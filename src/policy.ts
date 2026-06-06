@@ -37,6 +37,7 @@ export async function checkPolicy(args: {
   if (!agentRoles.length) {
     return { allowed: false, reason: "agent has no roles bound", provider, tool, scope };
   }
+  const ownerId = agentRoles[0].agent.ownerId;
 
   // 2) Check if any role allows this (tool, scope) pair
   const matchingRoles = agentRoles.filter((ar) => {
@@ -60,14 +61,14 @@ export async function checkPolicy(args: {
 
   // 3) Find a matching connection: (provider, scope) where enabled=true
   const connection = await prisma.connection.findFirst({
-    where: { provider, scope, enabled: true },
+    where: { provider, scope, ownerId, enabled: true },
     orderBy: { createdAt: "desc" },
   });
 
   if (!connection) {
     return {
       allowed: false,
-      reason: `no enabled connection for (provider=${provider}, scope=${scope || "<empty>"})`,
+      reason: `no enabled connection for this agent owner (provider=${provider}, scope=${scope || "<empty>"})`,
       provider, tool, scope,
     };
   }
@@ -126,9 +127,10 @@ export type AgentConnection = {
 export async function connectionsForAgent(agentId: string): Promise<AgentConnection[]> {
   const agentRoles = await prisma.agentRole.findMany({
     where: { agentId },
-    include: { role: true },
+    include: { role: true, agent: true },
   });
   if (!agentRoles.length) return [];
+  const ownerId = agentRoles[0].agent.ownerId;
 
   const roles = agentRoles.map((ar) => {
     let allowedTools: string[] = [];
@@ -149,7 +151,7 @@ export async function connectionsForAgent(agentId: string): Promise<AgentConnect
   if (!providers.size) return [];
 
   const conns = await prisma.connection.findMany({
-    where: { provider: { in: Array.from(providers) }, enabled: true },
+    where: { provider: { in: Array.from(providers) }, ownerId, enabled: true },
     select: { provider: true, scope: true, label: true },
     orderBy: [{ scope: "asc" }, { provider: "asc" }],
   });
