@@ -1,0 +1,29 @@
+{
+  "name": "agent-oauth",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "OAuth credential broker for AI agents (MCP-compatible)",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node --import tsx/esm src/server.ts",
+    "db:push": "prisma db push",
+    "db:generate": "prisma generate",
+    "db:studio": "prisma studio"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.7",
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "@prisma/client": "^5.22.0",
+    "arctic": "^2.3.4",
+    "better-auth": "^1.0.0",
+    "hono": "^4.6.10"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "prisma": "^5.22.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
