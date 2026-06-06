@@ -8,6 +8,7 @@ import { checkPolicy, allowedToolsForAgent, connectionsForAgent } from "./policy
 import { PROVIDERS, toolsForProvider } from "./connectors/registry.js";
 import { callNotionTool } from "./connectors/notion.js";
 import { callGitHubTool } from "./connectors/github.js";
+import { callGoogleGscTool } from "./connectors/google_gsc.js";
 
 export const mcpApp = new Hono();
 
@@ -146,6 +147,8 @@ mcpApp.post("/", async (c) => {
         result = await callNotionTool(toolName, args, token);
       } else if (decision.provider === "github") {
         result = await callGitHubTool(toolName, args, token);
+      } else if (decision.provider === "google_gsc") {
+        result = await callGoogleGscTool(toolName, args, token);
       } else {
         throw new Error(`no dispatcher for provider: ${decision.provider}`);
       }
