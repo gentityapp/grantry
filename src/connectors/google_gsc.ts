@@ -72,11 +72,39 @@ export async function callGoogleGscTool(tool: string, args: GscArgs, token: stri
 
   if (tool === "google_gsc/search_analytics") {
     const siteUrl = String(args.site_url ?? args.siteUrl ?? "");
-    if (!siteUrl) throw new Error("site_url is required");
-
     const startDate = String(args.start_date ?? args.startDate ?? "");
     const endDate = String(args.end_date ?? args.endDate ?? "");
-    if (!startDate || !endDate) throw new Error("start_date and end_date are required");
+    const missing = [
+      ...(siteUrl ? [] : ["site_url"]),
+      ...(startDate ? [] : ["start_date"]),
+      ...(endDate ? [] : ["end_date"]),
+    ];
+    if (missing.length > 0) {
+      let availableSites: any[] = [];
+      if (!siteUrl) {
+        const sitesResponse = await fetchGoogleGsc("/sites", { headers }, { tool, validation: "missing_site_url" });
+        const sitesJson = await readJsonResponse(sitesResponse);
+        availableSites = (sitesJson.siteEntry ?? []).map((site: any) => ({
+          site_url: site.siteUrl,
+          permission_level: site.permissionLevel,
+        }));
+      }
+      return {
+        structuredContent: {
+          error: "missing_required_arguments",
+          missing,
+          message: `google_gsc_search_analytics requires ${missing.join(", ")}`,
+          available_sites: availableSites,
+          example_arguments: {
+            site_url: availableSites[0]?.site_url ?? "https://example.com/",
+            start_date: "2026-05-01",
+            end_date: "2026-05-31",
+            dimensions: ["query", "page"],
+            row_limit: 1000,
+          },
+        },
+      };
+    }
 
     const body: Record<string, unknown> = {
       startDate,
