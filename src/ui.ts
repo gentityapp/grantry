@@ -73,25 +73,30 @@ const CSS = `
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0e0f12; color: #e1e3e6; margin: 0; line-height: 1.5; }
   a { color: #6ea8fe; text-decoration: none; }
   a:hover { text-decoration: underline; }
-  nav { display: flex; gap: 16px; padding: 12px 24px; border-bottom: 1px solid #2a2d33; background: #14161a; }
+  nav { display: flex; gap: 8px; padding: 12px 24px; border-bottom: 1px solid #2a2d33; background: #14161a; align-items: center; overflow-x: auto; }
   nav .brand { font-weight: 700; }
+  nav span { white-space: nowrap; }
   nav a { color: #c8ccd2; padding: 6px 10px; border-radius: 4px; }
   nav a:hover, nav a.active { background: rgba(110,168,254,0.1); color: #6ea8fe; text-decoration: none; }
-  main { max-width: 960px; margin: 32px auto; padding: 0 24px; }
+  main { width: min(100% - 48px, 1180px); margin: 32px auto; }
   h1 { font-size: 28px; margin: 0 0 24px; }
   h2 { font-size: 18px; margin: 24px 0 12px; color: #c8ccd2; }
   .card { background: #14161a; border: 1px solid #2a2d33; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
-  .row { display: flex; gap: 12px; align-items: center; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .row.spread { justify-content: space-between; }
   .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
   .badge.scoped { background: rgba(110,168,254,0.16); color: #6ea8fe; }
   .badge.unscoped { background: rgba(160,160,160,0.16); color: #aaa; }
   .badge.denied { background: rgba(255,107,107,0.16); color: #ff6b6b; }
   .badge.ok { background: rgba(81,207,102,0.16); color: #51cf66; }
+  .table-wrap { width: 100%; overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #2a2d33; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #2a2d33; font-size: 14px; vertical-align: middle; }
   th { color: #8a8d93; font-weight: 500; }
+  td:first-child, th:first-child { padding-left: 0; }
+  td:last-child, th:last-child { padding-right: 0; }
   code, pre { background: #1a1c20; padding: 2px 6px; border-radius: 3px; font-size: 13px; font-family: ui-monospace, monospace; }
+  code { overflow-wrap: anywhere; }
   pre { padding: 12px 16px; overflow-x: auto; border: 1px solid #2a2d33; }
   input[type=text], input[type=password], input[type=email], select, textarea {
     width: 100%; padding: 8px 10px; background: #1a1c20; color: #e1e3e6;
@@ -114,11 +119,36 @@ const CSS = `
   button:hover, .btn:hover { background: #5a96e8; text-decoration: none; color: #0e0f12; }
   button.secondary, .btn.secondary { background: #2a2d33; color: #c8ccd2; }
   button.secondary:hover, .btn.secondary:hover { background: #353941; color: #e1e3e6; }
+  input[type=checkbox] { accent-color: #6ea8fe; }
   .empty { padding: 40px; text-align: center; color: #8a8d93; }
   .tool-pill { display: inline-block; padding: 2px 8px; margin: 2px; background: #1a1c20; border: 1px solid #2a2d33; border-radius: 12px; font-size: 11px; font-family: ui-monospace, monospace; }
   .step-card { background: #14161a; border: 1px solid #2a2d33; border-radius: 8px; padding: 16px 20px; margin-bottom: 16px; }
   .step-card h2 { margin-top: 0; display: flex; align-items: center; gap: 12px; }
   .step-card h2 .num { display: inline-block; width: 28px; height: 28px; line-height: 28px; text-align: center; background: #6ea8fe; color: #0e0f12; border-radius: 50%; font-size: 14px; font-weight: 700; }
+  .connection-table { table-layout: fixed; min-width: 920px; }
+  .connection-table th:nth-child(1), .connection-table td:nth-child(1) { width: 130px; }
+  .connection-table th:nth-child(2), .connection-table td:nth-child(2) { width: 78px; }
+  .connection-table th:nth-child(3), .connection-table td:nth-child(3) { width: 120px; }
+  .connection-table th:nth-child(4), .connection-table td:nth-child(4) { width: auto; }
+  .connection-table th:nth-child(5), .connection-table td:nth-child(5) { width: 110px; }
+  .connection-table th:nth-child(6), .connection-table td:nth-child(6) { width: 90px; }
+  .connection-table th:nth-child(7), .connection-table td:nth-child(7) { width: 104px; }
+  .connection-table th:nth-child(8), .connection-table td:nth-child(8) { width: 124px; }
+  .connection-table td:nth-child(4) { line-height: 1.7; }
+  .connection-table td:nth-child(5) input { min-width: 0; }
+  .connection-table td:nth-child(6) label { display: inline-flex; align-items: center; gap: 6px; margin: 0; white-space: nowrap; }
+  .connection-table td:nth-child(7) code { white-space: nowrap; }
+  .credential-summary { max-width: 100%; }
+  .credential-summary code { display: inline-block; max-width: 100%; white-space: normal; word-break: break-all; }
+  .stacked-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  @media (max-width: 760px) {
+    nav { padding: 10px 16px; }
+    main { width: min(100% - 32px, 1180px); margin: 24px auto; }
+    h1 { font-size: 24px; }
+    .card { padding: 16px; }
+    th, td { padding: 9px 10px; }
+    .connection-table { min-width: 860px; }
+  }
 `;
 
 const NAV = (current: string) => `
@@ -172,7 +202,7 @@ function renderCredentialSummary(cn: {
   if (subject.email) parts.push(`<span style="color:#8a8d93;font-size:12px;">${escapeHtml(String(subject.email))}</span>`);
   if (!parts.length) parts.push(`<span style="color:#8a8d93;font-size:12px;">${escapeHtml(String(meta.status))}</span>`);
   const validated = cn.credentialValidatedAt ? ` title="Checked ${cn.credentialValidatedAt.toISOString()}"` : "";
-  return `<div${validated}>${parts.join("<br>")}</div>`;
+  return `<div class="credential-summary"${validated}>${parts.join("<br>")}</div>`;
 }
 
 async function getSessionUser(c: any) {
@@ -456,7 +486,8 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         ${connections.length === 0 ? '<div class="card"><div class="empty">No connections yet. Add one below.</div></div>' : `
         <div class="card">
           <p class="field-hint" style="margin-top:0;">Edit the display label for each connection. This is what you see in dashboards, audit logs, and tooltips.</p>
-          <table>
+          <div class="table-wrap">
+          <table class="connection-table">
             <thead><tr><th>Provider</th><th>Auth</th><th>Scope</th><th>Credential</th><th>Label</th><th>Enabled</th><th>Created</th><th>Action</th></tr></thead>
             <tbody>
             ${connections.map((cn) => {
@@ -472,12 +503,13 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                 <td><label style="font-weight:normal;font-size:13px;"><input type="checkbox" name="conn_enabled_${cn.id}" ${cn.enabled ? "checked" : ""}> on</label></td>
                 <td><code>${cn.createdAt.toISOString().slice(0, 10)}</code></td>
                 <td>${canReconnect
-                  ? `<a href="/oauth/${cn.provider}/start?tenant=${encodeURIComponent(cn.scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run the OAuth consent flow and refresh this exact connection's tokens">↻ Reconnect</a>${expired ? ' <span class="badge unscoped" style="color:#ff6b6b;">token expired</span>' : ""}`
+                  ? `<span class="stacked-actions"><a href="/oauth/${cn.provider}/start?tenant=${encodeURIComponent(cn.scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run the OAuth consent flow and refresh this exact connection's tokens">↻ Reconnect</a>${expired ? '<span class="badge unscoped" style="color:#ff6b6b;">token expired</span>' : ""}</span>`
                   : '<span style="color:#8a8d93;font-size:12px;">token</span>'}</td>
               </tr>
             `;}).join("")}
             </tbody>
           </table>
+          </div>
           <p class="field-hint">↻ <b>Reconnect</b> re-runs the provider's OAuth consent screen and refreshes this connection's access/refresh tokens in place. Use it when an agent reports an expired or revoked token. No new agent is created.</p>
         </div>`}
 
