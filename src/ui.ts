@@ -79,7 +79,7 @@ function mcpConfigBlock(origin: string, agentName: string, token: string, exactT
 type = "streamable-http"
 url = "${origin}/mcp"
 
-[mcp_servers.${serverName}.headers]
+[mcp_servers.${serverName}.http_headers]
 Authorization = "Bearer ${token}"
 ${scope ? `X-Gentity-Scope = "${scope}"` : ""}`;
   const claudeConfig = {
