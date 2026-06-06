@@ -54,6 +54,86 @@ function canonicalToolName(name: unknown): string {
   return raw;
 }
 
+function toolSpecificInputProperties(toolName: string): Record<string, any> {
+  if (toolName === "notion/get_page") {
+    return {
+      page_id: { type: "string", description: "Notion page ID." },
+      include_children: { type: "boolean", description: "When true, include the page's first-level block children." },
+    };
+  }
+  if (toolName === "notion/query_db") {
+    return {
+      database_id: { type: "string", description: "Notion database ID." },
+      filter: { type: "object", description: "Optional Notion database query filter object." },
+      sorts: { type: "array", items: { type: "object" }, description: "Optional Notion database query sorts array." },
+      page_size: { type: "number", minimum: 1, maximum: 100, description: "Rows to return, max 100." },
+      start_cursor: { type: "string", description: "Pagination cursor returned as next_cursor." },
+      slug: { type: "string", description: "Optional shortcut filter for a slug rich_text property." },
+      slug_property: { type: "string", description: "Slug property name, default Slug." },
+    };
+  }
+  if (toolName === "notion/create_page") {
+    return {
+      parent: { type: "object", description: "Notion page parent object." },
+      properties: { type: "object", description: "Raw Notion properties object." },
+    };
+  }
+  if (toolName === "notion/update_page") {
+    return {
+      page_id: { type: "string", description: "Notion page ID." },
+      properties: { type: "object", description: "Raw Notion properties object to PATCH onto the page." },
+      archived: { type: "boolean", description: "Archive or restore the page." },
+      icon: { type: "object", description: "Optional raw Notion icon object." },
+      cover: { type: "object", description: "Optional raw Notion cover object." },
+    };
+  }
+  if (toolName === "notion/append_blocks") {
+    return {
+      page_id: { type: "string", description: "Page ID to append children to. Alias for parent_block_id." },
+      parent_block_id: { type: "string", description: "Block ID whose children should receive appended blocks." },
+      after: { type: "string", description: "Optional sibling block ID to insert after." },
+      children: { type: "array", items: { type: "object" }, description: "Raw Notion block children array." },
+    };
+  }
+  if (toolName === "notion/update_blocks") {
+    return {
+      operations: {
+        type: "array",
+        maxItems: 25,
+        items: {
+          type: "object",
+          properties: {
+            block_id: { type: "string" },
+            patch: { type: "object", description: "Raw Notion block PATCH body." },
+            archived: { type: "boolean", description: "Shortcut to archive or restore a block." },
+          },
+          required: ["block_id"],
+        },
+        description: "Batch of block PATCH operations. Each item needs block_id and either patch or archived.",
+      },
+    };
+  }
+  if (toolName === "notion/update_page_status") {
+    return {
+      page_id: { type: "string", description: "Notion page ID." },
+      status: { type: "string", description: "Status property name." },
+      status_name: { type: "string", description: "New status option name, default Done." },
+    };
+  }
+  return {};
+}
+
+function requiredToolSpecificArgs(toolName: string): string[] {
+  if (toolName === "notion/get_page") return ["page_id"];
+  if (toolName === "notion/query_db") return ["database_id"];
+  if (toolName === "notion/create_page") return ["parent", "properties"];
+  if (toolName === "notion/update_page") return ["page_id"];
+  if (toolName === "notion/append_blocks") return ["children"];
+  if (toolName === "notion/update_blocks") return ["operations"];
+  if (toolName === "notion/update_page_status") return ["page_id", "status"];
+  return [];
+}
+
 /**
  * Tools advertised via tools/list, scoped to the calling agent.
  * - `ping` is always available (liveness, no policy).
@@ -94,8 +174,9 @@ function buildToolList(connections: Awaited<ReturnType<typeof connectionsForAgen
             scope: { type: "string", enum: scopes, description: "Tenant scope. Use one of the scopes exposed for this agent token." },
             auth_type: { type: "string", enum: authTypes, description: "Optional auth type disambiguator." },
             connection_id: { type: "string", enum: connectionIds, description: "Optional connection id disambiguator." },
+            ...toolSpecificInputProperties(toolName),
           },
-          required: ["scope"],
+          required: ["scope", ...requiredToolSpecificArgs(toolName)],
         },
       });
     }

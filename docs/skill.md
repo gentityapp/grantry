@@ -27,7 +27,7 @@ description: |
 - **Tenant model**: each `Connection` has a `scope` (the tenant name, e.g.
   `gentity-dev`). A `Role` has `allowedTools` + `allowedScopes`. Tool calls pass
   `scope` in `arguments` to pick the credential.
-- **23 tools** (incl. `ping`). Format: `<provider>/<tool>` (e.g. `github/git_push_repo`).
+- **26 tools** (incl. `ping`). Format: `<provider>/<tool>` (e.g. `github/git_push_repo`).
 
 ## The scope rule (the #1 gotcha)
 A tool call is allowed only if **all three** hold (`src/policy.ts`):
@@ -124,11 +124,12 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
    **Allowed scopes** (leave Allowed scopes empty for "any scope").
 3. Bind the role to the agent (`POST /ui/agents/:id/bind`).
 
-## Providers & tools (23)
+## Providers & tools (26)
 - `ping` — liveness (returns `pong from <agent>`)
 - **github** (PAT or OAuth; scopes `repo`, `read:user`):
   `list_repos`, `get_repo`, `get_file_contents`, `list_issues`, `create_issue`, `git_push_repo`, `create_repo`
-- **notion** (PAT): `list_dbs`, `get_page`, `query_db`, `create_page`, `update_page_status`
+- **notion** (PAT): `list_dbs`, `get_page`, `query_db`, `create_page`,
+  `update_page`, `append_blocks`, `update_blocks`, `update_page_status`
 - **google_drive** (OAuth, read-only): `list_files`, `get_file`, `search`
 - **google_gsc** (OAuth, read-only): `list_sites`, `search_analytics`
 - **google_ads** (OAuth, read-only): `list_campaigns`, `get_campaign`
@@ -145,6 +146,20 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
   empty and non-empty repos.
 - `create_repo`: `name`, `org?` (omit = personal account), `description?`, `private?`
 
+### Notion tool arguments (besides `scope`)
+- `list_dbs`: no additional arguments.
+- `get_page`: `page_id`; optional `include_children` to include first-level block children.
+- `query_db`: `database_id`; optional `filter`, `sorts`, `page_size`, `start_cursor`.
+  Shortcut filters: `slug` and optional `slug_property` (default `Slug`).
+- `create_page`: raw Notion `parent` and `properties`.
+- `update_page`: `page_id`; one or more of raw Notion `properties`, `archived`,
+  `icon`, `cover`. Use this for existing page title/excerpt/status/date updates.
+- `append_blocks`: `page_id` or `parent_block_id`, raw Notion `children`, optional
+  `after`. Use this for adding headings, paragraphs, related links, and tables.
+- `update_blocks`: `operations[]` with `block_id` and either raw Notion `patch` or
+  `archived`; max 25 operations. Use this for targeted block edits or archiving.
+- `update_page_status`: legacy helper; `page_id`, `status`, optional `status_name`.
+
 ## Output contract
 When asked to act via gentity-auth:
 1. If you don't already know the scope, call `connections/list` first to resolve
@@ -152,7 +167,8 @@ When asked to act via gentity-auth:
 2. State which tool(s) and which **scope** you'll use.
 3. Show the JSON-RPC payload.
 4. For **write** actions (`git_push_repo`, `create_repo`, `create_issue`,
-   `notion/create_page`, `hubspot/create_deal`, …) get explicit confirmation first —
+   `notion/create_page`, `notion/update_page`, `notion/append_blocks`,
+   `notion/update_blocks`, `hubspot/create_deal`, …) get explicit confirmation first —
    these hit the real SaaS via real tokens and are not reversible. **Read-only**
    calls (incl. the connectivity smoke test) need no confirmation — just run them.
 5. Report the result. The `scope` is recorded in the audit log (`/ui/audit`).

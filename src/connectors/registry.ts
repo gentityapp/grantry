@@ -38,7 +38,16 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     helpText: "Create an internal integration at notion.so/my-integrations. Copy the 'Internal Integration Token' (starts with ntn_ or secret_).",
     /** Where to get a new PAT (clickable link shown in the wizard) */
     tokenUrl: "https://www.notion.so/my-integrations",
-    tools: ["notion/list_dbs", "notion/get_page", "notion/query_db", "notion/create_page", "notion/update_page_status"],
+    tools: [
+      "notion/list_dbs",
+      "notion/get_page",
+      "notion/query_db",
+      "notion/create_page",
+      "notion/update_page",
+      "notion/append_blocks",
+      "notion/update_blocks",
+      "notion/update_page_status",
+    ],
   },
   github: {
     key: "github",
