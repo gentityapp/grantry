@@ -39,6 +39,21 @@ function configuredMcpScope(c: any): string {
   return String(c.req.header("x-gentity-scope") ?? c.req.header("x-gentity-tenant") ?? "").trim();
 }
 
+function publicToolName(canonicalName: string): string {
+  return canonicalName === "ping" ? canonicalName : canonicalName.replace("/", "_");
+}
+
+function canonicalToolName(name: unknown): string {
+  const raw = String(name ?? "");
+  if (raw === "ping") return raw;
+  for (const provider of Object.values(PROVIDERS)) {
+    if (provider.tools.includes(raw)) return raw;
+    const matched = provider.tools.find((tool) => publicToolName(tool) === raw);
+    if (matched) return matched;
+  }
+  return raw;
+}
+
 /**
  * Tools advertised via tools/list, scoped to the calling agent.
  * - `ping` is always available (liveness, no policy).
@@ -71,7 +86,7 @@ function buildToolList(connections: Awaited<ReturnType<typeof connectionsForAgen
       const authTypes = Array.from(authTypesByTool.get(toolName) ?? []).sort();
       const connectionIds = Array.from(connectionIdsByTool.get(toolName) ?? []).sort();
       tools.push({
-        name: toolName,
+        name: publicToolName(toolName),
         description: `${p.label}: ${toolName.split("/")[1]?.replace(/_/g, " ")}`,
         inputSchema: {
           type: "object",
@@ -296,7 +311,8 @@ mcpApp.post("/", async (c) => {
       }, 401);
     }
 
-    const toolName = params?.name;
+    const requestedToolName = String(params?.name ?? "");
+    const toolName = canonicalToolName(requestedToolName);
     const args = params?.arguments ?? {};
     const requestedScope = args.scope === undefined || args.scope === null ? "" : String(args.scope);
     const scope = requestedScope || configuredScope;
@@ -326,7 +342,7 @@ mcpApp.post("/", async (c) => {
       await prisma.auditLog.create({
         data: {
           agentId: agent.id,
-          provider: toolName?.includes("/") ? String(toolName).split("/", 1)[0] : "unknown",
+          provider: toolName.includes("/") ? toolName.split("/", 1)[0] : "unknown",
           tool: String(toolName ?? ""),
           scope: requestedScope,
           status: "denied",
@@ -338,7 +354,7 @@ mcpApp.post("/", async (c) => {
       });
       return c.json({
         jsonrpc: "2.0", id,
-        error: { code: -32010, message: `policy denied: ${toolName} (MCP server is locked to scope=${configuredScope})` },
+        error: { code: -32010, message: `policy denied: ${requestedToolName} (MCP server is locked to scope=${configuredScope})` },
       }, 403);
     }
 
