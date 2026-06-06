@@ -21,6 +21,52 @@ function escapeHtml(s: string): string {
   );
 }
 
+// Renders the "Agent token" card with a copy-to-clipboard button.
+// The token is shown once, so we make it easy to grab. `warningHtml` is
+// raw HTML (may contain links); pass "" to omit the warning line.
+function agentTokenCard(
+  token: string,
+  warningHtml = "⚠️ Save this token now. You won't see it again."
+): string {
+  const safe = escapeHtml(token);
+  return `
+      <div class="card" style="background:rgba(110,168,254,0.08);">
+        <h2>🔑 Agent token (save this — shown once!)</h2>
+        <div class="row" style="align-items:stretch;gap:8px;">
+          <pre style="background:#0e0f12;border:1px solid #6ea8fe;flex:1;margin:0;">${safe}</pre>
+          <button type="button" class="secondary copy-token-btn" data-token="${safe}" style="white-space:nowrap;">📋 Copy</button>
+        </div>
+        <p style="font-size:13px;color:#8a8d93;margin-bottom:0;margin-top:12px;">Use as <code>Authorization: Bearer ${safe}</code> when calling <code>/mcp</code>.</p>
+        ${warningHtml ? `<p style="font-size:13px;color:#ff6b6b;margin-top:8px;">${warningHtml}</p>` : ""}
+      </div>
+      <script>
+        (function () {
+          document.querySelectorAll('.copy-token-btn').forEach(function (btn) {
+            if (btn.dataset.bound) return;
+            btn.dataset.bound = '1';
+            btn.addEventListener('click', async function () {
+              var text = btn.dataset.token;
+              try {
+                await navigator.clipboard.writeText(text);
+              } catch (e) {
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                try { document.execCommand('copy'); } catch (_) {}
+                document.body.removeChild(ta);
+              }
+              var orig = btn.textContent;
+              btn.textContent = '✓ Copied!';
+              setTimeout(function () { btn.textContent = orig; }, 1500);
+            });
+          });
+        })();
+      </script>`;
+}
+
 const CSS = `
   * { box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0e0f12; color: #e1e3e6; margin: 0; line-height: 1.5; }
@@ -1171,12 +1217,7 @@ dashboardApp.post("/tenants/new", async (c) => {
         <h2>Agent</h2>
         <p><code>${agentRow.name}</code> · bound to <code>${role.name}</code></p>
       </div>
-      <div class="card" style="background:rgba(110,168,254,0.08);">
-        <h2>🔑 Agent token (save this — shown once!)</h2>
-        <pre style="background:#0e0f12;border:1px solid #6ea8fe;">${token}</pre>
-        <p style="font-size:13px;color:#8a8d93;margin-bottom:0;">Use as <code>Authorization: Bearer ${token}</code> when calling <code>/mcp</code>.</p>
-        <p style="font-size:13px;color:#ff6b6b;margin-top:8px;">⚠️  Save this token now. You won't see it again. Revoke and re-mint in <a href="/ui/agents">/ui/agents</a> if lost.</p>
-      </div>
+      ${agentTokenCard(token, "⚠️  Save this token now. You won't see it again. Revoke and re-mint in <a href=\"/ui/agents\">/ui/agents</a> if lost.")}
       <div class="card">
         <h2>Test it</h2>
         <pre>curl -X POST ${new URL(c.req.url).origin}/mcp \\
@@ -1754,11 +1795,7 @@ oauthApp.get("/:provider/callback", async (c) => {
         <h2>Agent</h2>
         <p><code>${agentRow.name}</code> · bound to <code>${role.name}</code></p>
       </div>
-      <div class="card" style="background:rgba(110,168,254,0.08);">
-        <h2>🔑 Agent token (save this — shown once!)</h2>
-        <pre style="background:#0e0f12;border:1px solid #6ea8fe;">${token}</pre>
-        <p style="font-size:13px;color:#8a8d93;margin-bottom:0;">Use as <code>Authorization: Bearer ${token}</code> when calling <code>/mcp</code>.</p>
-      </div>
+      ${agentTokenCard(token, "")}
       <p><a href="/ui/tenants">← Back to tenants</a> · <a href="/ui/agents">Manage agents</a></p>
     </main></body></html>
   `);
@@ -1922,12 +1959,7 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
         <p>Bound to <code>${role.name}</code> (allowed_scopes: <code>${safeJsonArray(role.allowedScopes).join(", ") || "<em>any</em>"}</code>)</p>
         <p>Tools: ${safeJsonArray(role.allowedTools).map((t: string) => `<span class="tool-pill">${t}</span>`).join(" ")}</p>
       </div>
-      <div class="card" style="background:rgba(110,168,254,0.08);">
-        <h2>🔑 Agent token (save this — shown once!)</h2>
-        <pre style="background:#0e0f12;border:1px solid #6ea8fe;">${token}</pre>
-        <p style="font-size:13px;color:#8a8d93;margin-bottom:0;">Use as <code>Authorization: Bearer ${token}</code> when calling <code>/mcp</code>.</p>
-        <p style="font-size:13px;color:#ff6b6b;margin-top:8px;">⚠️ Save this token now. You won't see it again.</p>
-      </div>
+      ${agentTokenCard(token)}
       <div class="card">
         <h2>Test it</h2>
         <pre>curl -X POST ${new URL(c.req.url).origin}/mcp \\
