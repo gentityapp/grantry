@@ -4,6 +4,7 @@ import { auth } from "./auth.js";
 import { prisma } from "./db.js";
 import { encrypt } from "./crypto.js";
 import { PROVIDERS, getProvider, listProviders, toolsForProvider } from "./connectors/registry.js";
+import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 
 export const dashboardApp = new Hono();
 
@@ -140,6 +141,38 @@ function safeJsonArray(s: string | null | undefined): string[] {
   } catch {
     return [];
   }
+}
+
+function safeJsonObject(s: string | null | undefined): Record<string, any> {
+  if (!s) return {};
+  try {
+    const v = JSON.parse(s);
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+function renderCredentialSummary(cn: {
+  credentialMetadata?: string | null;
+  credentialValidatedAt?: Date | null;
+}) {
+  const meta = safeJsonObject(cn.credentialMetadata);
+  if (!meta.status) return '<span style="color:#8a8d93;font-size:12px;">not checked</span>';
+  if (meta.status === "error") {
+    return `<span class="badge denied">check failed</span> <span style="color:#8a8d93;font-size:12px;">${escapeHtml(String(meta.error ?? "")).slice(0, 80)}</span>`;
+  }
+  const scopes = Array.isArray(meta.scopes) ? meta.scopes.map(String) : [];
+  const resources = Array.isArray(meta.resources) ? meta.resources : [];
+  const subject = meta.subject && typeof meta.subject === "object" ? meta.subject : {};
+  const parts: string[] = [];
+  if (scopes.length) parts.push(scopes.slice(0, 4).map((s) => `<code>${escapeHtml(s)}</code>`).join(" "));
+  if (resources.length) parts.push(`<span style="color:#8a8d93;font-size:12px;">${resources.length} resource${resources.length === 1 ? "" : "s"}</span>`);
+  if (subject.login) parts.push(`<span style="color:#8a8d93;font-size:12px;">@${escapeHtml(String(subject.login))}</span>`);
+  if (subject.email) parts.push(`<span style="color:#8a8d93;font-size:12px;">${escapeHtml(String(subject.email))}</span>`);
+  if (!parts.length) parts.push(`<span style="color:#8a8d93;font-size:12px;">${escapeHtml(String(meta.status))}</span>`);
+  const validated = cn.credentialValidatedAt ? ` title="Checked ${cn.credentialValidatedAt.toISOString()}"` : "";
+  return `<div${validated}>${parts.join("<br>")}</div>`;
 }
 
 async function getSessionUser(c: any) {
@@ -423,7 +456,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         <div class="card">
           <p class="field-hint" style="margin-top:0;">Edit the display label for each connection. This is what you see in dashboards, audit logs, and tooltips.</p>
           <table>
-            <thead><tr><th>Provider</th><th>Auth</th><th>Scope</th><th>Label</th><th>Enabled</th><th>Created</th><th>Action</th></tr></thead>
+            <thead><tr><th>Provider</th><th>Auth</th><th>Scope</th><th>Credential</th><th>Label</th><th>Enabled</th><th>Created</th><th>Action</th></tr></thead>
             <tbody>
             ${connections.map((cn) => {
               const canReconnect = cn.authType === "oauth";
@@ -433,6 +466,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                 <td><code>${cn.provider}</code></td>
                 <td><code>${cn.authType}</code></td>
                 <td><code>${cn.scope}</code></td>
+                <td>${renderCredentialSummary(cn)}</td>
                 <td><input type="text" name="conn_label_${cn.id}" value="${escapeHtml(cn.label)}" style="font-size:13px;"></td>
                 <td><label style="font-weight:normal;font-size:13px;"><input type="checkbox" name="conn_enabled_${cn.id}" ${cn.enabled ? "checked" : ""}> on</label></td>
                 <td><code>${cn.createdAt.toISOString().slice(0, 10)}</code></td>
@@ -453,8 +487,8 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             <input type="text" name="role_desc" id="role_desc" value="${escapeHtml(roleDesc)}" placeholder="What this role is for">
           </div>
           <div class="field">
-            <label>Allowed tools</label>
-            <p class="field-hint" style="margin-top:0;">Tools from the providers connected above. Uncheck to revoke. (Re-check + Save to re-enable.)</p>
+            <label>Agent tool allowlist</label>
+            <p class="field-hint" style="margin-top:0;">These are agent-oauth permissions, not SaaS permissions. The SaaS credential above may still reject calls if its own scopes are narrower.</p>
             ${allAvailableTools.length === 0 ? '<div class="empty">No providers connected yet.</div>' : `
             <div id="roleToolsList">${allAvailableTools.map((t) => `<label style="font-weight:normal;display:block;padding:2px 0;"><input type="checkbox" name="role_tools" value="${t}" ${roleTools.includes(t) ? "checked" : ""}> <code>${t}</code></label>`).join("")}</div>
             `}
@@ -738,6 +772,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     const existingConn = await prisma.connection.findFirst({
       where: { provider, authType: "pat", scope, ownerId: user.id },
     });
+    const credentialMeta = await credentialMetadataForStorage(provider, "pat", credential);
     const conn = existingConn
       ? await prisma.connection.update({
           where: { id: existingConn.id },
@@ -745,6 +780,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
             encryptedCredential: encrypt(credential),
             refreshToken: null,
             accessTokenExpiresAt: null,
+            ...credentialMeta,
           },
         })
       : await prisma.connection.create({
@@ -755,6 +791,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
             scope,
             ownerId: user.id,
             encryptedCredential: encrypt(credential),
+            ...credentialMeta,
           },
         });
 
@@ -1232,10 +1269,11 @@ dashboardApp.post("/tenants/new", async (c) => {
     //   - supports OAuth, no cred      -> queue for OAuth authorization
     //   - PAT-only, no cred, no conn   -> error
     if (credential) {
+      const credentialMeta = await credentialMetadataForStorage(provider, "pat", credential);
       const conn = existingConn
         ? await prisma.connection.update({
             where: { id: existingConn.id },
-            data: { encryptedCredential: encrypt(credential), refreshToken: null, accessTokenExpiresAt: null },
+            data: { encryptedCredential: encrypt(credential), refreshToken: null, accessTokenExpiresAt: null, ...credentialMeta },
           })
         : await prisma.connection.create({
             data: {
@@ -1245,6 +1283,7 @@ dashboardApp.post("/tenants/new", async (c) => {
               scope: tenant,
               ownerId: user.id,
               encryptedCredential: encrypt(credential),
+              ...credentialMeta,
             },
           });
       connections.push(conn);
@@ -1819,6 +1858,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     const data = {
       encryptedCredential: encrypt(accessToken),
       accessTokenExpiresAt: tokenJson.expires_in ? new Date(Date.now() + tokenJson.expires_in * 1000) : null,
+      ...(await credentialMetadataForStorage(providerKey, "oauth", accessToken)),
       // Google only returns a refresh_token on first consent unless prompt=consent
       // (which the start route forces), so keep the old one if none came back.
       ...(refreshToken ? { refreshToken: encrypt(refreshToken) } : {}),
@@ -1861,6 +1901,7 @@ oauthApp.get("/:provider/callback", async (c) => {
       encryptedCredential: encrypt(accessToken),
       accessTokenExpiresAt: tokenJson.expires_in ? new Date(Date.now() + tokenJson.expires_in * 1000) : null,
       refreshToken: refreshToken ? encrypt(refreshToken) : undefined,
+      ...(await credentialMetadataForStorage(providerKey, "oauth", accessToken)),
     },
   });
   // If the connection already existed, update the credential (token may have rotated)
@@ -1870,6 +1911,7 @@ oauthApp.get("/:provider/callback", async (c) => {
       data: {
         encryptedCredential: encrypt(accessToken),
         accessTokenExpiresAt: tokenJson.expires_in ? new Date(Date.now() + tokenJson.expires_in * 1000) : null,
+        ...(await credentialMetadataForStorage(providerKey, "oauth", accessToken)),
         ...(refreshToken ? { refreshToken: encrypt(refreshToken) } : {}),
       },
     });

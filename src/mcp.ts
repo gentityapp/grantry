@@ -9,6 +9,7 @@ import { PROVIDERS, toolsForProvider } from "./connectors/registry.js";
 import { callNotionTool } from "./connectors/notion.js";
 import { callGitHubTool } from "./connectors/github.js";
 import { callGoogleGscTool } from "./connectors/google_gsc.js";
+import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 
 export const mcpApp = new Hono();
 
@@ -105,6 +106,7 @@ async function credentialForConnection(conn: {
   id: string;
   provider: string;
   encryptedCredential: string;
+  authType: string;
   refreshToken: string | null;
   accessTokenExpiresAt: Date | null;
 }) {
@@ -123,6 +125,7 @@ async function credentialForConnection(conn: {
     data: {
       encryptedCredential: encrypt(refreshed.access_token),
       accessTokenExpiresAt: refreshed.expires_in ? new Date(Date.now() + refreshed.expires_in * 1000) : null,
+      ...(await credentialMetadataForStorage(conn.provider, conn.authType, refreshed.access_token)),
       ...(refreshed.refresh_token ? { refreshToken: encrypt(refreshed.refresh_token) } : {}),
     },
   });

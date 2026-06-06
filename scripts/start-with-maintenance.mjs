@@ -38,6 +38,7 @@ await run("npx", ["prisma", "generate"], { required: true, timeoutMs: 45_000 });
 // HTTP service down; failed maintenance is visible in logs and can be rerun.
 await run("npx", ["prisma", "db", "push", "--accept-data-loss"], { timeoutMs: 30_000 });
 await run("node", ["scripts/backfill-auth-types.mjs"], { timeoutMs: 20_000 });
+await run("node", ["--import", "tsx/esm", "scripts/backfill-credential-metadata.mjs"], { timeoutMs: 30_000 });
 await run("node", ["scripts/dedupe-connections.mjs"], { timeoutMs: 20_000 });
 await run("node", ["scripts/harden-roles.mjs"], { timeoutMs: 20_000 });
 
