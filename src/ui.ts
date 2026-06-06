@@ -510,6 +510,15 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
               ${availableToAdd.map((p) => `<option value="${p.key}" data-auth="${p.authTypes.join(",")}">${p.label} (${p.authTypes.map(t => t === "pat" ? "paste token" : "OAuth").join(" / ")})</option>`).join("")}
             </select>
           </div>
+          <div class="field" id="authMethodRow" style="display:none;">
+            <label>Authentication method</label>
+            <label style="font-weight:normal;display:inline-flex;align-items:center;gap:6px;margin-right:16px;">
+              <input type="radio" name="auth_method" value="pat" id="authMethodPat"> Paste token
+            </label>
+            <label style="font-weight:normal;display:inline-flex;align-items:center;gap:6px;">
+              <input type="radio" name="auth_method" value="oauth" id="authMethodOauth"> OAuth
+            </label>
+          </div>
           <div class="field" id="credFieldRow">
             <label for="credential">Credential</label>
             <textarea name="credential" id="credential" rows="3" required></textarea>
@@ -538,6 +547,10 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         const toolsList = document.getElementById('toolsList');
         const credHint = document.getElementById('credHint');
         const credField = document.getElementById('credential');
+        const credFieldRow = document.getElementById('credFieldRow');
+        const authMethodRow = document.getElementById('authMethodRow');
+        const authMethodPat = document.getElementById('authMethodPat');
+        const authMethodOauth = document.getElementById('authMethodOauth');
         const patLinkRow = document.getElementById('patLinkRow');
         const patLink = document.getElementById('patLink');
         const oauthSetupLinkRow = document.getElementById('oauthSetupLinkRow');
@@ -546,18 +559,32 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         function updateUI() {
           const p = PROVIDERS[sel.value];
           if (!p) return;
+          const hasPat = p.authTypes.includes("pat");
+          const hasOauth = p.authTypes.includes("oauth");
+          if (hasPat && hasOauth) {
+            authMethodRow.style.display = "";
+            if (!authMethodPat.checked && !authMethodOauth.checked) authMethodOauth.checked = true;
+          } else {
+            authMethodRow.style.display = "none";
+            authMethodPat.checked = hasPat;
+            authMethodOauth.checked = hasOauth;
+          }
+          const usePat = hasPat && authMethodPat.checked;
+          const useOauth = hasOauth && authMethodOauth.checked;
           credHint.textContent = p.helpText;
-          credField.placeholder = p.authTypes.includes("pat") ? "Paste your " + p.label + " token here" : "OAuth flow will start after submit";
-          credField.disabled = p.authTypes.includes("oauth") && !p.authTypes.includes("pat");
-          credField.required = p.authTypes.includes("pat");
-          if (p.tokenUrl) {
+          credField.placeholder = usePat ? "Paste your " + p.label + " token here" : "OAuth flow will start after submit";
+          credField.disabled = !usePat;
+          credField.required = usePat;
+          credFieldRow.style.opacity = usePat ? "1" : "0.55";
+          if (!usePat) credField.value = "";
+          if (usePat && p.tokenUrl) {
             patLink.href = p.tokenUrl;
             patLink.textContent = "🔗 Get a new " + p.label + " token here →";
             patLinkRow.style.display = "";
           } else {
             patLinkRow.style.display = "none";
           }
-          if (p.oauthSetupUrl) {
+          if (useOauth && p.oauthSetupUrl) {
             oauthSetupLink.href = p.oauthSetupUrl;
             oauthSetupLink.textContent = "🔗 Register/manage your " + p.label + " OAuth app here →";
             oauthSetupLinkRow.style.display = "";
@@ -567,6 +594,8 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           toolsList.innerHTML = p.tools.map(t => '<label style="font-weight:normal;display:block;padding:4px 0;"><input type="checkbox" name="tools" value="' + t + '" checked> <code>' + t + '</code></label>').join("");
         }
         sel.addEventListener('change', updateUI);
+        authMethodPat.addEventListener('change', updateUI);
+        authMethodOauth.addEventListener('change', updateUI);
         updateUI();
         document.getElementById('addConnForm').addEventListener('submit', () => {
           const selected = Array.from(document.querySelectorAll('input[name="tools"]:checked')).map(i => i.value);
@@ -667,6 +696,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
   // --- add_service: add a new provider connection (existing behavior) ---
   if (action === "add_service") {
     const provider = String(body.provider ?? "").trim();
+    const authMethod = String(body.auth_method ?? "").trim();
     const credential = String(body.credential ?? "").trim();
     const userIdShort2 = user.id.slice(0, 8);
     let tools: string[] = [];
@@ -676,10 +706,13 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     const providerDef = getProvider(provider);
     if (!providerDef) return c.html("<h1>unknown provider</h1>", 400);
     if (providerDef.implemented === false) return c.html("<h1>provider not implemented</h1>", 400);
-    if (!providerDef.authTypes.includes("pat") && credential) {
+    const wantsOauth = authMethod === "oauth" || (providerDef.authTypes.includes("oauth") && !providerDef.authTypes.includes("pat"));
+    const wantsPat = authMethod === "pat" || (providerDef.authTypes.includes("pat") && !providerDef.authTypes.includes("oauth"));
+    if (!wantsPat && credential) {
       return c.html("<h1>pasted credentials are not accepted for this OAuth-only provider</h1>", 400);
     }
-    if (providerDef.authTypes.includes("oauth") && !credential) {
+    if (wantsOauth) {
+      if (!providerDef.authTypes.includes("oauth")) return c.html("<h1>OAuth is not supported for this provider</h1>", 400);
       const selectedTools = tools.length > 0 ? tools : toolsForProvider(provider);
       let role = await prisma.role.findFirst({ where: { name: `${scope}-dev-${userIdShort2}`, ownerId: user.id } });
       const currentTools: string[] = role ? safeJsonArray(role.allowedTools) : [];
@@ -703,7 +736,8 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
       }
       return c.redirect(`/oauth/${provider}/start?tenant=${encodeURIComponent(scope)}&reauth=1`);
     }
-    if (providerDef.authTypes.includes("pat") && !credential) return c.html("<h1>credential required</h1>", 400);
+    if (!wantsPat || !providerDef.authTypes.includes("pat")) return c.html("<h1>paste token is not supported for this provider</h1>", 400);
+    if (!credential) return c.html("<h1>credential required</h1>", 400);
 
     // 1) Create connection
     const conn = await prisma.connection.create({
