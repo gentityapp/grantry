@@ -547,7 +547,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           const p = PROVIDERS[sel.value];
           if (!p) return;
           credHint.textContent = p.helpText;
-          credField.placeholder = p.authTypes.includes("pat") ? "Paste your " + p.label + " token here" : "OAuth flow (Phase 5)";
+          credField.placeholder = p.authTypes.includes("pat") ? "Paste your " + p.label + " token here" : "OAuth flow will start after submit";
           credField.disabled = p.authTypes.includes("oauth") && !p.authTypes.includes("pat");
           credField.required = p.authTypes.includes("pat");
           if (p.tokenUrl) {
@@ -675,6 +675,31 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
 
     const providerDef = getProvider(provider);
     if (!providerDef) return c.html("<h1>unknown provider</h1>", 400);
+    if (providerDef.implemented === false) return c.html("<h1>provider not implemented</h1>", 400);
+    if (providerDef.authTypes.includes("oauth") && !credential) {
+      const selectedTools = tools.length > 0 ? tools : toolsForProvider(provider);
+      let role = await prisma.role.findFirst({ where: { name: `${scope}-dev-${userIdShort2}`, ownerId: user.id } });
+      const currentTools: string[] = role ? safeJsonArray(role.allowedTools) : [];
+      const currentScopes: string[] = role ? safeJsonArray(role.allowedScopes) : [scope];
+      const mergedTools = Array.from(new Set([...currentTools, ...selectedTools]));
+      const mergedScopes = currentScopes.length === 0 ? [scope] : Array.from(new Set([...currentScopes, scope]));
+      if (role) {
+        await prisma.role.update({
+          where: { id: role.id },
+          data: { allowedTools: JSON.stringify(mergedTools), allowedScopes: JSON.stringify(mergedScopes) },
+        });
+      } else {
+        await prisma.role.create({
+          data: {
+            name: `${scope}-dev-${userIdShort2}`,
+            allowedTools: JSON.stringify(mergedTools),
+            allowedScopes: JSON.stringify([scope]),
+            ownerId: user.id,
+          },
+        });
+      }
+      return c.redirect(`/oauth/${provider}/start?tenant=${encodeURIComponent(scope)}&reauth=1`);
+    }
     if (providerDef.authTypes.includes("pat") && !credential) return c.html("<h1>credential required</h1>", 400);
 
     // 1) Create connection
@@ -1041,7 +1066,9 @@ dashboardApp.post("/tenants/new", async (c) => {
   }
   if (providers.length === 0) return c.html("<h1>select at least one provider</h1>", 400);
   for (const p of providers) {
-    if (!getProvider(p)) return c.html(`<h1>unknown provider: ${escapeHtml(p)}</h1>`, 400);
+    const providerDef = getProvider(p);
+    if (!providerDef) return c.html(`<h1>unknown provider: ${escapeHtml(p)}</h1>`, 400);
+    if (providerDef.implemented === false) return c.html(`<h1>provider not implemented: ${escapeHtml(providerDef.label)}</h1>`, 400);
   }
 
   // Check for agent name conflict up front so we can return a clean error
@@ -1431,12 +1458,15 @@ dashboardApp.post("/agents/:id/rotate", async (c) => {
 
 // --- DEBUG: /debug/agents — dumps agent/role/connection state ---
 dashboardApp.get("/debug/agents", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ error: "not authenticated" }, 401);
   const agents = await prisma.agent.findMany({
+    where: { ownerId: user.id },
     orderBy: { createdAt: "desc" },
     include: { roles: { include: { role: true } } },
   });
-  const roles = await prisma.role.findMany();
-  const conns = await prisma.connection.findMany();
+  const roles = await prisma.role.findMany({ where: { ownerId: user.id } });
+  const conns = await prisma.connection.findMany({ where: { ownerId: user.id } });
   return c.json({
     agents: agents.map((a) => ({
       name: a.name,
@@ -1505,7 +1535,7 @@ oauthApp.get("/:provider/start", async (c) => {
 
   const providerKey = c.req.param("provider");
   const providerDef = getProvider(providerKey);
-  if (!providerDef || !providerDef.authTypes.includes("oauth")) {
+  if (!providerDef || providerDef.implemented === false || !providerDef.authTypes.includes("oauth")) {
     return c.html(`<h1>unknown or non-OAuth provider: ${escapeHtml(providerKey)}</h1>`, 400);
   }
   if (!providerDef.authorizeUrl || !providerDef.oauthTokenUrl) {
@@ -1593,7 +1623,7 @@ oauthApp.get("/:provider/callback", async (c) => {
 
   const providerKey = c.req.param("provider");
   const providerDef = getProvider(providerKey);
-  if (!providerDef) {
+  if (!providerDef || providerDef.implemented === false) {
     return c.html(`<h1>unknown provider: ${escapeHtml(providerKey)}</h1>`, 400);
   }
 

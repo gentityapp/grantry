@@ -26,6 +26,8 @@ export type ProviderDef = {
   oauthTokenUrl?: string;
   /** Tools this provider exposes, by name */
   tools: string[];
+  /** Whether this provider has an MCP dispatcher implemented in this service. */
+  implemented?: boolean;
 };
 
 export const PROVIDERS: Record<string, ProviderDef> = {
@@ -52,6 +54,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authorizeUrl: "https://github.com/login/oauth/authorize",
     oauthTokenUrl: "https://github.com/login/oauth/access_token",
     tools: ["github/list_repos", "github/get_repo", "github/list_issues", "github/create_issue", "github/git_push_repo", "github/create_repo"],
+    implemented: true,
   },
   google_drive: {
     key: "google_drive",
@@ -67,6 +70,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     oauthTokenUrl: "https://oauth2.googleapis.com/token",
     tools: ["google_drive/list_files", "google_drive/get_file", "google_drive/search"],
+    implemented: false,
   },
   google_gsc: {
     key: "google_gsc",
@@ -81,6 +85,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     oauthTokenUrl: "https://oauth2.googleapis.com/token",
     tools: ["google_gsc/list_sites", "google_gsc/search_analytics"],
+    implemented: true,
   },
   google_ads: {
     key: "google_ads",
@@ -95,6 +100,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     oauthTokenUrl: "https://oauth2.googleapis.com/token",
     tools: ["google_ads/list_campaigns", "google_ads/get_campaign"],
+    implemented: false,
   },
   hubspot: {
     key: "hubspot",
@@ -106,6 +112,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authorizeUrl: "https://app.hubspot.com/oauth/authorize",
     oauthTokenUrl: "https://api.hubapi.com/oauth/v1/token",
     tools: ["hubspot/list_deals", "hubspot/get_contact", "hubspot/create_deal"],
+    implemented: false,
   },
 };
 
@@ -114,9 +121,11 @@ export function getProvider(key: string): ProviderDef | undefined {
 }
 
 export function listProviders(): ProviderDef[] {
-  return Object.values(PROVIDERS);
+  return Object.values(PROVIDERS).filter((p) => p.implemented !== false);
 }
 
 export function toolsForProvider(providerKey: string): string[] {
-  return PROVIDERS[providerKey]?.tools ?? [];
+  const provider = PROVIDERS[providerKey];
+  if (!provider || provider.implemented === false) return [];
+  return provider.tools;
 }

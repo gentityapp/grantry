@@ -27,6 +27,10 @@ export async function checkPolicy(args: {
 }): Promise<PolicyDecision> {
   const { agentId, tool, scope } = args;
   const [provider, toolName] = tool.includes("/") ? tool.split("/", 2) : ["", tool];
+  const providerDef = getProvider(provider);
+  if (!providerDef || providerDef.implemented === false) {
+    return { allowed: false, reason: `provider not implemented: ${provider || "<unknown>"}`, provider, tool, scope };
+  }
 
   // 1) Find the agent's roles
   const agentRoles = await prisma.agentRole.findMany({
@@ -99,7 +103,12 @@ export async function allowedToolsForAgent(agentId: string): Promise<Set<string>
   for (const ar of agentRoles) {
     let tools: string[] = [];
     try { tools = JSON.parse(ar.role.allowedTools); } catch { tools = []; }
-    for (const t of tools) allowed.add(t);
+    for (const t of tools) {
+      const provider = t.includes("/") ? t.split("/", 1)[0] : "";
+      const providerDef = getProvider(provider);
+      if (!providerDef || providerDef.implemented === false) continue;
+      allowed.add(t);
+    }
   }
   return allowed;
 }
@@ -145,7 +154,8 @@ export async function connectionsForAgent(agentId: string): Promise<AgentConnect
   for (const r of roles) {
     for (const t of r.allowedTools) {
       const p = t.includes("/") ? t.split("/", 1)[0] : "";
-      if (p) providers.add(p);
+      const providerDef = getProvider(p);
+      if (p && providerDef && providerDef.implemented !== false) providers.add(p);
     }
   }
   if (!providers.size) return [];

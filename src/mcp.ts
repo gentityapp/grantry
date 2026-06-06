@@ -25,6 +25,7 @@ function buildToolList(allowed: Set<string> | null) {
   const tools: any[] = [{ name: "ping", description: "Liveness check", inputSchema: { type: "object", properties: {} } }];
   if (!allowed) return tools;
   for (const p of Object.values(PROVIDERS)) {
+    if (p.implemented === false) continue;
     for (const toolName of p.tools) {
       if (!allowed.has(toolName)) continue;
       tools.push({
@@ -175,6 +176,11 @@ mcpApp.post("/", async (c) => {
     const toolName = params?.name;
     const args = params?.arguments ?? {};
     const scope = String(args.scope ?? "");
+
+    await prisma.agent.update({
+      where: { id: agent.id },
+      data: { lastUsedAt: new Date() },
+    });
 
     // 1) Special case: ping
     if (toolName === "ping") {

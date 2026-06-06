@@ -82,7 +82,7 @@ model Agent {
   id            String   @id @default(cuid())
   name          String   @unique
   description   String?
-  hashedToken   String   // bcrypt of the agent token (gn_agt_...)
+  hashedToken   String   // sha256 of the high-entropy agent token (gn_agt_...)
   tokenPrefix   String   // first 12 chars of plaintext (for UI display)
   ownerId       String
   owner         User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
