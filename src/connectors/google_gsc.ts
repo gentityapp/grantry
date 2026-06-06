@@ -1,6 +1,7 @@
 // Google Search Console connector — OAuth access tokens.
 // Calls the Search Console API using the stored OAuth access token.
 const GSC_API = "https://www.googleapis.com/webmasters/v3";
+const GSC_TIMEOUT_MS = 8_000;
 
 type GscArgs = Record<string, unknown>;
 
@@ -22,11 +23,41 @@ async function readJsonResponse(r: Response) {
   }
 }
 
+async function fetchGoogleGsc(path: string, init: RequestInit, logContext: Record<string, unknown>) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GSC_TIMEOUT_MS);
+  const started = Date.now();
+  try {
+    console.log("[google_gsc] request", { path, ...logContext });
+    const response = await fetch(`${GSC_API}${path}`, { ...init, signal: controller.signal });
+    console.log("[google_gsc] response", {
+      path,
+      status: response.status,
+      durationMs: Date.now() - started,
+      ...logContext,
+    });
+    return response;
+  } catch (e: any) {
+    const durationMs = Date.now() - started;
+    const aborted = e?.name === "AbortError";
+    console.error("[google_gsc] failed", {
+      path,
+      durationMs,
+      error: aborted ? `timeout after ${GSC_TIMEOUT_MS}ms` : String(e?.message ?? e),
+      ...logContext,
+    });
+    if (aborted) throw new Error(`Google GSC request timed out after ${GSC_TIMEOUT_MS}ms`);
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function callGoogleGscTool(tool: string, args: GscArgs, token: string) {
   const headers = googleHeaders(token);
 
   if (tool === "google_gsc/list_sites") {
-    const r = await fetch(`${GSC_API}/sites`, { headers });
+    const r = await fetchGoogleGsc("/sites", { headers }, { tool });
     const j = await readJsonResponse(r);
     if (!r.ok) throw new Error(`Google GSC list_sites failed: ${r.status} ${JSON.stringify(j).slice(0, 500)}`);
     return {
@@ -63,11 +94,11 @@ export async function callGoogleGscTool(tool: string, args: GscArgs, token: stri
     const dimensionFilterGroups = args.dimension_filter_groups ?? args.dimensionFilterGroups;
     if (dimensionFilterGroups !== undefined) body.dimensionFilterGroups = dimensionFilterGroups;
 
-    const r = await fetch(`${GSC_API}/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`, {
+    const r = await fetchGoogleGsc(`/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
-    });
+    }, { tool, siteUrl, startDate, endDate });
     const j = await readJsonResponse(r);
     if (!r.ok) throw new Error(`Google GSC search_analytics failed: ${r.status} ${JSON.stringify(j).slice(0, 500)}`);
     return {
