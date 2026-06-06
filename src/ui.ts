@@ -816,6 +816,7 @@ dashboardApp.get("/tenants/new", async (c) => {
   if (!user) return c.redirect("/ui/login");
 
   const providers = listProviders();
+  const knownProviders = Object.values(PROVIDERS);
   // Get existing tenants (distinct scope values) and which providers each has.
   // We need provider-by-provider info so the wizard can hide the credential
   // field when reusing an existing connection.
@@ -882,16 +883,19 @@ dashboardApp.get("/tenants/new", async (c) => {
         <div class="step-card">
           <h2><span class="num">2</span> Providers</h2>
           <p class="field-hint" style="margin-top:0;">Pick one or more services to wire into this tenant. Each one gets its own connection; you can tune which tools each enables.</p>
-          ${providers.map((p) => {
+          ${knownProviders.map((p) => {
             const authLabel = p.authTypes.map(t => t === "pat" ? "paste token" : "OAuth").join(" / ");
             const hasPat = p.authTypes.includes("pat");
             const hasOauth = p.authTypes.includes("oauth");
+            const isImplemented = p.implemented !== false;
             return `
-          <div class="provider-block" data-provider="${p.key}" data-haspat="${hasPat}" data-hasoauth="${hasOauth}" style="border:1px solid #2a2d33;border-radius:8px;padding:12px 16px;margin-bottom:12px;">
-            <label style="font-weight:600;display:flex;align-items:center;gap:8px;cursor:pointer;margin:0;">
-              <input type="checkbox" class="provider-check" value="${p.key}"> ${p.label}
+          <div class="provider-block" data-provider="${p.key}" data-haspat="${hasPat}" data-hasoauth="${hasOauth}" data-implemented="${isImplemented}" style="border:1px solid #2a2d33;border-radius:8px;padding:12px 16px;margin-bottom:12px;${isImplemented ? "" : "opacity:.62;"}">
+            <label style="font-weight:600;display:flex;align-items:center;gap:8px;cursor:${isImplemented ? "pointer" : "not-allowed"};margin:0;">
+              <input type="checkbox" class="provider-check" value="${p.key}" ${isImplemented ? "" : "disabled"}> ${p.label}
               <span style="color:#8a8d93;font-weight:normal;font-size:13px;">(${authLabel})</span>
+              ${isImplemented ? "" : '<span class="badge unscoped" style="margin-left:auto;">Coming soon</span>'}
             </label>
+            ${isImplemented ? `
             <div class="provider-detail" style="display:none;margin-top:12px;padding-left:24px;">
               ${hasPat ? `
               <div class="field cred-row">
@@ -915,6 +919,9 @@ dashboardApp.get("/tenants/new", async (c) => {
                 </div>
               </div>
             </div>
+            ` : `
+            <div class="field-hint" style="margin:8px 0 0 34px;">Provider registration is defined, but MCP tools and dispatch are not enabled yet.</div>
+            `}
           </div>`;
           }).join("")}
           <input type="hidden" name="providers_json" id="providersJson" value="">
@@ -927,7 +934,7 @@ dashboardApp.get("/tenants/new", async (c) => {
         </div>
       </form>
       <script>
-        const PROVIDERS = ${JSON.stringify(Object.fromEntries(providers.map(p => [p.key, p])))};
+        const PROVIDERS = ${JSON.stringify(Object.fromEntries(knownProviders.map(p => [p.key, p])))};
         const SCOPE_PROVIDERS = ${JSON.stringify(scopeProviders)};
         const tenantField = document.getElementById('tenant');
         const blocks = Array.from(document.querySelectorAll('.provider-block'));
@@ -946,6 +953,7 @@ dashboardApp.get("/tenants/new", async (c) => {
           const key = block.dataset.provider;
           const check = block.querySelector('.provider-check');
           const detail = block.querySelector('.provider-detail');
+          if (!detail) return;
           detail.style.display = check.checked ? "" : "none";
 
           const { scope } = getCurrentScope();
@@ -988,6 +996,7 @@ dashboardApp.get("/tenants/new", async (c) => {
           blocks.forEach((block) => {
             const check = block.querySelector('.provider-check');
             if (!check.checked) return;
+            if (check.disabled || block.dataset.implemented === 'false') return;
             const key = block.dataset.provider;
             selectedProviders.push(key);
             toolsMap[key] = Array.from(block.querySelectorAll('.tool-check:checked')).map(i => i.value);
