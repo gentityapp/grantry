@@ -18,7 +18,8 @@ description: |
 - **Service**: Hono/TypeScript app at `https://agent-oauth-production.up.railway.app`
 - **Source**: `github.com/gentityapp/gentity-auth`
 - **MCP endpoint**: `POST https://agent-oauth-production.up.railway.app/mcp`
-  (JSON-RPC 2.0: `tools/list`, `tools/call`; `tools/list` needs no auth)
+  (JSON-RPC 2.0: `tools/list`, `connections/list`, `tools/call`; `tools/list`
+  needs no auth, `connections/list` and `tools/call` require the agent token)
 - **Auth**: `Authorization: Bearer gn_agt_<token>` for MCP. The dashboard `/ui/*`
   uses a **better-auth email+password session** (NOT the agent token). There is
   **no `/admin` HTTP API** and **no `X-Admin-Token`** — tokens are minted through
@@ -52,9 +53,24 @@ curl -s -X POST https://agent-oauth-production.up.railway.app/mcp \
 ```
 
 ### 2. Find the right scope before calling
-The scope is the **tenant name**. Check it in the dashboard at `/ui/tenants` (or the
-role/tenant edit page). If unsure, **ask the user which tenant/scope** the connection
-was registered under rather than guessing — don't brute-force scope names.
+The scope is the **tenant name**. Discover it from the token alone with
+`connections/list` — it returns only the `(provider, scope)` pairs this agent can
+actually use, plus the tools callable against each, so you never have to guess
+`scope` or brute-force it against `tools/call`:
+```json
+POST /mcp
+Authorization: Bearer gn_agt_<token>
+{ "jsonrpc": "2.0", "id": 1, "method": "connections/list", "params": {} }
+```
+```json
+{ "jsonrpc": "2.0", "id": 1, "result": { "connections": [
+  { "provider": "google_gsc", "scope": "gentity-dev", "label": "GSC – gentity",
+    "tools": ["google_gsc/list_sites", "google_gsc/search_analytics"] }
+] } }
+```
+Pass the returned `scope` verbatim to `tools/call`. (An empty `connections` list
+means the agent has no usable enabled connection — check it in the dashboard at
+`/ui/tenants`, or ask the user, rather than brute-forcing scope names.)
 
 ### 3. Call a tool with scope
 ```json
@@ -127,7 +143,7 @@ When asked to act via gentity-auth:
     scope isn't in a non-empty `allowedScopes`.
   - `no enabled connection for (provider=…, scope=…)` → role is fine, but **no
     enabled connection at that exact scope**. Almost always means you passed the
-    wrong/empty `scope`. Verify the tenant name and resend.
+    wrong/empty `scope`. Call `connections/list` to get the exact scope, then resend.
 - `-32011` → connection row vanished mid-call (rare).
 - `-32601` → unknown JSON-RPC method.
 - Tool-level errors come back as `result.isError = true` with `content[].text`

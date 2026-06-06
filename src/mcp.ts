@@ -4,7 +4,7 @@
 import { Hono } from "hono";
 import { prisma } from "./db.js";
 import { decrypt } from "./crypto.js";
-import { checkPolicy, allowedToolsForAgent } from "./policy.js";
+import { checkPolicy, allowedToolsForAgent, connectionsForAgent } from "./policy.js";
 import { PROVIDERS, toolsForProvider } from "./connectors/registry.js";
 import { callNotionTool } from "./connectors/notion.js";
 import { callGitHubTool } from "./connectors/github.js";
@@ -68,6 +68,19 @@ mcpApp.post("/", async (c) => {
   if (method === "tools/list") {
     const allowed = agent ? await allowedToolsForAgent(agent.id) : null;
     return c.json({ jsonrpc: "2.0", id, result: { tools: buildToolList(allowed) } });
+  }
+
+  // --- connections/list: requires auth; returns the exact (provider, scope)
+  // pairs the agent can use, so it never has to guess `scope` for tools/call. ---
+  if (method === "connections/list") {
+    if (!agent) {
+      return c.json({
+        jsonrpc: "2.0", id,
+        error: { code: -32001, message: "authentication required: pass 'Authorization: Bearer gn_agt_...'" },
+      }, 401);
+    }
+    const connections = await connectionsForAgent(agent.id);
+    return c.json({ jsonrpc: "2.0", id, result: { connections } });
   }
 
   // --- tools/call: requires auth ---
