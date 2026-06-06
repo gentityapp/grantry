@@ -30,6 +30,18 @@ app.route("/ui", dashboardApp);
 // Mount OAuth flows (callback URLs must be stable public paths)
 app.route("/oauth", oauthApp);
 
+// Global error handler — without this, any uncaught exception renders Hono's
+// opaque default "Internal Server Error" page with no diagnostics (see the
+// OAuth callback). Log the real error and surface a minimal, safe message.
+app.onError((err, c) => {
+  console.error(`[error] ${c.req.method} ${c.req.path}:`, err);
+  const detail = err instanceof Error ? err.message : String(err);
+  return c.json(
+    { error: "internal_server_error", path: c.req.path, detail },
+    500,
+  );
+});
+
 // Health
 app.get("/health", (c) =>
   c.json({

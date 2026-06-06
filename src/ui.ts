@@ -1033,6 +1033,35 @@ dashboardApp.post("/tenants/new", async (c) => {
   if (!existingConn && providerDef.authTypes.includes("pat") && !credential) {
     return c.html("<h1>credential required for PAT providers</h1>", 400);
   }
+  // OAuth-only providers (e.g. google_gsc) MUST be connected via the OAuth
+  // flow (/oauth/:provider/start → callback), which is what creates the real
+  // connection. A plain form submit here would otherwise store a useless
+  // "pending-oauth" placeholder credential and still mint an agent token —
+  // producing a tenant that looks connected in the dashboard but can't
+  // actually call the provider. Reject it and point the user at the OAuth button.
+  const isOauthOnly = providerDef.authTypes.includes("oauth") && !providerDef.authTypes.includes("pat");
+  if (isOauthOnly && !existingConn) {
+    const wizardParams = new URLSearchParams();
+    if (tenant) wizardParams.set("tenant", tenant);
+    if (agent) wizardParams.set("agent", agent);
+    if (agentDesc) wizardParams.set("agent_desc", agentDesc);
+    if (additionalScopesRaw) wizardParams.set("additional_scopes", additionalScopesRaw);
+    wizardParams.set("tools_json", JSON.stringify(tools.length > 0 ? tools : toolsForProvider(provider)));
+    const startUrl = `/oauth/${provider}/start?${wizardParams.toString()}`;
+    return c.html(`
+      <!doctype html><html><head><meta charset="utf-8"><title>OAuth required — agent-oauth</title>
+      <style>${CSS}</style></head><body>
+      ${NAV("tenants")}
+      <main>
+        <h1>🔗 ${escapeHtml(providerDef.label)} requires OAuth</h1>
+        <div class="card">
+          <p><code>${escapeHtml(provider)}</code> is an OAuth-only provider. You must authorize the connection before the tenant can be created — submitting the form without connecting would leave a broken, unauthorized connection.</p>
+          <p><a href="${escapeHtml(startUrl)}" class="btn">🔗 Connect with ${escapeHtml(providerDef.label)} OAuth</a></p>
+        </div>
+        <p><a href="/ui/tenants/new">← Back to wizard</a></p>
+      </main></body></html>
+    `, 400);
+  }
   // If a new credential was provided AND an existing connection was found,
   // rotate the credential (user wants to replace their token). This makes
   // it safe to paste a new PAT into the wizard without affecting existing
@@ -1482,6 +1511,8 @@ oauthApp.get("/:provider/start", async (c) => {
 // Verifies state, exchanges code for token, encrypts + stores the connection,
 // completes the wizard using the saved payload.
 oauthApp.get("/:provider/callback", async (c) => {
+ const providerKeyForError = c.req.param("provider");
+ try {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/ui/login?error=oauth_session_expired");
 
@@ -1612,7 +1643,10 @@ oauthApp.get("/:provider/callback", async (c) => {
 
   // 2) Find or create role
   const desiredTools = tools.length > 0 ? tools : toolsForProvider(providerKey);
-  let role = await prisma.role.findFirst({ where: { name: `${effectiveTenant}-dev`, ownerId: user.id } });
+  // Role.name is globally unique — look it up by name alone. Filtering by
+  // ownerId here would miss an existing same-named role and fall through to
+  // create(), triggering a unique-constraint violation (an uncaught 500).
+  let role = await prisma.role.findUnique({ where: { name: `${effectiveTenant}-dev` } });
   if (role) {
     const existingTools = safeJsonArray(role.allowedTools);
     const existingScopes = safeJsonArray(role.allowedScopes);
@@ -1668,7 +1702,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     <style>${CSS}</style></head><body>
     ${NAV("tenants")}
     <main>
-      <h1>✓ GitHub connected · tenant <code>${effectiveTenant}</code> created</h1>
+      <h1>✓ ${escapeHtml(providerDef.label)} connected · tenant <code>${effectiveTenant}</code> created</h1>
       <div class="card">
         <h2>Connection</h2>
         <p><code>${conn.label}</code> · scope=<code>${conn.scope}</code> · user: <code>${escapeHtml(userLogin)}</code></p>
@@ -1689,6 +1723,24 @@ oauthApp.get("/:provider/callback", async (c) => {
       <p><a href="/ui/tenants">← Back to tenants</a> · <a href="/ui/agents">Manage agents</a></p>
     </main></body></html>
   `);
+ } catch (err) {
+    // Surface the real cause instead of an opaque "Internal Server Error".
+    console.error(`[oauth callback] ${providerKeyForError} failed:`, err);
+    const detail = err instanceof Error ? err.message : String(err);
+    return c.html(`
+      <!doctype html><html><head><meta charset="utf-8"><title>OAuth failed — agent-oauth</title>
+      <style>${CSS}</style></head><body>
+      ${NAV("tenants")}
+      <main>
+        <h1>⚠️  OAuth connection failed</h1>
+        <div class="card" style="border-color:#ff6b6b;">
+          <p>Something went wrong while completing the <code>${escapeHtml(providerKeyForError)}</code> connection.</p>
+          <pre style="background:#0e0f12;border:1px solid #ff6b6b;white-space:pre-wrap;">${escapeHtml(detail)}</pre>
+        </div>
+        <p><a href="/ui/tenants/new">← Try again</a></p>
+      </main></body></html>
+    `, 500);
+ }
 });
 
 // --- /ui/api/scopes (JSON dump of caller's wiring) ---
