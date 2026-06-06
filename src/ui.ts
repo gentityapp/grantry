@@ -99,20 +99,57 @@ ${scope ? `X-Gentity-Scope = "${scope}"` : ""}`;
   ${origin}/mcp \\
   --header "Authorization: Bearer ${token}"${scope ? ` \\
   --header "X-Gentity-Scope: ${scope}"` : ""}`;
+  const copyButton = (label: string, text: string) =>
+    `<button type="button" class="secondary copy-config-btn" data-copy="${escapeHtml(text)}" style="font-size:12px;padding:4px 10px;">Copy ${label}</button>`;
   return `
         <h2>MCP config</h2>
         <p style="font-size:13px;color:#8a8d93;margin-top:0;">
           Use one MCP server entry per tenant. Tool names stay stable; the token and <code>X-Gentity-Scope</code> lock this entry to the selected tenant.
         </p>
-        <h3 style="font-size:14px;margin:16px 0 8px;color:#c8ccd2;">Codex <code>~/.codex/config.toml</code></h3>
+        <div class="row spread" style="margin:16px 0 8px;">
+          <h3 style="font-size:14px;margin:0;color:#c8ccd2;">Codex <code>~/.codex/config.toml</code></h3>
+          ${copyButton("Codex", codexToml)}
+        </div>
         <pre>${escapeHtml(codexToml)}</pre>
-        <h3 style="font-size:14px;margin:16px 0 8px;color:#c8ccd2;">Claude Code JSON</h3>
+        <div class="row spread" style="margin:16px 0 8px;">
+          <h3 style="font-size:14px;margin:0;color:#c8ccd2;">Claude Code JSON</h3>
+          ${copyButton("JSON", claudeJson)}
+        </div>
         <pre>${escapeHtml(claudeJson)}</pre>
-        <h3 style="font-size:14px;margin:16px 0 8px;color:#c8ccd2;">Claude Code CLI</h3>
+        <div class="row spread" style="margin:16px 0 8px;">
+          <h3 style="font-size:14px;margin:0;color:#c8ccd2;">Claude Code CLI</h3>
+          ${copyButton("CLI", claudeCli)}
+        </div>
         <pre>${escapeHtml(claudeCli)}</pre>
         ${exactToken
           ? '<p style="font-size:13px;color:#8a8d93;margin-bottom:0;">This config includes the newly minted token. <code>Mcp-Session-Id</code> is managed by the MCP client/server handshake.</p>'
           : '<p style="font-size:13px;color:#ff6b6b;margin-bottom:0;">The full token is only shown when created or rotated. Rotate this agent if you need a copy-pasteable config with a fresh token.</p>'}
+        <script>
+          (function () {
+            document.querySelectorAll('.copy-config-btn').forEach(function (btn) {
+              if (btn.dataset.bound) return;
+              btn.dataset.bound = '1';
+              btn.addEventListener('click', async function () {
+                var text = btn.dataset.copy || '';
+                try {
+                  await navigator.clipboard.writeText(text);
+                } catch (e) {
+                  var ta = document.createElement('textarea');
+                  ta.value = text;
+                  ta.style.position = 'fixed';
+                  ta.style.opacity = '0';
+                  document.body.appendChild(ta);
+                  ta.select();
+                  try { document.execCommand('copy'); } catch (_) {}
+                  document.body.removeChild(ta);
+                }
+                var orig = btn.textContent;
+                btn.textContent = 'Copied';
+                setTimeout(function () { btn.textContent = orig; }, 1500);
+              });
+            });
+          })();
+        </script>
       `;
 }
 
