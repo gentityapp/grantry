@@ -1,0 +1,187 @@
+// agent-oauth — Prisma schema
+// PostgreSQL (Railway). Replaces the SQLite schema from the Python prototype.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- User auth (better-auth compatible) ----------
+
+model User {
+  id            String   @id
+  name          String
+  email         String   @unique
+  emailVerified Boolean  @default(false)
+  image         String?
+  role          String   @default("user") // "user" | "admin"
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sessions      Session[]
+  accounts      Account[]
+  agents        Agent[]
+  connections   Connection[]
+  roles         Role[]
+  auditLogs     AuditLog[]
+
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("verification")
+}
+
+// ---------- Agent / connection / role (the "agent-oauth" part) ----------
+
+model Agent {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  description   String?
+  hashedToken   String   // bcrypt of the agent token (gn_agt_...)
+  tokenPrefix   String   // first 12 chars of plaintext (for UI display)
+  ownerId       String
+  owner         User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  enabled       Boolean  @default(true)
+  expiresAt     DateTime?
+  lastUsedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  roles         AgentRole[]
+  auditLogs     AuditLog[]
+
+  @@map("agent")
+}
+
+model Role {
+  id            String   @id @default(cuid())
+  name          String   @unique
+  description   String?
+  allowedTools  String   // ["github/list_repos", "notion/list_dbs", ...]
+  allowedScopes String   // ["rootteam", "acme"] — empty array = any scope
+  ownerId       String
+  owner         User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  agents        AgentRole[]
+
+  @@map("role")
+}
+
+model AgentRole {
+  agentId String
+  roleId  String
+  agent   Agent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  role    Role  @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([agentId, roleId])
+  @@map("agent_role")
+}
+
+model Connection {
+  id                  String   @id @default(cuid())
+  provider            String   // "github" | "notion" | "google_drive" | "google_gsc" | "google_ads" | "hubspot"
+  label               String
+  scope               String   @default("") // tenant scope, e.g. "rootteam", "acme"
+  ownerId             String
+  owner               User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  encryptedCredential String   // Fernet-encrypted PAT/OAuth token
+  // OAuth-specific (null for PAT-only providers like notion)
+  refreshToken        String?  // also Fernet-encrypted
+  accessTokenExpiresAt DateTime?
+  enabled             Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@index([provider, scope])
+  @@index([ownerId])
+  @@map("connection")
+}
+
+// ---------- OAuth state (CSRF protection during OAuth callback) ----------
+
+model OAuthState {
+  id           String   @id @default(cuid())
+  state        String   @unique
+  provider     String
+  codeVerifier String?  // for PKCE
+  payload      String?  // wizard metadata (tenant, agent, role info)
+  redirectTo   String?  // URL to send user after success
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+
+  @@index([state])
+  @@map("oauth_state")
+}
+
+// ---------- Audit log ----------
+
+model AuditLog {
+  id              String   @id @default(cuid())
+  userId          String?  // null = anonymous (e.g. agent-only call)
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  agentId         String?
+  agent           Agent?   @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  provider        String   // "github" | "notion" | ...
+  tool            String   // "github/list_repos"
+  scope           String   @default("")
+  status          String   // "ok" | "denied" | "error"
+  errorMessage    String?
+  requestArgs     String?
+  responseSummary String?
+  durationMs      Int?
+  ipAddress       String?
+  userAgent       String?
+  createdAt       DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([agentId, createdAt])
+  @@index([provider, createdAt])
+  @@map("audit_log")
+}
