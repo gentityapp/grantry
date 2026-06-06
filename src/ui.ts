@@ -370,6 +370,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
   const roleTools: string[] = role ? safeJsonArray(role.allowedTools) : [];
   const roleScopes: string[] = role ? safeJsonArray(role.allowedScopes) : [];
   const providers = listProviders();
+  const knownProviders = Object.values(PROVIDERS);
 
   // Get union of all tools from all connected providers (for the role settings checkboxes)
   const usedProviders = new Set(connections.map((c) => c.provider));
@@ -377,6 +378,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
     providers.filter((p) => usedProviders.has(p.key)).flatMap((p) => p.tools)
   ));
   const availableToAdd = providers.filter((p) => !usedProviders.has(p.key));
+  const comingSoonProviders = knownProviders.filter((p) => p.implemented === false && !usedProviders.has(p.key));
 
   // Get all of the user's existing scopes (for allowedScopes multi-select)
   const userScopes = await prisma.connection.findMany({
@@ -499,7 +501,15 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
       </div>
 
       <h2>Add a service</h2>
-      ${availableToAdd.length === 0 ? '<div class="card"><div class="empty">All known providers are already connected. To replace a connection, disable and delete it (Phase 5 — not yet implemented).</div></div>' : `
+      ${availableToAdd.length === 0 ? `
+      <div class="card">
+        <div class="empty">All currently supported providers are already connected for this tenant.</div>
+        ${comingSoonProviders.length > 0 ? `
+          <p class="field-hint" style="text-align:center;margin-top:14px;">
+            Coming soon: ${comingSoonProviders.map((p) => `<code>${p.key}</code>`).join(", ")}
+          </p>
+        ` : ""}
+      </div>` : `
       <form method="post" action="/ui/tenants/${scope}/edit" id="addConnForm">
         <input type="hidden" name="_action" value="add_service">
         <div class="step-card">
