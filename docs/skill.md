@@ -43,20 +43,17 @@ that has no connection, returns `-32010 policy denied (no enabled connection …
 **even though the role allows any scope.** A connection registered at `scope=""`
 only matches calls that send no scope at all.
 
+You don't have to know the scope in advance, and you should never guess it:
+**`connections/list` resolves the exact scope from the token** (see Procedure §0).
+
 ## Procedure
 
-### 1. Discover tools
-```bash
-curl -s -X POST https://agent-oauth-production.up.railway.app/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
-```
-
-### 2. Find the right scope before calling
-The scope is the **tenant name**. Discover it from the token alone with
-`connections/list` — it returns only the `(provider, scope)` pairs this agent can
-actually use, plus the tools callable against each, so you never have to guess
-`scope` or brute-force it against `tools/call`:
+### 0. Connect & verify FIRST — the moment you have a token
+When handed a `gn_agt_…` token (or asked to "connect" / "繋いでみて" / test a
+provider), your **first call is `connections/list`**, not a question to the user.
+One authenticated call returns the exact `(provider, scope)` pairs this agent can
+use *and* the tools callable against each — everything you need to connect, with
+**no scope guessing and no brute-forcing**:
 ```json
 POST /mcp
 Authorization: Bearer gn_agt_<token>
@@ -68,11 +65,31 @@ Authorization: Bearer gn_agt_<token>
     "tools": ["google_gsc/list_sites", "google_gsc/search_analytics"] }
 ] } }
 ```
-Pass the returned `scope` verbatim to `tools/call`. (An empty `connections` list
-means the agent has no usable enabled connection — check it in the dashboard at
-`/ui/tenants`, or ask the user, rather than brute-forcing scope names.)
+Then **immediately run a read-only tool** from that connection's `tools` as a
+smoke test — pass the returned `scope` verbatim. Read-only calls (`*/list_*`,
+`*/get_*`, `*/search*`, `query_db`) are safe, so do this **without asking for
+confirmation**:
+```json
+{ "name": "google_gsc/list_sites", "arguments": { "scope": "gentity-dev" } }
+```
+That single round-trip *is* the connectivity check — report the result.
 
-### 3. Call a tool with scope
+**Only stop to ask the user when** `connections/list` returns an empty list (the
+agent has no usable enabled connection): point them to `/ui/tenants` to add one,
+or ask which tenant — never brute-force scope names against `tools/call`.
+
+### 1. Discover tools (optional)
+`connections/list` already tells you the callable tools per connection. If you
+want the full advertised set (with input schemas) instead, use `tools/list` —
+it needs no auth and, with the token, is already scoped to this agent's tools:
+```bash
+curl -s -X POST https://agent-oauth-production.up.railway.app/mcp \
+  -H "Content-Type: application/json" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
+```
+
+### 2. Call a tool with scope
+Use the exact `scope` from `connections/list`:
 ```json
 POST /mcp
 Authorization: Bearer gn_agt_<token>
@@ -127,12 +144,15 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 
 ## Output contract
 When asked to act via gentity-auth:
-1. State which tool(s) and which **scope** you'll use.
-2. Show the JSON-RPC payload.
-3. For **write** actions (`git_push_repo`, `create_repo`, `create_issue`,
+1. If you don't already know the scope, call `connections/list` first to resolve
+   it from the token — don't ask the user for a scope you can discover yourself.
+2. State which tool(s) and which **scope** you'll use.
+3. Show the JSON-RPC payload.
+4. For **write** actions (`git_push_repo`, `create_repo`, `create_issue`,
    `notion/create_page`, `hubspot/create_deal`, …) get explicit confirmation first —
-   these hit the real SaaS via real tokens and are not reversible.
-4. Report the result. The `scope` is recorded in the audit log (`/ui/audit`).
+   these hit the real SaaS via real tokens and are not reversible. **Read-only**
+   calls (incl. the connectivity smoke test) need no confirmation — just run them.
+5. Report the result. The `scope` is recorded in the audit log (`/ui/audit`).
 
 ## Failure handling (error codes)
 - `-32700` → JSON parse error (malformed body).
