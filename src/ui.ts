@@ -69,8 +69,8 @@ function agentTokenCard(
       </script>`;
 }
 
-function mcpConfigCard(origin: string, agentName: string, token: string, exactToken: boolean): string {
-  const serverName = `gentity-${agentName}`.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase();
+function mcpConfigCard(origin: string, agentName: string, token: string, exactToken: boolean, scope?: string): string {
+  const serverName = `gentity-${scope || agentName}`.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase();
   const config = {
     mcpServers: {
       [serverName]: {
@@ -78,6 +78,7 @@ function mcpConfigCard(origin: string, agentName: string, token: string, exactTo
         url: `${origin}/mcp`,
         headers: {
           Authorization: `Bearer ${token}`,
+          ...(scope ? { "X-Gentity-Scope": scope } : {}),
         },
       },
     },
@@ -87,7 +88,7 @@ function mcpConfigCard(origin: string, agentName: string, token: string, exactTo
       <div class="card">
         <h2>MCP config for Codex</h2>
         <p style="font-size:13px;color:#8a8d93;margin-top:0;">
-          Use one MCP server entry per tenant/agent. Tool names stay stable; the agent token decides which tenant and role Codex can access.
+          Use one MCP server entry per tenant. Tool names stay stable; the agent token and <code>X-Gentity-Scope</code> decide which tenant and role Codex can access.
         </p>
         <pre>${escapeHtml(json)}</pre>
         ${exactToken
@@ -1481,7 +1482,7 @@ dashboardApp.post("/tenants/new", async (c) => {
         <p><code>${agentRow.name}</code> · bound to <code>${role.name}</code></p>
       </div>
       ${agentTokenCard(token, "⚠️  Save this token now. You won't see it again. Revoke and re-mint in <a href=\"/ui/agents\">/ui/agents</a> if lost.")}
-      ${mcpConfigCard(new URL(c.req.url).origin, agentRow.name, token, true)}
+      ${mcpConfigCard(new URL(c.req.url).origin, agentRow.name, token, true, tenant)}
       <div class="card">
         <h2>Test it</h2>
         <pre>curl -X POST ${new URL(c.req.url).origin}/mcp \\
@@ -1619,6 +1620,7 @@ dashboardApp.get("/agents/:id", async (c) => {
   for (const conn of connections) {
     scopeSet.add(conn.scope);
   }
+  const scopes = Array.from(scopeSet).sort();
   const tokenPlaceholder = `${agent.tokenPrefix}...ROTATE_TO_VIEW_FULL_TOKEN`;
 
   return c.html(`
@@ -1658,7 +1660,9 @@ dashboardApp.get("/agents/:id", async (c) => {
           </table>
         </div>`}
       </div>
-      ${mcpConfigCard(new URL(c.req.url).origin, agent.name, tokenPlaceholder, false)}
+      ${scopes.length
+        ? scopes.map((scope) => mcpConfigCard(new URL(c.req.url).origin, agent.name, tokenPlaceholder, false, scope)).join("")
+        : mcpConfigCard(new URL(c.req.url).origin, agent.name, tokenPlaceholder, false)}
       <div class="card">
         <h2>Quick checks</h2>
         <pre>curl -X POST ${new URL(c.req.url).origin}/mcp \\
@@ -1722,6 +1726,9 @@ dashboardApp.post("/agents/:id/rotate", async (c) => {
     },
   });
 
+  const rotatedConnections = await connectionsForAgent(agent.id);
+  const rotatedScopes = Array.from(new Set(rotatedConnections.map((conn) => conn.scope))).sort();
+
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Token rotated — agent-oauth</title>
     <style>${CSS}</style></head><body>
@@ -1738,7 +1745,9 @@ dashboardApp.post("/agents/:id/rotate", async (c) => {
         <p style="font-size:13px;color:#8a8d93;margin-bottom:0;">Use as <code>Authorization: Bearer ${newToken}</code> when calling <code>/mcp</code>.</p>
         <p style="font-size:13px;color:#ff6b6b;margin-top:8px;">⚠️  Save this token now. If you lose it, you'll need to rotate again.</p>
       </div>
-      ${mcpConfigCard(new URL(c.req.url).origin, agent.name, newToken, true)}
+      ${rotatedScopes.length
+        ? rotatedScopes.map((scope) => mcpConfigCard(new URL(c.req.url).origin, agent.name, newToken, true, scope)).join("")
+        : mcpConfigCard(new URL(c.req.url).origin, agent.name, newToken, true)}
       <div class="card">
         <h2>Test the new token</h2>
         <pre>curl -X POST ${new URL(c.req.url).origin}/mcp \\
@@ -2179,7 +2188,7 @@ oauthApp.get("/:provider/callback", async (c) => {
         <p><code>${agentRow.name}</code> · bound to <code>${role.name}</code></p>
       </div>
       ${agentTokenCard(token, "")}
-      ${mcpConfigCard(new URL(c.req.url).origin, agentRow.name, token, true)}
+      ${mcpConfigCard(new URL(c.req.url).origin, agentRow.name, token, true, effectiveTenant)}
       <p><a href="/ui/tenants">← Back to tenants</a> · <a href="/ui/agents">Manage agents</a></p>
     </main></body></html>
   `);
@@ -2344,7 +2353,7 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
         <p>Tools: ${safeJsonArray(role.allowedTools).map((t: string) => `<span class="tool-pill">${t}</span>`).join(" ")}</p>
       </div>
       ${agentTokenCard(token)}
-      ${mcpConfigCard(new URL(c.req.url).origin, agentRow.name, token, true)}
+      ${mcpConfigCard(new URL(c.req.url).origin, agentRow.name, token, true, scope)}
       <div class="card">
         <h2>Test it</h2>
         <pre>curl -X POST ${new URL(c.req.url).origin}/mcp \\

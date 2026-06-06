@@ -34,6 +34,10 @@ function cleanupExpiredMcpSessions() {
   }
 }
 
+function configuredMcpScope(c: any): string {
+  return String(c.req.header("x-gentity-scope") ?? c.req.header("x-gentity-tenant") ?? "").trim();
+}
+
 /**
  * Tools advertised via tools/list, scoped to the calling agent.
  * - `ping` is always available (liveness, no policy).
@@ -211,6 +215,7 @@ mcpApp.post("/", async (c) => {
   const started = Date.now();
   const auth = c.req.header("authorization") ?? null;
   const agent = await resolveAgent(auth);
+  const configuredScope = configuredMcpScope(c);
   c.header("Access-Control-Expose-Headers", "Mcp-Session-Id");
   const session = prepareMcpSession(c, agent);
   if (!session.ok) {
@@ -233,7 +238,9 @@ mcpApp.post("/", async (c) => {
   // Unauthenticated requests only see `ping`; an authenticated agent only sees
   // tools backed by enabled connections it can actually call.
   if (method === "tools/list") {
-    const connections = agent ? await connectionsForAgent(agent.id) : null;
+    const connections = agent
+      ? (await connectionsForAgent(agent.id)).filter((conn) => !configuredScope || conn.scope === configuredScope)
+      : null;
     return c.json({ jsonrpc: "2.0", id, result: { tools: buildToolList(connections) } });
   }
 
@@ -246,7 +253,7 @@ mcpApp.post("/", async (c) => {
         error: { code: -32001, message: "authentication required: pass 'Authorization: Bearer gn_agt_...'" },
       }, 401);
     }
-    const connections = await connectionsForAgent(agent.id);
+    const connections = (await connectionsForAgent(agent.id)).filter((conn) => !configuredScope || conn.scope === configuredScope);
     return c.json({ jsonrpc: "2.0", id, result: { connections } });
   }
 
@@ -261,7 +268,8 @@ mcpApp.post("/", async (c) => {
 
     const toolName = params?.name;
     const args = params?.arguments ?? {};
-    const scope = String(args.scope ?? "");
+    const requestedScope = args.scope === undefined || args.scope === null ? "" : String(args.scope);
+    const scope = requestedScope || configuredScope;
     const authType = args.auth_type !== undefined ? String(args.auth_type) : (args.authType !== undefined ? String(args.authType) : "");
     const connectionId = args.connection_id !== undefined ? String(args.connection_id) : (args.connectionId !== undefined ? String(args.connectionId) : "");
 
@@ -282,6 +290,26 @@ mcpApp.post("/", async (c) => {
         },
       });
       return c.json({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: `pong from ${agent.name}` }] } });
+    }
+
+    if (configuredScope && requestedScope && requestedScope !== configuredScope) {
+      await prisma.auditLog.create({
+        data: {
+          agentId: agent.id,
+          provider: toolName?.includes("/") ? String(toolName).split("/", 1)[0] : "unknown",
+          tool: String(toolName ?? ""),
+          scope: requestedScope,
+          status: "denied",
+          errorMessage: `MCP server is locked to scope=${configuredScope}`,
+          requestArgs: JSON.stringify(args).slice(0, 4000),
+          durationMs: Date.now() - started,
+          ipAddress: c.req.header("x-forwarded-for") ?? null,
+        },
+      });
+      return c.json({
+        jsonrpc: "2.0", id,
+        error: { code: -32010, message: `policy denied: ${toolName} (MCP server is locked to scope=${configuredScope})` },
+      }, 403);
     }
 
     // 2) Policy check
