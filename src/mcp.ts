@@ -176,6 +176,8 @@ mcpApp.post("/", async (c) => {
     const toolName = params?.name;
     const args = params?.arguments ?? {};
     const scope = String(args.scope ?? "");
+    const authType = args.auth_type !== undefined ? String(args.auth_type) : (args.authType !== undefined ? String(args.authType) : "");
+    const connectionId = args.connection_id !== undefined ? String(args.connection_id) : (args.connectionId !== undefined ? String(args.connectionId) : "");
 
     await prisma.agent.update({
       where: { id: agent.id },
@@ -197,7 +199,7 @@ mcpApp.post("/", async (c) => {
     }
 
     // 2) Policy check
-    const decision = await checkPolicy({ agentId: agent.id, tool: toolName, scope });
+    const decision = await checkPolicy({ agentId: agent.id, tool: toolName, scope, authType, connectionId });
     if (!decision.allowed) {
       await prisma.auditLog.create({
         data: {
@@ -245,8 +247,8 @@ mcpApp.post("/", async (c) => {
           tool: toolName,
           scope,
           status: "ok",
+          responseSummary: JSON.stringify({ authType: decision.authType, connectionId: conn.id, result }).slice(0, 500),
           requestArgs: JSON.stringify(args).slice(0, 4000),
-          responseSummary: JSON.stringify(result).slice(0, 500),
           durationMs: Date.now() - started,
           ipAddress: c.req.header("x-forwarded-for") ?? null,
         },

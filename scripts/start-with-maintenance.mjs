@@ -36,8 +36,9 @@ await run("npx", ["prisma", "generate"], { required: true, timeoutMs: 45_000 });
 
 // Database hardening is best-effort at process start. It must never keep the
 // HTTP service down; failed maintenance is visible in logs and can be rerun.
+await run("npx", ["prisma", "db", "push"], { timeoutMs: 30_000 });
+await run("node", ["scripts/backfill-auth-types.mjs"], { timeoutMs: 20_000 });
 await run("node", ["scripts/dedupe-connections.mjs"], { timeoutMs: 20_000 });
 await run("node", ["scripts/harden-roles.mjs"], { timeoutMs: 20_000 });
-await run("npx", ["prisma", "db", "push"], { timeoutMs: 30_000 });
 
 await run("node", ["--import", "tsx/esm", "src/server.ts"], { required: true, timeoutMs: null });

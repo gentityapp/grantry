@@ -8,6 +8,7 @@ export type PolicyDecision = {
   reason: string;
   /** The connection that will be used (if allowed) */
   connectionId?: string;
+  authType?: string;
   provider: string;
   tool: string;
   scope: string;
@@ -24,8 +25,12 @@ export async function checkPolicy(args: {
   agentId: string;
   tool: string;
   scope: string;
+  authType?: string;
+  connectionId?: string;
 }): Promise<PolicyDecision> {
   const { agentId, tool, scope } = args;
+  const authType = args.authType ? String(args.authType) : "";
+  const requestedConnectionId = args.connectionId ? String(args.connectionId) : "";
   const [provider, toolName] = tool.includes("/") ? tool.split("/", 2) : ["", tool];
   const providerDef = getProvider(provider);
   if (!providerDef || providerDef.implemented === false) {
@@ -63,24 +68,44 @@ export async function checkPolicy(args: {
     };
   }
 
-  // 3) Find a matching connection: (provider, scope) where enabled=true
-  const connection = await prisma.connection.findFirst({
-    where: { provider, scope, ownerId, enabled: true },
-    orderBy: { createdAt: "desc" },
-  });
+  // 3) Find a matching connection. If authType or connectionId is supplied,
+  // honor it. Otherwise keep old behavior only when the match is unambiguous.
+  const connections = requestedConnectionId
+    ? await prisma.connection.findMany({
+        where: { id: requestedConnectionId, provider, scope, ownerId, enabled: true },
+      })
+    : await prisma.connection.findMany({
+        where: {
+          provider,
+          scope,
+          ownerId,
+          enabled: true,
+          ...(authType ? { authType } : {}),
+        },
+        orderBy: { createdAt: "desc" },
+      });
 
-  if (!connection) {
+  if (!connections.length) {
     return {
       allowed: false,
-      reason: `no enabled connection for this agent owner (provider=${provider}, scope=${scope || "<empty>"})`,
+      reason: `no enabled connection for this agent owner (provider=${provider}, scope=${scope || "<empty>"}${authType ? `, authType=${authType}` : ""}${requestedConnectionId ? `, connectionId=${requestedConnectionId}` : ""})`,
       provider, tool, scope,
     };
   }
+  if (!authType && !requestedConnectionId && connections.length > 1) {
+    return {
+      allowed: false,
+      reason: `ambiguous enabled connections for (provider=${provider}, scope=${scope || "<empty>"}); pass auth_type or connection_id`,
+      provider, tool, scope,
+    };
+  }
+  const connection = connections[0];
 
   return {
     allowed: true,
-    reason: `role=${matchingRoles[0].role.name}, connection=${connection.id.slice(0, 8)}`,
+    reason: `role=${matchingRoles[0].role.name}, connection=${connection.id.slice(0, 8)}, authType=${connection.authType}`,
     connectionId: connection.id,
+    authType: connection.authType,
     provider, tool, scope,
   };
 }
@@ -114,7 +139,9 @@ export async function allowedToolsForAgent(agentId: string): Promise<Set<string>
 }
 
 export type AgentConnection = {
+  id: string;
   provider: string;
+  authType: string;
   /** The exact scope string to pass in tools/call arguments. */
   scope: string;
   label: string;
@@ -162,14 +189,14 @@ export async function connectionsForAgent(agentId: string): Promise<AgentConnect
 
   const conns = await prisma.connection.findMany({
     where: { provider: { in: Array.from(providers) }, ownerId, enabled: true },
-    select: { provider: true, scope: true, label: true },
-    orderBy: [{ scope: "asc" }, { provider: "asc" }],
+    select: { id: true, provider: true, authType: true, scope: true, label: true },
+    orderBy: [{ scope: "asc" }, { provider: "asc" }, { authType: "asc" }],
   });
 
   const out: AgentConnection[] = [];
   const seen = new Set<string>();
   for (const cn of conns) {
-    const key = `${cn.provider} ${cn.scope}`;
+    const key = `${cn.provider} ${cn.scope} ${cn.authType}`;
     if (seen.has(key)) continue; // collapse duplicate (provider, scope) connections
     seen.add(key);
 
@@ -184,7 +211,7 @@ export async function connectionsForAgent(agentId: string): Promise<AgentConnect
     }
     if (!tools.size) continue;
 
-    out.push({ provider: cn.provider, scope: cn.scope, label: cn.label, tools: Array.from(tools).sort() });
+    out.push({ id: cn.id, provider: cn.provider, authType: cn.authType, scope: cn.scope, label: cn.label, tools: Array.from(tools).sort() });
   }
   return out;
 }

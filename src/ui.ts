@@ -319,11 +319,12 @@ dashboardApp.get("/tenants", async (c) => {
         <div class="card">
           <h2>${scope === "(unscoped)" ? '<span class="badge unscoped">unscoped</span> Legacy connections' : `<input type="checkbox" name="scopes" value="${scope}" class="rowCheck" style="margin-right:8px;transform:scale(1.2);"><span class="badge scoped">${scope}</span>`} ${scope !== "(unscoped)" ? `<a href="/ui/tenants/${scope}/edit" class="btn secondary" style="margin-left:8px;font-size:12px;padding:4px 10px;">+ Add service</a> <a href="/ui/tenants/${scope}/edit" class="btn secondary" style="margin-left:4px;font-size:12px;padding:4px 10px;">✎ Edit</a>` : ""}</h2>
           <table>
-            <thead><tr><th>Provider</th><th>Label</th><th>Status</th><th>Created</th></tr></thead>
+            <thead><tr><th>Provider</th><th>Auth</th><th>Label</th><th>Status</th><th>Created</th></tr></thead>
             <tbody>
             ${conns.map((c) => `
               <tr>
                 <td><code>${c.provider}</code></td>
+                <td><code>${c.authType}</code></td>
                 <td>${c.label}</td>
                 <td>${c.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</td>
                 <td><code>${c.createdAt.toISOString().slice(0, 10)}</code></td>
@@ -374,10 +375,13 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
 
   // Get union of all tools from all connected providers (for the role settings checkboxes)
   const usedProviders = new Set(connections.map((c) => c.provider));
+  const usedProviderAuthTypes = new Set(connections.map((c) => `${c.provider}:${c.authType}`));
   const allAvailableTools = Array.from(new Set(
     providers.filter((p) => usedProviders.has(p.key)).flatMap((p) => p.tools)
   ));
-  const availableToAdd = providers.filter((p) => !usedProviders.has(p.key));
+  const availableToAdd = providers.flatMap((p) =>
+    p.authTypes.map((authType) => ({ provider: p, authType }))
+  ).filter((option) => !usedProviderAuthTypes.has(`${option.provider.key}:${option.authType}`));
   const comingSoonProviders = knownProviders.filter((p) => p.implemented === false && !usedProviders.has(p.key));
 
   // Get all of the user's existing scopes (for allowedScopes multi-select)
@@ -419,26 +423,22 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         <div class="card">
           <p class="field-hint" style="margin-top:0;">Edit the display label for each connection. This is what you see in dashboards, audit logs, and tooltips.</p>
           <table>
-            <thead><tr><th>Provider</th><th>Scope</th><th>Label</th><th>Enabled</th><th>Created</th><th>Auth</th></tr></thead>
+            <thead><tr><th>Provider</th><th>Auth</th><th>Scope</th><th>Label</th><th>Enabled</th><th>Created</th><th>Action</th></tr></thead>
             <tbody>
             ${connections.map((cn) => {
-              const providerDef = getProvider(cn.provider);
-              const supportsOAuth = (providerDef?.authTypes ?? []).includes("oauth");
-              const supportsPat = (providerDef?.authTypes ?? []).includes("pat");
-              const hasOAuthState = !!cn.refreshToken || !!cn.accessTokenExpiresAt;
-              const isOAuthOnly = supportsOAuth && !supportsPat;
-              const canReconnect = isOAuthOnly || hasOAuthState;
+              const canReconnect = cn.authType === "oauth";
               const expired = cn.accessTokenExpiresAt ? cn.accessTokenExpiresAt < new Date() : false;
               return `
               <tr>
                 <td><code>${cn.provider}</code></td>
+                <td><code>${cn.authType}</code></td>
                 <td><code>${cn.scope}</code></td>
                 <td><input type="text" name="conn_label_${cn.id}" value="${escapeHtml(cn.label)}" style="font-size:13px;"></td>
                 <td><label style="font-weight:normal;font-size:13px;"><input type="checkbox" name="conn_enabled_${cn.id}" ${cn.enabled ? "checked" : ""}> on</label></td>
                 <td><code>${cn.createdAt.toISOString().slice(0, 10)}</code></td>
                 <td>${canReconnect
                   ? `<a href="/oauth/${cn.provider}/start?tenant=${encodeURIComponent(cn.scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run the OAuth consent flow and refresh this exact connection's tokens">↻ Reconnect</a>${expired ? ' <span class="badge unscoped" style="color:#ff6b6b;">token expired</span>' : ""}`
-                  : `<span style="color:#8a8d93;font-size:12px;">${supportsPat && supportsOAuth ? "PAT / token" : "PAT"}</span>`}</td>
+                  : '<span style="color:#8a8d93;font-size:12px;">token</span>'}</td>
               </tr>
             `;}).join("")}
             </tbody>
@@ -508,7 +508,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
       <h2>Add a service</h2>
       ${availableToAdd.length === 0 ? `
       <div class="card">
-        <div class="empty">All currently supported providers are already connected for this tenant.</div>
+        <div class="empty">All currently supported provider/auth combinations are already connected for this tenant.</div>
         ${comingSoonProviders.length > 0 ? `
           <p class="field-hint" style="text-align:center;margin-top:14px;">
             Coming soon: ${comingSoonProviders.map((p) => `<code>${p.key}</code>`).join(", ")}
@@ -522,18 +522,10 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           <div class="field">
             <label for="provider">Provider</label>
             <select name="provider" id="provider" required>
-              ${availableToAdd.map((p) => `<option value="${p.key}" data-auth="${p.authTypes.join(",")}">${p.label} (${p.authTypes.map(t => t === "pat" ? "paste token" : "OAuth").join(" / ")})</option>`).join("")}
+              ${availableToAdd.map(({ provider: p, authType }) => `<option value="${p.key}" data-auth-type="${authType}">${p.label} (${authType === "pat" ? "paste token" : "OAuth"})</option>`).join("")}
             </select>
           </div>
-          <div class="field" id="authMethodRow" style="display:none;">
-            <label>Authentication method</label>
-            <label style="font-weight:normal;display:inline-flex;align-items:center;gap:6px;margin-right:16px;">
-              <input type="radio" name="auth_method" value="pat" id="authMethodPat"> Paste token
-            </label>
-            <label style="font-weight:normal;display:inline-flex;align-items:center;gap:6px;">
-              <input type="radio" name="auth_method" value="oauth" id="authMethodOauth"> OAuth
-            </label>
-          </div>
+          <input type="hidden" name="auth_method" id="authMethodHidden" value="">
           <div class="field" id="credFieldRow">
             <label for="credential">Credential</label>
             <textarea name="credential" id="credential" rows="3" required></textarea>
@@ -557,15 +549,13 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         </div>
       </form>
       <script>
-        const PROVIDERS = ${JSON.stringify(Object.fromEntries(availableToAdd.map(p => [p.key, p])))};
+        const PROVIDERS = ${JSON.stringify(Object.fromEntries(providers.map(p => [p.key, p])))};
         const sel = document.getElementById('provider');
         const toolsList = document.getElementById('toolsList');
         const credHint = document.getElementById('credHint');
         const credField = document.getElementById('credential');
         const credFieldRow = document.getElementById('credFieldRow');
-        const authMethodRow = document.getElementById('authMethodRow');
-        const authMethodPat = document.getElementById('authMethodPat');
-        const authMethodOauth = document.getElementById('authMethodOauth');
+        const authMethodHidden = document.getElementById('authMethodHidden');
         const patLinkRow = document.getElementById('patLinkRow');
         const patLink = document.getElementById('patLink');
         const oauthSetupLinkRow = document.getElementById('oauthSetupLinkRow');
@@ -574,18 +564,10 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         function updateUI() {
           const p = PROVIDERS[sel.value];
           if (!p) return;
-          const hasPat = p.authTypes.includes("pat");
-          const hasOauth = p.authTypes.includes("oauth");
-          if (hasPat && hasOauth) {
-            authMethodRow.style.display = "";
-            if (!authMethodPat.checked && !authMethodOauth.checked) authMethodOauth.checked = true;
-          } else {
-            authMethodRow.style.display = "none";
-            authMethodPat.checked = hasPat;
-            authMethodOauth.checked = hasOauth;
-          }
-          const usePat = hasPat && authMethodPat.checked;
-          const useOauth = hasOauth && authMethodOauth.checked;
+          const authType = sel.options[sel.selectedIndex].dataset.authType;
+          authMethodHidden.value = authType;
+          const usePat = authType === "pat";
+          const useOauth = authType === "oauth";
           credHint.textContent = p.helpText;
           credField.placeholder = usePat ? "Paste your " + p.label + " token here" : "OAuth flow will start after submit";
           credField.disabled = !usePat;
@@ -609,8 +591,6 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           toolsList.innerHTML = p.tools.map(t => '<label style="font-weight:normal;display:block;padding:4px 0;"><input type="checkbox" name="tools" value="' + t + '" checked> <code>' + t + '</code></label>').join("");
         }
         sel.addEventListener('change', updateUI);
-        authMethodPat.addEventListener('change', updateUI);
-        authMethodOauth.addEventListener('change', updateUI);
         updateUI();
         document.getElementById('addConnForm').addEventListener('submit', () => {
           const selected = Array.from(document.querySelectorAll('input[name="tools"]:checked')).map(i => i.value);
@@ -754,16 +734,29 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     if (!wantsPat || !providerDef.authTypes.includes("pat")) return c.html("<h1>paste token is not supported for this provider</h1>", 400);
     if (!credential) return c.html("<h1>credential required</h1>", 400);
 
-    // 1) Create connection
-    const conn = await prisma.connection.create({
-      data: {
-        provider,
-        label: `${provider}-${scope}`,
-        scope,
-        ownerId: user.id,
-        encryptedCredential: encrypt(credential || "pending-oauth"),
-      },
+    // 1) Create or rotate the PAT connection for this provider/auth type.
+    const existingConn = await prisma.connection.findFirst({
+      where: { provider, authType: "pat", scope, ownerId: user.id },
     });
+    const conn = existingConn
+      ? await prisma.connection.update({
+          where: { id: existingConn.id },
+          data: {
+            encryptedCredential: encrypt(credential),
+            refreshToken: null,
+            accessTokenExpiresAt: null,
+          },
+        })
+      : await prisma.connection.create({
+          data: {
+            provider,
+            authType: "pat",
+            label: `${provider}-${scope}-pat`,
+            scope,
+            ownerId: user.id,
+            encryptedCredential: encrypt(credential),
+          },
+        });
 
     // 2) Find or create role, then merge allowedTools (union)
     let role = await prisma.role.findFirst({ where: { name: `${scope}-dev-${userIdShort2}`, ownerId: user.id } });
@@ -822,21 +815,24 @@ dashboardApp.get("/tenants/new", async (c) => {
 
   const providers = listProviders();
   const knownProviders = Object.values(PROVIDERS);
+  const providerAuthOptions = knownProviders.flatMap((p) =>
+    p.authTypes.map((authType) => ({ provider: p, authType }))
+  );
   // Get existing tenants (distinct scope values) and which providers each has.
   // We need provider-by-provider info so the wizard can hide the credential
   // field when reusing an existing connection.
   const existingConns = await prisma.connection.findMany({
     where: { ownerId: user.id },
-    select: { scope: true, provider: true, label: true },
+    select: { scope: true, provider: true, authType: true, label: true },
     orderBy: { scope: "asc" },
   });
   const existingScopes = Array.from(new Set(existingConns.map((c: { scope: string }) => c.scope).filter((s: string) => s.length > 0)));
-  // Map: scope -> { provider -> label } so the JS can detect "reusing" mode
+  // Map: scope -> { "provider:authType" -> label } so the JS can detect "reusing" mode
   const scopeProviders: Record<string, Record<string, string>> = {};
   for (const c of existingConns) {
     if (!c.scope) continue;
     if (!scopeProviders[c.scope]) scopeProviders[c.scope] = {};
-    scopeProviders[c.scope][c.provider] = c.label;
+    scopeProviders[c.scope][`${c.provider}:${c.authType}`] = c.label;
   }
 
   return c.html(`
@@ -888,33 +884,34 @@ dashboardApp.get("/tenants/new", async (c) => {
         <div class="step-card">
           <h2><span class="num">2</span> Providers</h2>
           <p class="field-hint" style="margin-top:0;">Pick one or more services to wire into this tenant. Each one gets its own connection; you can tune which tools each enables.</p>
-          ${knownProviders.map((p) => {
-            const authLabel = p.authTypes.map(t => t === "pat" ? "paste token" : "OAuth").join(" / ");
+          ${providerAuthOptions.map(({ provider: p, authType }) => {
+            const authLabel = authType === "pat" ? "paste token" : "OAuth";
             const hasPat = p.authTypes.includes("pat");
             const hasOauth = p.authTypes.includes("oauth");
             const isImplemented = p.implemented !== false;
+            const optionKey = `${p.key}:${authType}`;
             return `
-          <div class="provider-block" data-provider="${p.key}" data-haspat="${hasPat}" data-hasoauth="${hasOauth}" data-implemented="${isImplemented}" style="border:1px solid #2a2d33;border-radius:8px;padding:12px 16px;margin-bottom:12px;${isImplemented ? "" : "opacity:.62;"}">
+          <div class="provider-block" data-provider="${p.key}" data-auth-type="${authType}" data-haspat="${hasPat}" data-hasoauth="${hasOauth}" data-implemented="${isImplemented}" style="border:1px solid #2a2d33;border-radius:8px;padding:12px 16px;margin-bottom:12px;${isImplemented ? "" : "opacity:.62;"}">
             <label style="font-weight:600;display:flex;align-items:center;gap:8px;cursor:${isImplemented ? "pointer" : "not-allowed"};margin:0;">
-              <input type="checkbox" class="provider-check" value="${p.key}" ${isImplemented ? "" : "disabled"}> ${p.label}
+              <input type="checkbox" class="provider-check" value="${optionKey}" ${isImplemented ? "" : "disabled"}> ${p.label}
               <span style="color:#8a8d93;font-weight:normal;font-size:13px;">(${authLabel})</span>
               ${isImplemented ? "" : '<span class="badge unscoped" style="margin-left:auto;">Coming soon</span>'}
             </label>
             ${isImplemented ? `
             <div class="provider-detail" style="display:none;margin-top:12px;padding-left:24px;">
-              ${hasPat ? `
+              ${authType === "pat" ? `
               <div class="field cred-row">
                 <label>Credential</label>
-                <textarea name="credential_${p.key}" class="cred-input" rows="2" placeholder="Paste your ${p.label} token here${hasOauth ? " (or leave blank to use OAuth)" : ""}..."></textarea>
+                <textarea name="credential_${p.key}_${authType}" class="cred-input" rows="2" placeholder="Paste your ${p.label} token here..."></textarea>
                 <div class="field-hint">${escapeHtml(p.helpText)}</div>
                 ${p.tokenUrl ? `<div style="margin-top:4px;"><a href="${p.tokenUrl}" target="_blank" rel="noopener" style="font-size:13px;">🔗 Get a new ${p.label} token here →</a></div>` : ""}
                 <div class="reusing-notice" style="display:none;margin-top:6px;padding:8px;background:rgba(110,168,254,0.08);border-radius:6px;font-size:13px;">
                   ♻️ Reusing the existing <code class="reusing-label"></code> connection. <a href="#" class="rotate-link" style="margin-left:4px;">rotate credential</a> to paste a new one.
                 </div>
               </div>` : ""}
-              ${hasOauth ? `
+              ${authType === "oauth" ? `
               <div class="field oauth-row">
-                <div class="field-hint" style="margin-top:0;">${hasPat ? "Leave the credential blank to authorize via OAuth instead." : `${escapeHtml(p.helpText)} You'll be redirected to authorize after clicking <b>Create tenant</b>.`}</div>
+                <div class="field-hint" style="margin-top:0;">${escapeHtml(p.helpText)} You'll be redirected to authorize after clicking <b>Create tenant</b>.</div>
                 ${p.oauthSetupUrl ? `<div style="margin-top:4px;"><a href="${p.oauthSetupUrl}" target="_blank" rel="noopener" style="font-size:13px;">🔗 Register/manage your ${p.label} OAuth app here →</a></div>` : ""}
               </div>` : ""}
               <div class="field" style="margin-bottom:0;">
@@ -930,6 +927,7 @@ dashboardApp.get("/tenants/new", async (c) => {
           </div>`;
           }).join("")}
           <input type="hidden" name="providers_json" id="providersJson" value="">
+          <input type="hidden" name="provider_auths_json" id="providerAuthsJson" value="">
           <input type="hidden" name="tools_json" id="toolsJson" value="">
         </div>
 
@@ -956,13 +954,14 @@ dashboardApp.get("/tenants/new", async (c) => {
         // its "reusing existing connection" notice for the current scope.
         function updateBlock(block) {
           const key = block.dataset.provider;
+          const authType = block.dataset.authType;
           const check = block.querySelector('.provider-check');
           const detail = block.querySelector('.provider-detail');
           if (!detail) return;
           detail.style.display = check.checked ? "" : "none";
 
           const { scope } = getCurrentScope();
-          const existingConnLabel = (SCOPE_PROVIDERS[scope] || {})[key];
+          const existingConnLabel = (SCOPE_PROVIDERS[scope] || {})[key + ':' + authType];
           const reusing = !!existingConnLabel;
           const credRow = block.querySelector('.cred-row');
           const notice = block.querySelector('.reusing-notice');
@@ -997,14 +996,17 @@ dashboardApp.get("/tenants/new", async (c) => {
 
         document.getElementById('wizForm').addEventListener('submit', (e) => {
           const selectedProviders = [];
+          const selectedProviderAuths = [];
           const toolsMap = {};
           blocks.forEach((block) => {
             const check = block.querySelector('.provider-check');
             if (!check.checked) return;
             if (check.disabled || block.dataset.implemented === 'false') return;
             const key = block.dataset.provider;
+            const authType = block.dataset.authType;
             selectedProviders.push(key);
-            toolsMap[key] = Array.from(block.querySelectorAll('.tool-check:checked')).map(i => i.value);
+            selectedProviderAuths.push({ provider: key, authType });
+            toolsMap[key + ':' + authType] = Array.from(block.querySelectorAll('.tool-check:checked')).map(i => i.value);
           });
           if (selectedProviders.length === 0) {
             e.preventDefault();
@@ -1012,6 +1014,7 @@ dashboardApp.get("/tenants/new", async (c) => {
             return;
           }
           document.getElementById('providersJson').value = JSON.stringify(selectedProviders);
+          document.getElementById('providerAuthsJson').value = JSON.stringify(selectedProviderAuths);
           document.getElementById('toolsJson').value = JSON.stringify(toolsMap);
         });
         updateAllBlocks();
@@ -1084,6 +1087,21 @@ dashboardApp.post("/tenants/new", async (c) => {
   // separate fields named credential_<providerKey>. JSON blobs are used
   // because Hono's parseBody keeps only the last value for repeated keys.
   let providers: string[] = [];
+  let providerAuths: Array<{ provider: string; authType: string }> = [];
+  const providerAuthsJson = String(body.provider_auths_json ?? "").trim();
+  if (providerAuthsJson) {
+    try {
+      const parsed = JSON.parse(providerAuthsJson);
+      if (Array.isArray(parsed)) {
+        providerAuths = parsed
+          .map((item) => ({
+            provider: String(item?.provider ?? "").trim(),
+            authType: String(item?.authType ?? item?.auth_type ?? "").trim(),
+          }))
+          .filter((item) => item.provider && item.authType);
+      }
+    } catch { providerAuths = []; }
+  }
   const providersJson = String(body.providers_json ?? "").trim();
   if (providersJson) {
     try { providers = JSON.parse(providersJson); } catch { providers = []; }
@@ -1092,7 +1110,22 @@ dashboardApp.post("/tenants/new", async (c) => {
   if (providers.length === 0 && body.provider) {
     providers = [String(body.provider).trim()];
   }
+  if (providers.length === 0 && providerAuths.length > 0) {
+    providers = providerAuths.map((item) => item.provider);
+  }
   providers = Array.from(new Set(providers.map((p) => String(p).trim()).filter(Boolean)));
+  if (providerAuths.length === 0) {
+    providerAuths = providers.map((provider) => {
+      const providerDef = getProvider(provider);
+      return {
+        provider,
+        authType: providerDef?.authTypes.includes("oauth") && !providerDef.authTypes.includes("pat") ? "oauth" : "pat",
+      };
+    });
+  }
+  providerAuths = Array.from(
+    new Map(providerAuths.map((item) => [`${item.provider}:${item.authType}`, item])).values()
+  );
 
   // Per-provider tool selection map.
   let toolsByProvider: Record<string, string[]> = {};
@@ -1112,13 +1145,15 @@ dashboardApp.post("/tenants/new", async (c) => {
   }
   // Resolve the credential for a given provider (per-provider field first,
   // falling back to the legacy single `credential` field when there's one provider).
-  const credentialFor = (p: string) => {
+  const credentialFor = (p: string, authType = "pat") => {
+    const specificAuth = String((body as any)[`credential_${p}_${authType}`] ?? "").trim();
+    if (specificAuth) return specificAuth;
     const specific = String((body as any)[`credential_${p}`] ?? "").trim();
     if (specific) return specific;
-    if (providers.length === 1) return String(body.credential ?? "").trim();
+    if (providerAuths.length === 1) return String(body.credential ?? "").trim();
     return "";
   };
-  console.log("[tenants/new POST] tenant=", tenant, "providers=", providers);
+  console.log("[tenants/new POST] tenant=", tenant, "providerAuths=", providerAuths);
 
   if (!/^[a-z0-9_-]+$/.test(tenant)) return c.html("<h1>invalid tenant id</h1>", 400);
   if (!agent) return c.html("<h1>agent name required</h1>", 400);
@@ -1126,10 +1161,14 @@ dashboardApp.post("/tenants/new", async (c) => {
     return c.html("<h1>additional_scopes must be lowercase a-z, 0-9, hyphens, underscores (comma-separated)</h1>", 400);
   }
   if (providers.length === 0) return c.html("<h1>select at least one provider</h1>", 400);
-  for (const p of providers) {
-    const providerDef = getProvider(p);
-    if (!providerDef) return c.html(`<h1>unknown provider: ${escapeHtml(p)}</h1>`, 400);
+  if (providerAuths.length === 0) return c.html("<h1>select at least one provider</h1>", 400);
+  for (const item of providerAuths) {
+    const providerDef = getProvider(item.provider);
+    if (!providerDef) return c.html(`<h1>unknown provider: ${escapeHtml(item.provider)}</h1>`, 400);
     if (providerDef.implemented === false) return c.html(`<h1>provider not implemented: ${escapeHtml(providerDef.label)}</h1>`, 400);
+    if (!providerDef.authTypes.includes(item.authType as any)) {
+      return c.html(`<h1>auth type not supported: ${escapeHtml(item.provider)} / ${escapeHtml(item.authType)}</h1>`, 400);
+    }
   }
 
   // Check for agent name conflict up front so we can return a clean error
@@ -1179,12 +1218,12 @@ dashboardApp.post("/tenants/new", async (c) => {
   //    user B could inherit user A's credential.)
   const connections: Array<{ label: string; scope: string; provider: string }> = [];
   const oauthQueue: string[] = [];
-  for (const provider of providers) {
+  for (const { provider, authType } of providerAuths) {
     const providerDef = getProvider(provider)!; // validated above
-    const credential = credentialFor(provider);
+    const credential = authType === "pat" ? credentialFor(provider, authType) : "";
 
     const existingConn = await prisma.connection.findFirst({
-      where: { provider, scope: tenant, ownerId: user.id },
+      where: { provider, authType, scope: tenant, ownerId: user.id },
     });
 
     // Decide how to authenticate this provider:
@@ -1196,12 +1235,13 @@ dashboardApp.post("/tenants/new", async (c) => {
       const conn = existingConn
         ? await prisma.connection.update({
             where: { id: existingConn.id },
-            data: { encryptedCredential: encrypt(credential) },
+            data: { encryptedCredential: encrypt(credential), refreshToken: null, accessTokenExpiresAt: null },
           })
         : await prisma.connection.create({
             data: {
               provider,
-              label: `${provider}-${tenant}`,
+              authType: "pat",
+              label: `${provider}-${tenant}-pat`,
               scope: tenant,
               ownerId: user.id,
               encryptedCredential: encrypt(credential),
@@ -1210,7 +1250,7 @@ dashboardApp.post("/tenants/new", async (c) => {
       connections.push(conn);
     } else if (existingConn) {
       connections.push(existingConn);
-    } else if (providerDef.authTypes.includes("oauth")) {
+    } else if (authType === "oauth" && providerDef.authTypes.includes("oauth")) {
       oauthQueue.push(provider);
     } else {
       return c.html(`<h1>credential required for ${escapeHtml(providerDef.label)}</h1>`, 400);
@@ -1228,9 +1268,9 @@ dashboardApp.post("/tenants/new", async (c) => {
   // Union of every selected provider's chosen tools (falling back to that
   // provider's full tool set when the wizard sent no explicit selection).
   const desiredTools = Array.from(new Set(
-    providers.flatMap((p) => {
-      const t = toolsByProvider[p];
-      return t && t.length > 0 ? t : toolsForProvider(p);
+    providerAuths.flatMap(({ provider, authType }) => {
+      const t = toolsByProvider[`${provider}:${authType}`] ?? toolsByProvider[provider];
+      return t && t.length > 0 ? t : toolsForProvider(provider);
     })
   ));
   // Decide the initial allowedScopes for a NEW role.
@@ -1265,7 +1305,7 @@ dashboardApp.post("/tenants/new", async (c) => {
     role = await prisma.role.create({
       data: {
         name: roleName,
-        description: `Role for tenant '${tenant}' (per-user) — providers: ${providers.join(", ")}`,
+        description: `Role for tenant '${tenant}' (per-user) — providers: ${providerAuths.map((item) => `${item.provider}:${item.authType}`).join(", ")}`,
         allowedTools: JSON.stringify(desiredTools),
         allowedScopes: JSON.stringify(initialAllowedScopes),
         ownerId: user.id,
@@ -1767,10 +1807,10 @@ oauthApp.get("/:provider/callback", async (c) => {
     const requestedConnectionId = String(payload.connection_id || "");
     const conn = requestedConnectionId
       ? await prisma.connection.findFirst({
-          where: { id: requestedConnectionId, provider: providerKey, scope: effectiveTenant, ownerId: user.id },
+          where: { id: requestedConnectionId, provider: providerKey, authType: "oauth", scope: effectiveTenant, ownerId: user.id },
         })
       : await prisma.connection.findFirst({
-          where: { provider: providerKey, scope: effectiveTenant, ownerId: user.id },
+          where: { provider: providerKey, authType: "oauth", scope: effectiveTenant, ownerId: user.id },
           orderBy: { createdAt: "desc" },
         });
     if (requestedConnectionId && !conn) {
@@ -1791,7 +1831,8 @@ oauthApp.get("/:provider/callback", async (c) => {
       await prisma.connection.create({
         data: {
           provider: providerKey,
-          label: `${providerKey}-${userLogin}-${effectiveTenant}`,
+          authType: "oauth",
+          label: `${providerKey}-${userLogin}-${effectiveTenant}-oauth`,
           scope: effectiveTenant,
           ownerId: user.id,
           ...data,
@@ -1807,13 +1848,14 @@ oauthApp.get("/:provider/callback", async (c) => {
 
   // 1) Create connection (idempotent by provider+scope for this user)
   const existingConn = await prisma.connection.findFirst({
-    where: { provider: providerKey, scope: effectiveTenant, ownerId: user.id },
+    where: { provider: providerKey, authType: "oauth", scope: effectiveTenant, ownerId: user.id },
     orderBy: { createdAt: "desc" },
   });
   const conn = existingConn ?? await prisma.connection.create({
     data: {
       provider: providerKey,
-      label: `${providerKey}-${userLogin}-${effectiveTenant}`,
+      authType: "oauth",
+      label: `${providerKey}-${userLogin}-${effectiveTenant}-oauth`,
       scope: effectiveTenant,
       ownerId: user.id,
       encryptedCredential: encrypt(accessToken),
@@ -1918,7 +1960,7 @@ oauthApp.get("/:provider/callback", async (c) => {
   // show all the services that were wired up, not just the last one.
   const allConns = await prisma.connection.findMany({
     where: { scope: effectiveTenant, ownerId: user.id },
-    orderBy: { provider: "asc" },
+    orderBy: [{ provider: "asc" }, { authType: "asc" }],
   });
 
   return c.html(`
@@ -1929,7 +1971,7 @@ oauthApp.get("/:provider/callback", async (c) => {
       <h1>✓ ${escapeHtml(providerDef.label)} connected · tenant <code>${effectiveTenant}</code> created</h1>
       <div class="card">
         <h2>Connections (${allConns.length})</h2>
-        ${allConns.map((cn) => `<p><code>${escapeHtml(cn.label)}</code> · scope=<code>${escapeHtml(cn.scope)}</code></p>`).join("")}
+        ${allConns.map((cn) => `<p><code>${escapeHtml(cn.label)}</code> · auth=<code>${escapeHtml(cn.authType)}</code> · scope=<code>${escapeHtml(cn.scope)}</code></p>`).join("")}
       </div>
       <div class="card">
         <h2>Role</h2>
@@ -1973,8 +2015,8 @@ dashboardApp.get("/api/scopes", async (c) => {
   const [conns, roles, agents] = await Promise.all([
     prisma.connection.findMany({
       where: { ownerId: user.id },
-      select: { id: true, provider: true, scope: true, label: true, enabled: true, createdAt: true },
-      orderBy: [{ scope: "asc" }, { provider: "asc" }],
+      select: { id: true, provider: true, authType: true, scope: true, label: true, enabled: true, createdAt: true },
+      orderBy: [{ scope: "asc" }, { provider: "asc" }, { authType: "asc" }],
     }),
     prisma.role.findMany({
       where: { ownerId: user.id },
