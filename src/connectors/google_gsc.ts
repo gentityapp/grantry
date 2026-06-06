@@ -82,7 +82,7 @@ export async function callGoogleGscTool(tool: string, args: GscArgs, token: stri
       startDate,
       endDate,
       dimensions: Array.isArray(args.dimensions) ? args.dimensions : ["query", "page"],
-      rowLimit: Number(args.row_limit ?? args.rowLimit ?? 1000),
+      rowLimit: Math.min(Math.max(Number(args.row_limit ?? args.rowLimit ?? 1000) || 1000, 1), 25000),
     };
 
     const startRow = args.start_row ?? args.startRow;
@@ -93,6 +93,16 @@ export async function callGoogleGscTool(tool: string, args: GscArgs, token: stri
     if (aggregationType !== undefined) body.aggregationType = String(aggregationType);
     const dimensionFilterGroups = args.dimension_filter_groups ?? args.dimensionFilterGroups;
     if (dimensionFilterGroups !== undefined) body.dimensionFilterGroups = dimensionFilterGroups;
+    else if (Array.isArray(args.filters) && args.filters.length > 0) {
+      body.dimensionFilterGroups = [{
+        groupType: "and",
+        filters: args.filters.map((filter: any) => ({
+          dimension: String(filter?.dimension ?? ""),
+          operator: String(filter?.operator ?? "equals"),
+          expression: String(filter?.expression ?? ""),
+        })),
+      }];
+    }
 
     const r = await fetchGoogleGsc(`/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`, {
       method: "POST",

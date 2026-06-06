@@ -120,6 +120,74 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       status_name: { type: "string", description: "New status option name, default Done." },
     };
   }
+  if (toolName === "google_gsc/list_sites") {
+    return {};
+  }
+  if (toolName === "google_gsc/search_analytics") {
+    return {
+      site_url: {
+        type: "string",
+        description: "Exact Search Console property URL from google_gsc_list_sites, e.g. https://example.com/ or sc-domain:example.com.",
+      },
+      start_date: {
+        type: "string",
+        pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+        description: "Start date in YYYY-MM-DD.",
+      },
+      end_date: {
+        type: "string",
+        pattern: "^\\d{4}-\\d{2}-\\d{2}$",
+        description: "End date in YYYY-MM-DD.",
+      },
+      dimensions: {
+        type: "array",
+        items: { type: "string", enum: ["query", "page", "country", "device", "date", "searchAppearance"] },
+        description: "Aggregation dimensions. Defaults to query,page.",
+      },
+      row_limit: {
+        type: "number",
+        minimum: 1,
+        maximum: 25000,
+        description: "Rows to return. Defaults to 1000.",
+      },
+      start_row: {
+        type: "number",
+        minimum: 0,
+        description: "Pagination offset.",
+      },
+      search_type: {
+        type: "string",
+        enum: ["web", "image", "video", "news", "googleNews", "discover"],
+        description: "Search type, default web.",
+      },
+      aggregation_type: {
+        type: "string",
+        enum: ["auto", "byPage", "byProperty"],
+        description: "Search Console aggregation type.",
+      },
+      filters: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            dimension: { type: "string", enum: ["query", "page", "country", "device", "date", "searchAppearance"] },
+            operator: {
+              type: "string",
+              enum: ["equals", "notEquals", "contains", "notContains", "includingRegex", "excludingRegex"],
+            },
+            expression: { type: "string" },
+          },
+          required: ["dimension", "operator", "expression"],
+        },
+        description: "Convenience filters converted into one dimensionFilterGroups entry with groupType=and.",
+      },
+      dimension_filter_groups: {
+        type: "array",
+        items: { type: "object" },
+        description: "Raw Search Console dimensionFilterGroups array. Overrides filters when supplied.",
+      },
+    };
+  }
   return {};
 }
 
@@ -131,6 +199,7 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "notion/append_blocks") return ["children"];
   if (toolName === "notion/update_blocks") return ["operations"];
   if (toolName === "notion/update_page_status") return ["page_id", "status"];
+  if (toolName === "google_gsc/search_analytics") return ["site_url", "start_date", "end_date"];
   return [];
 }
 
