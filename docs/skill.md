@@ -27,7 +27,7 @@ description: |
 - **Tenant model**: each `Connection` has a `scope` (the tenant name, e.g.
   `gentity-dev`). A `Role` has `allowedTools` + `allowedScopes`. Tool calls pass
   `scope` in `arguments` to pick the credential.
-- **22 tools** (incl. `ping`). Format: `<provider>/<tool>` (e.g. `github/git_push_repo`).
+- **23 tools** (incl. `ping`). Format: `<provider>/<tool>` (e.g. `github/git_push_repo`).
 
 ## The scope rule (the #1 gotcha)
 A tool call is allowed only if **all three** hold (`src/policy.ts`):
@@ -124,10 +124,10 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
    **Allowed scopes** (leave Allowed scopes empty for "any scope").
 3. Bind the role to the agent (`POST /ui/agents/:id/bind`).
 
-## Providers & tools (22)
+## Providers & tools (23)
 - `ping` — liveness (returns `pong from <agent>`)
 - **github** (PAT or OAuth; scopes `repo`, `read:user`):
-  `list_repos`, `get_repo`, `list_issues`, `create_issue`, `git_push_repo`, `create_repo`
+  `list_repos`, `get_repo`, `get_file_contents`, `list_issues`, `create_issue`, `git_push_repo`, `create_repo`
 - **notion** (PAT): `list_dbs`, `get_page`, `query_db`, `create_page`, `update_page_status`
 - **google_drive** (OAuth, read-only): `list_files`, `get_file`, `search`
 - **google_gsc** (OAuth, read-only): `list_sites`, `search_analytics`
@@ -136,6 +136,9 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 
 ### GitHub tool arguments (besides `scope`)
 - `get_repo`, `list_issues`: `owner`, `repo` (list_issues also `state`, default `open`)
+- `get_file_contents` (read): `owner`, `repo`, `path` (file or dir; `""` = repo root),
+  `ref?` (branch/tag/commit). A file returns decoded UTF-8 `content` (`truncated:true`
+  for files >1MB — fetch the blob by `sha`); a directory returns `entries[]`.
 - `create_issue`: `owner`, `repo`, `title`, `body?`
 - `git_push_repo`: `owner`, `repo`, `branch?` (default `main`), `commit_message?`,
   `files` (object `{ "path": "utf8 content" }`). Uses the Contents API — works on

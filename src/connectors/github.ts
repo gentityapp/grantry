@@ -26,6 +26,58 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
     };
   }
 
+  if (tool === "github/get_file_contents") {
+    // Read a file or list a directory via the Contents API.
+    // - File   -> returns the decoded UTF-8 text (base64 in the API response).
+    // - Dir    -> returns the entries (name/path/type/size), so the agent can
+    //             discover files (e.g. browse `blog/`) without cloning.
+    // `path` may be "" (repo root). `ref` optionally pins a branch/tag/commit.
+    const owner = String(args.owner ?? "");
+    const repo = String(args.repo ?? "");
+    if (!owner || !repo) throw new Error("owner and repo are required");
+    const path = String(args.path ?? "").replace(/^\/+/, "");
+    const ref = String(args.ref ?? "").trim();
+    const url =
+      `https://api.github.com/repos/${owner}/${repo}/contents/${path.split("/").map(encodeURIComponent).join("/")}` +
+      (ref ? `?ref=${encodeURIComponent(ref)}` : "");
+    const r = await fetch(url, { headers });
+    if (!r.ok) throw new Error(`GitHub get_file_contents failed: ${r.status} ${await r.text()}`);
+    const j: any = await r.json();
+
+    if (Array.isArray(j)) {
+      return {
+        structuredContent: {
+          type: "dir",
+          path,
+          entries: j.map((e) => ({ name: e.name, path: e.path, type: e.type, size: e.size, sha: e.sha })),
+        },
+      };
+    }
+
+    if (j.type === "file") {
+      // Large files (>1MB) come back with content="" and encoding="none"; the
+      // caller must fetch the blob by sha in that case.
+      const content =
+        j.encoding === "base64" && typeof j.content === "string"
+          ? Buffer.from(j.content, "base64").toString("utf8")
+          : null;
+      return {
+        structuredContent: {
+          type: "file",
+          path: j.path,
+          size: j.size,
+          sha: j.sha,
+          encoding: j.encoding,
+          truncated: content === null,
+          content,
+        },
+      };
+    }
+
+    // Submodule / symlink and other non-file entries: return as-is.
+    return { structuredContent: { type: j.type ?? "unknown", path: j.path ?? path, raw: j } };
+  }
+
   if (tool === "github/get_repo") {
     const owner = String(args.owner ?? "");
     const repo = String(args.repo ?? "");
