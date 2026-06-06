@@ -450,6 +450,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
 
       <form method="post" action="/ui/tenants/${scope}/edit" id="settingsForm">
         <input type="hidden" name="_action" value="save_settings">
+        <input type="hidden" name="role_tools_json" id="roleToolsJson" value="">
 
         <h2>Connections (${connections.length})</h2>
         ${connections.length === 0 ? '<div class="card"><div class="empty">No connections yet. Add one below.</div></div>' : `
@@ -505,6 +506,12 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           <a href="/ui/tenants" class="btn secondary">Cancel</a>
         </div>
       </form>
+      <script>
+        document.getElementById('settingsForm').addEventListener('submit', () => {
+          const selected = Array.from(document.querySelectorAll('#roleToolsList input[name="role_tools"]:checked')).map(i => i.value);
+          document.getElementById('roleToolsJson').value = JSON.stringify(selected);
+        });
+      </script>
 
       <h2>+ Add another agent to this tenant</h2>
       <div class="card">
@@ -675,7 +682,18 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     const roleScopes = roleScopesRaw
       ? roleScopesRaw.split(",").map((s) => s.trim()).filter((s) => /^[a-z0-9_-]+$/.test(s))
       : [];
-    const roleTools: string[] = Array.isArray(body.role_tools) ? body.role_tools.map(String) : (body.role_tools ? [String(body.role_tools)] : []);
+    let roleTools: string[] = [];
+    const roleToolsJson = String(body.role_tools_json ?? "").trim();
+    if (roleToolsJson) {
+      try {
+        const parsed = JSON.parse(roleToolsJson);
+        roleTools = Array.isArray(parsed) ? parsed.map(String) : [];
+      } catch {
+        roleTools = [];
+      }
+    } else {
+      roleTools = Array.isArray(body.role_tools) ? body.role_tools.map(String) : (body.role_tools ? [String(body.role_tools)] : []);
+    }
 
     let role = await prisma.role.findFirst({ where: { name: `${scope}-dev-${userIdShort}`, ownerId: user.id } });
     if (role) {
