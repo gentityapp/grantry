@@ -99,6 +99,22 @@ ${scope ? `X-Gentity-Scope = "${scope}"` : ""}`;
   ${origin}/mcp \\
   --header "Authorization: Bearer ${token}"${scope ? ` \\
   --header "X-Gentity-Scope: ${scope}"` : ""}`;
+  const claudeDesktopConfig = {
+    mcpServers: {
+      [serverName]: {
+        command: "npx",
+        args: [
+          "-y",
+          "mcp-remote@latest",
+          `${origin}/mcp`,
+          "--header",
+          `Authorization: Bearer ${token}`,
+          ...(scope ? ["--header", `X-Gentity-Scope: ${scope}`] : []),
+        ],
+      },
+    },
+  };
+  const claudeDesktopJson = JSON.stringify(claudeDesktopConfig, null, 2);
   const copyButton = (label: string, text: string) =>
     `<button type="button" class="secondary copy-config-btn" data-copy="${escapeHtml(text)}" style="font-size:12px;padding:4px 10px;">Copy ${label}</button>`;
   return `
@@ -121,6 +137,11 @@ ${scope ? `X-Gentity-Scope = "${scope}"` : ""}`;
           ${copyButton("CLI", claudeCli)}
         </div>
         <pre>${escapeHtml(claudeCli)}</pre>
+        <div class="row spread" style="margin:16px 0 8px;">
+          <h3 style="font-size:14px;margin:0;color:#c8ccd2;">Claude Desktop <code>claude_desktop_config.json</code></h3>
+          ${copyButton("Desktop", claudeDesktopJson)}
+        </div>
+        <pre>${escapeHtml(claudeDesktopJson)}</pre>
         ${exactToken
           ? '<p style="font-size:13px;color:#8a8d93;margin-bottom:0;">This config includes the newly minted token. <code>Mcp-Session-Id</code> is managed by the MCP client/server handshake.</p>'
           : '<p style="font-size:13px;color:#ff6b6b;margin-bottom:0;">The full token is only shown when created or rotated. Rotate this agent if you need a copy-pasteable config with a fresh token.</p>'}
