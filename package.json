@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "node --import tsx/esm src/server.ts",
+    "start": "node scripts/start-with-maintenance.mjs",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:dedupe-connections": "node scripts/dedupe-connections.mjs",
