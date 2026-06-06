@@ -1469,6 +1469,7 @@ oauthApp.get("/:provider/start", async (c) => {
   }
   const scopeStr = (providerDef.oauthScopes || []).join(" ");
   const params = new URLSearchParams({
+    response_type: "code",
     client_id: clientId,
     redirect_uri: redirectUri,
     scope: scopeStr,
