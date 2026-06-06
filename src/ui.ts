@@ -70,6 +70,10 @@ function agentTokenCard(
 }
 
 function mcpConfigCard(origin: string, agentName: string, token: string, exactToken: boolean, scope?: string): string {
+  return `<div class="card">${mcpConfigBlock(origin, agentName, token, exactToken, scope)}</div>`;
+}
+
+function mcpConfigBlock(origin: string, agentName: string, token: string, exactToken: boolean, scope?: string): string {
   const serverName = `gentity-${scope || agentName}`.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase();
   const config = {
     mcpServers: {
@@ -85,7 +89,6 @@ function mcpConfigCard(origin: string, agentName: string, token: string, exactTo
   };
   const json = JSON.stringify(config, null, 2);
   return `
-      <div class="card">
         <h2>MCP config for Codex</h2>
         <p style="font-size:13px;color:#8a8d93;margin-top:0;">
           Use one MCP server entry per tenant. Tool names stay stable; the agent token and <code>X-Gentity-Scope</code> decide which tenant and role Codex can access.
@@ -94,7 +97,7 @@ function mcpConfigCard(origin: string, agentName: string, token: string, exactTo
         ${exactToken
           ? '<p style="font-size:13px;color:#8a8d93;margin-bottom:0;">This config includes the newly minted token. <code>Mcp-Session-Id</code> is managed by the MCP client/server handshake.</p>'
           : '<p style="font-size:13px;color:#ff6b6b;margin-bottom:0;">The full token is only shown when created or rotated. Rotate this agent if you need a copy-pasteable config with a fresh token.</p>'}
-      </div>`;
+      `;
 }
 
 const CSS = `
@@ -409,7 +412,7 @@ dashboardApp.get("/tenants", async (c) => {
         </div>
         ${Array.from(byScope.entries()).map(([scope, conns]) => `
         <div class="card">
-          <h2>${scope === "(unscoped)" ? '<span class="badge unscoped">unscoped</span> Legacy connections' : `<input type="checkbox" name="scopes" value="${scope}" class="rowCheck" style="margin-right:8px;transform:scale(1.2);"><span class="badge scoped">${scope}</span>`} ${scope !== "(unscoped)" ? `<a href="/ui/tenants/${scope}/edit" class="btn secondary" style="margin-left:8px;font-size:12px;padding:4px 10px;">+ Add service</a> <a href="/ui/tenants/${scope}/edit" class="btn secondary" style="margin-left:4px;font-size:12px;padding:4px 10px;">✎ Edit</a>` : ""}</h2>
+          <h2>${scope === "(unscoped)" ? '<span class="badge unscoped">unscoped</span> Legacy connections' : `<input type="checkbox" name="scopes" value="${scope}" class="rowCheck" style="margin-right:8px;transform:scale(1.2);"><span class="badge scoped">${scope}</span>`} ${scope !== "(unscoped)" ? `<a href="/ui/tenants/${scope}/edit#codex-mcp" class="btn secondary" style="margin-left:8px;font-size:12px;padding:4px 10px;">Connect to Codex</a> <a href="/ui/tenants/${scope}/edit" class="btn secondary" style="margin-left:4px;font-size:12px;padding:4px 10px;">+ Add service</a> <a href="/ui/tenants/${scope}/edit" class="btn secondary" style="margin-left:4px;font-size:12px;padding:4px 10px;">✎ Edit</a>` : ""}</h2>
           <table>
             <thead><tr><th>Provider</th><th>Auth</th><th>Label</th><th>Status</th><th>Created</th></tr></thead>
             <tbody>
@@ -462,6 +465,13 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
   const role = await prisma.role.findFirst({ where: { name: `${scope}-dev-${userIdShort}`, ownerId: user.id } });
   const roleTools: string[] = role ? safeJsonArray(role.allowedTools) : [];
   const roleScopes: string[] = role ? safeJsonArray(role.allowedScopes) : [];
+  const codexAgents = role ? await prisma.agent.findMany({
+    where: {
+      ownerId: user.id,
+      roles: { some: { roleId: role.id } },
+    },
+    orderBy: { createdAt: "asc" },
+  }) : [];
   const providers = listProviders();
   const knownProviders = Object.values(PROVIDERS);
 
@@ -506,6 +516,42 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         Edit the tenant's display labels, role tools, and role scopes. To add a new service, scroll down.
       </p>
       ${reauthBanner}
+
+      <h2 id="codex-mcp">Codex MCP</h2>
+      <div class="card">
+        <p style="font-size:13px;color:#8a8d93;margin-top:0;">
+          Connect this tenant to Codex as one MCP server. The generated config is locked to <code>${scope}</code>, so Codex cannot cross into another tenant through this entry.
+        </p>
+        ${codexAgents.length === 0 ? `
+          <p>No Codex MCP token exists for this tenant yet.</p>
+          <form method="post" action="/ui/tenants/${scope}/codex-mcp/create">
+            <button type="submit">Create Codex MCP config</button>
+          </form>
+        ` : `
+          <p>${codexAgents.length} token${codexAgents.length === 1 ? "" : "s"} can access this tenant. Use the first one for the default Codex config.</p>
+          ${mcpConfigBlock(new URL(c.req.url).origin, codexAgents[0].name, `${codexAgents[0].tokenPrefix}...ROTATE_TO_VIEW_FULL_TOKEN`, false, scope)}
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Internal token</th><th>Status</th><th>Last used</th><th>Created</th><th>Action</th></tr></thead>
+              <tbody>
+                ${codexAgents.map((a) => `
+                  <tr>
+                    <td><code>${escapeHtml(a.name)}</code><br><span style="color:#8a8d93;font-size:12px;"><code>${escapeHtml(a.tokenPrefix)}...</code></span></td>
+                    <td>${a.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</td>
+                    <td>${a.lastUsedAt ? a.lastUsedAt.toISOString().slice(0, 16) : "—"}</td>
+                    <td>${a.createdAt.toISOString().slice(0, 10)}</td>
+                    <td>
+                      <form method="post" action="/ui/tenants/${scope}/codex-mcp/${a.id}/rotate" style="display:inline;" onsubmit="return confirm('Rotate Codex MCP token for ${scope}?\\n\\nThe old token will stop working immediately.')">
+                        <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;">Rotate token</button>
+                      </form>
+                    </td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        `}
+      </div>
 
       <form method="post" action="/ui/tenants/${scope}/edit" id="settingsForm">
         <input type="hidden" name="_action" value="save_settings">
@@ -574,9 +620,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         });
       </script>
 
-      <h2>+ Add another agent to this tenant</h2>
+      <h2>Advanced: additional agent token</h2>
       <div class="card">
-        <p class="field-hint" style="margin-top:0;">Mint a new agent token bound to the existing <code>${scope}-dev-${userIdShort}</code> role. Reuses all existing connections — no PAT/OAuth needed.</p>
+        <p class="field-hint" style="margin-top:0;">Most users should use <b>Codex MCP</b> above. This creates an extra internal agent token bound to <code>${scope}-dev-${userIdShort}</code> for custom automation or testing.</p>
         <form method="post" action="/ui/tenants/${scope}/agents/new" id="addAgentForm">
           <div class="field">
             <label for="agent">Agent name</label>
@@ -594,7 +640,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             <input type="hidden" name="tools_json" id="agentToolsJson" value="">
           </div>
           <div style="display:flex;gap:8px;">
-            <button type="submit">Create agent</button>
+            <button type="submit" class="secondary">Create additional token</button>
           </div>
         </form>
       </div>
@@ -700,6 +746,129 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         });
       </script>
       `}
+    </main></body></html>
+  `);
+});
+
+async function uniqueAgentName(base: string): Promise<string> {
+  const safeBase = base.replace(/[^a-zA-Z0-9_-]/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "") || "codex";
+  let candidate = safeBase;
+  for (let i = 0; i < 20; i++) {
+    const existing = await prisma.agent.findUnique({ where: { name: candidate } });
+    if (!existing) return candidate;
+    candidate = `${safeBase}-${crypto.randomUUID().replace(/-/g, "").slice(0, 6)}`;
+  }
+  return `${safeBase}-${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
+}
+
+async function roleForTenantOrCreate(userId: string, scope: string) {
+  const userIdShort = userId.slice(0, 8);
+  let role = await prisma.role.findFirst({ where: { name: `${scope}-dev-${userIdShort}`, ownerId: userId } });
+  if (role) return role;
+
+  const conns = await prisma.connection.findMany({
+    where: { ownerId: userId, scope, enabled: true },
+    select: { provider: true },
+  });
+  const tools = Array.from(new Set(conns.flatMap((cn) => toolsForProvider(cn.provider))));
+  return prisma.role.create({
+    data: {
+      name: `${scope}-dev-${userIdShort}`,
+      description: `Default role for ${scope}`,
+      allowedTools: JSON.stringify(tools),
+      allowedScopes: JSON.stringify([scope]),
+      ownerId: userId,
+    },
+  });
+}
+
+// --- /ui/tenants/:scope/codex-mcp/create ---
+dashboardApp.post("/tenants/:scope/codex-mcp/create", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ error: "not authenticated" }, 401);
+  const scope = c.req.param("scope");
+  if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
+
+  const role = await roleForTenantOrCreate(user.id, scope);
+  const existing = await prisma.agent.findFirst({
+    where: {
+      ownerId: user.id,
+      roles: { some: { roleId: role.id } },
+    },
+    orderBy: { createdAt: "asc" },
+  });
+  if (existing) return c.redirect(`/ui/tenants/${scope}/edit#codex-mcp`);
+
+  const token = `gn_agt_${crypto.randomUUID().replace(/-/g, "")}`;
+  const tokenHash = await import("node:crypto").then(c => c.createHash("sha256").update(token).digest("hex"));
+  const agentName = await uniqueAgentName(`${scope}-codex`);
+  const agent = await prisma.agent.create({
+    data: {
+      name: agentName,
+      description: `Codex MCP token for tenant ${scope}`,
+      hashedToken: tokenHash,
+      tokenPrefix: token.slice(0, 16),
+      ownerId: user.id,
+      roles: { create: [{ roleId: role.id }] },
+    },
+  });
+
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Codex MCP created — agent-oauth</title>
+    <style>${CSS}</style></head><body>
+    ${NAV("tenants")}
+    <main>
+      <h1>Codex MCP ready for <code>${escapeHtml(scope)}</code></h1>
+      <div class="card">
+        <h2>Internal token</h2>
+        <p><code>${escapeHtml(agent.name)}</code> is bound to <code>${escapeHtml(role.name)}</code>.</p>
+      </div>
+      ${agentTokenCard(token)}
+      ${mcpConfigCard(new URL(c.req.url).origin, agent.name, token, true, scope)}
+      <p><a href="/ui/tenants/${scope}/edit#codex-mcp">← Back to ${scope}</a></p>
+    </main></body></html>
+  `);
+});
+
+// --- /ui/tenants/:scope/codex-mcp/:agentId/rotate ---
+dashboardApp.post("/tenants/:scope/codex-mcp/:agentId/rotate", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ error: "not authenticated" }, 401);
+  const scope = c.req.param("scope");
+  const agentId = c.req.param("agentId");
+  if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
+
+  const userIdShort = user.id.slice(0, 8);
+  const role = await prisma.role.findFirst({ where: { name: `${scope}-dev-${userIdShort}`, ownerId: user.id } });
+  if (!role) return c.html("<h1>tenant role not found</h1>", 404);
+  const agent = await prisma.agent.findUnique({
+    where: { id: agentId },
+    include: { roles: true },
+  });
+  if (!agent) return c.html("<h1>agent not found</h1>", 404);
+  if (agent.ownerId !== user.id) return c.html("<h1>not your token</h1>", 403);
+  if (!agent.roles.some((r) => r.roleId === role.id)) return c.html("<h1>token is not bound to this tenant</h1>", 403);
+
+  const token = `gn_agt_${crypto.randomUUID().replace(/-/g, "")}`;
+  const tokenHash = await import("node:crypto").then(c => c.createHash("sha256").update(token).digest("hex"));
+  await prisma.agent.update({
+    where: { id: agent.id },
+    data: {
+      hashedToken: tokenHash,
+      tokenPrefix: token.slice(0, 16),
+      lastUsedAt: null,
+    },
+  });
+
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Codex MCP rotated — agent-oauth</title>
+    <style>${CSS}</style></head><body>
+    ${NAV("tenants")}
+    <main>
+      <h1>Codex MCP token rotated for <code>${escapeHtml(scope)}</code></h1>
+      ${agentTokenCard(token)}
+      ${mcpConfigCard(new URL(c.req.url).origin, agent.name, token, true, scope)}
+      <p><a href="/ui/tenants/${scope}/edit#codex-mcp">← Back to ${scope}</a></p>
     </main></body></html>
   `);
 });
@@ -1570,7 +1739,7 @@ dashboardApp.get("/agents", async (c) => {
                 <form method="post" action="/ui/agents/${a.id}/rotate" style="display:inline;" onsubmit="return confirm('Rotate token for ${a.name}?\\n\\nThe OLD token will be invalidated immediately. The NEW token will be shown ONCE on the next page.')">
                   <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;">Rotate</button>
                 </form>
-                <a href="/ui/agents/${a.id}" class="btn secondary" style="font-size:12px;padding:4px 10px;">MCP config</a>
+                <a href="/ui/agents/${a.id}" class="btn secondary" style="font-size:12px;padding:4px 10px;">Details</a>
                 <form method="post" action="/ui/agents/${a.id}/delete" style="display:inline;" onsubmit="return confirm('Delete agent ${a.name}?\\n\\nThis permanently destroys its token. The role(s) it was bound to are not deleted.')">
                   <button type="submit" style="font-size:12px;padding:4px 10px;background:#ff6b6b;color:#0e0f12;">🗑</button>
                 </form>
