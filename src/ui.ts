@@ -676,6 +676,9 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     const providerDef = getProvider(provider);
     if (!providerDef) return c.html("<h1>unknown provider</h1>", 400);
     if (providerDef.implemented === false) return c.html("<h1>provider not implemented</h1>", 400);
+    if (!providerDef.authTypes.includes("pat") && credential) {
+      return c.html("<h1>pasted credentials are not accepted for this OAuth-only provider</h1>", 400);
+    }
     if (providerDef.authTypes.includes("oauth") && !credential) {
       const selectedTools = tools.length > 0 ? tools : toolsForProvider(provider);
       let role = await prisma.role.findFirst({ where: { name: `${scope}-dev-${userIdShort2}`, ownerId: user.id } });
@@ -1458,25 +1461,7 @@ dashboardApp.post("/agents/:id/rotate", async (c) => {
 
 // --- DEBUG: /debug/agents — dumps agent/role/connection state ---
 dashboardApp.get("/debug/agents", async (c) => {
-  const user = await getSessionUser(c);
-  if (!user) return c.json({ error: "not authenticated" }, 401);
-  const agents = await prisma.agent.findMany({
-    where: { ownerId: user.id },
-    orderBy: { createdAt: "desc" },
-    include: { roles: { include: { role: true } } },
-  });
-  const roles = await prisma.role.findMany({ where: { ownerId: user.id } });
-  const conns = await prisma.connection.findMany({ where: { ownerId: user.id } });
-  return c.json({
-    agents: agents.map((a) => ({
-      name: a.name,
-      tokenPrefix: a.tokenPrefix,
-      enabled: a.enabled,
-      bindings: a.roles.map((r) => ({ role: r.role.name, allowedScopes: safeJsonArray(r.role.allowedScopes) })),
-    })),
-    roles: roles.map((r) => ({ name: r.name, allowedScopes: safeJsonArray(r.allowedScopes), allowedTools: safeJsonArray(r.allowedTools) })),
-    connections: conns.map((c) => ({ label: c.label, provider: c.provider, scope: c.scope, enabled: c.enabled })),
-  });
+  return c.json({ error: "debug endpoint disabled; use /ui/api/scopes" }, 410);
 });
 
 // --- /ui/audit ---
