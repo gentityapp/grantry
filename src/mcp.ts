@@ -4,18 +4,25 @@
 import { Hono } from "hono";
 import { prisma } from "./db.js";
 import { decrypt } from "./crypto.js";
-import { checkPolicy } from "./policy.js";
+import { checkPolicy, allowedToolsForAgent } from "./policy.js";
 import { PROVIDERS, toolsForProvider } from "./connectors/registry.js";
 import { callNotionTool } from "./connectors/notion.js";
 import { callGitHubTool } from "./connectors/github.js";
 
 export const mcpApp = new Hono();
 
-/** All available tools across providers (used for tools/list) */
-function buildToolList() {
+/**
+ * Tools advertised via tools/list, scoped to the calling agent.
+ * - `ping` is always available (liveness, no policy).
+ * - When `allowed` is null (unauthenticated request), only `ping` is returned.
+ * - Otherwise only tools present in `allowed` (the agent's permitted set) are listed.
+ */
+function buildToolList(allowed: Set<string> | null) {
   const tools: any[] = [{ name: "ping", description: "Liveness check", inputSchema: { type: "object", properties: {} } }];
+  if (!allowed) return tools;
   for (const p of Object.values(PROVIDERS)) {
     for (const toolName of p.tools) {
+      if (!allowed.has(toolName)) continue;
       tools.push({
         name: toolName,
         description: `${p.label}: ${toolName.split("/")[1]?.replace(/_/g, " ")}`,
@@ -55,9 +62,12 @@ mcpApp.post("/", async (c) => {
 
   const { method, params, id } = body ?? {};
 
-  // --- tools/list: doesn't require auth, returns all known tools ---
+  // --- tools/list: scoped to the calling agent's permitted tools ---
+  // Unauthenticated requests only see `ping`; an authenticated agent sees the
+  // tools its bound roles allow (full enforcement still happens at tools/call).
   if (method === "tools/list") {
-    return c.json({ jsonrpc: "2.0", id, result: { tools: buildToolList() } });
+    const allowed = agent ? await allowedToolsForAgent(agent.id) : null;
+    return c.json({ jsonrpc: "2.0", id, result: { tools: buildToolList(allowed) } });
   }
 
   // --- tools/call: requires auth ---

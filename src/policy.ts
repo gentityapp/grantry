@@ -79,3 +79,26 @@ export async function checkPolicy(args: {
     provider, tool, scope,
   };
 }
+
+/**
+ * Return the set of tool names an agent is permitted to call, aggregated
+ * across all of its bound roles' allowedTools. Used by tools/list to scope
+ * the advertised tools to what the agent can actually invoke.
+ *
+ * Note: this is scope-agnostic (it does not check allowedScopes or whether a
+ * matching Connection currently exists) — those are enforced at tools/call.
+ */
+export async function allowedToolsForAgent(agentId: string): Promise<Set<string>> {
+  const agentRoles = await prisma.agentRole.findMany({
+    where: { agentId },
+    include: { role: true },
+  });
+
+  const allowed = new Set<string>();
+  for (const ar of agentRoles) {
+    let tools: string[] = [];
+    try { tools = JSON.parse(ar.role.allowedTools); } catch { tools = []; }
+    for (const t of tools) allowed.add(t);
+  }
+  return allowed;
+}
