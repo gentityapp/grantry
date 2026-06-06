@@ -3,7 +3,7 @@
 // Phase 3: scope-based policy enforcement
 import { Hono } from "hono";
 import { prisma } from "./db.js";
-import { decrypt } from "./crypto.js";
+import { decrypt, encrypt } from "./crypto.js";
 import { checkPolicy, allowedToolsForAgent, connectionsForAgent } from "./policy.js";
 import { PROVIDERS, toolsForProvider } from "./connectors/registry.js";
 import { callNotionTool } from "./connectors/notion.js";
@@ -11,6 +11,9 @@ import { callGitHubTool } from "./connectors/github.js";
 import { callGoogleGscTool } from "./connectors/google_gsc.js";
 
 export const mcpApp = new Hono();
+
+const TOKEN_REFRESH_TIMEOUT_MS = 8_000;
+const TOKEN_REFRESH_SKEW_MS = 60_000;
 
 /**
  * Tools advertised via tools/list, scoped to the calling agent.
@@ -47,6 +50,82 @@ async function resolveAgent(authHeader: string | null): Promise<{ id: string; na
   if (!agent || !agent.enabled) return null;
   if (agent.expiresAt && agent.expiresAt < new Date()) return null;
   return { id: agent.id, name: agent.name, enabled: agent.enabled };
+}
+
+async function refreshOAuthToken(provider: string, refreshToken: string) {
+  const providerDef = PROVIDERS[provider];
+  if (!providerDef?.oauthTokenUrl) throw new Error(`OAuth refresh is not configured for provider: ${provider}`);
+
+  const envPrefix = provider.toUpperCase();
+  const legacyAliases: Record<string, string[]> = {
+    github: ["GH_CLIENT_ID", "GENTITY_GITHUB_CLIENT_ID"],
+  };
+  const legacySecretAliases: Record<string, string[]> = {
+    github: ["GH_CLIENT_SECRET", "GENTITY_GITHUB_CLIENT_SECRET"],
+  };
+  const clientId = process.env[`${envPrefix}_CLIENT_ID`]
+    || (legacyAliases[provider] || []).map((k) => process.env[k]).find(Boolean);
+  const clientSecret = process.env[`${envPrefix}_CLIENT_SECRET`]
+    || (legacySecretAliases[provider] || []).map((k) => process.env[k]).find(Boolean);
+  if (!clientId || !clientSecret) {
+    throw new Error(`${provider} OAuth refresh credentials missing: set ${envPrefix}_CLIENT_ID and ${envPrefix}_CLIENT_SECRET`);
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TOKEN_REFRESH_TIMEOUT_MS);
+  try {
+    const resp = await fetch(providerDef.oauthTokenUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        refresh_token: refreshToken,
+        grant_type: "refresh_token",
+      }),
+      signal: controller.signal,
+    });
+    const text = await resp.text();
+    let json: any = {};
+    try { json = text ? JSON.parse(text) : {}; } catch { json = { raw: text }; }
+    if (!resp.ok || json.error || !json.access_token) {
+      throw new Error(`${provider} OAuth refresh failed: ${resp.status} ${JSON.stringify(json).slice(0, 500)}`);
+    }
+    return json as { access_token: string; expires_in?: number; refresh_token?: string };
+  } catch (e: any) {
+    if (e?.name === "AbortError") throw new Error(`${provider} OAuth refresh timed out after ${TOKEN_REFRESH_TIMEOUT_MS}ms`);
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function credentialForConnection(conn: {
+  id: string;
+  provider: string;
+  encryptedCredential: string;
+  refreshToken: string | null;
+  accessTokenExpiresAt: Date | null;
+}) {
+  const currentToken = decrypt(conn.encryptedCredential);
+  if (!conn.refreshToken || !conn.accessTokenExpiresAt) return currentToken;
+  if (conn.accessTokenExpiresAt.getTime() > Date.now() + TOKEN_REFRESH_SKEW_MS) return currentToken;
+
+  console.log("[oauth] refreshing access token", {
+    provider: conn.provider,
+    connectionId: conn.id,
+    expiresAt: conn.accessTokenExpiresAt.toISOString(),
+  });
+  const refreshed = await refreshOAuthToken(conn.provider, decrypt(conn.refreshToken));
+  await prisma.connection.update({
+    where: { id: conn.id },
+    data: {
+      encryptedCredential: encrypt(refreshed.access_token),
+      accessTokenExpiresAt: refreshed.expires_in ? new Date(Date.now() + refreshed.expires_in * 1000) : null,
+      ...(refreshed.refresh_token ? { refreshToken: encrypt(refreshed.refresh_token) } : {}),
+    },
+  });
+  return refreshed.access_token;
 }
 
 mcpApp.post("/", async (c) => {
@@ -138,7 +217,7 @@ mcpApp.post("/", async (c) => {
     if (!conn) {
       return c.json({ jsonrpc: "2.0", id, error: { code: -32011, message: "connection vanished" } }, 500);
     }
-    const token = decrypt(conn.encryptedCredential);
+    const token = await credentialForConnection(conn);
 
     // 4) Dispatch to provider-specific tool
     try {
