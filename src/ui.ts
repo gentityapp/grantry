@@ -398,6 +398,31 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         </div>
       </form>
 
+      <h2>+ Add another agent to this tenant</h2>
+      <div class="card">
+        <p class="field-hint" style="margin-top:0;">Mint a new agent token bound to the existing <code>${scope}-dev-${userIdShort}</code> role. Reuses all existing connections — no PAT/OAuth needed.</p>
+        <form method="post" action="/ui/tenants/${scope}/agents/new" id="addAgentForm">
+          <div class="field">
+            <label for="agent">Agent name</label>
+            <input type="text" name="agent" id="agent" pattern="[a-zA-Z0-9_-]+" placeholder="e.g. ${escapeHtml(scope)}-read-bot" required>
+            <div class="field-hint">Globally unique. Suggestions: <code>${escapeHtml(scope)}-read</code>, <code>${escapeHtml(scope)}-write</code>, <code>${escapeHtml(scope)}-ci</code>.</div>
+          </div>
+          <div class="field">
+            <label for="agent_desc">Description <span style="color:#8a8d93;">(optional)</span></label>
+            <input type="text" name="agent_desc" id="agent_desc" placeholder="What this agent is for">
+          </div>
+          <div class="field">
+            <label>Additional tools to enable</label>
+            <p class="field-hint" style="margin-top:0;">The agent will inherit all tools the role already has. Uncheck to NOT add any extras (rare — leave as-is unless you need a tool the role doesn't have).</p>
+            <div id="agentToolsList" style="font-size:13px;color:#8a8d93;">${roleTools.length} tools already in role: <code>${roleTools.slice(0, 4).join("</code> · <code>")}${roleTools.length > 4 ? `</code> · +${roleTools.length - 4} more` : "</code>"}</div>
+            <input type="hidden" name="tools_json" id="agentToolsJson" value="">
+          </div>
+          <div style="display:flex;gap:8px;">
+            <button type="submit">Create agent</button>
+          </div>
+        </form>
+      </div>
+
       <h2 style="color:#ff6b6b;">Danger zone</h2>
       <div class="card" style="border-color:#ff6b6b;">
         <p>Delete this tenant entirely. This removes <b>all your connections</b> for scope <code>${scope}</code> and the role <code>${scope}-dev-${userIdShort}</code>. Agents bound to that role will be left <b>unbound</b> (use <a href="/ui/agents">/ui/agents</a> to clean them up).</p>
@@ -652,14 +677,22 @@ dashboardApp.get("/tenants/new", async (c) => {
   if (!user) return c.redirect("/ui/login");
 
   const providers = listProviders();
-  // Get existing tenants (distinct scope values) for the dropdown
+  // Get existing tenants (distinct scope values) and which providers each has.
+  // We need provider-by-provider info so the wizard can hide the credential
+  // field when reusing an existing connection.
   const existingConns = await prisma.connection.findMany({
     where: { ownerId: user.id },
-    select: { scope: true },
-    distinct: ["scope"],
+    select: { scope: true, provider: true, label: true },
     orderBy: { scope: "asc" },
   });
-  const existingScopes = existingConns.map((c: { scope: string }) => c.scope).filter((s: string) => s.length > 0);
+  const existingScopes = Array.from(new Set(existingConns.map((c: { scope: string }) => c.scope).filter((s: string) => s.length > 0)));
+  // Map: scope -> { provider -> label } so the JS can detect "reusing" mode
+  const scopeProviders: Record<string, Record<string, string>> = {};
+  for (const c of existingConns) {
+    if (!c.scope) continue;
+    if (!scopeProviders[c.scope]) scopeProviders[c.scope] = {};
+    scopeProviders[c.scope][c.provider] = c.label;
+  }
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>New tenant — agent-oauth</title>
@@ -719,6 +752,9 @@ dashboardApp.get("/tenants/new", async (c) => {
             <label for="credential">Credential</label>
             <textarea name="credential" id="credential" rows="3" required placeholder="Paste your token here..."></textarea>
             <div class="field-hint" id="credHint"></div>
+            <div id="reusingNotice" style="display:none;margin-top:6px;padding:8px;background:rgba(110,168,254,0.08);border-radius:6px;font-size:13px;">
+              ♻️ Reusing the existing <code id="reusingConnLabel"></code> connection. <a href="#" id="rotateLink" style="margin-left:4px;">rotate credential</a> to paste a new one.
+            </div>
             <div id="patLinkRow" style="margin-top:6px;display:none;">
               <a id="patLink" href="#" target="_blank" rel="noopener" style="font-size:13px;">🔗 Get a new token here →</a>
             </div>
@@ -748,6 +784,7 @@ dashboardApp.get("/tenants/new", async (c) => {
       </form>
       <script>
         const PROVIDERS = ${JSON.stringify(Object.fromEntries(providers.map(p => [p.key, p])))};
+        const SCOPE_PROVIDERS = ${JSON.stringify(scopeProviders)};
         const sel = document.getElementById('provider');
         const toolsList = document.getElementById('toolsList');
         const credHint = document.getElementById('credHint');
@@ -760,36 +797,74 @@ dashboardApp.get("/tenants/new", async (c) => {
         const patLink = document.getElementById('patLink');
         const oauthSetupLinkRow = document.getElementById('oauthSetupLinkRow');
         const oauthSetupLink = document.getElementById('oauthSetupLink');
+        const reusingNotice = document.getElementById('reusingNotice');
+        const reusingConnLabel = document.getElementById('reusingConnLabel');
+        const rotateLink = document.getElementById('rotateLink');
         const tenantField = document.getElementById('tenant');
         const agentField = document.getElementById('agent');
+
+        // Returns the current scope (either typed or selected) and whether it's an existing tenant.
+        function getCurrentScope() {
+          const tSelect = document.getElementById('tenant_select');
+          const selected = tSelect && tSelect.value ? tSelect.value : '';
+          const typed = tenantField.value.trim();
+          return { scope: selected || typed, isExisting: !!selected };
+        }
 
         function updateProviderUI() {
           const p = PROVIDERS[sel.value];
           credHint.textContent = p.helpText;
           const hasPat = p.authTypes.includes("pat");
           const hasOauth = p.authTypes.includes("oauth");
-          // Credential field: visible only if PAT is supported
-          if (hasPat) {
+          // Detect if we're reusing an existing connection (existing tenant
+          // is selected AND has a connection for the chosen provider).
+          const { scope, isExisting } = getCurrentScope();
+          const existingConnLabel = (SCOPE_PROVIDERS[scope] || {})[sel.value];
+          const reusing = !!existingConnLabel;
+          // Credential field: visible if PAT is supported AND not reusing.
+          if (hasPat && !reusing) {
             credFieldRow.style.display = "";
             credField.placeholder = "Paste your " + p.label + " token here";
             credField.disabled = false;
             credField.required = true;
+            credField.value = "";
+            patLinkRow.style.display = p.tokenUrl ? "" : "none";
             if (p.tokenUrl) {
               patLink.href = p.tokenUrl;
               patLink.textContent = "🔗 Get a new " + p.label + " token here →";
-              patLinkRow.style.display = "";
-            } else {
-              patLinkRow.style.display = "none";
+            }
+            reusingNotice.style.display = "none";
+          } else if (hasPat && reusing) {
+            // Reusing — hide credential textarea, show "reusing" notice
+            credField.value = "";
+            credField.disabled = true;
+            credField.required = false;
+            credFieldRow.style.display = "none";
+            patLinkRow.style.display = "none";
+            reusingNotice.style.display = "";
+            reusingConnLabel.textContent = existingConnLabel;
+            if (rotateLink) {
+              rotateLink.onclick = (e) => {
+                e.preventDefault();
+                credFieldRow.style.display = "";
+                credField.disabled = false;
+                credField.required = true;
+                credField.placeholder = "Paste your new " + p.label + " token here (rotates credential)";
+                credField.focus();
+                reusingNotice.style.display = "none";
+              };
             }
           } else {
+            // OAuth-only provider (notion, hubspot, etc.)
             credFieldRow.style.display = "none";
             patLinkRow.style.display = "none";
             credField.disabled = true;
             credField.required = false;
             credField.value = "(via OAuth)";
+            reusingNotice.style.display = "none";
           }
-          // OAuth button: visible if OAuth is supported
-          if (hasOauth) {
+          // OAuth button: visible if OAuth is supported AND not reusing
+          if (hasOauth && !reusing) {
             oauthButtonRow.style.display = "";
             oauthHint.textContent = p.helpText;
             if (p.oauthSetupUrl) {
@@ -846,9 +921,19 @@ dashboardApp.get("/tenants/new", async (c) => {
             if (tenantSelect.value) {
               tenantInput.value = '';
               suggestAgentName(tenantSelect.value);
+              // Re-evaluate credential reuse: the chosen provider may have an
+              // existing connection for this scope, which means we don't need
+              // to ask for a new credential.
+              updateProviderUI();
             }
           });
         }
+        tenantInput.addEventListener('input', () => {
+          if (tenantSelect) tenantSelect.value = '';
+          // Tenant name changed: re-evaluate reuse too (user might be typing
+          // a name that matches an existing scope).
+          updateProviderUI();
+        });
         // User-typed agent names should not be overwritten by auto-suggest.
         agentInput.addEventListener('input', () => {
           if (agentInput.value) agentInput.dataset.autoSuggested = '';
@@ -936,23 +1021,39 @@ dashboardApp.post("/tenants/new", async (c) => {
 
   const providerDef = getProvider(provider);
   if (!providerDef) return c.html("<h1>unknown provider</h1>", 400);
-  if (providerDef.authTypes.includes("pat") && !credential) return c.html("<h1>credential required for PAT providers</h1>", 400);
 
-  // 1) Create or reuse connection (idempotent: dedupe on owner+provider+label+scope)
-  //    MUST filter by ownerId — otherwise user B could inherit user A's credential
-  //    by typing the same tenant name in the wizard.
+  // 1) Check for an existing connection first — if found, we can reuse
+  //    its credential and don't need a new one. (MUST filter by ownerId —
+  //    otherwise user B could inherit user A's credential.)
   const existingConn = await prisma.connection.findFirst({
     where: { provider, label: `${provider}-${tenant}`, scope: tenant, ownerId: user.id },
   });
-  const conn = existingConn ?? await prisma.connection.create({
-    data: {
-      provider,
-      label: `${provider}-${tenant}`,
-      scope: tenant,
-      ownerId: user.id,
-      encryptedCredential: encrypt(credential || "pending-oauth"),
-    },
-  });
+  // Credential is required only if we're creating a NEW connection.
+  // If reusing an existing one, it's optional (and ignored if blank).
+  if (!existingConn && providerDef.authTypes.includes("pat") && !credential) {
+    return c.html("<h1>credential required for PAT providers</h1>", 400);
+  }
+  // If a new credential was provided AND an existing connection was found,
+  // rotate the credential (user wants to replace their token). This makes
+  // it safe to paste a new PAT into the wizard without affecting existing
+  // agents that were using the old one.
+  let conn = existingConn;
+  if (!conn) {
+    conn = await prisma.connection.create({
+      data: {
+        provider,
+        label: `${provider}-${tenant}`,
+        scope: tenant,
+        ownerId: user.id,
+        encryptedCredential: encrypt(credential || "pending-oauth"),
+      },
+    });
+  } else if (credential) {
+    conn = await prisma.connection.update({
+      where: { id: conn.id },
+      data: { encryptedCredential: encrypt(credential) },
+    });
+  }
 
   // 2) Find or create role. Reuse existing ${tenant}-dev if present.
   // This way, running the wizard twice for the same tenant doesn't create
@@ -1639,6 +1740,116 @@ dashboardApp.get("/api/scopes", async (c) => {
       )),
     })),
   });
+});
+
+// --- /ui/tenants/:scope/agents/new (POST) — add another agent to existing tenant ---
+dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ error: "not authenticated" }, 401);
+  const scope = c.req.param("scope");
+  if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
+  const body = await c.req.parseBody();
+  const agent = String(body.agent ?? "").trim();
+  const agentDesc = String(body.agent_desc ?? "").trim();
+  const toolsJson = String(body.tools_json ?? "").trim();
+  if (!agent) return c.html("<h1>agent name required</h1>", 400);
+  if (!/^[a-zA-Z0-9_-]+$/.test(agent)) {
+    return c.html("<h1>invalid agent name (a-z, 0-9, hyphens, underscores)</h1>", 400);
+  }
+
+  // Find the existing role for this tenant (per-user naming)
+  const userIdShort = user.id.slice(0, 8);
+  const role = await prisma.role.findFirst({
+    where: { name: `${scope}-dev-${userIdShort}`, ownerId: user.id },
+  });
+  if (!role) {
+    return c.html(`<h1>no role found for scope '${scope}' (yours). Use the wizard to create a new tenant first.</h1>`, 404);
+  }
+
+  // Check for agent name conflict up front
+  const existingAgent = await prisma.agent.findUnique({ where: { name: agent } });
+  if (existingAgent) {
+    return c.html(`
+      <!doctype html><html><head><meta charset="utf-8"><title>Agent name taken — agent-oauth</title>
+      <style>${CSS}</style></head><body>
+      ${NAV("tenants")}
+      <main>
+        <h1>⚠️ Agent name <code>${escapeHtml(agent)}</code> already exists</h1>
+        <div class="card" style="border-color:#ff6b6b;">
+          <p>Pick a different agent name (e.g. <code>${escapeHtml(agent)}-v2</code>).</p>
+          <p><a href="/ui/tenants/${scope}/edit">← Back to ${scope}</a></p>
+        </div>
+      </main></body></html>
+    `, 409);
+  }
+
+  // If the form provided a custom tools list, optionally update the role
+  // with the union. (Most users won't customize this — they get the role's
+  // existing tool set.)
+  let customTools: string[] | null = null;
+  if (toolsJson) {
+    try { customTools = JSON.parse(toolsJson); } catch {}
+  }
+  if (customTools && customTools.length > 0) {
+    const existing = safeJsonArray(role.allowedTools);
+    const merged = Array.from(new Set([...existing, ...customTools]));
+    if (merged.length !== existing.length) {
+      await prisma.role.update({
+        where: { id: role.id },
+        data: { allowedTools: JSON.stringify(merged) },
+      });
+    }
+  }
+
+  // Mint token + create agent
+  const token = `gn_agt_${crypto.randomUUID().replace(/-/g, "")}`;
+  const tokenHash = await import("node:crypto").then(c => c.createHash("sha256").update(token).digest("hex"));
+  const agentRow = await prisma.agent.create({
+    data: {
+      name: agent,
+      description: agentDesc || null,
+      hashedToken: tokenHash,
+      tokenPrefix: token.slice(0, 16),
+      ownerId: user.id,
+      roles: { create: [{ roleId: role.id }] },
+    },
+  });
+
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Agent created — agent-oauth</title>
+    <style>${CSS}</style></head><body>
+    ${NAV("tenants")}
+    <main>
+      <h1>✓ New agent <code>${agentRow.name}</code> added to <code>${scope}</code></h1>
+      <div class="card">
+        <h2>Connection</h2>
+        <p>Reused the existing <code>${scope}</code> connection(s) — no new PAT/OAuth needed.</p>
+      </div>
+      <div class="card">
+        <h2>Role</h2>
+        <p>Bound to <code>${role.name}</code> (allowed_scopes: <code>${safeJsonArray(role.allowedScopes).join(", ") || "<em>any</em>"}</code>)</p>
+        <p>Tools: ${safeJsonArray(role.allowedTools).map((t: string) => `<span class="tool-pill">${t}</span>`).join(" ")}</p>
+      </div>
+      <div class="card" style="background:rgba(110,168,254,0.08);">
+        <h2>🔑 Agent token (save this — shown once!)</h2>
+        <pre style="background:#0e0f12;border:1px solid #6ea8fe;">${token}</pre>
+        <p style="font-size:13px;color:#8a8d93;margin-bottom:0;">Use as <code>Authorization: Bearer ${token}</code> when calling <code>/mcp</code>.</p>
+        <p style="font-size:13px;color:#ff6b6b;margin-top:8px;">⚠️ Save this token now. You won't see it again.</p>
+      </div>
+      <div class="card">
+        <h2>Test it</h2>
+        <pre>curl -X POST ${new URL(c.req.url).origin}/mcp \\
+  -H "Authorization: Bearer ${token}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping"}}'</pre>
+      </div>
+      <p>
+        <a href="/ui/tenants/${scope}/edit">← Back to ${scope}</a> ·
+        <a href="/ui/tenants/${scope}/edit">Add another agent</a> ·
+        <a href="/ui/agents">Manage all agents</a>
+      </p>
+    </main></body></html>
+  `);
 });
 
 // --- /ui/tenants/:scope/delete (POST) — single tenant delete ---
