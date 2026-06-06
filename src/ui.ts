@@ -425,7 +425,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                 <td><label style="font-weight:normal;font-size:13px;"><input type="checkbox" name="conn_enabled_${cn.id}" ${cn.enabled ? "checked" : ""}> on</label></td>
                 <td><code>${cn.createdAt.toISOString().slice(0, 10)}</code></td>
                 <td>${isOAuth
-                  ? `<a href="/oauth/${cn.provider}/start?tenant=${encodeURIComponent(cn.scope)}&reauth=1" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run the OAuth consent flow and refresh this connection's tokens">↻ Reconnect</a>${expired ? ' <span class="badge unscoped" style="color:#ff6b6b;">token expired</span>' : ""}`
+                  ? `<a href="/oauth/${cn.provider}/start?tenant=${encodeURIComponent(cn.scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run the OAuth consent flow and refresh this exact connection's tokens">↻ Reconnect</a>${expired ? ' <span class="badge unscoped" style="color:#ff6b6b;">token expired</span>' : ""}`
                   : '<span style="color:#8a8d93;font-size:12px;">PAT</span>'}</td>
               </tr>
             `;}).join("")}
@@ -1538,6 +1538,7 @@ oauthApp.get("/:provider/start", async (c) => {
     agent_desc: c.req.query("agent_desc") || "",
     tools_json: c.req.query("tools_json") || "[]",
     oauth_queue: c.req.query("oauth_queue") || "",
+    connection_id: c.req.query("connection_id") || "",
     reauth,
     userId: user.id,
   };
@@ -1687,10 +1688,18 @@ oauthApp.get("/:provider/callback", async (c) => {
   // its credentials, and return to the edit page. This is what the "↻ Reconnect"
   // button drives (e.g. when an agent reports an expired/revoked Google token).
   if (payload.reauth) {
-    const conn = await prisma.connection.findFirst({
-      where: { provider: providerKey, scope: effectiveTenant, ownerId: user.id },
-      orderBy: { createdAt: "asc" },
-    });
+    const requestedConnectionId = String(payload.connection_id || "");
+    const conn = requestedConnectionId
+      ? await prisma.connection.findFirst({
+          where: { id: requestedConnectionId, provider: providerKey, scope: effectiveTenant, ownerId: user.id },
+        })
+      : await prisma.connection.findFirst({
+          where: { provider: providerKey, scope: effectiveTenant, ownerId: user.id },
+          orderBy: { createdAt: "desc" },
+        });
+    if (requestedConnectionId && !conn) {
+      return c.html(`<h1>connection not found for reconnect</h1><p>The requested connection does not belong to this tenant/provider. <a href="/ui/tenants/${effectiveTenant}/edit">Back</a></p>`, 404);
+    }
     const data = {
       encryptedCredential: encrypt(accessToken),
       accessTokenExpiresAt: tokenJson.expires_in ? new Date(Date.now() + tokenJson.expires_in * 1000) : null,
@@ -1720,9 +1729,10 @@ oauthApp.get("/:provider/callback", async (c) => {
     return c.html(`<h1>agent name missing in saved payload</h1>`, 400);
   }
 
-  // 1) Create connection (idempotent: dedupe on provider+label+scope)
+  // 1) Create connection (idempotent by provider+scope for this user)
   const existingConn = await prisma.connection.findFirst({
-    where: { provider: providerKey, label: `${providerKey}-${effectiveTenant}`, scope: effectiveTenant, ownerId: user.id },
+    where: { provider: providerKey, scope: effectiveTenant, ownerId: user.id },
+    orderBy: { createdAt: "desc" },
   });
   const conn = existingConn ?? await prisma.connection.create({
     data: {
