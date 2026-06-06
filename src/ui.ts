@@ -75,10 +75,17 @@ function mcpConfigCard(origin: string, agentName: string, token: string, exactTo
 
 function mcpConfigBlock(origin: string, agentName: string, token: string, exactToken: boolean, scope?: string): string {
   const serverName = `gentity-${scope || agentName}`.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase();
-  const config = {
+  const codexToml = `[mcp_servers.${serverName}]
+type = "streamable-http"
+url = "${origin}/mcp"
+
+[mcp_servers.${serverName}.headers]
+Authorization = "Bearer ${token}"
+${scope ? `X-Gentity-Scope = "${scope}"` : ""}`;
+  const claudeConfig = {
     mcpServers: {
       [serverName]: {
-        type: "streamable-http",
+        type: "http",
         url: `${origin}/mcp`,
         headers: {
           Authorization: `Bearer ${token}`,
@@ -87,13 +94,22 @@ function mcpConfigBlock(origin: string, agentName: string, token: string, exactT
       },
     },
   };
-  const json = JSON.stringify(config, null, 2);
+  const claudeJson = JSON.stringify(claudeConfig, null, 2);
+  const claudeCli = `claude mcp add --transport http ${serverName} \\
+  ${origin}/mcp \\
+  --header "Authorization: Bearer ${token}"${scope ? ` \\
+  --header "X-Gentity-Scope: ${scope}"` : ""}`;
   return `
-        <h2>MCP config for Codex</h2>
+        <h2>MCP config</h2>
         <p style="font-size:13px;color:#8a8d93;margin-top:0;">
-          Use one MCP server entry per tenant. Tool names stay stable; the agent token and <code>X-Gentity-Scope</code> decide which tenant and role Codex can access.
+          Use one MCP server entry per tenant. Tool names stay stable; the token and <code>X-Gentity-Scope</code> lock this entry to the selected tenant.
         </p>
-        <pre>${escapeHtml(json)}</pre>
+        <h3 style="font-size:14px;margin:16px 0 8px;color:#c8ccd2;">Codex <code>~/.codex/config.toml</code></h3>
+        <pre>${escapeHtml(codexToml)}</pre>
+        <h3 style="font-size:14px;margin:16px 0 8px;color:#c8ccd2;">Claude Code JSON</h3>
+        <pre>${escapeHtml(claudeJson)}</pre>
+        <h3 style="font-size:14px;margin:16px 0 8px;color:#c8ccd2;">Claude Code CLI</h3>
+        <pre>${escapeHtml(claudeCli)}</pre>
         ${exactToken
           ? '<p style="font-size:13px;color:#8a8d93;margin-bottom:0;">This config includes the newly minted token. <code>Mcp-Session-Id</code> is managed by the MCP client/server handshake.</p>'
           : '<p style="font-size:13px;color:#ff6b6b;margin-bottom:0;">The full token is only shown when created or rotated. Rotate this agent if you need a copy-pasteable config with a fresh token.</p>'}
