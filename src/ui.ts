@@ -153,10 +153,15 @@ dashboardApp.get("/", async (c) => {
   if (!user) return c.redirect("/ui/login");
 
   const [connectionCount, agentCount, roleCount, recentAudits] = await Promise.all([
-    prisma.connection.count(),
-    prisma.agent.count(),
-    prisma.role.count(),
-    prisma.auditLog.findMany({ take: 10, orderBy: { createdAt: "desc" }, include: { agent: true } }),
+    prisma.connection.count({ where: { ownerId: user.id } }),
+    prisma.agent.count({ where: { ownerId: user.id } }),
+    prisma.role.count({ where: { ownerId: user.id } }),
+    prisma.auditLog.findMany({
+      where: { OR: [{ userId: user.id }, { agent: { ownerId: user.id } }] },
+      take: 10,
+      orderBy: { createdAt: "desc" },
+      include: { agent: true },
+    }),
   ]);
 
   return c.html(`
@@ -449,8 +454,8 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           </div>
           <div class="field">
             <label for="role_scopes">Allowed scopes</label>
-            <input type="text" name="role_scopes" id="role_scopes" value="${escapeHtml(roleScopesStr)}" placeholder="(empty = any scope)">
-            <div class="field-hint">Comma-separated scope names. <b>Empty = any scope</b> (recommended for multi-tenant dev). Your other tenants: ${existingScopes.map((s) => `<code>${s}</code>`).join(", ") || "<em>none</em>"}.</div>
+            <input type="text" name="role_scopes" id="role_scopes" value="${escapeHtml(roleScopesStr)}" placeholder="${escapeHtml(scope)}">
+            <div class="field-hint">Comma-separated scope names. Use exact tenant names. <b>Empty = any scope</b> and is only for legacy/admin use. Your other tenants: ${existingScopes.map((s) => `<code>${s}</code>`).join(", ") || "<em>none</em>"}.</div>
           </div>
         </div>
 
@@ -688,7 +693,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     let currentTools: string[] = role ? safeJsonArray(role.allowedTools) : [];
     let currentScopes: string[] = role ? safeJsonArray(role.allowedScopes) : [];
     if (currentScopes.length === 0) {
-      // keep empty = any scope; don't shrink
+      currentScopes = [scope];
     } else if (!currentScopes.includes(scope)) {
       currentScopes.push(scope);
     }
@@ -704,7 +709,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
         data: {
           name: `${scope}-dev-${userIdShort2}`,
           allowedTools: JSON.stringify(mergedTools.length > 0 ? mergedTools : toolsForProvider(provider)),
-          allowedScopes: JSON.stringify([]),
+          allowedScopes: JSON.stringify([scope]),
           ownerId: user.id,
         },
       });
@@ -788,7 +793,7 @@ dashboardApp.get("/tenants/new", async (c) => {
           <div class="field" style="margin-top:16px;">
             <label for="additional_scopes">Additional allowed scopes <span style="color:#8a8d93;">(optional, multi-tenant)</span></label>
             <input type="text" name="additional_scopes" id="additional_scopes" placeholder="e.g. ${existingScopes.slice(0, 2).join(', ')}${existingScopes.length > 2 ? ', ...' : ''}">
-            <div class="field-hint">Comma-separated. The role will be allowed to access <i>these scopes too</i> (in addition to the new tenant). Leave empty for <b>any scope</b>. Your other tenants: ${existingScopes.map((s) => `<code>${s}</code>`).join(", ")}.</div>
+            <div class="field-hint">Comma-separated. The role will be allowed to access <i>these scopes too</i> in addition to the new tenant. Leave empty to allow <b>only the new tenant</b>. Your other tenants: ${existingScopes.map((s) => `<code>${s}</code>`).join(", ")}.</div>
           </div>
           ` : ''}
           <div class="field" style="margin-top:16px;">
@@ -1129,10 +1134,9 @@ dashboardApp.post("/tenants/new", async (c) => {
   // an orphan role; the new agent gets bound to the same role as before.
   //
   // allowedScopes logic:
-  //   - If user specified `additional_scopes`: pin to [tenant, ...additional]
-  //     (explicit allowlist, more secure).
-  //   - Else: default to [] (= any scope) so a single agent token
-  //     works across all of the user's tenants (Mavis's pattern).
+  //   - Always pin new roles to [tenant, ...additionalScopes].
+  //   - Empty [] still means "any scope" for legacy rows, but new rows should
+  //     not use it by default because it broadens every future connection.
   // Union of every selected provider's chosen tools (falling back to that
   // provider's full tool set when the wizard sent no explicit selection).
   const desiredTools = Array.from(new Set(
@@ -1144,7 +1148,7 @@ dashboardApp.post("/tenants/new", async (c) => {
   // Decide the initial allowedScopes for a NEW role.
   const initialAllowedScopes = additionalScopes.length > 0
     ? Array.from(new Set([tenant, ...additionalScopes]))
-    : []; // any
+    : [tenant];
 
   // roleName is globally unique (it encodes the owner via the per-user suffix),
   // so look it up by name alone — filtering by ownerId could miss it and fall
@@ -1157,9 +1161,7 @@ dashboardApp.post("/tenants/new", async (c) => {
     const mergedTools = Array.from(new Set([...existingTools, ...desiredTools]));
     let mergedScopes: string[];
     if (existingScopes.length === 0) {
-      // Existing role allows any — if user now specified an allowlist, apply it.
-      // Otherwise keep "any".
-      mergedScopes = additionalScopes.length > 0 ? initialAllowedScopes : [];
+      mergedScopes = initialAllowedScopes;
     } else {
       // Existing role has an allowlist — widen by adding new scopes. Never narrow.
       mergedScopes = Array.from(new Set([...existingScopes, tenant, ...additionalScopes]));
@@ -1227,7 +1229,7 @@ dashboardApp.post("/tenants/new", async (c) => {
       </div>
       <div class="card">
         <h2>Role</h2>
-        <p><code>${role.name}</code> · allowed_scopes=<code>${tenant}</code> · ${JSON.parse(role.allowedTools).length} tools</p>
+        <p><code>${role.name}</code> · allowed_scopes=<code>${safeJsonArray(role.allowedScopes).join(", ") || "any"}</code> · ${JSON.parse(role.allowedTools).length} tools</p>
       </div>
       <div class="card">
         <h2>Agent</h2>
@@ -1290,7 +1292,7 @@ dashboardApp.get("/agents", async (c) => {
               for (const s of safeJsonArray(r.role.allowedScopes)) allScopes.add(s);
             }
             const scopesDisplay = allScopes.size === 0
-              ? '<em style="color:#ff6b6b;">⚠️ no scopes (rotate or rebind)</em>'
+              ? '<span class="badge denied" title="Legacy broad access: this role can use any of your enabled connection scopes">any</span>'
               : Array.from(allScopes).map((s) => `<span class="badge scoped">${s}</span>`).join(" ");
             const rolesDisplay = roleNames.length === 0
               ? '<em style="color:#ff6b6b;">no role bound</em>'
@@ -1453,6 +1455,7 @@ dashboardApp.get("/audit", async (c) => {
   if (!user) return c.redirect("/ui/login");
 
   const logs = await prisma.auditLog.findMany({
+    where: { OR: [{ userId: user.id }, { agent: { ownerId: user.id } }] },
     take: 100,
     orderBy: { createdAt: "desc" },
     include: { agent: true },
@@ -1772,7 +1775,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     const existingTools = safeJsonArray(role.allowedTools);
     const existingScopes = safeJsonArray(role.allowedScopes);
     const mergedTools = Array.from(new Set([...existingTools, ...desiredTools]));
-    const mergedScopes = existingScopes.length === 0 ? [] : Array.from(new Set([...existingScopes, effectiveTenant]));
+    const mergedScopes = existingScopes.length === 0 ? [effectiveTenant] : Array.from(new Set([...existingScopes, effectiveTenant]));
     role = await prisma.role.update({
       where: { id: role.id },
       data: { allowedTools: JSON.stringify(mergedTools), allowedScopes: JSON.stringify(mergedScopes) },
@@ -1783,7 +1786,7 @@ oauthApp.get("/:provider/callback", async (c) => {
         name: roleName,
         description: `Role for tenant '${effectiveTenant}' (via OAuth)`,
         allowedTools: JSON.stringify(desiredTools),
-        allowedScopes: JSON.stringify([]),
+        allowedScopes: JSON.stringify([effectiveTenant]),
         ownerId: user.id,
       },
     });
@@ -1857,7 +1860,7 @@ oauthApp.get("/:provider/callback", async (c) => {
       </div>
       <div class="card">
         <h2>Role</h2>
-        <p><code>${role.name}</code> · ${JSON.parse(role.allowedTools).length} tools</p>
+        <p><code>${role.name}</code> · allowed_scopes=<code>${safeJsonArray(role.allowedScopes).join(", ") || "any"}</code> · ${JSON.parse(role.allowedTools).length} tools</p>
       </div>
       <div class="card">
         <h2>Agent</h2>

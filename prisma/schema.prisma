@@ -139,6 +139,7 @@ model Connection {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
+  @@unique([ownerId, provider, scope])
   @@index([provider, scope])
   @@index([ownerId])
   @@map("connection")

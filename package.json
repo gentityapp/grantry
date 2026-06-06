@@ -10,6 +10,7 @@
     "start": "node --import tsx/esm src/server.ts",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
+    "db:dedupe-connections": "node scripts/dedupe-connections.mjs",
     "db:studio": "prisma studio"
   },
   "dependencies": {
