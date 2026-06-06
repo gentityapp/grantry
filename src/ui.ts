@@ -422,7 +422,12 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             <thead><tr><th>Provider</th><th>Scope</th><th>Label</th><th>Enabled</th><th>Created</th><th>Auth</th></tr></thead>
             <tbody>
             ${connections.map((cn) => {
-              const isOAuth = (getProvider(cn.provider)?.authTypes ?? []).includes("oauth");
+              const providerDef = getProvider(cn.provider);
+              const supportsOAuth = (providerDef?.authTypes ?? []).includes("oauth");
+              const supportsPat = (providerDef?.authTypes ?? []).includes("pat");
+              const hasOAuthState = !!cn.refreshToken || !!cn.accessTokenExpiresAt;
+              const isOAuthOnly = supportsOAuth && !supportsPat;
+              const canReconnect = isOAuthOnly || hasOAuthState;
               const expired = cn.accessTokenExpiresAt ? cn.accessTokenExpiresAt < new Date() : false;
               return `
               <tr>
@@ -431,9 +436,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                 <td><input type="text" name="conn_label_${cn.id}" value="${escapeHtml(cn.label)}" style="font-size:13px;"></td>
                 <td><label style="font-weight:normal;font-size:13px;"><input type="checkbox" name="conn_enabled_${cn.id}" ${cn.enabled ? "checked" : ""}> on</label></td>
                 <td><code>${cn.createdAt.toISOString().slice(0, 10)}</code></td>
-                <td>${isOAuth
+                <td>${canReconnect
                   ? `<a href="/oauth/${cn.provider}/start?tenant=${encodeURIComponent(cn.scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run the OAuth consent flow and refresh this exact connection's tokens">↻ Reconnect</a>${expired ? ' <span class="badge unscoped" style="color:#ff6b6b;">token expired</span>' : ""}`
-                  : '<span style="color:#8a8d93;font-size:12px;">PAT</span>'}</td>
+                  : `<span style="color:#8a8d93;font-size:12px;">${supportsPat && supportsOAuth ? "PAT / token" : "PAT"}</span>`}</td>
               </tr>
             `;}).join("")}
             </tbody>
