@@ -17,6 +17,7 @@ export const mcpApp = new Hono();
 const TOKEN_REFRESH_TIMEOUT_MS = 8_000;
 const TOKEN_REFRESH_SKEW_MS = 60_000;
 const MCP_SESSION_TTL_MS = 60 * 60 * 1000;
+const MCP_PROTOCOL_VERSION = "2024-11-05";
 
 type McpSession = {
   agentId: string;
@@ -234,6 +235,35 @@ mcpApp.post("/", async (c) => {
 
   const { method, params, id } = body ?? {};
 
+  // --- MCP handshake ---
+  // Remote MCP clients (Claude Desktop via mcp-remote, Claude Code, Codex) call
+  // initialize before listing/calling tools. Keep this lightweight; auth still
+  // gates tenant-specific tools and calls below.
+  if (method === "initialize") {
+    return c.json({
+      jsonrpc: "2.0",
+      id,
+      result: {
+        protocolVersion: String(params?.protocolVersion ?? MCP_PROTOCOL_VERSION),
+        capabilities: {
+          tools: {},
+        },
+        serverInfo: {
+          name: "gentity-auth",
+          version: "0.1.0",
+        },
+      },
+    });
+  }
+
+  if (method === "notifications/initialized") {
+    return c.body(null, 204);
+  }
+
+  if (method === "ping") {
+    return c.json({ jsonrpc: "2.0", id, result: {} });
+  }
+
   // --- tools/list: scoped to the calling agent's permitted tools ---
   // Unauthenticated requests only see `ping`; an authenticated agent only sees
   // tools backed by enabled connections it can actually call.
@@ -400,5 +430,5 @@ mcpApp.post("/", async (c) => {
     }
   }
 
-  return c.json({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } }, 404);
+  return c.json({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });
 });
