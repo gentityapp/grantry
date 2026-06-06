@@ -385,6 +385,14 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
   const roleScopesStr = roleScopes.join(", ");
   const roleDesc = role?.description ?? "";
 
+  // Flash banner after a successful reconnect (OAuth re-authorization).
+  const reauthed = c.req.query("reauthed");
+  const reauthBanner = reauthed
+    ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);margin-bottom:20px;">
+         ✓ Re-authorized <code>${escapeHtml(reauthed)}</code>. The connection's access token (and refresh token) have been refreshed.
+       </div>`
+    : "";
+
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Edit ${scope} — agent-oauth</title>
     <style>${CSS}</style></head><body>
@@ -394,6 +402,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
       <p style="color:#8a8d93;margin-top:-16px;margin-bottom:24px;">
         Edit the tenant's display labels, role tools, and role scopes. To add a new service, scroll down.
       </p>
+      ${reauthBanner}
 
       <form method="post" action="/ui/tenants/${scope}/edit" id="settingsForm">
         <input type="hidden" name="_action" value="save_settings">
@@ -403,19 +412,26 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         <div class="card">
           <p class="field-hint" style="margin-top:0;">Edit the display label for each connection. This is what you see in dashboards, audit logs, and tooltips.</p>
           <table>
-            <thead><tr><th>Provider</th><th>Scope</th><th>Label</th><th>Enabled</th><th>Created</th></tr></thead>
+            <thead><tr><th>Provider</th><th>Scope</th><th>Label</th><th>Enabled</th><th>Created</th><th>Auth</th></tr></thead>
             <tbody>
-            ${connections.map((cn) => `
+            ${connections.map((cn) => {
+              const isOAuth = (getProvider(cn.provider)?.authTypes ?? []).includes("oauth");
+              const expired = cn.accessTokenExpiresAt ? cn.accessTokenExpiresAt < new Date() : false;
+              return `
               <tr>
                 <td><code>${cn.provider}</code></td>
                 <td><code>${cn.scope}</code></td>
                 <td><input type="text" name="conn_label_${cn.id}" value="${escapeHtml(cn.label)}" style="font-size:13px;"></td>
                 <td><label style="font-weight:normal;font-size:13px;"><input type="checkbox" name="conn_enabled_${cn.id}" ${cn.enabled ? "checked" : ""}> on</label></td>
                 <td><code>${cn.createdAt.toISOString().slice(0, 10)}</code></td>
+                <td>${isOAuth
+                  ? `<a href="/oauth/${cn.provider}/start?tenant=${encodeURIComponent(cn.scope)}&reauth=1" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run the OAuth consent flow and refresh this connection's tokens">↻ Reconnect</a>${expired ? ' <span class="badge unscoped" style="color:#ff6b6b;">token expired</span>' : ""}`
+                  : '<span style="color:#8a8d93;font-size:12px;">PAT</span>'}</td>
               </tr>
-            `).join("")}
+            `;}).join("")}
             </tbody>
           </table>
+          <p class="field-hint">↻ <b>Reconnect</b> re-runs the provider's OAuth consent screen and refreshes this connection's access/refresh tokens in place. Use it when an agent reports an expired or revoked token. No new agent is created.</p>
         </div>`}
 
         <h2>Role <code>${scope}-dev-${userIdShort}</code></h2>
@@ -1507,6 +1523,12 @@ oauthApp.get("/:provider/start", async (c) => {
   }
   const publicUrl = process.env.BETTER_AUTH_URL || `${new URL(c.req.url).origin}`;
 
+  // `reauth=1` means we're refreshing the tokens of an existing connection
+  // (triggered by the "↻ Reconnect" button on the tenant edit page). In that
+  // mode there is no wizard: no new agent is minted and we return to the edit
+  // page once the new tokens are saved.
+  const reauth = c.req.query("reauth") === "1";
+
   // Collect wizard data from query string
   const payload = {
     tenant: c.req.query("tenant") || "",
@@ -1516,6 +1538,7 @@ oauthApp.get("/:provider/start", async (c) => {
     agent_desc: c.req.query("agent_desc") || "",
     tools_json: c.req.query("tools_json") || "[]",
     oauth_queue: c.req.query("oauth_queue") || "",
+    reauth,
     userId: user.id,
   };
   if (!/^[a-z0-9_-]+$/.test(payload.tenant)) {
@@ -1529,7 +1552,7 @@ oauthApp.get("/:provider/start", async (c) => {
       state,
       provider: providerKey,
       payload: JSON.stringify(payload),
-      redirectTo: "/ui/tenants/new",
+      redirectTo: reauth ? `/ui/tenants/${payload.tenant}/edit` : "/ui/tenants/new",
       expiresAt: new Date(Date.now() + 30 * 60 * 1000),
     },
   });
@@ -1658,6 +1681,41 @@ oauthApp.get("/:provider/callback", async (c) => {
   if (!/^[a-z0-9_-]+$/.test(effectiveTenant)) {
     return c.html(`<h1>invalid tenant in saved payload</h1>`, 400);
   }
+
+  // --- Reconnect mode: refresh an existing connection's tokens in place. ---
+  // No wizard, no agent: find the tenant's connection for this provider, update
+  // its credentials, and return to the edit page. This is what the "↻ Reconnect"
+  // button drives (e.g. when an agent reports an expired/revoked Google token).
+  if (payload.reauth) {
+    const conn = await prisma.connection.findFirst({
+      where: { provider: providerKey, scope: effectiveTenant, ownerId: user.id },
+      orderBy: { createdAt: "asc" },
+    });
+    const data = {
+      encryptedCredential: encrypt(accessToken),
+      accessTokenExpiresAt: tokenJson.expires_in ? new Date(Date.now() + tokenJson.expires_in * 1000) : null,
+      // Google only returns a refresh_token on first consent unless prompt=consent
+      // (which the start route forces), so keep the old one if none came back.
+      ...(refreshToken ? { refreshToken: encrypt(refreshToken) } : {}),
+    };
+    if (conn) {
+      await prisma.connection.update({ where: { id: conn.id }, data });
+    } else {
+      // No existing connection for this tenant/provider — create one so the
+      // reconnect still leaves a usable credential behind.
+      await prisma.connection.create({
+        data: {
+          provider: providerKey,
+          label: `${providerKey}-${userLogin}-${effectiveTenant}`,
+          scope: effectiveTenant,
+          ownerId: user.id,
+          ...data,
+        },
+      });
+    }
+    return c.redirect(`/ui/tenants/${effectiveTenant}/edit?reauthed=${encodeURIComponent(providerKey)}`);
+  }
+
   if (!agent) {
     return c.html(`<h1>agent name missing in saved payload</h1>`, 400);
   }
