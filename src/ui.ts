@@ -5,6 +5,7 @@ import { prisma } from "./db.js";
 import { encrypt } from "./crypto.js";
 import { PROVIDERS, getProvider, listProviders, toolsForProvider } from "./connectors/registry.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
+import { connectionsForAgent } from "./policy.js";
 
 export const dashboardApp = new Hono();
 
@@ -66,6 +67,33 @@ function agentTokenCard(
           });
         })();
       </script>`;
+}
+
+function mcpConfigCard(origin: string, agentName: string, token: string, exactToken: boolean): string {
+  const serverName = `gentity-${agentName}`.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase();
+  const config = {
+    mcpServers: {
+      [serverName]: {
+        type: "streamable-http",
+        url: `${origin}/mcp`,
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    },
+  };
+  const json = JSON.stringify(config, null, 2);
+  return `
+      <div class="card">
+        <h2>MCP config for Codex</h2>
+        <p style="font-size:13px;color:#8a8d93;margin-top:0;">
+          Use one MCP server entry per tenant/agent. Tool names stay stable; the agent token decides which tenant and role Codex can access.
+        </p>
+        <pre>${escapeHtml(json)}</pre>
+        ${exactToken
+          ? '<p style="font-size:13px;color:#8a8d93;margin-bottom:0;">This config includes the newly minted token. <code>Mcp-Session-Id</code> is managed by the MCP client/server handshake.</p>'
+          : '<p style="font-size:13px;color:#ff6b6b;margin-bottom:0;">The full token is only shown when created or rotated. Rotate this agent if you need a copy-pasteable config with a fresh token.</p>'}
+      </div>`;
 }
 
 const CSS = `
@@ -1453,6 +1481,7 @@ dashboardApp.post("/tenants/new", async (c) => {
         <p><code>${agentRow.name}</code> · bound to <code>${role.name}</code></p>
       </div>
       ${agentTokenCard(token, "⚠️  Save this token now. You won't see it again. Revoke and re-mint in <a href=\"/ui/agents\">/ui/agents</a> if lost.")}
+      ${mcpConfigCard(new URL(c.req.url).origin, agentRow.name, token, true)}
       <div class="card">
         <h2>Test it</h2>
         <pre>curl -X POST ${new URL(c.req.url).origin}/mcp \\
@@ -1540,6 +1569,7 @@ dashboardApp.get("/agents", async (c) => {
                 <form method="post" action="/ui/agents/${a.id}/rotate" style="display:inline;" onsubmit="return confirm('Rotate token for ${a.name}?\\n\\nThe OLD token will be invalidated immediately. The NEW token will be shown ONCE on the next page.')">
                   <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;">Rotate</button>
                 </form>
+                <a href="/ui/agents/${a.id}" class="btn secondary" style="font-size:12px;padding:4px 10px;">MCP config</a>
                 <form method="post" action="/ui/agents/${a.id}/delete" style="display:inline;" onsubmit="return confirm('Delete agent ${a.name}?\\n\\nThis permanently destroys its token. The role(s) it was bound to are not deleted.')">
                   <button type="submit" style="font-size:12px;padding:4px 10px;background:#ff6b6b;color:#0e0f12;">🗑</button>
                 </form>
@@ -1567,6 +1597,80 @@ dashboardApp.get("/agents", async (c) => {
         });
         aChecks.forEach(c => c.addEventListener('change', updateABtn));
       </script>
+    </main></body></html>
+  `);
+});
+
+// --- /ui/agents/:id — agent detail + Codex MCP config ---
+dashboardApp.get("/agents/:id", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/ui/login");
+
+  const id = c.req.param("id");
+  const agent = await prisma.agent.findUnique({
+    where: { id },
+    include: { roles: { include: { role: true } } },
+  });
+  if (!agent) return c.html("<h1>agent not found</h1>", 404);
+  if (agent.ownerId !== user.id) return c.html("<h1>not your agent</h1>", 403);
+
+  const connections = await connectionsForAgent(agent.id);
+  const scopeSet = new Set<string>();
+  for (const conn of connections) {
+    scopeSet.add(conn.scope);
+  }
+  const tokenPlaceholder = `${agent.tokenPrefix}...ROTATE_TO_VIEW_FULL_TOKEN`;
+
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(agent.name)} — agent-oauth</title>
+    <style>${CSS}</style></head><body>
+    ${NAV("agents")}
+    <main>
+      <h1>Agent <code>${escapeHtml(agent.name)}</code></h1>
+      <div class="card">
+        <h2>Binding</h2>
+        <p>Status: ${agent.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</p>
+        <p>Token prefix: <code>${escapeHtml(agent.tokenPrefix)}...</code></p>
+        <p>Roles: ${agent.roles.length
+          ? agent.roles.map((ar) => `<span class="tool-pill">${escapeHtml(ar.role.name)}</span>`).join(" ")
+          : '<em style="color:#ff6b6b;">no role bound</em>'}</p>
+        <p>Accessible tenants: ${scopeSet.size
+          ? Array.from(scopeSet).sort().map((s) => `<span class="badge scoped">${escapeHtml(s)}</span>`).join(" ")
+          : '<span class="badge denied">none</span>'}</p>
+      </div>
+      <div class="card">
+        <h2>Callable connections</h2>
+        ${connections.length === 0 ? '<div class="empty">No enabled connection is callable by this agent. Check role scopes, role tools, and tenant connections.</div>' : `
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Tenant</th><th>Provider</th><th>Auth</th><th>Label</th><th>Tools</th></tr></thead>
+            <tbody>
+              ${connections.map((conn) => `
+                <tr>
+                  <td><code>${escapeHtml(conn.scope)}</code></td>
+                  <td><code>${escapeHtml(conn.provider)}</code></td>
+                  <td><code>${escapeHtml(conn.authType)}</code></td>
+                  <td>${escapeHtml(conn.label)}</td>
+                  <td>${conn.tools.map((t) => `<span class="tool-pill">${escapeHtml(t)}</span>`).join(" ")}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>`}
+      </div>
+      ${mcpConfigCard(new URL(c.req.url).origin, agent.name, tokenPlaceholder, false)}
+      <div class="card">
+        <h2>Quick checks</h2>
+        <pre>curl -X POST ${new URL(c.req.url).origin}/mcp \\
+  -H "Authorization: Bearer YOUR_FULL_AGENT_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'</pre>
+        <pre>curl -X POST ${new URL(c.req.url).origin}/mcp \\
+  -H "Authorization: Bearer YOUR_FULL_AGENT_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"jsonrpc":"2.0","id":2,"method":"connections/list"}'</pre>
+      </div>
+      <p><a href="/ui/agents">← Back to agents</a></p>
     </main></body></html>
   `);
 });
@@ -1634,6 +1738,7 @@ dashboardApp.post("/agents/:id/rotate", async (c) => {
         <p style="font-size:13px;color:#8a8d93;margin-bottom:0;">Use as <code>Authorization: Bearer ${newToken}</code> when calling <code>/mcp</code>.</p>
         <p style="font-size:13px;color:#ff6b6b;margin-top:8px;">⚠️  Save this token now. If you lose it, you'll need to rotate again.</p>
       </div>
+      ${mcpConfigCard(new URL(c.req.url).origin, agent.name, newToken, true)}
       <div class="card">
         <h2>Test the new token</h2>
         <pre>curl -X POST ${new URL(c.req.url).origin}/mcp \\
@@ -2074,6 +2179,7 @@ oauthApp.get("/:provider/callback", async (c) => {
         <p><code>${agentRow.name}</code> · bound to <code>${role.name}</code></p>
       </div>
       ${agentTokenCard(token, "")}
+      ${mcpConfigCard(new URL(c.req.url).origin, agentRow.name, token, true)}
       <p><a href="/ui/tenants">← Back to tenants</a> · <a href="/ui/agents">Manage agents</a></p>
     </main></body></html>
   `);
@@ -2238,6 +2344,7 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
         <p>Tools: ${safeJsonArray(role.allowedTools).map((t: string) => `<span class="tool-pill">${t}</span>`).join(" ")}</p>
       </div>
       ${agentTokenCard(token)}
+      ${mcpConfigCard(new URL(c.req.url).origin, agentRow.name, token, true)}
       <div class="card">
         <h2>Test it</h2>
         <pre>curl -X POST ${new URL(c.req.url).origin}/mcp \\

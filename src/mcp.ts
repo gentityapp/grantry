@@ -2,10 +2,11 @@
 // Phase 2: implements real tool dispatch for notion/* and github/*
 // Phase 3: scope-based policy enforcement
 import { Hono } from "hono";
+import { randomUUID } from "node:crypto";
 import { prisma } from "./db.js";
 import { decrypt, encrypt } from "./crypto.js";
-import { checkPolicy, allowedToolsForAgent, connectionsForAgent } from "./policy.js";
-import { PROVIDERS, toolsForProvider } from "./connectors/registry.js";
+import { checkPolicy, connectionsForAgent } from "./policy.js";
+import { PROVIDERS } from "./connectors/registry.js";
 import { callNotionTool } from "./connectors/notion.js";
 import { callGitHubTool } from "./connectors/github.js";
 import { callGoogleGscTool } from "./connectors/google_gsc.js";
@@ -15,24 +16,67 @@ export const mcpApp = new Hono();
 
 const TOKEN_REFRESH_TIMEOUT_MS = 8_000;
 const TOKEN_REFRESH_SKEW_MS = 60_000;
+const MCP_SESSION_TTL_MS = 60 * 60 * 1000;
+
+type McpSession = {
+  agentId: string;
+  createdAt: number;
+  lastSeenAt: number;
+  expiresAt: number;
+};
+
+const mcpSessions = new Map<string, McpSession>();
+
+function cleanupExpiredMcpSessions() {
+  const now = Date.now();
+  for (const [id, session] of mcpSessions) {
+    if (session.expiresAt <= now) mcpSessions.delete(id);
+  }
+}
 
 /**
  * Tools advertised via tools/list, scoped to the calling agent.
  * - `ping` is always available (liveness, no policy).
- * - When `allowed` is null (unauthenticated request), only `ping` is returned.
- * - Otherwise only tools present in `allowed` (the agent's permitted set) are listed.
+ * - When `connections` is null (unauthenticated request), only `ping` is returned.
+ * - Otherwise only tools that have an enabled, policy-usable connection are listed.
  */
-function buildToolList(allowed: Set<string> | null) {
+function buildToolList(connections: Awaited<ReturnType<typeof connectionsForAgent>> | null) {
   const tools: any[] = [{ name: "ping", description: "Liveness check", inputSchema: { type: "object", properties: {} } }];
-  if (!allowed) return tools;
+  if (!connections) return tools;
+
+  const scopesByTool = new Map<string, Set<string>>();
+  const authTypesByTool = new Map<string, Set<string>>();
+  const connectionIdsByTool = new Map<string, Set<string>>();
+  for (const conn of connections) {
+    for (const tool of conn.tools) {
+      if (!scopesByTool.has(tool)) scopesByTool.set(tool, new Set());
+      if (!authTypesByTool.has(tool)) authTypesByTool.set(tool, new Set());
+      if (!connectionIdsByTool.has(tool)) connectionIdsByTool.set(tool, new Set());
+      scopesByTool.get(tool)!.add(conn.scope);
+      authTypesByTool.get(tool)!.add(conn.authType);
+      connectionIdsByTool.get(tool)!.add(conn.id);
+    }
+  }
+
   for (const p of Object.values(PROVIDERS)) {
     if (p.implemented === false) continue;
     for (const toolName of p.tools) {
-      if (!allowed.has(toolName)) continue;
+      const scopes = Array.from(scopesByTool.get(toolName) ?? []).sort();
+      if (!scopes.length) continue;
+      const authTypes = Array.from(authTypesByTool.get(toolName) ?? []).sort();
+      const connectionIds = Array.from(connectionIdsByTool.get(toolName) ?? []).sort();
       tools.push({
         name: toolName,
         description: `${p.label}: ${toolName.split("/")[1]?.replace(/_/g, " ")}`,
-        inputSchema: { type: "object", properties: {} },
+        inputSchema: {
+          type: "object",
+          properties: {
+            scope: { type: "string", enum: scopes, description: "Tenant scope. Use one of the scopes exposed for this agent token." },
+            auth_type: { type: "string", enum: authTypes, description: "Optional auth type disambiguator." },
+            connection_id: { type: "string", enum: connectionIds, description: "Optional connection id disambiguator." },
+          },
+          required: ["scope"],
+        },
       });
     }
   }
@@ -52,6 +96,37 @@ async function resolveAgent(authHeader: string | null): Promise<{ id: string; na
   if (!agent || !agent.enabled) return null;
   if (agent.expiresAt && agent.expiresAt < new Date()) return null;
   return { id: agent.id, name: agent.name, enabled: agent.enabled };
+}
+
+function prepareMcpSession(c: any, agent: { id: string } | null) {
+  if (!agent) return { ok: true as const };
+
+  cleanupExpiredMcpSessions();
+  const now = Date.now();
+  const requestedId = c.req.header("mcp-session-id") ?? c.req.header("Mcp-Session-Id") ?? "";
+  if (requestedId) {
+    const existing = mcpSessions.get(requestedId);
+    if (!existing || existing.expiresAt <= now) {
+      return { ok: false as const, status: 404, message: "Mcp-Session-Id is unknown or expired; retry without the header to create a new session" };
+    }
+    if (existing.agentId !== agent.id) {
+      return { ok: false as const, status: 409, message: "Mcp-Session-Id belongs to a different agent token" };
+    }
+    existing.lastSeenAt = now;
+    existing.expiresAt = now + MCP_SESSION_TTL_MS;
+    c.header("Mcp-Session-Id", requestedId);
+    return { ok: true as const };
+  }
+
+  const sessionId = randomUUID();
+  mcpSessions.set(sessionId, {
+    agentId: agent.id,
+    createdAt: now,
+    lastSeenAt: now,
+    expiresAt: now + MCP_SESSION_TTL_MS,
+  });
+  c.header("Mcp-Session-Id", sessionId);
+  return { ok: true as const };
 }
 
 async function refreshOAuthToken(provider: string, refreshToken: string) {
@@ -136,6 +211,14 @@ mcpApp.post("/", async (c) => {
   const started = Date.now();
   const auth = c.req.header("authorization") ?? null;
   const agent = await resolveAgent(auth);
+  c.header("Access-Control-Expose-Headers", "Mcp-Session-Id");
+  const session = prepareMcpSession(c, agent);
+  if (!session.ok) {
+    return c.json({
+      jsonrpc: "2.0", id: null,
+      error: { code: -32002, message: session.message },
+    }, session.status as any);
+  }
 
   let body: any;
   try {
@@ -147,11 +230,11 @@ mcpApp.post("/", async (c) => {
   const { method, params, id } = body ?? {};
 
   // --- tools/list: scoped to the calling agent's permitted tools ---
-  // Unauthenticated requests only see `ping`; an authenticated agent sees the
-  // tools its bound roles allow (full enforcement still happens at tools/call).
+  // Unauthenticated requests only see `ping`; an authenticated agent only sees
+  // tools backed by enabled connections it can actually call.
   if (method === "tools/list") {
-    const allowed = agent ? await allowedToolsForAgent(agent.id) : null;
-    return c.json({ jsonrpc: "2.0", id, result: { tools: buildToolList(allowed) } });
+    const connections = agent ? await connectionsForAgent(agent.id) : null;
+    return c.json({ jsonrpc: "2.0", id, result: { tools: buildToolList(connections) } });
   }
 
   // --- connections/list: requires auth; returns the exact (provider, scope)
