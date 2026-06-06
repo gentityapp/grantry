@@ -60,7 +60,10 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
   }
 
   if (tool === "github/git_push_repo") {
-    // Uses Git Data API to push a tree of files in a single commit
+    // Uses Contents API to push files. Works for both empty and non-empty repos
+    // (Git Data API POST /git/blobs and /git/trees 409 on empty repos).
+    // Each file PUT creates or updates the file; the first PUT on an empty
+    // repo also creates the initial commit + main branch.
     const owner = String(args.owner ?? "");
     const repo = String(args.repo ?? "");
     const branch = String(args.branch ?? "main");
@@ -69,71 +72,37 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
     if (!owner || !repo) throw new Error("owner and repo are required");
     if (Object.keys(files).length === 0) throw new Error("files (object) is required");
 
-    // 1. Get current commit SHA for the branch
-    const refRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${branch}`, { headers });
-    if (!refRes.ok) {
-      if (refRes.status === 404) {
-        // Branch doesn't exist — try main first
-        if (branch !== "main") {
-          return await callGitHubTool("github/git_push_repo", { ...args, branch: "main" }, token);
-        }
-        throw new Error(`Branch ${branch} not found: ${refRes.status}`);
+    // The Contents API requires base64-encoded content. We have UTF-8 strings.
+    const b64 = (s: string) => Buffer.from(s, "utf8").toString("base64");
+
+    const pushed: { path: string; sha: string; commit_sha: string }[] = [];
+    let lastCommitSha = "";
+
+    for (const [path, content] of Object.entries(files)) {
+      const url = `https://api.github.com/repos/${owner}/${repo}/contents/${encodeURIComponent(path)}`;
+      const putRes = await fetch(url, {
+        method: "PUT", headers,
+        body: JSON.stringify({
+          message: commit_message,
+          content: b64(content),
+          branch,
+        }),
+      });
+      if (!putRes.ok) {
+        const errBody = await putRes.text();
+        throw new Error(`contents PUT failed for ${path}: ${putRes.status} ${errBody}`);
       }
-      throw new Error(`git/ref failed: ${refRes.status} ${await refRes.text()}`);
+      const j: any = await putRes.json();
+      pushed.push({ path, sha: j.content.sha, commit_sha: j.commit.sha });
+      lastCommitSha = j.commit.sha;
     }
-    const ref: any = await refRes.json();
-    const parentSha = ref.object.sha;
-
-    // 2. Get the parent commit (for tree base)
-    const commitRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits/${parentSha}`, { headers });
-    if (!commitRes.ok) throw new Error(`git/commits failed: ${commitRes.status}`);
-    const parentCommit: any = await commitRes.json();
-    const baseTreeSha = parentCommit.tree.sha;
-
-    // 3. Create blobs for each file
-    const blobs = await Promise.all(
-      Object.entries(files).map(async ([path, content]) => {
-        const blobRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/blobs`, {
-          method: "POST", headers,
-          body: JSON.stringify({ content, encoding: "utf-8" }),
-        });
-        if (!blobRes.ok) throw new Error(`git/blobs failed for ${path}: ${blobRes.status}`);
-        const blob: any = await blobRes.json();
-        return { path, sha: blob.sha };
-      })
-    );
-
-    // 4. Create a tree
-    const treeRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees`, {
-      method: "POST", headers,
-      body: JSON.stringify({
-        base_tree: baseTreeSha,
-        tree: blobs.map((b) => ({ path: b.path, mode: "100644", type: "blob", sha: b.sha })),
-      }),
-    });
-    if (!treeRes.ok) throw new Error(`git/trees failed: ${treeRes.status}`);
-    const tree: any = await treeRes.json();
-
-    // 5. Create commit
-    const newCommitRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/commits`, {
-      method: "POST", headers,
-      body: JSON.stringify({ message: commit_message, tree: tree.sha, parents: [parentSha] }),
-    });
-    if (!newCommitRes.ok) throw new Error(`git/commits POST failed: ${newCommitRes.status}`);
-    const newCommit: any = await newCommitRes.json();
-
-    // 6. Update ref
-    const updateRefRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/refs/heads/${branch}`, {
-      method: "PATCH", headers,
-      body: JSON.stringify({ sha: newCommit.sha }),
-    });
-    if (!updateRefRes.ok) throw new Error(`git/refs PATCH failed: ${updateRefRes.status}`);
 
     return {
       structuredContent: {
-        commit_sha: newCommit.sha,
-        files_pushed: Object.keys(files).length,
-        url: `https://github.com/${owner}/${repo}/commit/${newCommit.sha}`,
+        commit_sha: lastCommitSha,
+        files_pushed: pushed.length,
+        file_shas: pushed.map((p) => ({ path: p.path, sha: p.sha })),
+        url: `https://github.com/${owner}/${repo}/commit/${lastCommitSha}`,
       },
     };
   }
