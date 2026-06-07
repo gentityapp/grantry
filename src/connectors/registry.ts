@@ -96,7 +96,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     oauthTokenUrl: "https://oauth2.googleapis.com/token",
     tools: ["google_drive/list_files", "google_drive/get_file", "google_drive/search"],
-    implemented: false,
+    implemented: true,
   },
   google_gsc: {
     key: "google_gsc",

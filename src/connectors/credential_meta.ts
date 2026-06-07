@@ -123,6 +123,21 @@ export async function inspectCredential(provider: string, authType: string, toke
           meta.notes = [`GSC sites check failed: ${sitesResp.status}`];
         }
       }
+      if (provider === "google_drive") {
+        const aboutResp = await fetchWithTimeout("https://www.googleapis.com/drive/v3/about?fields=user,storageQuota", {
+          headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+        });
+        const about: any = await readJson(aboutResp);
+        if (aboutResp.ok) {
+          meta.subject = {
+            ...meta.subject,
+            drive_user: about.user,
+          };
+          meta.resources = about.storageQuota ? [{ storageQuota: about.storageQuota }] : undefined;
+        } else {
+          meta.notes = [`Drive about check failed: ${aboutResp.status}`];
+        }
+      }
       return meta;
     }
 

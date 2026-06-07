@@ -10,6 +10,7 @@ import { PROVIDERS } from "./connectors/registry.js";
 import { callNotionTool } from "./connectors/notion.js";
 import { callGitHubTool } from "./connectors/github.js";
 import { callCloudflareTool } from "./connectors/cloudflare.js";
+import { callGoogleDriveTool } from "./connectors/google_drive.js";
 import { callGoogleGscTool } from "./connectors/google_gsc.js";
 import { callGoogleAnalyticsTool } from "./connectors/google_analytics.js";
 import { callGoogleAdsTool } from "./connectors/google_ads.js";
@@ -190,6 +191,29 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       prefixes: { type: "array", items: { type: "string" }, description: "URL prefixes to purge." },
     };
   }
+  if (toolName === "google_drive/list_files" || toolName === "google_drive/search") {
+    return {
+      q: { type: "string", description: "Google Drive query string, e.g. name contains 'report' and trashed = false." },
+      page_size: { type: "number", minimum: 1, maximum: 1000, description: "Files to return, max 1000." },
+      page_token: { type: "string", description: "Optional pagination token." },
+      order_by: { type: "string", description: "Optional Drive orderBy, e.g. modifiedTime desc." },
+      corpora: { type: "string", description: "Optional corpus, e.g. user, drive, allDrives." },
+      drive_id: { type: "string", description: "Shared drive id when corpora=drive." },
+      fields: { type: "string", description: "Optional Drive partial-response fields selector." },
+    };
+  }
+  if (toolName === "google_drive/get_file") {
+    return {
+      file_id: { type: "string", description: "Google Drive file id." },
+      fields: { type: "string", description: "Optional metadata fields selector." },
+      download: { type: "boolean", description: "When true, fetch binary file content as base64 for non-Google Workspace files." },
+      alt: { type: "string", enum: ["media"], description: "Set to media to download binary content." },
+      export_mime_type: {
+        type: "string",
+        description: "Export MIME type for Google Docs/Sheets/Slides, e.g. text/plain, text/csv, application/pdf.",
+      },
+    };
+  }
   if (toolName === "google_gsc/list_sites") {
     return {};
   }
@@ -368,6 +392,7 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "cloudflare/update_dns_record") return ["zone_id", "record_id"];
   if (toolName === "cloudflare/delete_dns_record") return ["zone_id", "record_id"];
   if (toolName === "cloudflare/purge_cache") return ["zone_id"];
+  if (toolName === "google_drive/get_file") return ["file_id"];
   if (toolName === "google_gsc/search_analytics") return ["site_url", "start_date", "end_date"];
   if (toolName === "google_analytics/run_report") return ["property_id", "start_date", "end_date"];
   if (toolName === "google_ads/search") return ["customer_id", "query"];
@@ -730,6 +755,8 @@ mcpApp.post("/", async (c) => {
         result = await callGitHubTool(toolName, args, token);
       } else if (decision.provider === "cloudflare") {
         result = await callCloudflareTool(toolName, args, token);
+      } else if (decision.provider === "google_drive") {
+        result = await callGoogleDriveTool(toolName, args, token);
       } else if (decision.provider === "google_gsc") {
         result = await callGoogleGscTool(toolName, args, token);
       } else if (decision.provider === "google_analytics") {
