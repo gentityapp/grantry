@@ -65,6 +65,23 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     tools: ["github/list_repos", "github/get_repo", "github/get_file_contents", "github/list_issues", "github/create_issue", "github/git_push_repo", "github/create_repo"],
     implemented: true,
   },
+  cloudflare: {
+    key: "cloudflare",
+    label: "Cloudflare",
+    authTypes: ["pat"],
+    helpText: "Paste a Cloudflare API Token. Recommended permissions: Zone:Read, DNS:Read/Edit, and Cache Purge for the zones this tenant should manage.",
+    tokenUrl: "https://dash.cloudflare.com/profile/api-tokens",
+    tools: [
+      "cloudflare/list_zones",
+      "cloudflare/get_zone",
+      "cloudflare/list_dns_records",
+      "cloudflare/create_dns_record",
+      "cloudflare/update_dns_record",
+      "cloudflare/delete_dns_record",
+      "cloudflare/purge_cache",
+    ],
+    implemented: true,
+  },
   google_drive: {
     key: "google_drive",
     label: "Google Drive",

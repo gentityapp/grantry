@@ -9,6 +9,7 @@ import { checkPolicy, connectionsForAgent } from "./policy.js";
 import { PROVIDERS } from "./connectors/registry.js";
 import { callNotionTool } from "./connectors/notion.js";
 import { callGitHubTool } from "./connectors/github.js";
+import { callCloudflareTool } from "./connectors/cloudflare.js";
 import { callGoogleGscTool } from "./connectors/google_gsc.js";
 import { callGoogleAnalyticsTool } from "./connectors/google_analytics.js";
 import { callGoogleAdsTool } from "./connectors/google_ads.js";
@@ -122,6 +123,71 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       page_id: { type: "string", description: "Notion page ID." },
       status: { type: "string", description: "Status property name." },
       status_name: { type: "string", description: "New status option name, default Done." },
+    };
+  }
+  if (toolName === "cloudflare/list_zones") {
+    return {
+      name: { type: "string", description: "Optional exact zone name filter, e.g. example.com." },
+      page: { type: "number", minimum: 1, description: "Page number." },
+      per_page: { type: "number", minimum: 1, maximum: 100, description: "Zones per page." },
+    };
+  }
+  if (toolName === "cloudflare/get_zone") {
+    return {
+      zone_id: { type: "string", description: "Cloudflare zone id." },
+    };
+  }
+  if (toolName === "cloudflare/list_dns_records") {
+    return {
+      zone_id: { type: "string", description: "Cloudflare zone id." },
+      type: { type: "string", description: "Optional DNS record type, e.g. A, CNAME, TXT." },
+      name: { type: "string", description: "Optional DNS record name." },
+      content: { type: "string", description: "Optional DNS record content." },
+      page: { type: "number", minimum: 1, description: "Page number." },
+      per_page: { type: "number", minimum: 1, maximum: 500, description: "Records per page." },
+    };
+  }
+  if (toolName === "cloudflare/create_dns_record") {
+    return {
+      zone_id: { type: "string", description: "Cloudflare zone id." },
+      type: { type: "string", description: "DNS record type, e.g. A, CNAME, TXT." },
+      name: { type: "string", description: "DNS record name." },
+      content: { type: "string", description: "DNS record content." },
+      ttl: { type: "number", description: "TTL in seconds. Use 1 for automatic." },
+      proxied: { type: "boolean", description: "Whether the record is proxied by Cloudflare." },
+      priority: { type: "number", description: "Priority for MX/SRV records." },
+      comment: { type: "string", description: "Optional record comment." },
+      tags: { type: "array", items: { type: "string" }, description: "Optional record tags." },
+    };
+  }
+  if (toolName === "cloudflare/update_dns_record") {
+    return {
+      zone_id: { type: "string", description: "Cloudflare zone id." },
+      record_id: { type: "string", description: "Cloudflare DNS record id." },
+      type: { type: "string", description: "DNS record type." },
+      name: { type: "string", description: "DNS record name." },
+      content: { type: "string", description: "DNS record content." },
+      ttl: { type: "number", description: "TTL in seconds. Use 1 for automatic." },
+      proxied: { type: "boolean", description: "Whether the record is proxied by Cloudflare." },
+      priority: { type: "number", description: "Priority for MX/SRV records." },
+      comment: { type: "string", description: "Optional record comment." },
+      tags: { type: "array", items: { type: "string" }, description: "Optional record tags." },
+    };
+  }
+  if (toolName === "cloudflare/delete_dns_record") {
+    return {
+      zone_id: { type: "string", description: "Cloudflare zone id." },
+      record_id: { type: "string", description: "Cloudflare DNS record id." },
+    };
+  }
+  if (toolName === "cloudflare/purge_cache") {
+    return {
+      zone_id: { type: "string", description: "Cloudflare zone id." },
+      purge_everything: { type: "boolean", description: "Purge the entire zone cache." },
+      files: { type: "array", items: { type: "string" }, description: "Specific URLs to purge." },
+      tags: { type: "array", items: { type: "string" }, description: "Cache tags to purge." },
+      hosts: { type: "array", items: { type: "string" }, description: "Hosts to purge." },
+      prefixes: { type: "array", items: { type: "string" }, description: "URL prefixes to purge." },
     };
   }
   if (toolName === "google_gsc/list_sites") {
@@ -296,6 +362,12 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "notion/append_blocks") return ["children"];
   if (toolName === "notion/update_blocks") return ["operations"];
   if (toolName === "notion/update_page_status") return ["page_id", "status"];
+  if (toolName === "cloudflare/get_zone") return ["zone_id"];
+  if (toolName === "cloudflare/list_dns_records") return ["zone_id"];
+  if (toolName === "cloudflare/create_dns_record") return ["zone_id", "type", "name", "content"];
+  if (toolName === "cloudflare/update_dns_record") return ["zone_id", "record_id"];
+  if (toolName === "cloudflare/delete_dns_record") return ["zone_id", "record_id"];
+  if (toolName === "cloudflare/purge_cache") return ["zone_id"];
   if (toolName === "google_gsc/search_analytics") return ["site_url", "start_date", "end_date"];
   if (toolName === "google_analytics/run_report") return ["property_id", "start_date", "end_date"];
   if (toolName === "google_ads/search") return ["customer_id", "query"];
@@ -656,6 +728,8 @@ mcpApp.post("/", async (c) => {
         result = await callNotionTool(toolName, args, token);
       } else if (decision.provider === "github") {
         result = await callGitHubTool(toolName, args, token);
+      } else if (decision.provider === "cloudflare") {
+        result = await callCloudflareTool(toolName, args, token);
       } else if (decision.provider === "google_gsc") {
         result = await callGoogleGscTool(toolName, args, token);
       } else if (decision.provider === "google_analytics") {

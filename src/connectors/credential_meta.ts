@@ -71,6 +71,30 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "cloudflare") {
+      const resp = await fetchWithTimeout("https://api.cloudflare.com/client/v4/user/tokens/verify", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok || body.success === false) {
+        return { provider, authType, status: "error", checkedAt, error: `Cloudflare token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: {
+          id: body.result?.id,
+          status: body.result?.status,
+        },
+        notes: ["Cloudflare token permissions are scoped in the Cloudflare dashboard and are not fully enumerated by token verification."],
+        checkedAt,
+      };
+    }
+
     if (provider.startsWith("google_") || provider === "gmail") {
       const tokenInfo = await fetchWithTimeout(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(token)}`);
       const info: any = await readJson(tokenInfo);
