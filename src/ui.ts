@@ -28,6 +28,7 @@ function jsString(s: string): string {
 }
 
 function authTypeLabel(providerKey: string, authType: string): string {
+  if (authType === "oauth" && providerKey === "google_ads") return "OAuth + API developer token";
   if (authType === "oauth") return "OAuth";
   if (providerKey === "hubspot") return "Private App token";
   return "paste token";
@@ -42,6 +43,17 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
 function tokenLinkLabel(providerKey: string, providerLabel: string): string {
   if (providerKey === "hubspot") return "🔗 Get a new HubSpot Private App access token here →";
   return `🔗 Get a new ${providerLabel} token here →`;
+}
+
+function serverCredentialHint(providerKey: string): string {
+  const provider = getProvider(providerKey);
+  if (!provider?.serverCredentialEnv) return "";
+  const present = !!process.env[provider.serverCredentialEnv];
+  const status = present ? '<span class="badge ok">set</span>' : '<span class="badge denied">missing</span>';
+  const url = provider.serverCredentialUrl
+    ? ` <a href="${provider.serverCredentialUrl}" target="_blank" rel="noopener">Get/manage ${escapeHtml(provider.serverCredentialLabel || "server credential")} →</a>`
+    : "";
+  return `<div class="field-hint" style="margin-top:6px;">${status} Server credential required: <code>${escapeHtml(provider.serverCredentialEnv)}</code>. This is configured once on Railway, not pasted into this tenant connection.${url}</div>`;
 }
 
 function pkceCodeVerifier(): string {
@@ -685,12 +697,15 @@ dashboardApp.get("/meta", async (c) => {
         <p class="field-hint" style="margin-top:0;">${providerDefs.length} providers, ${totalToolCount} unique tools.</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Provider</th><th>Auth</th><th>Tools</th><th>Status</th></tr></thead>
+            <thead><tr><th>Provider</th><th>Auth</th><th>Server credential</th><th>Tools</th><th>Status</th></tr></thead>
             <tbody>
               ${providerDefs.map((p) => `
                 <tr>
                   <td><code>${escapeHtml(p.key)}</code><br><span style="color:#8a8d93;font-size:12px;">${escapeHtml(p.label)}</span></td>
                   <td>${p.authTypes.map((a) => `<span class="tool-pill">${escapeHtml(authTypeLabel(p.key, a))}</span>`).join(" ")}</td>
+                  <td>${p.serverCredentialEnv
+                    ? `${okBadge(!!process.env[p.serverCredentialEnv], process.env[p.serverCredentialEnv] ? "set" : "missing")} <code>${escapeHtml(p.serverCredentialEnv)}</code>`
+                    : '<span style="color:#8a8d93;">none</span>'}</td>
                   <td>${p.tools.map((t) => `<span class="tool-pill">${escapeHtml(t)}</span>`).join(" ")}</td>
                   <td>${p.implemented === false ? '<span class="badge unscoped">coming soon</span>' : '<span class="badge ok">implemented</span>'}</td>
                 </tr>
@@ -1258,6 +1273,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             <label for="credential">Credential</label>
             <textarea name="credential" id="credential" rows="3" required></textarea>
             <div class="field-hint" id="credHint"></div>
+            <div class="field-hint" id="serverCredentialHint"></div>
             <div id="patLinkRow" style="margin-top:6px;display:none;">
               <a id="patLink" href="#" target="_blank" rel="noopener" style="font-size:13px;">🔗 Get a new token here →</a>
             </div>
@@ -1283,6 +1299,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         const credHint = document.getElementById('credHint');
         const credField = document.getElementById('credential');
         const credFieldRow = document.getElementById('credFieldRow');
+        const serverCredentialHint = document.getElementById('serverCredentialHint');
         const authMethodHidden = document.getElementById('authMethodHidden');
         const patLinkRow = document.getElementById('patLinkRow');
         const patLink = document.getElementById('patLink');
@@ -1298,6 +1315,14 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           const usePat = authType === "pat";
           const useOauth = authType === "oauth";
           credHint.textContent = p.helpText;
+          if (serverCredentialHint) {
+            if (sel.value === "google_ads") {
+              const envSet = ${JSON.stringify(!!process.env.GOOGLE_ADS_DEVELOPER_TOKEN)};
+              serverCredentialHint.innerHTML = (envSet ? '<span class="badge ok">set</span>' : '<span class="badge denied">missing</span>') + ' Server credential required: <code>GOOGLE_ADS_DEVELOPER_TOKEN</code>. Configure it once on Railway. <a href="https://ads.google.com/aw/apicenter" target="_blank" rel="noopener">Open Google Ads API Center →</a>';
+            } else {
+              serverCredentialHint.innerHTML = "";
+            }
+          }
           const tokenLabel = sel.value === "hubspot" ? "HubSpot Private App access token" : p.label + " token";
           credField.placeholder = usePat ? "Paste your " + tokenLabel + (sel.value === "hubspot" ? " here (starts with pat-)" : " here") : "OAuth flow will start after submit";
           credField.disabled = !usePat;
@@ -1314,7 +1339,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           }
           if (useOauth && p.oauthSetupUrl) {
             oauthSetupLink.href = p.oauthSetupUrl;
-            oauthSetupLink.textContent = "🔗 Register/manage your " + p.label + " OAuth app here →";
+            oauthSetupLink.textContent = sel.value === "google_ads" ? "🔗 Register/manage Google OAuth client here →" : "🔗 Register/manage your " + p.label + " OAuth app here →";
             oauthSetupLinkRow.style.display = "";
           } else {
             oauthSetupLinkRow.style.display = "none";
@@ -1873,7 +1898,8 @@ dashboardApp.get("/tenants/new", async (c) => {
               ${authType === "oauth" ? `
               <div class="field oauth-row">
                 <div class="field-hint" style="margin-top:0;">${escapeHtml(p.helpText)} You'll be redirected to authorize after clicking <b>Create tenant</b>.</div>
-                ${p.oauthSetupUrl ? `<div style="margin-top:4px;"><a href="${p.oauthSetupUrl}" target="_blank" rel="noopener" style="font-size:13px;">🔗 Register/manage your ${p.label} OAuth app here →</a></div>` : ""}
+                ${serverCredentialHint(p.key)}
+                ${p.oauthSetupUrl ? `<div style="margin-top:4px;"><a href="${p.oauthSetupUrl}" target="_blank" rel="noopener" style="font-size:13px;">${p.key === "google_ads" ? "🔗 Register/manage Google OAuth client here →" : `🔗 Register/manage your ${p.label} OAuth app here →`}</a></div>` : ""}
               </div>` : ""}
               <div class="field" style="margin-bottom:0;">
                 <label style="font-size:13px;">Tools</label>

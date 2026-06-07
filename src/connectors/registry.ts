@@ -18,6 +18,10 @@ export type ProviderDef = {
   tokenUrl?: string;
   /** Where to register/manage an OAuth App (shown in the wizard for oauth flow) */
   oauthSetupUrl?: string;
+  /** Optional server-side credential required in addition to user auth. */
+  serverCredentialLabel?: string;
+  serverCredentialEnv?: string;
+  serverCredentialUrl?: string;
   /** OAuth scopes to request (oauth only) */
   oauthScopes?: string[];
   /** OAuth App authorize URL (oauth only) */
@@ -141,8 +145,11 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "google_ads",
     label: "Google Ads",
     authTypes: ["oauth"],
-    helpText: "Connect your Google Ads account. Supports customer discovery, GAQL search, and mutate operations for campaign/ad submission. Requires GOOGLE_ADS_DEVELOPER_TOKEN on the server.",
+    helpText: "Connect your Google Ads account with OAuth. Google Ads API calls also require a server-side Developer Token from the Google Ads manager account API Center.",
     oauthSetupUrl: "https://console.cloud.google.com/apis/credentials",
+    serverCredentialLabel: "Google Ads API Developer Token",
+    serverCredentialEnv: "GOOGLE_ADS_DEVELOPER_TOKEN",
+    serverCredentialUrl: "https://ads.google.com/aw/apicenter",
     oauthScopes: [
       "https://www.googleapis.com/auth/adwords",
       "https://www.googleapis.com/auth/userinfo.email",
