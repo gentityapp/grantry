@@ -296,7 +296,24 @@ const NAV = (current: string) => `
   <a href="/audit" class="${current === "audit" ? "active" : ""}">Audit</a>
   <a href="/meta" class="${current === "meta" ? "active" : ""}">Meta</a>
   <span style="flex:1"></span>
-  <a href="/api/auth/sign-out">Sign out</a>
+  <form id="signOutForm" style="margin:0;">
+    <button type="submit" class="secondary" style="font-size:13px;padding:6px 10px;">Sign out</button>
+  </form>
+  <script>
+    (function () {
+      var form = document.getElementById('signOutForm');
+      if (!form || form.dataset.bound) return;
+      form.dataset.bound = '1';
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        try {
+          await fetch('/api/auth/sign-out', { method: 'POST', credentials: 'include' });
+        } finally {
+          location.href = '/login';
+        }
+      });
+    })();
+  </script>
 </nav>
 `;
 
