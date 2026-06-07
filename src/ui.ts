@@ -296,24 +296,9 @@ const NAV = (current: string) => `
   <a href="/audit" class="${current === "audit" ? "active" : ""}">Audit</a>
   <a href="/meta" class="${current === "meta" ? "active" : ""}">Meta</a>
   <span style="flex:1"></span>
-  <form id="signOutForm" style="margin:0;">
+  <form method="post" action="/logout" style="margin:0;">
     <button type="submit" class="secondary" style="font-size:13px;padding:6px 10px;">Sign out</button>
   </form>
-  <script>
-    (function () {
-      var form = document.getElementById('signOutForm');
-      if (!form || form.dataset.bound) return;
-      form.dataset.bound = '1';
-      form.addEventListener('submit', async function (e) {
-        e.preventDefault();
-        try {
-          await fetch('/api/auth/sign-out', { method: 'POST', credentials: 'include' });
-        } finally {
-          location.href = '/login';
-        }
-      });
-    })();
-  </script>
 </nav>
 `;
 
@@ -368,6 +353,44 @@ async function getDbSessionUser(c: any) {
   const user = await getSessionUser(c);
   if (!user?.id) return null;
   return prisma.user.findUnique({ where: { id: user.id } });
+}
+
+async function signOutAndRedirect(c: any) {
+  const url = new URL(c.req.url);
+  url.pathname = "/api/auth/sign-out";
+  url.search = "";
+  let signOutResponse: Response | null = null;
+  try {
+    signOutResponse = await auth.handler(new Request(url, {
+      method: "POST",
+      headers: c.req.raw.headers,
+      body: "{}",
+    }));
+  } catch (err) {
+    console.error("[logout] better-auth sign-out failed:", err);
+  }
+  const response = c.redirect("/login", 303);
+  if (signOutResponse) {
+    const getSetCookie = (signOutResponse.headers as any).getSetCookie;
+    const cookies = typeof getSetCookie === "function"
+      ? getSetCookie.call(signOutResponse.headers)
+      : [signOutResponse.headers.get("set-cookie")].filter(Boolean);
+    for (const cookie of cookies) {
+      response.headers.append("set-cookie", cookie);
+    }
+  }
+  const expires = "Max-Age=0; Path=/; HttpOnly; SameSite=Lax";
+  for (const cookie of [
+    `better-auth.session_token=; ${expires}`,
+    `better-auth.session_data=; ${expires}`,
+    `better-auth.dont_remember=; ${expires}`,
+    `__Secure-better-auth.session_token=; ${expires}; Secure`,
+    `__Secure-better-auth.session_data=; ${expires}; Secure`,
+    `__Secure-better-auth.dont_remember=; ${expires}; Secure`,
+  ]) {
+    response.headers.append("set-cookie", cookie);
+  }
+  return response;
 }
 
 function publicOrigin(c: any): string {
@@ -874,6 +897,9 @@ dashboardApp.get("/login", async (c) => {
     </body></html>
   `);
 });
+
+// --- /logout ---
+dashboardApp.post("/logout", async (c) => signOutAndRedirect(c));
 
 // --- /register ---
 dashboardApp.get("/register", async (c) => {
