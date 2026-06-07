@@ -794,7 +794,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           </div>
         </div>
         <div style="display:flex;gap:8px;">
-          <button type="submit">Add service</button>
+          <button type="submit" id="addServiceButton">Add service</button>
         </div>
       </form>
       <script>
@@ -809,6 +809,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         const patLink = document.getElementById('patLink');
         const oauthSetupLinkRow = document.getElementById('oauthSetupLinkRow');
         const oauthSetupLink = document.getElementById('oauthSetupLink');
+        const addServiceButton = document.getElementById('addServiceButton');
 
         function updateUI() {
           const p = PROVIDERS[sel.value];
@@ -822,6 +823,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           credField.disabled = !usePat;
           credField.required = usePat;
           credFieldRow.style.opacity = usePat ? "1" : "0.55";
+          addServiceButton.textContent = useOauth ? "Connect with OAuth" : "Add service";
           if (!usePat) credField.value = "";
           if (usePat && p.tokenUrl) {
             patLink.href = p.tokenUrl;

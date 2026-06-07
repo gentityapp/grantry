@@ -177,6 +177,26 @@ export async function inspectCredential(provider: string, authType: string, toke
     }
 
     if (provider === "hubspot") {
+      if (authType === "pat") {
+        const resp = await fetchWithTimeout("https://api.hubapi.com/crm/v3/objects/contacts?limit=1", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
+        });
+        const body: any = await readJson(resp);
+        if (!resp.ok) {
+          return { provider, authType, status: "error", checkedAt, error: `HubSpot private app token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+        }
+        return {
+          provider,
+          authType,
+          status: "ok",
+          resources: [{ contacts_probe: { total: body.total ?? null, returned: Array.isArray(body.results) ? body.results.length : null } }],
+          notes: ["HubSpot private app token permissions are managed in HubSpot and are not fully enumerated here."],
+          checkedAt,
+        };
+      }
       const resp = await fetchWithTimeout(`https://api.hubapi.com/oauth/v1/access-tokens/${encodeURIComponent(token)}`);
       const body: any = await readJson(resp);
       if (!resp.ok) {
