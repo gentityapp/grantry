@@ -688,12 +688,12 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           <div class="field">
             <label>Agent tool allowlist</label>
             <p class="field-hint" style="margin-top:0;">These are agent-oauth permissions, not SaaS permissions. The SaaS credential above may still reject calls if its own scopes are narrower.</p>
-            ${allAvailableTools.some((t) => !roleTools.includes(t)) ? `
-              <div class="field-hint" style="margin:8px 0 12px;color:#f0b429;">
-                ${allAvailableTools.filter((t) => !roleTools.includes(t)).length} connected tool(s) are not granted to this role yet.
-                <button type="submit" form="sync_role_tools_form" class="secondary" style="font-size:12px;padding:4px 10px;margin-left:8px;">Grant connected tools</button>
-              </div>
-            ` : ""}
+            <div class="field-hint" style="margin:8px 0 12px;">
+              ${allAvailableTools.filter((t) => !roleTools.includes(t)).length > 0
+                ? `<span style="color:#f0b429;">${allAvailableTools.filter((t) => !roleTools.includes(t)).length} connected tool(s) are not granted to this role yet.</span>`
+                : `<span style="color:#7bd88f;">All connected provider tools are granted to this role.</span>`}
+              <button type="submit" form="sync_role_tools_form" class="secondary" style="font-size:12px;padding:4px 10px;margin-left:8px;">Refresh grants</button>
+            </div>
             ${allAvailableTools.length === 0 ? '<div class="empty">No providers connected yet.</div>' : `
             <div id="roleToolsList">${allAvailableTools.map((t) => `<label style="font-weight:normal;display:block;padding:2px 0;"><input type="checkbox" name="role_tools" value="${t}" ${roleTools.includes(t) ? "checked" : ""}> <code>${t}</code></label>`).join("")}</div>
             `}
@@ -2418,6 +2418,7 @@ oauthApp.get("/:provider/callback", async (c) => {
         },
       });
     }
+    await syncTenantRoleTools(user.id, effectiveTenant);
     return c.redirect(`/ui/tenants/${effectiveTenant}/edit?reauthed=${encodeURIComponent(providerKey)}`);
   }
 
@@ -2455,6 +2456,7 @@ oauthApp.get("/:provider/callback", async (c) => {
       },
     });
   }
+  await syncTenantRoleTools(user.id, effectiveTenant);
 
   // 2) Find or create role. Use the per-user role name (matching the wizard
   //    and edit flows) so a chained multi-provider creation reuses the same
