@@ -525,6 +525,7 @@ async function refreshOAuthToken(provider: string, refreshToken: string) {
     google_gsc: ["GOOGLE_CLIENT_ID"],
     google_analytics: ["GOOGLE_CLIENT_ID"],
     google_ads: ["GOOGLE_CLIENT_ID"],
+    google_drive: ["GOOGLE_CLIENT_ID"],
     gmail: ["GOOGLE_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
@@ -532,6 +533,7 @@ async function refreshOAuthToken(provider: string, refreshToken: string) {
     google_gsc: ["GOOGLE_CLIENT_SECRET"],
     google_analytics: ["GOOGLE_CLIENT_SECRET"],
     google_ads: ["GOOGLE_CLIENT_SECRET"],
+    google_drive: ["GOOGLE_CLIENT_SECRET"],
     gmail: ["GOOGLE_CLIENT_SECRET"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]

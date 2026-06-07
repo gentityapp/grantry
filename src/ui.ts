@@ -294,6 +294,7 @@ const NAV = (current: string) => `
   <a href="/ui/tenants" class="${current === "tenants" ? "active" : ""}">Tenants</a>
   <a href="/ui/agents" class="${current === "agents" ? "active" : ""}">Agents</a>
   <a href="/ui/audit" class="${current === "audit" ? "active" : ""}">Audit</a>
+  <a href="/ui/meta" class="${current === "meta" ? "active" : ""}">Meta</a>
   <span style="flex:1"></span>
   <a href="/api/auth/sign-out">Sign out</a>
 </nav>
@@ -346,6 +347,12 @@ async function getSessionUser(c: any) {
   return sess?.user ?? null;
 }
 
+async function getDbSessionUser(c: any) {
+  const user = await getSessionUser(c);
+  if (!user?.id) return null;
+  return prisma.user.findUnique({ where: { id: user.id } });
+}
+
 function publicOrigin(c: any): string {
   if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL.replace(/\/+$/, "");
   if (process.env.BETTER_AUTH_URL) return process.env.BETTER_AUTH_URL.replace(/\/+$/, "");
@@ -355,6 +362,37 @@ function publicOrigin(c: any): string {
   const proto = forwardedProto || (host && /\.up\.railway\.app$/i.test(host) ? "https" : new URL(c.req.url).protocol.replace(":", ""));
   if (host) return `${proto}://${host}`;
   return new URL(c.req.url).origin;
+}
+
+const OAUTH_LEGACY_CLIENT_ID_ALIASES: Record<string, string[]> = {
+  github: ["GH_CLIENT_ID", "GENTITY_GITHUB_CLIENT_ID"],
+  google_gsc: ["GOOGLE_CLIENT_ID"],
+  google_analytics: ["GOOGLE_CLIENT_ID"],
+  google_ads: ["GOOGLE_CLIENT_ID"],
+  google_drive: ["GOOGLE_CLIENT_ID"],
+  gmail: ["GOOGLE_CLIENT_ID"],
+};
+
+const OAUTH_LEGACY_CLIENT_SECRET_ALIASES: Record<string, string[]> = {
+  github: ["GH_CLIENT_SECRET", "GENTITY_GITHUB_CLIENT_SECRET"],
+  google_gsc: ["GOOGLE_CLIENT_SECRET"],
+  google_analytics: ["GOOGLE_CLIENT_SECRET"],
+  google_ads: ["GOOGLE_CLIENT_SECRET"],
+  google_drive: ["GOOGLE_CLIENT_SECRET"],
+  gmail: ["GOOGLE_CLIENT_SECRET"],
+};
+
+function oauthEnvCandidates(providerKey: string, kind: "CLIENT_ID" | "CLIENT_SECRET"): string[] {
+  const primary = `${providerKey.toUpperCase()}_${kind}`;
+  const aliases = kind === "CLIENT_ID"
+    ? OAUTH_LEGACY_CLIENT_ID_ALIASES[providerKey] || []
+    : OAUTH_LEGACY_CLIENT_SECRET_ALIASES[providerKey] || [];
+  return [primary, ...aliases];
+}
+
+function envStatus(names: string[]): { present: boolean; variable: string; candidates: string[] } {
+  const variable = names.find((name) => !!process.env[name]) || names[0] || "";
+  return { present: names.some((name) => !!process.env[name]), variable, candidates: names };
 }
 
 // --- /ui (Dashboard) ---
@@ -406,6 +444,376 @@ dashboardApp.get("/", async (c) => {
       </div>
     </main></body></html>
   `);
+});
+
+// --- /ui/meta — system-wide admin overview ---
+dashboardApp.get("/meta", async (c) => {
+  const dbUser = await getDbSessionUser(c);
+  if (!dbUser) return c.redirect("/ui/login");
+
+  const adminCount = await prisma.user.count({ where: { role: "admin" } });
+  const bootstrapMode = adminCount === 0;
+  if (dbUser.role !== "admin" && !bootstrapMode) {
+    return c.html(`
+      <!doctype html><html><head><meta charset="utf-8"><title>Meta — agent-oauth</title>
+      <style>${CSS}</style></head><body>
+      ${NAV("meta")}
+      <main>
+        <h1>Meta</h1>
+        <div class="card"><h2>Forbidden</h2><p>This screen is restricted to <code>admin</code> users.</p></div>
+      </main></body></html>
+    `, 403);
+  }
+
+  const now = new Date();
+  const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const pruned = c.req.query("pruned");
+
+  const [
+    userCount,
+    adminUserCount,
+    connectionCount,
+    enabledConnectionCount,
+    agentCount,
+    enabledAgentCount,
+    roleCount,
+    audit24hCount,
+    audit24hErrors,
+    audit24hDenied,
+    oauthStateCount,
+    expiredOAuthStateCount,
+    connectionGroups,
+    tenantGroups,
+    recentErrors,
+    users,
+    connectionIssues,
+    expiredOAuthConnections,
+    agentsWithoutRoles,
+    roles,
+  ] = await Promise.all([
+    prisma.user.count(),
+    prisma.user.count({ where: { role: "admin" } }),
+    prisma.connection.count(),
+    prisma.connection.count({ where: { enabled: true } }),
+    prisma.agent.count(),
+    prisma.agent.count({ where: { enabled: true } }),
+    prisma.role.count(),
+    prisma.auditLog.count({ where: { createdAt: { gte: dayAgo } } }),
+    prisma.auditLog.count({ where: { createdAt: { gte: dayAgo }, status: "error" } }),
+    prisma.auditLog.count({ where: { createdAt: { gte: dayAgo }, status: "denied" } }),
+    prisma.oAuthState.count(),
+    prisma.oAuthState.count({ where: { expiresAt: { lt: now } } }),
+    prisma.connection.groupBy({ by: ["provider", "authType", "enabled"], _count: { _all: true } }),
+    prisma.connection.groupBy({ by: ["scope"], _count: { _all: true }, orderBy: { _count: { scope: "desc" } }, take: 40 }),
+    prisma.auditLog.findMany({
+      where: { createdAt: { gte: weekAgo }, status: { in: ["error", "denied"] } },
+      take: 25,
+      orderBy: { createdAt: "desc" },
+      include: { user: true, agent: true },
+    }),
+    prisma.user.findMany({
+      take: 50,
+      orderBy: { createdAt: "desc" },
+      include: { _count: { select: { connections: true, agents: true, roles: true, auditLogs: true } } },
+    }),
+    prisma.connection.findMany({
+      where: {
+        OR: [
+          { enabled: false },
+          { credentialMetadata: { contains: '"status":"error"' } },
+        ],
+      },
+      take: 50,
+      orderBy: { updatedAt: "desc" },
+      include: { owner: true },
+    }),
+    prisma.connection.findMany({
+      where: { enabled: true, accessTokenExpiresAt: { lt: now } },
+      take: 50,
+      orderBy: { accessTokenExpiresAt: "asc" },
+      include: { owner: true },
+    }),
+    prisma.agent.findMany({
+      where: { roles: { none: {} } },
+      take: 50,
+      orderBy: { createdAt: "desc" },
+      include: { owner: true },
+    }),
+    prisma.role.findMany({
+      take: 200,
+      orderBy: { updatedAt: "desc" },
+      include: { owner: true, agents: true },
+    }),
+  ]);
+
+  const providerDefs = Object.values(PROVIDERS);
+  const oauthProviders = providerDefs.filter((p) => p.authTypes.includes("oauth"));
+  const totalToolCount = new Set(providerDefs.flatMap((p) => p.tools)).size;
+  const broadRoles = roles.filter((r) => safeJsonArray(r.allowedScopes).length === 0);
+  const unusedRoles = roles.filter((r) => r.agents.length === 0);
+  const envRows = oauthProviders.map((p) => {
+    const id = envStatus(oauthEnvCandidates(p.key, "CLIENT_ID"));
+    const secret = envStatus(oauthEnvCandidates(p.key, "CLIENT_SECRET"));
+    return { provider: p, id, secret, ok: id.present && secret.present };
+  });
+  const googleAdsDeveloperTokenPresent = !!process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
+  const cryptoSecretPresent = !!(process.env.FERNET_KEY || process.env.BETTER_AUTH_SECRET);
+  const publicUrlPresent = !!(process.env.PUBLIC_BASE_URL || process.env.BETTER_AUTH_URL);
+
+  const card = (label: string, value: string | number, hint = "") => `
+    <div class="card" style="flex:1;min-width:160px;">
+      <div style="color:#8a8d93;font-size:12px;">${escapeHtml(label)}</div>
+      <div style="font-size:24px;font-weight:700;">${value}</div>
+      ${hint ? `<div style="color:#8a8d93;font-size:12px;margin-top:4px;">${hint}</div>` : ""}
+    </div>
+  `;
+  const okBadge = (ok: boolean, label?: string) => ok
+    ? `<span class="badge ok">${escapeHtml(label || "ok")}</span>`
+    : `<span class="badge denied">${escapeHtml(label || "missing")}</span>`;
+
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Meta — agent-oauth</title>
+    <style>${CSS}</style></head><body>
+    ${NAV("meta")}
+    <main>
+      <h1>Meta</h1>
+      <p style="color:#8a8d93;margin-top:-12px;">System-wide operational view. No raw credentials are shown.</p>
+
+      ${bootstrapMode ? `
+      <div class="card" style="border-color:#f0b429;background:rgba(240,180,41,0.08);">
+        <h2>Admin bootstrap required</h2>
+        <p>No admin user exists yet. You are viewing this screen because the system has zero admins.</p>
+        <form method="post" action="/ui/meta/promote-self" onsubmit="return confirm('Promote your account to admin?')">
+          <button type="submit">Promote me to admin</button>
+        </form>
+      </div>` : ""}
+
+      ${pruned ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">Pruned <b>${escapeHtml(pruned)}</b> expired OAuth state row(s).</div>` : ""}
+
+      <div class="row" style="gap:16px;flex-wrap:wrap;margin-bottom:24px;">
+        ${card("Users", userCount, `${adminUserCount} admin`)}
+        ${card("Connections", connectionCount, `${enabledConnectionCount} enabled`)}
+        ${card("Agents", agentCount, `${enabledAgentCount} enabled`)}
+        ${card("Roles", roleCount, `${broadRoles.length} broad scope`)}
+        ${card("Audit 24h", audit24hCount, `${audit24hErrors} error / ${audit24hDenied} denied`)}
+        ${card("OAuth states", oauthStateCount, `${expiredOAuthStateCount} expired`)}
+      </div>
+
+      <h2>System Health</h2>
+      <div class="card">
+        <table>
+          <thead><tr><th>Check</th><th>Status</th><th>Detail</th></tr></thead>
+          <tbody>
+            <tr><td>Credential encryption secret</td><td>${okBadge(cryptoSecretPresent)}</td><td><code>FERNET_KEY</code> or <code>BETTER_AUTH_SECRET</code></td></tr>
+            <tr><td>Public base URL</td><td>${okBadge(publicUrlPresent)}</td><td><code>PUBLIC_BASE_URL</code> or <code>BETTER_AUTH_URL</code></td></tr>
+            <tr><td>Google Ads developer token</td><td>${okBadge(googleAdsDeveloperTokenPresent, googleAdsDeveloperTokenPresent ? "set" : "missing")}</td><td>Required for <code>google_ads/*</code> calls.</td></tr>
+            <tr><td>Expired OAuth states</td><td>${expiredOAuthStateCount ? okBadge(false, `${expiredOAuthStateCount} expired`) : okBadge(true)}</td><td>
+              <form method="post" action="/ui/meta/oauth-states/prune" style="display:inline;">
+                <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;" ${expiredOAuthStateCount ? "" : "disabled"}>Prune expired</button>
+              </form>
+            </td></tr>
+            <tr><td>Agents without roles</td><td>${agentsWithoutRoles.length ? okBadge(false, String(agentsWithoutRoles.length)) : okBadge(true)}</td><td>Unbound agents cannot access tenant connections.</td></tr>
+            <tr><td>Broad roles</td><td>${broadRoles.length ? okBadge(false, String(broadRoles.length)) : okBadge(true)}</td><td>Roles with empty <code>allowedScopes</code> can access any owner scope.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>OAuth Environment</h2>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Provider</th><th>Client ID</th><th>Client Secret</th><th>Callback</th></tr></thead>
+            <tbody>
+              ${envRows.map(({ provider: p, id, secret, ok }) => `
+                <tr>
+                  <td><code>${escapeHtml(p.key)}</code> ${ok ? '<span class="badge ok">ready</span>' : '<span class="badge denied">incomplete</span>'}</td>
+                  <td>${okBadge(id.present, id.present ? "set" : "missing")} <code>${escapeHtml(id.variable)}</code></td>
+                  <td>${okBadge(secret.present, secret.present ? "set" : "missing")} <code>${escapeHtml(secret.variable)}</code></td>
+                  <td><code>${escapeHtml(publicOrigin(c))}/oauth/${escapeHtml(p.key)}/callback</code></td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <h2>Provider Catalog</h2>
+      <div class="card">
+        <p class="field-hint" style="margin-top:0;">${providerDefs.length} providers, ${totalToolCount} unique tools.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Provider</th><th>Auth</th><th>Tools</th><th>Status</th></tr></thead>
+            <tbody>
+              ${providerDefs.map((p) => `
+                <tr>
+                  <td><code>${escapeHtml(p.key)}</code><br><span style="color:#8a8d93;font-size:12px;">${escapeHtml(p.label)}</span></td>
+                  <td>${p.authTypes.map((a) => `<span class="tool-pill">${escapeHtml(authTypeLabel(p.key, a))}</span>`).join(" ")}</td>
+                  <td>${p.tools.map((t) => `<span class="tool-pill">${escapeHtml(t)}</span>`).join(" ")}</td>
+                  <td>${p.implemented === false ? '<span class="badge unscoped">coming soon</span>' : '<span class="badge ok">implemented</span>'}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <h2>Connections</h2>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Provider</th><th>Auth</th><th>Status</th><th>Count</th></tr></thead>
+            <tbody>
+              ${connectionGroups.map((g) => `
+                <tr>
+                  <td><code>${escapeHtml(g.provider)}</code></td>
+                  <td><code>${escapeHtml(g.authType)}</code></td>
+                  <td>${g.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</td>
+                  <td>${g._count._all}</td>
+                </tr>
+              `).join("") || '<tr><td colspan="4">No connections.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <h2>Tenant Scopes</h2>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Scope</th><th>Connections</th></tr></thead>
+            <tbody>
+              ${tenantGroups.map((g) => `
+                <tr>
+                  <td>${g.scope ? `<code>${escapeHtml(g.scope)}</code>` : '<span class="badge unscoped">unscoped</span>'}</td>
+                  <td>${g._count._all}</td>
+                </tr>
+              `).join("") || '<tr><td colspan="2">No tenant scopes.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <h2>Attention Needed</h2>
+      <div class="card">
+        <h3 style="margin-top:0;">Connection issues</h3>
+        ${connectionIssues.length === 0 && expiredOAuthConnections.length === 0 ? '<div class="empty">No disabled, failed-check, or expired OAuth connections found.</div>' : `
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Owner</th><th>Scope</th><th>Provider</th><th>Auth</th><th>Status</th><th>Credential</th></tr></thead>
+            <tbody>
+              ${[...connectionIssues, ...expiredOAuthConnections].map((cn) => `
+                <tr>
+                  <td>${escapeHtml(cn.owner.email)}</td>
+                  <td><code>${escapeHtml(cn.scope || "-")}</code></td>
+                  <td><code>${escapeHtml(cn.provider)}</code></td>
+                  <td><code>${escapeHtml(cn.authType)}</code></td>
+                  <td>${cn.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}${cn.accessTokenExpiresAt && cn.accessTokenExpiresAt < now ? ' <span class="badge denied">expired</span>' : ""}</td>
+                  <td>${renderCredentialSummary(cn)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>`}
+
+        <h3>Agents without roles</h3>
+        ${agentsWithoutRoles.length === 0 ? '<div class="empty">None.</div>' : `
+        <table>
+          <thead><tr><th>Owner</th><th>Agent</th><th>Created</th></tr></thead>
+          <tbody>
+            ${agentsWithoutRoles.map((a) => `
+              <tr><td>${escapeHtml(a.owner.email)}</td><td><code>${escapeHtml(a.name)}</code></td><td><code>${a.createdAt.toISOString().slice(0, 10)}</code></td></tr>
+            `).join("")}
+          </tbody>
+        </table>`}
+
+        <h3>Broad or unused roles</h3>
+        ${broadRoles.length === 0 && unusedRoles.length === 0 ? '<div class="empty">None.</div>' : `
+        <table>
+          <thead><tr><th>Owner</th><th>Role</th><th>Issue</th><th>Tools</th></tr></thead>
+          <tbody>
+            ${Array.from(new Map([...broadRoles, ...unusedRoles].map((r) => [r.id, r])).values()).map((r) => {
+              const issues = [
+                safeJsonArray(r.allowedScopes).length === 0 ? "any-scope" : "",
+                r.agents.length === 0 ? "unused" : "",
+              ].filter(Boolean);
+              return `
+                <tr>
+                  <td>${escapeHtml(r.owner.email)}</td>
+                  <td><code>${escapeHtml(r.name)}</code></td>
+                  <td>${issues.map((i) => `<span class="badge denied">${escapeHtml(i)}</span>`).join(" ")}</td>
+                  <td>${safeJsonArray(r.allowedTools).slice(0, 8).map((t) => `<span class="tool-pill">${escapeHtml(t)}</span>`).join(" ")}${safeJsonArray(r.allowedTools).length > 8 ? ` <span style="color:#8a8d93;">+${safeJsonArray(r.allowedTools).length - 8}</span>` : ""}</td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>`}
+      </div>
+
+      <h2>Recent Errors</h2>
+      <div class="card">
+        ${recentErrors.length === 0 ? '<div class="empty">No errors or denied calls in the last 7 days.</div>' : `
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>When</th><th>User</th><th>Agent</th><th>Tool</th><th>Scope</th><th>Status</th><th>Error</th></tr></thead>
+            <tbody>
+              ${recentErrors.map((l) => `
+                <tr>
+                  <td><code>${l.createdAt.toISOString().slice(0, 19).replace("T", " ")}</code></td>
+                  <td>${l.user ? escapeHtml(l.user.email) : "<system>"}</td>
+                  <td>${l.agent ? `<code>${escapeHtml(l.agent.name)}</code>` : "—"}</td>
+                  <td><code>${escapeHtml(l.tool)}</code></td>
+                  <td><code>${escapeHtml(l.scope || "-")}</code></td>
+                  <td><span class="badge denied">${escapeHtml(l.status)}</span></td>
+                  <td style="max-width:360px;overflow:hidden;text-overflow:ellipsis;">${escapeHtml(l.errorMessage || "")}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>`}
+      </div>
+
+      <h2>Users</h2>
+      <div class="card">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Email</th><th>Role</th><th>Connections</th><th>Agents</th><th>Roles</th><th>Audit</th><th>Created</th></tr></thead>
+            <tbody>
+              ${users.map((u) => `
+                <tr>
+                  <td>${escapeHtml(u.email)}<br><span style="color:#8a8d93;font-size:12px;">${escapeHtml(u.name || "")}</span></td>
+                  <td>${u.role === "admin" ? '<span class="badge ok">admin</span>' : '<span class="badge unscoped">user</span>'}</td>
+                  <td>${u._count.connections}</td>
+                  <td>${u._count.agents}</td>
+                  <td>${u._count.roles}</td>
+                  <td>${u._count.auditLogs}</td>
+                  <td><code>${u.createdAt.toISOString().slice(0, 10)}</code></td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main></body></html>
+  `);
+});
+
+dashboardApp.post("/meta/promote-self", async (c) => {
+  const dbUser = await getDbSessionUser(c);
+  if (!dbUser) return c.redirect("/ui/login");
+  const adminCount = await prisma.user.count({ where: { role: "admin" } });
+  if (adminCount > 0 && dbUser.role !== "admin") return c.html("<h1>admin already exists</h1>", 403);
+  await prisma.user.update({ where: { id: dbUser.id }, data: { role: "admin" } });
+  return c.redirect("/ui/meta");
+});
+
+dashboardApp.post("/meta/oauth-states/prune", async (c) => {
+  const dbUser = await getDbSessionUser(c);
+  if (!dbUser) return c.redirect("/ui/login");
+  const adminCount = await prisma.user.count({ where: { role: "admin" } });
+  if (dbUser.role !== "admin" && adminCount > 0) return c.html("<h1>admin required</h1>", 403);
+  const result = await prisma.oAuthState.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+  return c.redirect(`/ui/meta?pruned=${result.count}`);
 });
 
 // --- /ui/login ---
@@ -2229,6 +2637,7 @@ oauthApp.get("/:provider/start", async (c) => {
     google_gsc: ["GOOGLE_CLIENT_ID"],
     google_analytics: ["GOOGLE_CLIENT_ID"],
     google_ads: ["GOOGLE_CLIENT_ID"],
+    google_drive: ["GOOGLE_CLIENT_ID"],
     gmail: ["GOOGLE_CLIENT_ID"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
@@ -2344,6 +2753,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     google_gsc: ["GOOGLE_CLIENT_ID"],
     google_analytics: ["GOOGLE_CLIENT_ID"],
     google_ads: ["GOOGLE_CLIENT_ID"],
+    google_drive: ["GOOGLE_CLIENT_ID"],
     gmail: ["GOOGLE_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
@@ -2351,6 +2761,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     google_gsc: ["GOOGLE_CLIENT_SECRET"],
     google_analytics: ["GOOGLE_CLIENT_SECRET"],
     google_ads: ["GOOGLE_CLIENT_SECRET"],
+    google_drive: ["GOOGLE_CLIENT_SECRET"],
     gmail: ["GOOGLE_CLIENT_SECRET"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
