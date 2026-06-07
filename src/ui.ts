@@ -23,6 +23,10 @@ function escapeHtml(s: string): string {
   );
 }
 
+function jsString(s: string): string {
+  return JSON.stringify(s);
+}
+
 // Renders the "Agent token" card with a copy-to-clipboard button.
 // The token is shown once, so we make it easy to grab. `warningHtml` is
 // raw HTML (may contain links); pass "" to omit the warning line.
@@ -662,15 +666,17 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                 <td><input type="text" name="conn_label_${cn.id}" value="${escapeHtml(cn.label)}" style="font-size:13px;"></td>
                 <td><label style="font-weight:normal;font-size:13px;"><input type="checkbox" name="conn_enabled_${cn.id}" ${cn.enabled ? "checked" : ""}> on</label></td>
                 <td><code>${cn.createdAt.toISOString().slice(0, 10)}</code></td>
-                <td>${canReconnect
-                  ? `<span class="stacked-actions"><a href="/oauth/${cn.provider}/start?tenant=${encodeURIComponent(cn.scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run the OAuth consent flow and refresh this exact connection's tokens">↻ Reconnect</a>${expired ? '<span class="badge unscoped" style="color:#ff6b6b;">token expired</span>' : ""}</span>`
-                  : '<span style="color:#8a8d93;font-size:12px;">token</span>'}</td>
+                <td><span class="stacked-actions">${canReconnect
+                  ? `<a href="/oauth/${cn.provider}/start?tenant=${encodeURIComponent(cn.scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run the OAuth consent flow and refresh this exact connection's tokens">↻ Reconnect</a>${expired ? '<span class="badge unscoped" style="color:#ff6b6b;">token expired</span>' : ""}`
+                  : '<span style="color:#8a8d93;font-size:12px;">token</span>'}
+                  <button type="submit" form="delete_connection_${cn.id}" class="danger" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Delete only this connection">Delete</button>
+                </span></td>
               </tr>
             `;}).join("")}
             </tbody>
           </table>
           </div>
-          <p class="field-hint">↻ <b>Reconnect</b> re-runs the provider's OAuth consent screen and refreshes this connection's access/refresh tokens in place. Use it when an agent reports an expired or revoked token. No new agent is created.</p>
+          <p class="field-hint">↻ <b>Reconnect</b> re-runs the provider's OAuth consent screen and refreshes this connection's access/refresh tokens in place. <b>Delete</b> removes only that credential connection; roles and agents remain.</p>
         </div>`}
 
         <h2>Role <code>${scope}-dev-${userIdShort}</code></h2>
@@ -704,6 +710,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           document.getElementById('roleToolsJson').value = JSON.stringify(selected);
         });
       </script>
+      ${connections.map((cn) => `
+        <form id="delete_connection_${cn.id}" method="post" action="/ui/tenants/${scope}/connections/${cn.id}/delete" onsubmit="return confirm(${jsString(`Delete connection ${cn.label}?\n\nProvider: ${cn.provider}\nScope: ${cn.scope}\n\nRoles and agents remain, but this provider credential will no longer be usable.`)});"></form>
+      `).join("")}
 
       <h2>Advanced: additional agent token</h2>
       <div class="card">
@@ -1176,6 +1185,39 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
   }
 
   return c.html("<h1>unknown action</h1>", 400);
+});
+
+// --- /ui/tenants/:scope/connections/:connectionId/delete (POST) — delete one connection ---
+dashboardApp.post("/tenants/:scope/connections/:connectionId/delete", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ error: "not authenticated" }, 401);
+  const scope = c.req.param("scope");
+  const connectionId = c.req.param("connectionId");
+  if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
+
+  const conn = await prisma.connection.findFirst({
+    where: { id: connectionId, scope, ownerId: user.id },
+    select: { id: true, label: true, provider: true, scope: true },
+  });
+  if (!conn) {
+    return c.html(`<h1>connection not found</h1><p>The connection either does not exist, is not yours, or does not belong to <code>${escapeHtml(scope)}</code>.</p><p><a href="/ui/tenants/${scope}/edit">← Back</a></p>`, 404);
+  }
+
+  await prisma.connection.delete({ where: { id: conn.id } });
+
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Connection deleted — agent-oauth</title>
+    <style>${CSS}</style></head><body>
+    ${NAV("tenants")}
+    <main>
+      <h1>✓ Deleted connection <code>${escapeHtml(conn.label)}</code></h1>
+      <div class="card">
+        <p>Provider <code>${escapeHtml(conn.provider)}</code> was removed from scope <code>${escapeHtml(conn.scope)}</code>.</p>
+        <p>Roles and agents were left unchanged. Calls to this provider will be denied until a new connection is added.</p>
+      </div>
+      <p><a href="/ui/tenants/${scope}/edit">← Back to ${scope}</a></p>
+    </main></body></html>
+  `);
 });
 
 // --- /ui/tenants/new ---
