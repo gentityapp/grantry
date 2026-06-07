@@ -178,10 +178,9 @@ export const PROVIDERS: Record<string, ProviderDef> = {
   hubspot: {
     key: "hubspot",
     label: "HubSpot",
-    authTypes: ["pat", "oauth"],
-    helpText: "Paste a HubSpot Private App access token or connect with OAuth to access CRM data.",
+    authTypes: ["pat"],
+    helpText: "Paste a HubSpot Private App access token to access CRM data.",
     tokenUrl: "https://app.hubspot.com/private-apps",
-    oauthSetupUrl: "https://developers.hubspot.com/",
     oauthScopes: ["crm.objects.deals.read", "crm.objects.deals.write", "crm.objects.contacts.read", "crm.objects.contacts.write", "oauth"],
     authorizeUrl: "https://app.hubspot.com/oauth/authorize",
     oauthTokenUrl: "https://api.hubapi.com/oauth/v1/token",
