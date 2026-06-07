@@ -24,9 +24,6 @@ app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 // Mount MCP gateway
 app.route("/mcp", mcpApp);
 
-// Mount dashboard UI
-app.route("/ui", dashboardApp);
-
 // Mount OAuth flows (callback URLs must be stable public paths)
 app.route("/oauth", oauthApp);
 
@@ -53,18 +50,18 @@ app.get("/health", (c) =>
   }),
 );
 
-app.get("/", (c) =>
-  c.json({
-    name: "agent-oauth",
-    description: "OAuth credential broker for AI agents (MCP-compatible)",
-    endpoints: {
-      health: "GET /health",
-      auth: "GET/POST /api/auth/*",
-      mcp: "POST /mcp",
-      ui: "GET /ui",
-    },
-  }),
-);
+// Legacy UI URLs. GET requests move to the product-facing top-level routes;
+// POST requests are still accepted through the old mount for compatibility with
+// already-open forms during deploys.
+app.get("/ui", (c) => c.redirect("/dashboard", 308));
+app.get("/ui/*", (c) => {
+  const next = c.req.path.replace(/^\/ui/, "") || "/dashboard";
+  return c.redirect(next === "/" ? "/dashboard" : next, 308);
+});
+app.route("/ui", dashboardApp);
+
+// Mount dashboard console at product-facing top-level URLs.
+app.route("/", dashboardApp);
 
 const port = Number(process.env.PORT ?? 3000);
 serve({ fetch: app.fetch, port }, (info) => {

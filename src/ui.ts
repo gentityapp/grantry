@@ -10,7 +10,7 @@ import { connectionsForAgent } from "./policy.js";
 export const dashboardApp = new Hono();
 
 // Separate Hono app for OAuth flows (mounted at /oauth in server.ts).
-// Not under /ui because GitHub's OAuth callback URL needs to be a stable
+// Not under the dashboard routes because GitHub's OAuth callback URL needs to be a stable
 // public path; keeping it outside the UI mount makes the contract cleaner.
 export const oauthApp = new Hono();
 // Minimal HTML escape — used for user-supplied strings in error messages.
@@ -290,11 +290,11 @@ const CSS = `
 const NAV = (current: string) => `
 <nav>
   <span class="brand">agent-oauth</span>
-  <a href="/ui" class="${current === "dashboard" ? "active" : ""}">Dashboard</a>
-  <a href="/ui/tenants" class="${current === "tenants" ? "active" : ""}">Tenants</a>
-  <a href="/ui/agents" class="${current === "agents" ? "active" : ""}">Agents</a>
-  <a href="/ui/audit" class="${current === "audit" ? "active" : ""}">Audit</a>
-  <a href="/ui/meta" class="${current === "meta" ? "active" : ""}">Meta</a>
+  <a href="/dashboard" class="${current === "dashboard" ? "active" : ""}">Dashboard</a>
+  <a href="/tenants" class="${current === "tenants" ? "active" : ""}">Tenants</a>
+  <a href="/agents" class="${current === "agents" ? "active" : ""}">Agents</a>
+  <a href="/audit" class="${current === "audit" ? "active" : ""}">Audit</a>
+  <a href="/meta" class="${current === "meta" ? "active" : ""}">Meta</a>
   <span style="flex:1"></span>
   <a href="/api/auth/sign-out">Sign out</a>
 </nav>
@@ -395,10 +395,12 @@ function envStatus(names: string[]): { present: boolean; variable: string; candi
   return { present: names.some((name) => !!process.env[name]), variable, candidates: names };
 }
 
-// --- /ui (Dashboard) ---
-dashboardApp.get("/", async (c) => {
+// --- /dashboard ---
+dashboardApp.get("/", (c) => c.redirect("/dashboard"));
+
+dashboardApp.get("/dashboard", async (c) => {
   const user = await getSessionUser(c);
-  if (!user) return c.redirect("/ui/login");
+  if (!user) return c.redirect("/login");
 
   const [connectionCount, agentCount, roleCount, recentAudits] = await Promise.all([
     prisma.connection.count({ where: { ownerId: user.id } }),
@@ -425,7 +427,7 @@ dashboardApp.get("/", async (c) => {
       </div>
       <h2>Recent activity</h2>
       <div class="card">
-        ${recentAudits.length === 0 ? '<div class="empty">No activity yet. Create your first tenant → <a href="/ui/tenants/new">+ New tenant</a></div>' : `
+        ${recentAudits.length === 0 ? '<div class="empty">No activity yet. Create your first tenant → <a href="/tenants/new">+ New tenant</a></div>' : `
         <table>
           <thead><tr><th>When</th><th>Agent</th><th>Tool</th><th>Scope</th><th>Status</th><th>Duration</th></tr></thead>
           <tbody>
@@ -446,10 +448,10 @@ dashboardApp.get("/", async (c) => {
   `);
 });
 
-// --- /ui/meta — system-wide admin overview ---
+// --- /meta — system-wide admin overview ---
 dashboardApp.get("/meta", async (c) => {
   const dbUser = await getDbSessionUser(c);
-  if (!dbUser) return c.redirect("/ui/login");
+  if (!dbUser) return c.redirect("/login");
 
   const adminCount = await prisma.user.count({ where: { role: "admin" } });
   const bootstrapMode = adminCount === 0;
@@ -584,7 +586,7 @@ dashboardApp.get("/meta", async (c) => {
       <div class="card" style="border-color:#f0b429;background:rgba(240,180,41,0.08);">
         <h2>Admin bootstrap required</h2>
         <p>No admin user exists yet. You are viewing this screen because the system has zero admins.</p>
-        <form method="post" action="/ui/meta/promote-self" onsubmit="return confirm('Promote your account to admin?')">
+        <form method="post" action="/meta/promote-self" onsubmit="return confirm('Promote your account to admin?')">
           <button type="submit">Promote me to admin</button>
         </form>
       </div>` : ""}
@@ -609,7 +611,7 @@ dashboardApp.get("/meta", async (c) => {
             <tr><td>Public base URL</td><td>${okBadge(publicUrlPresent)}</td><td><code>PUBLIC_BASE_URL</code> or <code>BETTER_AUTH_URL</code></td></tr>
             <tr><td>Google Ads developer token</td><td>${okBadge(googleAdsDeveloperTokenPresent, googleAdsDeveloperTokenPresent ? "set" : "missing")}</td><td>Required for <code>google_ads/*</code> calls.</td></tr>
             <tr><td>Expired OAuth states</td><td>${expiredOAuthStateCount ? okBadge(false, `${expiredOAuthStateCount} expired`) : okBadge(true)}</td><td>
-              <form method="post" action="/ui/meta/oauth-states/prune" style="display:inline;">
+              <form method="post" action="/meta/oauth-states/prune" style="display:inline;">
                 <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;" ${expiredOAuthStateCount ? "" : "disabled"}>Prune expired</button>
               </form>
             </td></tr>
@@ -800,26 +802,26 @@ dashboardApp.get("/meta", async (c) => {
 
 dashboardApp.post("/meta/promote-self", async (c) => {
   const dbUser = await getDbSessionUser(c);
-  if (!dbUser) return c.redirect("/ui/login");
+  if (!dbUser) return c.redirect("/login");
   const adminCount = await prisma.user.count({ where: { role: "admin" } });
   if (adminCount > 0 && dbUser.role !== "admin") return c.html("<h1>admin already exists</h1>", 403);
   await prisma.user.update({ where: { id: dbUser.id }, data: { role: "admin" } });
-  return c.redirect("/ui/meta");
+  return c.redirect("/meta");
 });
 
 dashboardApp.post("/meta/oauth-states/prune", async (c) => {
   const dbUser = await getDbSessionUser(c);
-  if (!dbUser) return c.redirect("/ui/login");
+  if (!dbUser) return c.redirect("/login");
   const adminCount = await prisma.user.count({ where: { role: "admin" } });
   if (dbUser.role !== "admin" && adminCount > 0) return c.html("<h1>admin required</h1>", 403);
   const result = await prisma.oAuthState.deleteMany({ where: { expiresAt: { lt: new Date() } } });
-  return c.redirect(`/ui/meta?pruned=${result.count}`);
+  return c.redirect(`/meta?pruned=${result.count}`);
 });
 
-// --- /ui/login ---
+// --- /login ---
 dashboardApp.get("/login", async (c) => {
   const user = await getSessionUser(c);
-  if (user) return c.redirect("/ui");
+  if (user) return c.redirect("/dashboard");
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Sign in — agent-oauth</title>
     <style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
@@ -838,7 +840,7 @@ dashboardApp.get("/login", async (c) => {
         <div id="err" style="color:#ff6b6b;margin-top:8px;font-size:13px;"></div>
       </form>
     </div>
-    <p style="text-align:center;color:#8a8d93;font-size:13px;">No account? <a href="/ui/register">Create one</a></p>
+    <p style="text-align:center;color:#8a8d93;font-size:13px;">No account? <a href="/register">Create one</a></p>
     <script>
       document.getElementById('loginForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -848,7 +850,7 @@ dashboardApp.get("/login", async (c) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: fd.get('email'), password: fd.get('password') })
         });
-        if (r.ok) { location.href = '/ui'; }
+        if (r.ok) { location.href = '/dashboard'; }
         else { document.getElementById('err').textContent = 'Invalid email or password'; }
       });
     </script>
@@ -856,7 +858,7 @@ dashboardApp.get("/login", async (c) => {
   `);
 });
 
-// --- /ui/register ---
+// --- /register ---
 dashboardApp.get("/register", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Create account — agent-oauth</title>
@@ -880,7 +882,7 @@ dashboardApp.get("/register", async (c) => {
         <div id="err" style="color:#ff6b6b;margin-top:8px;font-size:13px;"></div>
       </form>
     </div>
-    <p style="text-align:center;color:#8a8d93;font-size:13px;">Already have one? <a href="/ui/login">Sign in</a></p>
+    <p style="text-align:center;color:#8a8d93;font-size:13px;">Already have one? <a href="/login">Sign in</a></p>
     <script>
       document.getElementById('regForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -890,7 +892,7 @@ dashboardApp.get("/register", async (c) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: fd.get('name'), email: fd.get('email'), password: fd.get('password') })
         });
-        if (r.ok) { location.href = '/ui'; }
+        if (r.ok) { location.href = '/dashboard'; }
         else { const j = await r.json().catch(()=>({})); document.getElementById('err').textContent = j.message || 'Sign up failed'; }
       });
     </script>
@@ -898,10 +900,10 @@ dashboardApp.get("/register", async (c) => {
   `);
 });
 
-// --- /ui/tenants ---
+// --- /tenants ---
 dashboardApp.get("/tenants", async (c) => {
   const user = await getSessionUser(c);
-  if (!user) return c.redirect("/ui/login");
+  if (!user) return c.redirect("/login");
 
   const connections = await prisma.connection.findMany({
     where: { ownerId: user.id },
@@ -923,19 +925,19 @@ dashboardApp.get("/tenants", async (c) => {
     <main>
       <div class="row spread" style="margin-bottom:16px;">
         <h1 style="margin:0;">Tenants</h1>
-        <a href="/ui/tenants/new" class="btn">+ New tenant</a>
+        <a href="/tenants/new" class="btn">+ New tenant</a>
       </div>
-      <p style="color:#8a8d93;margin-top:-8px;">API: <code>GET /ui/api/scopes</code> returns your full wiring as JSON.</p>
-      <form method="post" action="/ui/tenants/bulk-delete" id="bulkForm">
+      <p style="color:#8a8d93;margin-top:-8px;">API: <code>GET /api/scopes</code> returns your full wiring as JSON.</p>
+      <form method="post" action="/tenants/bulk-delete" id="bulkForm">
         <input type="hidden" name="scopes_csv" id="scopesCsv" value="">
-        ${byScope.size === 0 ? '<div class="card"><div class="empty">No tenants yet. <a href="/ui/tenants/new">Create your first one</a>.</div></div>' : `
+        ${byScope.size === 0 ? '<div class="card"><div class="empty">No tenants yet. <a href="/tenants/new">Create your first one</a>.</div></div>' : `
         <div class="row spread" style="margin-bottom:8px;">
           <label style="font-size:13px;color:#c8ccd2;cursor:pointer;"><input type="checkbox" id="selectAll"> select all</label>
           <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;" id="bulkDelBtn" disabled>🗑 Delete selected (0)</button>
         </div>
         ${Array.from(byScope.entries()).map(([scope, conns]) => `
         <div class="card">
-          <h2>${scope === "(unscoped)" ? '<span class="badge unscoped">unscoped</span> Legacy connections' : `<input type="checkbox" name="scopes" value="${scope}" class="rowCheck" style="margin-right:8px;transform:scale(1.2);"><span class="badge scoped">${scope}</span>`} ${scope !== "(unscoped)" ? `<a href="/ui/tenants/${scope}/edit#codex-mcp" class="btn secondary" style="margin-left:8px;font-size:12px;padding:4px 10px;">Connect to Codex</a> <a href="/ui/tenants/${scope}/edit" class="btn secondary" style="margin-left:4px;font-size:12px;padding:4px 10px;">+ Add service</a> <a href="/ui/tenants/${scope}/edit" class="btn secondary" style="margin-left:4px;font-size:12px;padding:4px 10px;">✎ Edit</a>` : ""}</h2>
+          <h2>${scope === "(unscoped)" ? '<span class="badge unscoped">unscoped</span> Legacy connections' : `<input type="checkbox" name="scopes" value="${scope}" class="rowCheck" style="margin-right:8px;transform:scale(1.2);"><span class="badge scoped">${scope}</span>`} ${scope !== "(unscoped)" ? `<a href="/tenants/${scope}/edit#codex-mcp" class="btn secondary" style="margin-left:8px;font-size:12px;padding:4px 10px;">Connect to Codex</a> <a href="/tenants/${scope}/edit" class="btn secondary" style="margin-left:4px;font-size:12px;padding:4px 10px;">+ Add service</a> <a href="/tenants/${scope}/edit" class="btn secondary" style="margin-left:4px;font-size:12px;padding:4px 10px;">✎ Edit</a>` : ""}</h2>
           <table>
             <thead><tr><th>Provider</th><th>Auth</th><th>Label</th><th>Status</th><th>Created</th></tr></thead>
             <tbody>
@@ -974,10 +976,10 @@ dashboardApp.get("/tenants", async (c) => {
   `);
 });
 
-// --- /ui/tenants/:scope/edit (edit settings + add services) ---
+// --- /tenants/:scope/edit (edit settings + add services) ---
 dashboardApp.get("/tenants/:scope/edit", async (c) => {
   const user = await getSessionUser(c);
-  if (!user) return c.redirect("/ui/login");
+  if (!user) return c.redirect("/login");
 
   const scope = c.req.param("scope");
   const connections = await prisma.connection.findMany({
@@ -1047,7 +1049,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         </p>
         ${codexAgents.length === 0 ? `
           <p>No Codex MCP token exists for this tenant yet.</p>
-          <form method="post" action="/ui/tenants/${scope}/codex-mcp/create">
+          <form method="post" action="/tenants/${scope}/codex-mcp/create">
             <button type="submit">Create Codex MCP config</button>
           </form>
         ` : `
@@ -1064,7 +1066,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                     <td>${a.lastUsedAt ? a.lastUsedAt.toISOString().slice(0, 16) : "—"}</td>
                     <td>${a.createdAt.toISOString().slice(0, 10)}</td>
                     <td>
-                      <form method="post" action="/ui/tenants/${scope}/codex-mcp/${a.id}/rotate" style="display:inline;" onsubmit="return confirm('Rotate Codex MCP token for ${scope}?\\n\\nThe old token will stop working immediately.')">
+                      <form method="post" action="/tenants/${scope}/codex-mcp/${a.id}/rotate" style="display:inline;" onsubmit="return confirm('Rotate Codex MCP token for ${scope}?\\n\\nThe old token will stop working immediately.')">
                         <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;">Rotate token</button>
                       </form>
                     </td>
@@ -1076,7 +1078,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         `}
       </div>
 
-      <form method="post" action="/ui/tenants/${scope}/edit" id="settingsForm">
+      <form method="post" action="/tenants/${scope}/edit" id="settingsForm">
         <input type="hidden" name="_action" value="save_settings">
         <input type="hidden" name="role_tools_json" id="roleToolsJson" value="">
 
@@ -1141,7 +1143,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
 
         <div style="display:flex;gap:8px;margin-bottom:32px;">
           <button type="submit">Save settings</button>
-          <a href="/ui/tenants" class="btn secondary">Cancel</a>
+          <a href="/tenants" class="btn secondary">Cancel</a>
         </div>
       </form>
       <script>
@@ -1151,14 +1153,14 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         });
       </script>
       ${connections.map((cn) => `
-        <form id="delete_connection_${cn.id}" method="post" action="/ui/tenants/${scope}/connections/${cn.id}/delete" onsubmit="return confirm(${jsString(`Delete connection ${cn.label}?\n\nProvider: ${cn.provider}\nScope: ${cn.scope}\n\nRoles and agents remain, but this provider credential will no longer be usable.`)});"></form>
+        <form id="delete_connection_${cn.id}" method="post" action="/tenants/${scope}/connections/${cn.id}/delete" onsubmit="return confirm(${jsString(`Delete connection ${cn.label}?\n\nProvider: ${cn.provider}\nScope: ${cn.scope}\n\nRoles and agents remain, but this provider credential will no longer be usable.`)});"></form>
       `).join("")}
-      <form id="sync_role_tools_form" method="post" action="/ui/tenants/${scope}/sync-role-tools"></form>
+      <form id="sync_role_tools_form" method="post" action="/tenants/${scope}/sync-role-tools"></form>
 
       <h2>Advanced: additional agent token</h2>
       <div class="card">
         <p class="field-hint" style="margin-top:0;">Most users should use <b>Codex MCP</b> above. This creates an extra internal agent token bound to <code>${scope}-dev-${userIdShort}</code> for custom automation or testing.</p>
-        <form method="post" action="/ui/tenants/${scope}/agents/new" id="addAgentForm">
+        <form method="post" action="/tenants/${scope}/agents/new" id="addAgentForm">
           <div class="field">
             <label for="agent">Agent name</label>
             <input type="text" name="agent" id="agent" pattern="[a-zA-Z0-9_-]+" placeholder="e.g. ${escapeHtml(scope)}-read-bot" required>
@@ -1182,8 +1184,8 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
 
       <h2 style="color:#ff6b6b;">Danger zone</h2>
       <div class="card" style="border-color:#ff6b6b;">
-        <p>Delete this tenant entirely. This removes <b>all your connections</b> for scope <code>${scope}</code> and the role <code>${scope}-dev-${userIdShort}</code>. Agents bound to that role will be left <b>unbound</b> (use <a href="/ui/agents">/ui/agents</a> to clean them up).</p>
-        <form method="post" action="/ui/tenants/${scope}/delete" onsubmit="return confirm('Delete tenant ${scope}?\\n\\nThis removes all YOUR connections and the role for this scope. This action cannot be undone.');">
+        <p>Delete this tenant entirely. This removes <b>all your connections</b> for scope <code>${scope}</code> and the role <code>${scope}-dev-${userIdShort}</code>. Agents bound to that role will be left <b>unbound</b> (use <a href="/agents">/agents</a> to clean them up).</p>
+        <form method="post" action="/tenants/${scope}/delete" onsubmit="return confirm('Delete tenant ${scope}?\\n\\nThis removes all YOUR connections and the role for this scope. This action cannot be undone.');">
           <button type="submit" style="background:#ff6b6b;color:#0e0f12;">🗑 Delete tenant ${scope}</button>
         </form>
       </div>
@@ -1198,7 +1200,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           </p>
         ` : ""}
       </div>` : `
-      <form method="post" action="/ui/tenants/${scope}/edit" id="addConnForm">
+      <form method="post" action="/tenants/${scope}/edit" id="addConnForm">
         <input type="hidden" name="_action" value="add_service">
         <div class="step-card">
           <h2><span class="num">+</span> New service</h2>
@@ -1356,7 +1358,7 @@ async function syncTenantRoleTools(userId: string, scope: string) {
   return { role, addedTools, connectedTools };
 }
 
-// --- /ui/tenants/:scope/sync-role-tools (POST) — grant all connected provider tools to tenant role ---
+// --- /tenants/:scope/sync-role-tools (POST) — grant all connected provider tools to tenant role ---
 dashboardApp.post("/tenants/:scope/sync-role-tools", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
@@ -1375,12 +1377,12 @@ dashboardApp.post("/tenants/:scope/sync-role-tools", async (c) => {
         <p>Connected provider tools: ${connectedTools.map((tool) => `<span class="tool-pill">${escapeHtml(tool)}</span>`).join(" ") || "<em>none</em>"}</p>
         <p>Newly added: ${addedTools.map((tool) => `<span class="tool-pill">${escapeHtml(tool)}</span>`).join(" ") || "<em>none</em>"}</p>
       </div>
-      <p><a href="/ui/tenants/${scope}/edit">← Back to ${scope}</a></p>
+      <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a></p>
     </main></body></html>
   `);
 });
 
-// --- /ui/tenants/:scope/codex-mcp/create ---
+// --- /tenants/:scope/codex-mcp/create ---
 dashboardApp.post("/tenants/:scope/codex-mcp/create", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
@@ -1395,7 +1397,7 @@ dashboardApp.post("/tenants/:scope/codex-mcp/create", async (c) => {
     },
     orderBy: { createdAt: "asc" },
   });
-  if (existing) return c.redirect(`/ui/tenants/${scope}/edit#codex-mcp`);
+  if (existing) return c.redirect(`/tenants/${scope}/edit#codex-mcp`);
 
   const token = `gn_agt_${crypto.randomUUID().replace(/-/g, "")}`;
   const tokenHash = await import("node:crypto").then(c => c.createHash("sha256").update(token).digest("hex"));
@@ -1423,12 +1425,12 @@ dashboardApp.post("/tenants/:scope/codex-mcp/create", async (c) => {
       </div>
       ${agentTokenCard(token)}
       ${mcpConfigCard(publicOrigin(c), agent.name, token, true, scope)}
-      <p><a href="/ui/tenants/${scope}/edit#codex-mcp">← Back to ${scope}</a></p>
+      <p><a href="/tenants/${scope}/edit#codex-mcp">← Back to ${scope}</a></p>
     </main></body></html>
   `);
 });
 
-// --- /ui/tenants/:scope/codex-mcp/:agentId/rotate ---
+// --- /tenants/:scope/codex-mcp/:agentId/rotate ---
 dashboardApp.post("/tenants/:scope/codex-mcp/:agentId/rotate", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
@@ -1466,7 +1468,7 @@ dashboardApp.post("/tenants/:scope/codex-mcp/:agentId/rotate", async (c) => {
       <h1>Codex MCP token rotated for <code>${escapeHtml(scope)}</code></h1>
       ${agentTokenCard(token)}
       ${mcpConfigCard(publicOrigin(c), agent.name, token, true, scope)}
-      <p><a href="/ui/tenants/${scope}/edit#codex-mcp">← Back to ${scope}</a></p>
+      <p><a href="/tenants/${scope}/edit#codex-mcp">← Back to ${scope}</a></p>
     </main></body></html>
   `);
 });
@@ -1563,7 +1565,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
           <p><b>Tools (${JSON.parse(role.allowedTools).length}):</b> ${(JSON.parse(role.allowedTools) as string[]).map((t) => `<span class="tool-pill">${t}</span>`).join(" ") || "<em>none</em>"}</p>
           <p><b>Scopes:</b> ${(JSON.parse(role.allowedScopes) as string[]).map((s) => `<code>${s}</code>`).join(", ") || "<em>any (empty)</em>"}</p>
         </div>
-        <p><a href="/ui/tenants/${scope}/edit">← Back to ${scope}</a> · <a href="/ui/tenants">All tenants</a></p>
+        <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a> · <a href="/tenants">All tenants</a></p>
       </main></body></html>
     `);
   }
@@ -1683,7 +1685,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
           <p><code>${role.name}</code> now has ${mergedTools.length} tools (added ${mergedTools.length - currentTools.length} new ones)</p>
           <p>${mergedTools.map((t) => `<span class="tool-pill">${t}</span>`).join(" ")}</p>
         </div>
-        <p><a href="/ui/tenants/${scope}/edit">← Back to ${scope}</a> · <a href="/ui/tenants">All tenants</a></p>
+        <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a> · <a href="/tenants">All tenants</a></p>
       </main></body></html>
     `);
   }
@@ -1691,7 +1693,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
   return c.html("<h1>unknown action</h1>", 400);
 });
 
-// --- /ui/tenants/:scope/connections/:connectionId/delete (POST) — delete one connection ---
+// --- /tenants/:scope/connections/:connectionId/delete (POST) — delete one connection ---
 dashboardApp.post("/tenants/:scope/connections/:connectionId/delete", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
@@ -1704,7 +1706,7 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/delete", async (c) 
     select: { id: true, label: true, provider: true, scope: true },
   });
   if (!conn) {
-    return c.html(`<h1>connection not found</h1><p>The connection either does not exist, is not yours, or does not belong to <code>${escapeHtml(scope)}</code>.</p><p><a href="/ui/tenants/${scope}/edit">← Back</a></p>`, 404);
+    return c.html(`<h1>connection not found</h1><p>The connection either does not exist, is not yours, or does not belong to <code>${escapeHtml(scope)}</code>.</p><p><a href="/tenants/${scope}/edit">← Back</a></p>`, 404);
   }
 
   await prisma.connection.delete({ where: { id: conn.id } });
@@ -1719,15 +1721,15 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/delete", async (c) 
         <p>Provider <code>${escapeHtml(conn.provider)}</code> was removed from scope <code>${escapeHtml(conn.scope)}</code>.</p>
         <p>Roles and agents were left unchanged. Calls to this provider will be denied until a new connection is added.</p>
       </div>
-      <p><a href="/ui/tenants/${scope}/edit">← Back to ${scope}</a></p>
+      <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a></p>
     </main></body></html>
   `);
 });
 
-// --- /ui/tenants/new ---
+// --- /tenants/new ---
 dashboardApp.get("/tenants/new", async (c) => {
   const user = await getSessionUser(c);
-  if (!user) return c.redirect("/ui/login");
+  if (!user) return c.redirect("/login");
 
   const providers = listProviders();
   const knownProviders = Object.values(PROVIDERS);
@@ -1761,7 +1763,7 @@ dashboardApp.get("/tenants/new", async (c) => {
         Create an isolated tenant in one step. This sets up: a <b>connection</b> with scope=&lt;tenant&gt;,
         a <b>role</b> with allowed_scopes bound to that tenant, an <b>agent</b>, and a fresh <b>token</b>.
       </p>
-      <form method="post" action="/ui/tenants/new" id="wizForm">
+      <form method="post" action="/tenants/new" id="wizForm">
         <div class="step-card">
           <h2><span class="num">1</span> Tenant</h2>
           <div class="field field-primary">
@@ -1849,7 +1851,7 @@ dashboardApp.get("/tenants/new", async (c) => {
 
         <div style="display:flex;gap:8px;">
           <button type="submit">Create tenant</button>
-          <a href="/ui/tenants" class="btn secondary">Cancel</a>
+          <a href="/tenants" class="btn secondary">Cancel</a>
         </div>
       </form>
       <script>
@@ -1978,7 +1980,7 @@ dashboardApp.get("/tenants/new", async (c) => {
   `);
 });
 
-// --- /ui/tenants/new POST handler ---
+// --- /tenants/new POST handler ---
 dashboardApp.post("/tenants/new", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
@@ -2102,8 +2104,8 @@ dashboardApp.post("/tenants/new", async (c) => {
           <p><b>Options:</b></p>
           <ul>
             <li>Pick a different agent name (e.g. <code>${escapeHtml(agent)}-v2</code>, <code>${escapeHtml(agent)}-${Date.now().toString(36).slice(-4)}</code>)</li>
-            <li><a href="/ui/agents/${existingAgent.id}">Reuse the existing agent</a> and rotate its token instead</li>
-            <li><a href="/ui/tenants/new">← Back to wizard</a></li>
+            <li><a href="/agents/${existingAgent.id}">Reuse the existing agent</a> and rotate its token instead</li>
+            <li><a href="/tenants/new">← Back to wizard</a></li>
           </ul>
         </div>
         <p style="color:#8a8d93;font-size:13px;">Why globally unique? Agent names double as the agent's display ID in audit logs and MCP routing. <a href="https://github.com/gentityapp/agent-oauth/issues/new">file an issue</a> if you want per-user uniqueness.</p>
@@ -2281,7 +2283,7 @@ dashboardApp.post("/tenants/new", async (c) => {
         <h2>Agent</h2>
         <p><code>${agentRow.name}</code> · bound to <code>${role.name}</code></p>
       </div>
-      ${agentTokenCard(token, "⚠️  Save this token now. You won't see it again. Revoke and re-mint in <a href=\"/ui/agents\">/ui/agents</a> if lost.")}
+      ${agentTokenCard(token, "⚠️  Save this token now. You won't see it again. Revoke and re-mint in <a href=\"/agents\">/agents</a> if lost.")}
       ${mcpConfigCard(publicOrigin(c), agentRow.name, token, true, tenant)}
       <div class="card">
         <h2>Test it</h2>
@@ -2296,15 +2298,15 @@ dashboardApp.post("/tenants/new", async (c) => {
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"notion/list_dbs","arguments":{"scope":"${tenant}"}}}'</pre>
         ` : ""}
       </div>
-      <p><a href="/ui/tenants">← Back to tenants</a> · <a href="/ui/agents">Manage agents</a></p>
+      <p><a href="/tenants">← Back to tenants</a> · <a href="/agents">Manage agents</a></p>
     </main></body></html>
   `);
 });
 
-// --- /ui/agents ---
+// --- /agents ---
 dashboardApp.get("/agents", async (c) => {
   const user = await getSessionUser(c);
-  if (!user) return c.redirect("/ui/login");
+  if (!user) return c.redirect("/login");
 
   const agents = await prisma.agent.findMany({
     where: { ownerId: user.id },
@@ -2319,14 +2321,14 @@ dashboardApp.get("/agents", async (c) => {
     ${NAV("agents")}
     <main>
       <h1>Agents</h1>
-      <form method="post" action="/ui/agents/bulk-delete" id="bulkAgentForm">
+      <form method="post" action="/agents/bulk-delete" id="bulkAgentForm">
         <input type="hidden" name="agent_ids_csv" id="agentIdsCsv" value="">
         <div class="row spread" style="margin-bottom:8px;">
           <label style="font-size:13px;color:#c8ccd2;cursor:pointer;"><input type="checkbox" id="selAllAgents"> select all</label>
           <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;" id="bulkAgentBtn" disabled>🗑 Delete selected (0)</button>
         </div>
       </form>
-      ${agents.length === 0 ? '<div class="card"><div class="empty">No agents yet. <a href="/ui/tenants/new">Create one via the tenant wizard</a>.</div></div>' : `
+      ${agents.length === 0 ? '<div class="card"><div class="empty">No agents yet. <a href="/tenants/new">Create one via the tenant wizard</a>.</div></div>' : `
       <div class="card">
         <table>
           <thead><tr><th></th><th>Name</th><th>Token prefix</th><th>Role(s)</th><th>Accessible scopes</th><th>Status</th><th>Last used</th><th>Created</th><th>Actions</th></tr></thead>
@@ -2358,7 +2360,7 @@ dashboardApp.get("/agents", async (c) => {
                 <details style="display:inline-block; margin-right: 6px;">
                   <summary style="display:inline-block; cursor:pointer; background:#2a2d33; color:#c8ccd2; padding:4px 10px; border-radius:4px; font-size:12px; list-style:none;">Bind</summary>
                   <div style="position:absolute; right:0; background:#1a1c20; border:1px solid #2a2d33; border-radius:4px; padding:8px; z-index:10; min-width:280px; margin-top:4px;">
-                    <form method="post" action="/ui/agents/${a.id}/bind">
+                    <form method="post" action="/agents/${a.id}/bind">
                       <div style="margin-bottom:6px; font-size:12px; color:#8a8d93;">Replace bindings with:</div>
                       <select name="role_id" style="margin-bottom:6px; font-size:12px; padding:4px; width:100%;">
                         ${roles.map((r) => `<option value="${r.id}">${r.name} (scopes: ${safeJsonArray(r.allowedScopes).join(", ") || "any"})</option>`).join("")}
@@ -2367,11 +2369,11 @@ dashboardApp.get("/agents", async (c) => {
                     </form>
                   </div>
                 </details>
-                <form method="post" action="/ui/agents/${a.id}/rotate" style="display:inline;" onsubmit="return confirm('Rotate token for ${a.name}?\\n\\nThe OLD token will be invalidated immediately. The NEW token will be shown ONCE on the next page.')">
+                <form method="post" action="/agents/${a.id}/rotate" style="display:inline;" onsubmit="return confirm('Rotate token for ${a.name}?\\n\\nThe OLD token will be invalidated immediately. The NEW token will be shown ONCE on the next page.')">
                   <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;">Rotate</button>
                 </form>
-                <a href="/ui/agents/${a.id}" class="btn secondary" style="font-size:12px;padding:4px 10px;">Details</a>
-                <form method="post" action="/ui/agents/${a.id}/delete" style="display:inline;" onsubmit="return confirm('Delete agent ${a.name}?\\n\\nThis permanently destroys its token. The role(s) it was bound to are not deleted.')">
+                <a href="/agents/${a.id}" class="btn secondary" style="font-size:12px;padding:4px 10px;">Details</a>
+                <form method="post" action="/agents/${a.id}/delete" style="display:inline;" onsubmit="return confirm('Delete agent ${a.name}?\\n\\nThis permanently destroys its token. The role(s) it was bound to are not deleted.')">
                   <button type="submit" style="font-size:12px;padding:4px 10px;background:#ff6b6b;color:#0e0f12;">🗑</button>
                 </form>
               </td>
@@ -2402,10 +2404,10 @@ dashboardApp.get("/agents", async (c) => {
   `);
 });
 
-// --- /ui/agents/:id — agent detail + Codex MCP config ---
+// --- /agents/:id — agent detail + Codex MCP config ---
 dashboardApp.get("/agents/:id", async (c) => {
   const user = await getSessionUser(c);
-  if (!user) return c.redirect("/ui/login");
+  if (!user) return c.redirect("/login");
 
   const id = c.req.param("id");
   const agent = await prisma.agent.findUnique({
@@ -2474,12 +2476,12 @@ dashboardApp.get("/agents/:id", async (c) => {
   -H "Content-Type: application/json" \\
   -d '{"jsonrpc":"2.0","id":2,"method":"connections/list"}'</pre>
       </div>
-      <p><a href="/ui/agents">← Back to agents</a></p>
+      <p><a href="/agents">← Back to agents</a></p>
     </main></body></html>
   `);
 });
 
-// --- /ui/agents/:id/bind POST (rebind to a different role) ---
+// --- /agents/:id/bind POST (rebind to a different role) ---
 dashboardApp.post("/agents/:id/bind", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
@@ -2499,10 +2501,10 @@ dashboardApp.post("/agents/:id/bind", async (c) => {
   await prisma.agentRole.deleteMany({ where: { agentId: agent.id } });
   await prisma.agentRole.create({ data: { agentId: agent.id, roleId: role.id } });
 
-  return c.redirect("/ui/agents");
+  return c.redirect("/agents");
 });
 
-// --- /ui/agents/:id/rotate (POST) ---
+// --- /agents/:id/rotate (POST) ---
 dashboardApp.post("/agents/:id/rotate", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
@@ -2555,20 +2557,20 @@ dashboardApp.post("/agents/:id/rotate", async (c) => {
   -H "Content-Type: application/json" \\
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping"}}'</pre>
       </div>
-      <p><a href="/ui/agents">← Back to agents</a></p>
+      <p><a href="/agents">← Back to agents</a></p>
     </main></body></html>
   `);
 });
 
 // --- DEBUG: /debug/agents — dumps agent/role/connection state ---
 dashboardApp.get("/debug/agents", async (c) => {
-  return c.json({ error: "debug endpoint disabled; use /ui/api/scopes" }, 410);
+  return c.json({ error: "debug endpoint disabled; use /api/scopes" }, 410);
 });
 
-// --- /ui/audit ---
+// --- /audit ---
 dashboardApp.get("/audit", async (c) => {
   const user = await getSessionUser(c);
-  if (!user) return c.redirect("/ui/login");
+  if (!user) return c.redirect("/login");
 
   const logs = await prisma.auditLog.findMany({
     where: { OR: [{ userId: user.id }, { agent: { ownerId: user.id } }] },
@@ -2617,7 +2619,7 @@ dashboardApp.get("/audit", async (c) => {
 // Stores the wizard data in OAuthState.payload keyed by the `state` param.
 oauthApp.get("/:provider/start", async (c) => {
   const user = await getSessionUser(c);
-  if (!user) return c.redirect("/ui/login");
+  if (!user) return c.redirect("/login");
 
   const providerKey = c.req.param("provider");
   const providerDef = getProvider(providerKey);
@@ -2625,7 +2627,7 @@ oauthApp.get("/:provider/start", async (c) => {
     return c.html(`<h1>unknown or non-OAuth provider: ${escapeHtml(providerKey)}</h1>`, 400);
   }
   if (!providerDef.authorizeUrl || !providerDef.oauthTokenUrl) {
-    return c.html(`<h1>${escapeHtml(providerDef.label)} OAuth not configured</h1><p>Missing <code>authorizeUrl</code> in registry. <a href="/ui/tenants/new">← Back</a></p>`, 500);
+    return c.html(`<h1>${escapeHtml(providerDef.label)} OAuth not configured</h1><p>Missing <code>authorizeUrl</code> in registry. <a href="/tenants/new">← Back</a></p>`, 500);
   }
 
   // Per-provider env var names: GITHUB_CLIENT_ID / GOOGLE_GSC_CLIENT_ID / HUBSPOT_CLIENT_ID
@@ -2643,7 +2645,7 @@ oauthApp.get("/:provider/start", async (c) => {
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
     || (legacyAliases[providerKey] || []).map(k => process.env[k]).find(Boolean);
   if (!clientId) {
-    return c.html(`<h1>${escapeHtml(providerDef.label)} OAuth not configured</h1><p>Set <code>${envPrefix}_CLIENT_ID</code> env var. <a href="/ui/tenants/new">← Back</a></p>`, 500);
+    return c.html(`<h1>${escapeHtml(providerDef.label)} OAuth not configured</h1><p>Set <code>${envPrefix}_CLIENT_ID</code> env var. <a href="/tenants/new">← Back</a></p>`, 500);
   }
   const publicUrl = process.env.BETTER_AUTH_URL || `${publicOrigin(c)}`;
 
@@ -2671,7 +2673,7 @@ oauthApp.get("/:provider/start", async (c) => {
     payload.pkce_code_verifier = hubspotPkceVerifier;
   }
   if (!/^[a-z0-9_-]+$/.test(payload.tenant)) {
-    return c.html(`<h1>invalid tenant</h1><p>Tenant must match <code>[a-z0-9_-]+</code>. <a href="/ui/tenants/new">← Back</a></p>`, 400);
+    return c.html(`<h1>invalid tenant</h1><p>Tenant must match <code>[a-z0-9_-]+</code>. <a href="/tenants/new">← Back</a></p>`, 400);
   }
 
   // CSRF state
@@ -2681,7 +2683,7 @@ oauthApp.get("/:provider/start", async (c) => {
       state,
       provider: providerKey,
       payload: JSON.stringify(payload),
-      redirectTo: reauth ? `/ui/tenants/${payload.tenant}/edit` : "/ui/tenants/new",
+      redirectTo: reauth ? `/tenants/${payload.tenant}/edit` : "/tenants/new",
       expiresAt: new Date(Date.now() + 30 * 60 * 1000),
     },
   });
@@ -2716,7 +2718,7 @@ oauthApp.get("/:provider/callback", async (c) => {
  const providerKeyForError = c.req.param("provider");
  try {
   const user = await getSessionUser(c);
-  if (!user) return c.redirect("/ui/login?error=oauth_session_expired");
+  if (!user) return c.redirect("/login?error=oauth_session_expired");
 
   const providerKey = c.req.param("provider");
   const providerDef = getProvider(providerKey);
@@ -2733,7 +2735,7 @@ oauthApp.get("/:provider/callback", async (c) => {
   // Look up + consume state
   const oauthState = await prisma.oAuthState.findUnique({ where: { state } });
   if (!oauthState || oauthState.expiresAt < new Date()) {
-    return c.html(`<h1>OAuth state expired or invalid</h1><p>Try <a href="/ui/tenants/new">creating the tenant</a> again.</p>`, 400);
+    return c.html(`<h1>OAuth state expired or invalid</h1><p>Try <a href="/tenants/new">creating the tenant</a> again.</p>`, 400);
   }
   await prisma.oAuthState.delete({ where: { state } });
   if (oauthState.provider !== providerKey) {
@@ -2843,7 +2845,7 @@ oauthApp.get("/:provider/callback", async (c) => {
           orderBy: { createdAt: "desc" },
         });
     if (requestedConnectionId && !conn) {
-      return c.html(`<h1>connection not found for reconnect</h1><p>The requested connection does not belong to this tenant/provider. <a href="/ui/tenants/${effectiveTenant}/edit">Back</a></p>`, 404);
+      return c.html(`<h1>connection not found for reconnect</h1><p>The requested connection does not belong to this tenant/provider. <a href="/tenants/${effectiveTenant}/edit">Back</a></p>`, 404);
     }
     const data = {
       encryptedCredential: encrypt(accessToken),
@@ -2870,7 +2872,7 @@ oauthApp.get("/:provider/callback", async (c) => {
       });
     }
     await syncTenantRoleTools(user.id, effectiveTenant);
-    return c.redirect(`/ui/tenants/${effectiveTenant}/edit?reauthed=${encodeURIComponent(providerKey)}`);
+    return c.redirect(`/tenants/${effectiveTenant}/edit?reauthed=${encodeURIComponent(providerKey)}`);
   }
 
   if (!agent) {
@@ -2971,9 +2973,9 @@ oauthApp.get("/:provider/callback", async (c) => {
       <main>
         <h1>⚠️  Agent name <code>${escapeHtml(agent)}</code> already exists</h1>
         <div class="card" style="border-color:#ff6b6b;">
-          <p>${escapeHtml(providerDef.label)} connection was created, but the agent name is taken. <a href="/ui/agents/${existingAgent.id}">Reuse the existing agent</a> or pick a different name.</p>
+          <p>${escapeHtml(providerDef.label)} connection was created, but the agent name is taken. <a href="/agents/${existingAgent.id}">Reuse the existing agent</a> or pick a different name.</p>
         </div>
-        <p><a href="/ui/tenants">← Back to tenants</a></p>
+        <p><a href="/tenants">← Back to tenants</a></p>
       </main></body></html>
     `, 409);
   }
@@ -3017,7 +3019,7 @@ oauthApp.get("/:provider/callback", async (c) => {
       </div>
       ${agentTokenCard(token, "")}
       ${mcpConfigCard(publicOrigin(c), agentRow.name, token, true, effectiveTenant)}
-      <p><a href="/ui/tenants">← Back to tenants</a> · <a href="/ui/agents">Manage agents</a></p>
+      <p><a href="/tenants">← Back to tenants</a> · <a href="/agents">Manage agents</a></p>
     </main></body></html>
   `);
  } catch (err) {
@@ -3034,13 +3036,13 @@ oauthApp.get("/:provider/callback", async (c) => {
           <p>Something went wrong while completing the <code>${escapeHtml(providerKeyForError)}</code> connection.</p>
           <pre style="background:#0e0f12;border:1px solid #ff6b6b;white-space:pre-wrap;">${escapeHtml(detail)}</pre>
         </div>
-        <p><a href="/ui/tenants/new">← Try again</a></p>
+        <p><a href="/tenants/new">← Try again</a></p>
       </main></body></html>
     `, 500);
  }
 });
 
-// --- /ui/api/scopes (JSON dump of caller's wiring) ---
+// --- /api/scopes (JSON dump of caller's wiring) ---
 // Returns the user's distinct scopes, connections, roles, and agents.
 // Useful for agents that need to know what they can call before hitting /mcp.
 dashboardApp.get("/api/scopes", async (c) => {
@@ -3092,7 +3094,7 @@ dashboardApp.get("/api/scopes", async (c) => {
   });
 });
 
-// --- /ui/tenants/:scope/agents/new (POST) — add another agent to existing tenant ---
+// --- /tenants/:scope/agents/new (POST) — add another agent to existing tenant ---
 dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
@@ -3127,7 +3129,7 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
         <h1>⚠️ Agent name <code>${escapeHtml(agent)}</code> already exists</h1>
         <div class="card" style="border-color:#ff6b6b;">
           <p>Pick a different agent name (e.g. <code>${escapeHtml(agent)}-v2</code>).</p>
-          <p><a href="/ui/tenants/${scope}/edit">← Back to ${scope}</a></p>
+          <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a></p>
         </div>
       </main></body></html>
     `, 409);
@@ -3190,15 +3192,15 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping"}}'</pre>
       </div>
       <p>
-        <a href="/ui/tenants/${scope}/edit">← Back to ${scope}</a> ·
-        <a href="/ui/tenants/${scope}/edit">Add another agent</a> ·
-        <a href="/ui/agents">Manage all agents</a>
+        <a href="/tenants/${scope}/edit">← Back to ${scope}</a> ·
+        <a href="/tenants/${scope}/edit">Add another agent</a> ·
+        <a href="/agents">Manage all agents</a>
       </p>
     </main></body></html>
   `);
 });
 
-// --- /ui/tenants/:scope/delete (POST) — single tenant delete ---
+// --- /tenants/:scope/delete (POST) — single tenant delete ---
 dashboardApp.post("/tenants/:scope/delete", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
@@ -3241,14 +3243,14 @@ dashboardApp.post("/tenants/:scope/delete", async (c) => {
       <h1>✓ Deleted tenant <code>${scope}</code></h1>
       <div class="card">
         <p>Removed <b>${connDelete.count}</b> connection(s) and <b>${roleDelete.count}</b> role(s).</p>
-        <p>Agents that were bound to this role are now unbound. Visit <a href="/ui/agents">/ui/agents</a> to re-bind or delete them.</p>
+        <p>Agents that were bound to this role are now unbound. Visit <a href="/agents">/agents</a> to re-bind or delete them.</p>
       </div>
-      <p><a href="/ui/tenants">← Back to all tenants</a></p>
+      <p><a href="/tenants">← Back to all tenants</a></p>
     </main></body></html>
   `);
 });
 
-// --- /ui/tenants/bulk-delete (POST) — bulk tenant delete ---
+// --- /tenants/bulk-delete (POST) — bulk tenant delete ---
 dashboardApp.post("/tenants/bulk-delete", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
@@ -3287,12 +3289,12 @@ dashboardApp.post("/tenants/bulk-delete", async (c) => {
         <p>Total: <b>${conns}</b> connection(s), <b>${roles}</b> role(s) removed.</p>
         <ul>${detail.join("")}</ul>
       </div>
-      <p><a href="/ui/tenants">← Back to all tenants</a></p>
+      <p><a href="/tenants">← Back to all tenants</a></p>
     </main></body></html>
   `);
 });
 
-// --- /ui/agents/:id/delete (POST) — single agent delete ---
+// --- /agents/:id/delete (POST) — single agent delete ---
 dashboardApp.post("/agents/:id/delete", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
@@ -3303,10 +3305,10 @@ dashboardApp.post("/agents/:id/delete", async (c) => {
 
   // Cascade AgentRole rows via onDelete: Cascade; the agent itself is then deleted.
   await prisma.agent.delete({ where: { id: agent.id } });
-  return c.redirect("/ui/agents");
+  return c.redirect("/agents");
 });
 
-// --- /ui/agents/bulk-delete (POST) — bulk agent delete ---
+// --- /agents/bulk-delete (POST) — bulk agent delete ---
 dashboardApp.post("/agents/bulk-delete", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
@@ -3332,7 +3334,7 @@ dashboardApp.post("/agents/bulk-delete", async (c) => {
     <main>
       <h1>✓ Bulk deleted ${result.count} agent(s)</h1>
       <p>${result.count < ids.length ? `(${ids.length - result.count} skipped — not yours or not found)` : ""}</p>
-      <p><a href="/ui/agents">← Back to all agents</a></p>
+      <p><a href="/agents">← Back to all agents</a></p>
     </main></body></html>
   `);
 });
