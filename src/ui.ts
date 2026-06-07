@@ -27,6 +27,15 @@ function jsString(s: string): string {
   return JSON.stringify(s);
 }
 
+function pkceCodeVerifier(): string {
+  return crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
+}
+
+async function pkceCodeChallenge(verifier: string): Promise<string> {
+  const nodeCrypto = await import("node:crypto");
+  return nodeCrypto.createHash("sha256").update(verifier).digest("base64url");
+}
+
 // Renders the "Agent token" card with a copy-to-clipboard button.
 // The token is shown once, so we make it easy to grab. `warningHtml` is
 // raw HTML (may contain links); pass "" to omit the warning line.
@@ -2218,7 +2227,7 @@ oauthApp.get("/:provider/start", async (c) => {
   const reauth = c.req.query("reauth") === "1";
 
   // Collect wizard data from query string
-  const payload = {
+  const payload: Record<string, any> = {
     tenant: c.req.query("tenant") || "",
     tenant_select: c.req.query("tenant_select") || "",
     additional_scopes: c.req.query("additional_scopes") || "",
@@ -2230,6 +2239,10 @@ oauthApp.get("/:provider/start", async (c) => {
     reauth,
     userId: user.id,
   };
+  const hubspotPkceVerifier = providerKey === "hubspot" ? pkceCodeVerifier() : "";
+  if (hubspotPkceVerifier) {
+    payload.pkce_code_verifier = hubspotPkceVerifier;
+  }
   if (!/^[a-z0-9_-]+$/.test(payload.tenant)) {
     return c.html(`<h1>invalid tenant</h1><p>Tenant must match <code>[a-z0-9_-]+</code>. <a href="/ui/tenants/new">← Back</a></p>`, 400);
   }
@@ -2253,8 +2266,6 @@ oauthApp.get("/:provider/start", async (c) => {
     extraParams = `&allow_signup=true`;
   } else if (providerKey.startsWith("google_") || providerKey === "gmail") {
     extraParams = `&access_type=offline&prompt=consent`; // request refresh_token
-  } else if (providerKey === "hubspot") {
-    extraParams = `&optional_scopes=`;
   }
   const scopeStr = (providerDef.oauthScopes || []).join(" ");
   const params = new URLSearchParams({
@@ -2264,6 +2275,10 @@ oauthApp.get("/:provider/start", async (c) => {
     scope: scopeStr,
     state,
   });
+  if (hubspotPkceVerifier) {
+    params.set("code_challenge", await pkceCodeChallenge(hubspotPkceVerifier));
+    params.set("code_challenge_method", "S256");
+  }
   return c.redirect(`${providerDef.authorizeUrl}?${params.toString()}${extraParams}`);
 });
 
@@ -2330,17 +2345,22 @@ oauthApp.get("/:provider/callback", async (c) => {
   }
   const redirectUri = `${publicUrl.replace(/\/+$/, "")}/oauth/${providerKey}/callback`;
 
+  const tokenBody = new URLSearchParams({
+    client_id: clientId,
+    client_secret: clientSecret,
+    code,
+    redirect_uri: redirectUri,
+    state,
+    grant_type: "authorization_code",
+  });
+  const pkceVerifier = String(payload.pkce_code_verifier || "");
+  if (providerKey === "hubspot" && pkceVerifier) {
+    tokenBody.set("code_verifier", pkceVerifier);
+  }
   const tokenResp = await fetch(providerDef.oauthTokenUrl!, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
-    body: new URLSearchParams({
-      client_id: clientId,
-      client_secret: clientSecret,
-      code,
-      redirect_uri: redirectUri,
-      state,
-      grant_type: "authorization_code",
-    }),
+    body: tokenBody,
   });
   if (!tokenResp.ok) {
     return c.html(`<h1>${escapeHtml(providerDef.label)} token exchange failed</h1><p>HTTP ${tokenResp.status}</p>`, 500);
