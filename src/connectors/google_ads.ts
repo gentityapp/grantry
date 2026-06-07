@@ -109,5 +109,36 @@ export async function callGoogleAdsTool(tool: string, args: AdsArgs, token: stri
     };
   }
 
+  if (tool === "google_ads/mutate") {
+    const cid = customerId(args.customer_id ?? args.customerId);
+    const operations = Array.isArray(args.operations) ? args.operations : null;
+    if (!cid || !operations || operations.length === 0) {
+      throw new Error("customer_id and non-empty operations array are required");
+    }
+
+    const body: Record<string, unknown> = { mutateOperations: operations };
+    if (typeof args.partial_failure === "boolean") body.partialFailure = args.partial_failure;
+    if (typeof args.partialFailure === "boolean") body.partialFailure = args.partialFailure;
+    if (typeof args.validate_only === "boolean") body.validateOnly = args.validate_only;
+    if (typeof args.validateOnly === "boolean") body.validateOnly = args.validateOnly;
+    const responseContentType = String(args.response_content_type ?? args.responseContentType ?? "").trim();
+    if (responseContentType) body.responseContentType = responseContentType;
+
+    const r = await fetchGoogleAds(`/customers/${cid}/googleAds:mutate`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    }, { tool, customerId: cid, operationCount: operations.length });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Google Ads mutate failed: ${r.status} ${JSON.stringify(j).slice(0, 1500)}`);
+    return {
+      structuredContent: {
+        api_version: GOOGLE_ADS_API_VERSION,
+        results: j.mutateOperationResponses ?? j.results ?? [],
+        partial_failure_error: j.partialFailureError ?? null,
+      },
+    };
+  }
+
   throw new Error(`Unknown Google Ads tool: ${tool}`);
 }

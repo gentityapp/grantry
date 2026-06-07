@@ -2091,6 +2091,7 @@ oauthApp.get("/:provider/start", async (c) => {
     google_gsc: ["GOOGLE_CLIENT_ID"],
     google_analytics: ["GOOGLE_CLIENT_ID"],
     google_ads: ["GOOGLE_CLIENT_ID"],
+    gmail: ["GOOGLE_CLIENT_ID"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
     || (legacyAliases[providerKey] || []).map(k => process.env[k]).find(Boolean);
@@ -2139,7 +2140,7 @@ oauthApp.get("/:provider/start", async (c) => {
   let extraParams = "";
   if (providerKey === "github") {
     extraParams = `&allow_signup=true`;
-  } else if (providerKey.startsWith("google_")) {
+  } else if (providerKey.startsWith("google_") || providerKey === "gmail") {
     extraParams = `&access_type=offline&prompt=consent`; // request refresh_token
   } else if (providerKey === "hubspot") {
     extraParams = `&optional_scopes=`;
@@ -2199,12 +2200,14 @@ oauthApp.get("/:provider/callback", async (c) => {
     google_gsc: ["GOOGLE_CLIENT_ID"],
     google_analytics: ["GOOGLE_CLIENT_ID"],
     google_ads: ["GOOGLE_CLIENT_ID"],
+    gmail: ["GOOGLE_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
     github: ["GH_CLIENT_SECRET", "GENTITY_GITHUB_CLIENT_SECRET"],
     google_gsc: ["GOOGLE_CLIENT_SECRET"],
     google_analytics: ["GOOGLE_CLIENT_SECRET"],
     google_ads: ["GOOGLE_CLIENT_SECRET"],
+    gmail: ["GOOGLE_CLIENT_SECRET"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
     || (legacyAliases[providerKey] || []).map(k => process.env[k]).find(Boolean);
@@ -2244,7 +2247,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     if (providerKey === "github") {
       const u: any = await (await fetch("https://api.github.com/user", { headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "agent-oauth" } })).json();
       if (u.login) userLogin = u.login;
-    } else if (providerKey.startsWith("google_")) {
+    } else if (providerKey.startsWith("google_") || providerKey === "gmail") {
       const u: any = await (await fetch(`https://www.googleapis.com/oauth2/v2/userinfo?access_token=${accessToken}`)).json();
       if (u.email) userLogin = u.email;
     } else if (providerKey === "hubspot") {

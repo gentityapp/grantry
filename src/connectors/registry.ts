@@ -115,7 +115,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "google_ads",
     label: "Google Ads",
     authTypes: ["oauth"],
-    helpText: "Connect your Google Ads account. Read-only access to customers and GAQL search reports. Requires GOOGLE_ADS_DEVELOPER_TOKEN on the server.",
+    helpText: "Connect your Google Ads account. Supports customer discovery, GAQL search, and mutate operations for campaign/ad submission. Requires GOOGLE_ADS_DEVELOPER_TOKEN on the server.",
     oauthSetupUrl: "https://console.cloud.google.com/apis/credentials",
     oauthScopes: [
       "https://www.googleapis.com/auth/adwords",
@@ -123,7 +123,23 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     oauthTokenUrl: "https://oauth2.googleapis.com/token",
-    tools: ["google_ads/list_accessible_customers", "google_ads/search"],
+    tools: ["google_ads/list_accessible_customers", "google_ads/search", "google_ads/mutate"],
+    implemented: true,
+  },
+  gmail: {
+    key: "gmail",
+    label: "Gmail",
+    authTypes: ["oauth"],
+    helpText: "Connect Gmail to list, read, and send messages through the Gmail API.",
+    oauthSetupUrl: "https://console.cloud.google.com/apis/credentials",
+    oauthScopes: [
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/gmail.send",
+      "https://www.googleapis.com/auth/userinfo.email",
+    ],
+    authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+    oauthTokenUrl: "https://oauth2.googleapis.com/token",
+    tools: ["gmail/list_messages", "gmail/get_message", "gmail/send_message"],
     implemented: true,
   },
   hubspot: {
@@ -132,11 +148,11 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authTypes: ["oauth"],
     helpText: "Connect your HubSpot account to access CRM data.",
     oauthSetupUrl: "https://developers.hubspot.com/",
-    oauthScopes: ["crm.objects.deals.read", "crm.objects.contacts.read", "oauth"],
+    oauthScopes: ["crm.objects.deals.read", "crm.objects.deals.write", "crm.objects.contacts.read", "crm.objects.contacts.write", "oauth"],
     authorizeUrl: "https://app.hubspot.com/oauth/authorize",
     oauthTokenUrl: "https://api.hubapi.com/oauth/v1/token",
     tools: ["hubspot/list_deals", "hubspot/get_contact", "hubspot/create_deal"],
-    implemented: false,
+    implemented: true,
   },
 };
 

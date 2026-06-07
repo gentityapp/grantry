@@ -12,6 +12,8 @@ import { callGitHubTool } from "./connectors/github.js";
 import { callGoogleGscTool } from "./connectors/google_gsc.js";
 import { callGoogleAnalyticsTool } from "./connectors/google_analytics.js";
 import { callGoogleAdsTool } from "./connectors/google_ads.js";
+import { callHubSpotTool } from "./connectors/hubspot.js";
+import { callGmailTool } from "./connectors/gmail.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 
 export const mcpApp = new Hono();
@@ -225,6 +227,64 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       page_token: { type: "string", description: "Optional next page token." },
     };
   }
+  if (toolName === "google_ads/mutate") {
+    return {
+      customer_id: { type: "string", description: "Google Ads customer id to mutate, with or without dashes." },
+      operations: {
+        type: "array",
+        minItems: 1,
+        items: { type: "object" },
+        description: "Google Ads mutateOperations array, e.g. campaignBudgetOperation, campaignOperation, adGroupOperation, adGroupAdOperation, or adGroupCriterionOperation.",
+      },
+      login_customer_id: { type: "string", description: "Optional manager customer id for login-customer-id header, no dashes." },
+      partial_failure: { type: "boolean", description: "When true, valid operations may still succeed if other operations fail." },
+      validate_only: { type: "boolean", description: "When true, Google Ads validates the operations without applying changes." },
+      response_content_type: { type: "string", enum: ["MUTABLE_RESOURCE", "RESOURCE_NAME_ONLY"], description: "Google Ads response content type." },
+    };
+  }
+  if (toolName === "hubspot/list_deals") {
+    return {
+      limit: { type: "number", minimum: 1, maximum: 100, description: "Deals to return, max 100." },
+      after: { type: "string", description: "HubSpot paging cursor." },
+      properties: { type: "array", items: { type: "string" }, description: "Deal properties to include." },
+    };
+  }
+  if (toolName === "hubspot/get_contact") {
+    return {
+      contact_id: { type: "string", description: "HubSpot contact object id." },
+      properties: { type: "array", items: { type: "string" }, description: "Contact properties to include." },
+    };
+  }
+  if (toolName === "hubspot/create_deal") {
+    return {
+      properties: { type: "object", description: "HubSpot deal properties, e.g. dealname, amount, pipeline, dealstage, closedate." },
+    };
+  }
+  if (toolName === "gmail/list_messages") {
+    return {
+      q: { type: "string", description: "Gmail search query." },
+      max_results: { type: "number", minimum: 1, maximum: 100, description: "Messages to return, max 100." },
+      page_token: { type: "string", description: "Optional Gmail page token." },
+    };
+  }
+  if (toolName === "gmail/get_message") {
+    return {
+      message_id: { type: "string", description: "Gmail message id." },
+      format: { type: "string", enum: ["minimal", "full", "raw", "metadata"], description: "Gmail message format. Defaults to metadata." },
+    };
+  }
+  if (toolName === "gmail/send_message") {
+    return {
+      to: { type: "string", description: "Recipient email address." },
+      cc: { type: "string", description: "Optional CC recipients." },
+      bcc: { type: "string", description: "Optional BCC recipients." },
+      subject: { type: "string", description: "Email subject." },
+      body: { type: "string", description: "Email body." },
+      reply_to: { type: "string", description: "Optional Reply-To address." },
+      thread_id: { type: "string", description: "Optional Gmail thread id." },
+      mime_type: { type: "string", description: "Content-Type, defaults to text/plain; charset=UTF-8." },
+    };
+  }
   return {};
 }
 
@@ -239,6 +299,11 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "google_gsc/search_analytics") return ["site_url", "start_date", "end_date"];
   if (toolName === "google_analytics/run_report") return ["property_id", "start_date", "end_date"];
   if (toolName === "google_ads/search") return ["customer_id", "query"];
+  if (toolName === "google_ads/mutate") return ["customer_id", "operations"];
+  if (toolName === "hubspot/get_contact") return ["contact_id"];
+  if (toolName === "hubspot/create_deal") return ["properties"];
+  if (toolName === "gmail/get_message") return ["message_id"];
+  if (toolName === "gmail/send_message") return ["to", "subject", "body"];
   return [];
 }
 
@@ -348,12 +413,14 @@ async function refreshOAuthToken(provider: string, refreshToken: string) {
     google_gsc: ["GOOGLE_CLIENT_ID"],
     google_analytics: ["GOOGLE_CLIENT_ID"],
     google_ads: ["GOOGLE_CLIENT_ID"],
+    gmail: ["GOOGLE_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
     github: ["GH_CLIENT_SECRET", "GENTITY_GITHUB_CLIENT_SECRET"],
     google_gsc: ["GOOGLE_CLIENT_SECRET"],
     google_analytics: ["GOOGLE_CLIENT_SECRET"],
     google_ads: ["GOOGLE_CLIENT_SECRET"],
+    gmail: ["GOOGLE_CLIENT_SECRET"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
     || (legacyAliases[provider] || []).map((k) => process.env[k]).find(Boolean);
@@ -595,6 +662,10 @@ mcpApp.post("/", async (c) => {
         result = await callGoogleAnalyticsTool(toolName, args, token);
       } else if (decision.provider === "google_ads") {
         result = await callGoogleAdsTool(toolName, args, token);
+      } else if (decision.provider === "hubspot") {
+        result = await callHubSpotTool(toolName, args, token);
+      } else if (decision.provider === "gmail") {
+        result = await callGmailTool(toolName, args, token);
       } else {
         throw new Error(`no dispatcher for provider: ${decision.provider}`);
       }
