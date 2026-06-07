@@ -2088,6 +2088,9 @@ oauthApp.get("/:provider/start", async (c) => {
   // Backwards compat: also accept GH_CLIENT_ID (legacy) and GENTITY_GITHUB_CLIENT_ID
   const legacyAliases: Record<string, string[]> = {
     github: ["GH_CLIENT_ID", "GENTITY_GITHUB_CLIENT_ID"],
+    google_gsc: ["GOOGLE_CLIENT_ID"],
+    google_analytics: ["GOOGLE_CLIENT_ID"],
+    google_ads: ["GOOGLE_CLIENT_ID"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
     || (legacyAliases[providerKey] || []).map(k => process.env[k]).find(Boolean);
@@ -2193,9 +2196,15 @@ oauthApp.get("/:provider/callback", async (c) => {
   const envPrefix = providerKey.toUpperCase();
   const legacyAliases: Record<string, string[]> = {
     github: ["GH_CLIENT_ID", "GENTITY_GITHUB_CLIENT_ID"],
+    google_gsc: ["GOOGLE_CLIENT_ID"],
+    google_analytics: ["GOOGLE_CLIENT_ID"],
+    google_ads: ["GOOGLE_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
     github: ["GH_CLIENT_SECRET", "GENTITY_GITHUB_CLIENT_SECRET"],
+    google_gsc: ["GOOGLE_CLIENT_SECRET"],
+    google_analytics: ["GOOGLE_CLIENT_SECRET"],
+    google_ads: ["GOOGLE_CLIENT_SECRET"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
     || (legacyAliases[providerKey] || []).map(k => process.env[k]).find(Boolean);

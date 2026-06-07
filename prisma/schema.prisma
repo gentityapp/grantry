@@ -126,7 +126,7 @@ model AgentRole {
 
 model Connection {
   id                  String   @id @default(cuid())
-  provider            String   // "github" | "notion" | "google_drive" | "google_gsc" | "google_ads" | "hubspot"
+  provider            String   // "github" | "notion" | "google_drive" | "google_gsc" | "google_analytics" | "google_ads" | "hubspot"
   authType            String   @default("pat") // "pat" | "oauth" | "private_app" | "service_account"
   label               String
   scope               String   @default("") // tenant scope, e.g. "rootteam", "acme"

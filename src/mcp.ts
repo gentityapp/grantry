@@ -10,6 +10,8 @@ import { PROVIDERS } from "./connectors/registry.js";
 import { callNotionTool } from "./connectors/notion.js";
 import { callGitHubTool } from "./connectors/github.js";
 import { callGoogleGscTool } from "./connectors/google_gsc.js";
+import { callGoogleAnalyticsTool } from "./connectors/google_analytics.js";
+import { callGoogleAdsTool } from "./connectors/google_ads.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 
 export const mcpApp = new Hono();
@@ -188,6 +190,41 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       },
     };
   }
+  if (toolName === "google_analytics/list_properties") {
+    return {
+      page_size: { type: "number", minimum: 1, maximum: 200, description: "Account summaries page size, max 200." },
+      page_token: { type: "string", description: "Optional pagination token." },
+    };
+  }
+  if (toolName === "google_analytics/run_report") {
+    return {
+      property_id: { type: "string", description: "GA4 property id, either 123456 or properties/123456." },
+      start_date: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "Start date in YYYY-MM-DD." },
+      end_date: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "End date in YYYY-MM-DD." },
+      dimensions: { type: "array", items: { type: "string" }, description: "GA4 dimension names, e.g. date, sessionDefaultChannelGroup, pagePath." },
+      metrics: { type: "array", items: { type: "string" }, description: "GA4 metric names, e.g. activeUsers, sessions, conversions." },
+      limit: { type: "number", minimum: 1, maximum: 250000, description: "Rows to return. Defaults to 1000." },
+      offset: { type: "number", minimum: 0, description: "Pagination offset." },
+      dimension_filter: { type: "object", description: "Raw GA4 Data API dimensionFilter expression." },
+      metric_filter: { type: "object", description: "Raw GA4 Data API metricFilter expression." },
+      order_bys: { type: "array", items: { type: "object" }, description: "Raw GA4 Data API orderBys array." },
+      keep_empty_rows: { type: "boolean", description: "Whether to return rows with all metrics equal to zero." },
+    };
+  }
+  if (toolName === "google_ads/list_accessible_customers") {
+    return {
+      login_customer_id: { type: "string", description: "Optional Google Ads manager customer id, no dashes." },
+    };
+  }
+  if (toolName === "google_ads/search") {
+    return {
+      customer_id: { type: "string", description: "Google Ads customer id to query, with or without dashes." },
+      query: { type: "string", description: "GAQL query string." },
+      login_customer_id: { type: "string", description: "Optional manager customer id for login-customer-id header, no dashes." },
+      page_size: { type: "number", minimum: 1, maximum: 10000, description: "Rows per page." },
+      page_token: { type: "string", description: "Optional next page token." },
+    };
+  }
   return {};
 }
 
@@ -200,6 +237,8 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "notion/update_blocks") return ["operations"];
   if (toolName === "notion/update_page_status") return ["page_id", "status"];
   if (toolName === "google_gsc/search_analytics") return ["site_url", "start_date", "end_date"];
+  if (toolName === "google_analytics/run_report") return ["property_id", "start_date", "end_date"];
+  if (toolName === "google_ads/search") return ["customer_id", "query"];
   return [];
 }
 
@@ -306,9 +345,15 @@ async function refreshOAuthToken(provider: string, refreshToken: string) {
   const envPrefix = provider.toUpperCase();
   const legacyAliases: Record<string, string[]> = {
     github: ["GH_CLIENT_ID", "GENTITY_GITHUB_CLIENT_ID"],
+    google_gsc: ["GOOGLE_CLIENT_ID"],
+    google_analytics: ["GOOGLE_CLIENT_ID"],
+    google_ads: ["GOOGLE_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
     github: ["GH_CLIENT_SECRET", "GENTITY_GITHUB_CLIENT_SECRET"],
+    google_gsc: ["GOOGLE_CLIENT_SECRET"],
+    google_analytics: ["GOOGLE_CLIENT_SECRET"],
+    google_ads: ["GOOGLE_CLIENT_SECRET"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
     || (legacyAliases[provider] || []).map((k) => process.env[k]).find(Boolean);
@@ -546,6 +591,10 @@ mcpApp.post("/", async (c) => {
         result = await callGitHubTool(toolName, args, token);
       } else if (decision.provider === "google_gsc") {
         result = await callGoogleGscTool(toolName, args, token);
+      } else if (decision.provider === "google_analytics") {
+        result = await callGoogleAnalyticsTool(toolName, args, token);
+      } else if (decision.provider === "google_ads") {
+        result = await callGoogleAdsTool(toolName, args, token);
       } else {
         throw new Error(`no dispatcher for provider: ${decision.provider}`);
       }

@@ -96,11 +96,26 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     tools: ["google_gsc/list_sites", "google_gsc/search_analytics"],
     implemented: true,
   },
+  google_analytics: {
+    key: "google_analytics",
+    label: "Google Analytics",
+    authTypes: ["oauth"],
+    helpText: "Connect your Google account to access GA4 properties and run read-only Analytics Data API reports.",
+    oauthSetupUrl: "https://console.cloud.google.com/apis/credentials",
+    oauthScopes: [
+      "https://www.googleapis.com/auth/analytics.readonly",
+      "https://www.googleapis.com/auth/userinfo.email",
+    ],
+    authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+    oauthTokenUrl: "https://oauth2.googleapis.com/token",
+    tools: ["google_analytics/list_properties", "google_analytics/run_report"],
+    implemented: true,
+  },
   google_ads: {
     key: "google_ads",
     label: "Google Ads",
     authTypes: ["oauth"],
-    helpText: "Connect your Google Ads account. Read-only access to campaigns and reports.",
+    helpText: "Connect your Google Ads account. Read-only access to customers and GAQL search reports. Requires GOOGLE_ADS_DEVELOPER_TOKEN on the server.",
     oauthSetupUrl: "https://console.cloud.google.com/apis/credentials",
     oauthScopes: [
       "https://www.googleapis.com/auth/adwords",
@@ -108,8 +123,8 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     oauthTokenUrl: "https://oauth2.googleapis.com/token",
-    tools: ["google_ads/list_campaigns", "google_ads/get_campaign"],
-    implemented: false,
+    tools: ["google_ads/list_accessible_customers", "google_ads/search"],
+    implemented: true,
   },
   hubspot: {
     key: "hubspot",
