@@ -1575,7 +1575,6 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
 
     // Update each connection's label + enabled
     const connUpdates: Array<{ id: string; label: string; enabled: boolean }> = [];
-    let googleAdsDeveloperTokenSaved = false;
     for (const cn of connections) {
       const labelField = `conn_label_${cn.id}`;
       const enabledField = `conn_enabled_${cn.id}`;
@@ -1591,7 +1590,6 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
         if (newEnabled !== cn.enabled) updateData.enabled = newEnabled;
         if (cn.provider === "google_ads" && serverCredential) {
           updateData.encryptedServerCredential = encrypt(serverCredential);
-          googleAdsDeveloperTokenSaved = true;
         }
         if (cn.provider === "google_ads" && clearServerCredential) updateData.encryptedServerCredential = null;
         if (Object.keys(updateData).length > 0) {
@@ -1644,9 +1642,14 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
         },
       });
     }
-    if (googleAdsDeveloperTokenSaved && role) {
+    if (role) {
+      const enabledConnections = await prisma.connection.findMany({
+        where: { scope, ownerId: user.id, enabled: true },
+        select: { provider: true },
+      });
       const existingTools = safeJsonArray(role.allowedTools);
-      const mergedTools = Array.from(new Set([...existingTools, ...toolsForProvider("google_ads")]));
+      const connectedTools = enabledConnections.flatMap((cn) => toolsForProvider(cn.provider));
+      const mergedTools = Array.from(new Set([...existingTools, ...connectedTools]));
       role = await prisma.role.update({
         where: { id: role.id },
         data: { allowedTools: JSON.stringify(mergedTools) },
