@@ -27,6 +27,23 @@ function jsString(s: string): string {
   return JSON.stringify(s);
 }
 
+function authTypeLabel(providerKey: string, authType: string): string {
+  if (authType === "oauth") return "OAuth";
+  if (providerKey === "hubspot") return "Private App token";
+  return "paste token";
+}
+
+function credentialPlaceholder(providerKey: string, providerLabel: string, authType: string): string {
+  if (authType === "oauth") return "OAuth flow will start after submit";
+  if (providerKey === "hubspot") return "Paste your HubSpot Private App access token here (starts with pat-)";
+  return `Paste your ${providerLabel} token here`;
+}
+
+function tokenLinkLabel(providerKey: string, providerLabel: string): string {
+  if (providerKey === "hubspot") return "🔗 Get a new HubSpot Private App access token here →";
+  return `🔗 Get a new ${providerLabel} token here →`;
+}
+
 function pkceCodeVerifier(): string {
   return crypto.randomUUID().replace(/-/g, "") + crypto.randomUUID().replace(/-/g, "");
 }
@@ -780,7 +797,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           <div class="field">
             <label for="provider">Provider</label>
             <select name="provider" id="provider" required>
-              ${availableToAdd.map(({ provider: p, authType }) => `<option value="${p.key}" data-auth-type="${authType}">${p.label} (${authType === "pat" ? "paste token" : "OAuth"})</option>`).join("")}
+              ${availableToAdd.map(({ provider: p, authType }) => `<option value="${p.key}" data-auth-type="${authType}">${p.label} (${authTypeLabel(p.key, authType)})</option>`).join("")}
             </select>
           </div>
           <input type="hidden" name="auth_method" id="authMethodHidden" value="">
@@ -828,7 +845,8 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           const usePat = authType === "pat";
           const useOauth = authType === "oauth";
           credHint.textContent = p.helpText;
-          credField.placeholder = usePat ? "Paste your " + p.label + " token here" : "OAuth flow will start after submit";
+          const tokenLabel = sel.value === "hubspot" ? "HubSpot Private App access token" : p.label + " token";
+          credField.placeholder = usePat ? "Paste your " + tokenLabel + (sel.value === "hubspot" ? " here (starts with pat-)" : " here") : "OAuth flow will start after submit";
           credField.disabled = !usePat;
           credField.required = usePat;
           credFieldRow.style.opacity = usePat ? "1" : "0.55";
@@ -836,7 +854,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           if (!usePat) credField.value = "";
           if (usePat && p.tokenUrl) {
             patLink.href = p.tokenUrl;
-            patLink.textContent = "🔗 Get a new " + p.label + " token here →";
+            patLink.textContent = sel.value === "hubspot" ? "🔗 Get a new HubSpot Private App access token here →" : "🔗 Get a new " + p.label + " token here →";
             patLinkRow.style.display = "";
           } else {
             patLinkRow.style.display = "none";
@@ -1375,7 +1393,7 @@ dashboardApp.get("/tenants/new", async (c) => {
           <h2><span class="num">2</span> Providers</h2>
           <p class="field-hint" style="margin-top:0;">Pick one or more services to wire into this tenant. Each one gets its own connection; you can tune which tools each enables.</p>
           ${providerAuthOptions.map(({ provider: p, authType }) => {
-            const authLabel = authType === "pat" ? "paste token" : "OAuth";
+            const authLabel = authTypeLabel(p.key, authType);
             const hasPat = p.authTypes.includes("pat");
             const hasOauth = p.authTypes.includes("oauth");
             const isImplemented = p.implemented !== false;
@@ -1392,9 +1410,9 @@ dashboardApp.get("/tenants/new", async (c) => {
               ${authType === "pat" ? `
               <div class="field cred-row">
                 <label>Credential</label>
-                <textarea name="credential_${p.key}_${authType}" class="cred-input" rows="2" placeholder="Paste your ${p.label} token here..."></textarea>
+                <textarea name="credential_${p.key}_${authType}" class="cred-input" rows="2" placeholder="${escapeHtml(credentialPlaceholder(p.key, p.label, authType))}"></textarea>
                 <div class="field-hint">${escapeHtml(p.helpText)}</div>
-                ${p.tokenUrl ? `<div style="margin-top:4px;"><a href="${p.tokenUrl}" target="_blank" rel="noopener" style="font-size:13px;">🔗 Get a new ${p.label} token here →</a></div>` : ""}
+                ${p.tokenUrl ? `<div style="margin-top:4px;"><a href="${p.tokenUrl}" target="_blank" rel="noopener" style="font-size:13px;">${escapeHtml(tokenLinkLabel(p.key, p.label))}</a></div>` : ""}
                 <div class="reusing-notice" style="display:none;margin-top:6px;padding:8px;background:rgba(110,168,254,0.08);border-radius:6px;font-size:13px;">
                   ♻️ Reusing the existing <code class="reusing-label"></code> connection. <a href="#" class="rotate-link" style="margin-left:4px;">rotate credential</a> to paste a new one.
                 </div>
@@ -1466,7 +1484,7 @@ dashboardApp.get("/tenants/new", async (c) => {
               if (rotate) rotate.onclick = (e) => {
                 e.preventDefault();
                 credInput.style.display = "";
-                credInput.placeholder = "Paste a new " + (PROVIDERS[key] ? PROVIDERS[key].label : key) + " token here (rotates credential)";
+                credInput.placeholder = key === "hubspot" ? "Paste a new HubSpot Private App access token here (rotates credential)" : "Paste a new " + (PROVIDERS[key] ? PROVIDERS[key].label : key) + " token here (rotates credential)";
                 credInput.focus();
                 notice.style.display = "none";
               };
