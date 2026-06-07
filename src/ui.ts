@@ -688,6 +688,12 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           <div class="field">
             <label>Agent tool allowlist</label>
             <p class="field-hint" style="margin-top:0;">These are agent-oauth permissions, not SaaS permissions. The SaaS credential above may still reject calls if its own scopes are narrower.</p>
+            ${allAvailableTools.some((t) => !roleTools.includes(t)) ? `
+              <div class="field-hint" style="margin:8px 0 12px;color:#f0b429;">
+                ${allAvailableTools.filter((t) => !roleTools.includes(t)).length} connected tool(s) are not granted to this role yet.
+                <button type="submit" form="sync_role_tools_form" class="secondary" style="font-size:12px;padding:4px 10px;margin-left:8px;">Grant connected tools</button>
+              </div>
+            ` : ""}
             ${allAvailableTools.length === 0 ? '<div class="empty">No providers connected yet.</div>' : `
             <div id="roleToolsList">${allAvailableTools.map((t) => `<label style="font-weight:normal;display:block;padding:2px 0;"><input type="checkbox" name="role_tools" value="${t}" ${roleTools.includes(t) ? "checked" : ""}> <code>${t}</code></label>`).join("")}</div>
             `}
@@ -713,6 +719,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
       ${connections.map((cn) => `
         <form id="delete_connection_${cn.id}" method="post" action="/ui/tenants/${scope}/connections/${cn.id}/delete" onsubmit="return confirm(${jsString(`Delete connection ${cn.label}?\n\nProvider: ${cn.provider}\nScope: ${cn.scope}\n\nRoles and agents remain, but this provider credential will no longer be usable.`)});"></form>
       `).join("")}
+      <form id="sync_role_tools_form" method="post" action="/ui/tenants/${scope}/sync-role-tools"></form>
 
       <h2>Advanced: additional agent token</h2>
       <div class="card">
@@ -875,6 +882,66 @@ async function roleForTenantOrCreate(userId: string, scope: string) {
     },
   });
 }
+
+async function syncTenantRoleTools(userId: string, scope: string) {
+  const userIdShort = userId.slice(0, 8);
+  const conns = await prisma.connection.findMany({
+    where: { ownerId: userId, scope, enabled: true },
+    select: { provider: true },
+  });
+  const connectedTools = Array.from(new Set(conns.flatMap((cn) => toolsForProvider(cn.provider))));
+  let role = await prisma.role.findFirst({ where: { name: `${scope}-dev-${userIdShort}`, ownerId: userId } });
+  if (!role) {
+    role = await prisma.role.create({
+      data: {
+        name: `${scope}-dev-${userIdShort}`,
+        description: `Default role for ${scope}`,
+        allowedTools: JSON.stringify(connectedTools),
+        allowedScopes: JSON.stringify([scope]),
+        ownerId: userId,
+      },
+    });
+    return { role, addedTools: connectedTools, connectedTools };
+  }
+
+  const existingTools = safeJsonArray(role.allowedTools);
+  const existingScopes = safeJsonArray(role.allowedScopes);
+  const mergedTools = Array.from(new Set([...existingTools, ...connectedTools]));
+  const mergedScopes = existingScopes.length === 0 ? [scope] : Array.from(new Set([...existingScopes, scope]));
+  const addedTools = mergedTools.filter((tool) => !existingTools.includes(tool));
+  role = await prisma.role.update({
+    where: { id: role.id },
+    data: {
+      allowedTools: JSON.stringify(mergedTools),
+      allowedScopes: JSON.stringify(mergedScopes),
+    },
+  });
+  return { role, addedTools, connectedTools };
+}
+
+// --- /ui/tenants/:scope/sync-role-tools (POST) — grant all connected provider tools to tenant role ---
+dashboardApp.post("/tenants/:scope/sync-role-tools", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ error: "not authenticated" }, 401);
+  const scope = c.req.param("scope");
+  if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
+
+  const { role, addedTools, connectedTools } = await syncTenantRoleTools(user.id, scope);
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Role tools synced — agent-oauth</title>
+    <style>${CSS}</style></head><body>
+    ${NAV("tenants")}
+    <main>
+      <h1>✓ Granted connected tools for <code>${escapeHtml(scope)}</code></h1>
+      <div class="card">
+        <p>Role <code>${escapeHtml(role.name)}</code> now includes ${safeJsonArray(role.allowedTools).length} tool(s).</p>
+        <p>Connected provider tools: ${connectedTools.map((tool) => `<span class="tool-pill">${escapeHtml(tool)}</span>`).join(" ") || "<em>none</em>"}</p>
+        <p>Newly added: ${addedTools.map((tool) => `<span class="tool-pill">${escapeHtml(tool)}</span>`).join(" ") || "<em>none</em>"}</p>
+      </div>
+      <p><a href="/ui/tenants/${scope}/edit">← Back to ${scope}</a></p>
+    </main></body></html>
+  `);
+});
 
 // --- /ui/tenants/:scope/codex-mcp/create ---
 dashboardApp.post("/tenants/:scope/codex-mcp/create", async (c) => {
