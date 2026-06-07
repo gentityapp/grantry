@@ -82,6 +82,15 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  clarity: {
+    key: "clarity",
+    label: "Microsoft Clarity",
+    authTypes: ["pat"],
+    helpText: "Paste a Microsoft Clarity Data Export API token from the project's Settings → Data Export page.",
+    tokenUrl: "https://clarity.microsoft.com/",
+    tools: ["clarity/list_projects", "clarity/get_live_insights"],
+    implemented: true,
+  },
   google_drive: {
     key: "google_drive",
     label: "Google Drive",

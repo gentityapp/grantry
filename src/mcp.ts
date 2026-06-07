@@ -10,6 +10,7 @@ import { PROVIDERS } from "./connectors/registry.js";
 import { callNotionTool } from "./connectors/notion.js";
 import { callGitHubTool } from "./connectors/github.js";
 import { callCloudflareTool } from "./connectors/cloudflare.js";
+import { callClarityTool } from "./connectors/clarity.js";
 import { callGoogleDriveTool } from "./connectors/google_drive.js";
 import { callGoogleGscTool } from "./connectors/google_gsc.js";
 import { callGoogleAnalyticsTool } from "./connectors/google_analytics.js";
@@ -189,6 +190,23 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       tags: { type: "array", items: { type: "string" }, description: "Cache tags to purge." },
       hosts: { type: "array", items: { type: "string" }, description: "Hosts to purge." },
       prefixes: { type: "array", items: { type: "string" }, description: "URL prefixes to purge." },
+    };
+  }
+  if (toolName === "clarity/list_projects") {
+    return {};
+  }
+  if (toolName === "clarity/get_live_insights") {
+    return {
+      num_of_days: { type: "number", enum: [1, 2, 3], description: "Number of recent days to export: 1, 2, or 3." },
+      dimensions: {
+        type: "array",
+        maxItems: 3,
+        items: { type: "string", enum: ["Browser", "Device", "Country", "OS", "Source", "Medium", "Campaign", "Channel", "URL"] },
+        description: "Up to three dimensions to break down insights by.",
+      },
+      dimension1: { type: "string", enum: ["Browser", "Device", "Country", "OS", "Source", "Medium", "Campaign", "Channel", "URL"] },
+      dimension2: { type: "string", enum: ["Browser", "Device", "Country", "OS", "Source", "Medium", "Campaign", "Channel", "URL"] },
+      dimension3: { type: "string", enum: ["Browser", "Device", "Country", "OS", "Source", "Medium", "Campaign", "Channel", "URL"] },
     };
   }
   if (toolName === "google_drive/list_files" || toolName === "google_drive/search") {
@@ -755,6 +773,8 @@ mcpApp.post("/", async (c) => {
         result = await callGitHubTool(toolName, args, token);
       } else if (decision.provider === "cloudflare") {
         result = await callCloudflareTool(toolName, args, token);
+      } else if (decision.provider === "clarity") {
+        result = await callClarityTool(toolName, args, token);
       } else if (decision.provider === "google_drive") {
         result = await callGoogleDriveTool(toolName, args, token);
       } else if (decision.provider === "google_gsc") {
