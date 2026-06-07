@@ -781,7 +781,7 @@ mcpApp.post("/", async (c) => {
       } else if (decision.provider === "google_analytics") {
         result = await callGoogleAnalyticsTool(toolName, args, token);
       } else if (decision.provider === "google_ads") {
-        result = await callGoogleAdsTool(toolName, args, token);
+        result = await callGoogleAdsTool(toolName, args, token, conn.encryptedServerCredential ? decrypt(conn.encryptedServerCredential) : null);
       } else if (decision.provider === "hubspot") {
         result = await callHubSpotTool(toolName, args, token);
       } else if (decision.provider === "gmail") {

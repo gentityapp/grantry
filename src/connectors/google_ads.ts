@@ -1,13 +1,13 @@
-// Google Ads connector — OAuth access token + server developer token.
+// Google Ads connector — OAuth access token + Google Ads API developer token.
 const GOOGLE_ADS_API_VERSION = process.env.GOOGLE_ADS_API_VERSION || "v22";
 const GOOGLE_ADS_API = `https://googleads.googleapis.com/${GOOGLE_ADS_API_VERSION}`;
 const GOOGLE_ADS_TIMEOUT_MS = 10_000;
 
 type AdsArgs = Record<string, unknown>;
 
-function adsHeaders(token: string, args: AdsArgs) {
-  const developerToken = process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
-  if (!developerToken) throw new Error("GOOGLE_ADS_DEVELOPER_TOKEN is required for Google Ads tools");
+function adsHeaders(token: string, args: AdsArgs, developerTokenOverride?: string | null) {
+  const developerToken = developerTokenOverride || process.env.GOOGLE_ADS_DEVELOPER_TOKEN;
+  if (!developerToken) throw new Error("Google Ads developer token is required. Add it to this Google Ads connection in the tenant UI.");
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     "developer-token": developerToken,
@@ -62,8 +62,8 @@ function customerId(value: unknown) {
   return String(value ?? "").replace(/-/g, "").trim();
 }
 
-export async function callGoogleAdsTool(tool: string, args: AdsArgs, token: string) {
-  const headers = adsHeaders(token, args);
+export async function callGoogleAdsTool(tool: string, args: AdsArgs, token: string, developerToken?: string | null) {
+  const headers = adsHeaders(token, args, developerToken);
 
   if (tool === "google_ads/list_accessible_customers") {
     const r = await fetchGoogleAds("/customers:listAccessibleCustomers", { headers }, { tool });

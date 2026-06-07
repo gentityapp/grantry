@@ -50,9 +50,9 @@ function serverCredentialHint(providerKey: string): string {
   const present = !!process.env[provider.serverCredentialEnv];
   const status = present ? '<span class="badge ok">set</span>' : '<span class="badge denied">missing</span>';
   const url = provider.serverCredentialUrl
-    ? ` <a href="${provider.serverCredentialUrl}" target="_blank" rel="noopener">Get/manage ${escapeHtml(provider.serverCredentialLabel || "server credential")} →</a>`
+    ? ` <a href="${provider.serverCredentialUrl}" target="_blank" rel="noopener">Open Google Ads API Center →</a>`
     : "";
-  return `<div class="field-hint" style="margin-top:6px;">${status} Google Ads API Center token: <code>${escapeHtml(provider.serverCredentialEnv)}</code>. This is a server setting from the Google Ads manager account, separate from this tenant's OAuth connection.${url}</div>`;
+  return `<div class="field-hint" style="margin-top:6px;">${status} Google Ads Developer token is separate from OAuth. After OAuth, paste the API Center token into the Google Ads connection row.${url}</div>`;
 }
 
 function pkceCodeVerifier(): string {
@@ -1155,7 +1155,25 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                 <td><code>${cn.provider}</code></td>
                 <td><code>${cn.authType}</code></td>
                 <td><code>${cn.scope}</code></td>
-                <td>${renderCredentialSummary(cn)}</td>
+                <td>
+                  ${renderCredentialSummary(cn)}
+                  ${cn.provider === "google_ads" ? `
+                    <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #2a2d33;">
+                      <div class="field-hint" style="margin-bottom:6px;">
+                        Google Ads Developer token:
+                        ${cn.encryptedServerCredential || process.env.GOOGLE_ADS_DEVELOPER_TOKEN
+                          ? '<span class="badge ok">set</span>'
+                          : '<span class="badge denied">missing</span>'}
+                      </div>
+                      <input type="password" name="conn_server_credential_${cn.id}" placeholder="Paste Developer token from Google Ads API Center" style="font-size:13px;margin-bottom:6px;">
+                      <div class="field-hint">
+                        OAuth user tokenとは別です。Google Ads API Center の Developer token をここに保存します。
+                        <a href="https://ads.google.com/aw/apicenter" target="_blank" rel="noopener">Open API Center →</a>
+                      </div>
+                      ${cn.encryptedServerCredential ? `<label style="font-weight:normal;font-size:12px;margin-top:6px;"><input type="checkbox" name="conn_clear_server_credential_${cn.id}"> clear saved developer token</label>` : ""}
+                    </div>
+                  ` : ""}
+                </td>
                 <td><input type="text" name="conn_label_${cn.id}" value="${escapeHtml(cn.label)}" style="font-size:13px;"></td>
                 <td><label style="font-weight:normal;font-size:13px;"><input type="checkbox" name="conn_enabled_${cn.id}" ${cn.enabled ? "checked" : ""}> on</label></td>
                 <td><code>${cn.createdAt.toISOString().slice(0, 10)}</code></td>
@@ -1317,7 +1335,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           if (serverCredentialHint) {
             if (sel.value === "google_ads") {
               const envSet = ${JSON.stringify(!!process.env.GOOGLE_ADS_DEVELOPER_TOKEN)};
-              serverCredentialHint.innerHTML = (envSet ? '<span class="badge ok">set</span>' : '<span class="badge denied">missing</span>') + ' Google Ads API Center token: <code>GOOGLE_ADS_DEVELOPER_TOKEN</code>. This is a server setting from the Google Ads manager account, separate from this tenant OAuth connection. <a href="https://ads.google.com/aw/apicenter" target="_blank" rel="noopener">Open Google Ads API Center →</a>';
+              serverCredentialHint.innerHTML = (envSet ? '<span class="badge ok">set</span>' : '<span class="badge denied">missing</span>') + ' Google Ads Developer token is separate from OAuth. After OAuth, paste the API Center token into the Google Ads connection row. <a href="https://ads.google.com/aw/apicenter" target="_blank" rel="noopener">Open API Center →</a>';
             } else {
               serverCredentialHint.innerHTML = "";
             }
@@ -1560,13 +1578,22 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     for (const cn of connections) {
       const labelField = `conn_label_${cn.id}`;
       const enabledField = `conn_enabled_${cn.id}`;
+      const serverCredentialField = `conn_server_credential_${cn.id}`;
+      const clearServerCredentialField = `conn_clear_server_credential_${cn.id}`;
       if (body[labelField] !== undefined) {
         const newLabel = String(body[labelField]).trim() || cn.label;
         const newEnabled = body[enabledField] !== undefined; // checkbox present = on
-        if (newLabel !== cn.label || newEnabled !== cn.enabled) {
+        const serverCredential = String(body[serverCredentialField] ?? "").trim();
+        const clearServerCredential = body[clearServerCredentialField] !== undefined;
+        const updateData: Record<string, unknown> = {};
+        if (newLabel !== cn.label) updateData.label = newLabel;
+        if (newEnabled !== cn.enabled) updateData.enabled = newEnabled;
+        if (cn.provider === "google_ads" && serverCredential) updateData.encryptedServerCredential = encrypt(serverCredential);
+        if (cn.provider === "google_ads" && clearServerCredential) updateData.encryptedServerCredential = null;
+        if (Object.keys(updateData).length > 0) {
           await prisma.connection.update({
             where: { id: cn.id },
-            data: { label: newLabel, enabled: newEnabled },
+            data: updateData,
           });
           connUpdates.push({ id: cn.id, label: newLabel, enabled: newEnabled });
         }
@@ -3066,6 +3093,9 @@ oauthApp.get("/:provider/callback", async (c) => {
     where: { scope: effectiveTenant, ownerId: user.id },
     orderBy: [{ provider: "asc" }, { authType: "asc" }],
   });
+  const googleAdsConnectionNeedsDeveloperToken = allConns.some((cn) =>
+    cn.provider === "google_ads" && !cn.encryptedServerCredential && !process.env.GOOGLE_ADS_DEVELOPER_TOKEN
+  );
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(providerDef.label)} connected — agent-oauth</title>
@@ -3073,6 +3103,13 @@ oauthApp.get("/:provider/callback", async (c) => {
     ${NAV("tenants")}
     <main>
       <h1>✓ ${escapeHtml(providerDef.label)} connected · tenant <code>${effectiveTenant}</code> created</h1>
+      ${googleAdsConnectionNeedsDeveloperToken ? `
+      <div class="card" style="border-color:#f0b429;background:rgba(240,180,41,0.08);">
+        <h2>Google Ads API token still required</h2>
+        <p>OAuth は完了しましたが、Google Ads API を呼ぶには Google Ads API Center の <b>Developer token</b> も必要です。</p>
+        <p>次の画面で <code>google_ads</code> connection の <b>Developer token</b> 欄に貼って保存してください。</p>
+        <p><a href="/tenants/${effectiveTenant}/edit">Open tenant settings →</a> · <a href="https://ads.google.com/aw/apicenter" target="_blank" rel="noopener">Open Google Ads API Center →</a></p>
+      </div>` : ""}
       <div class="card">
         <h2>Connections (${allConns.length})</h2>
         ${allConns.map((cn) => `<p><code>${escapeHtml(cn.label)}</code> · auth=<code>${escapeHtml(cn.authType)}</code> · scope=<code>${escapeHtml(cn.scope)}</code></p>`).join("")}

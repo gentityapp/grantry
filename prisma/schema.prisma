@@ -133,6 +133,7 @@ model Connection {
   ownerId             String
   owner               User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   encryptedCredential String   // Fernet-encrypted PAT/OAuth token
+  encryptedServerCredential String? // encrypted provider-level secret, e.g. Google Ads developer token
   credentialMetadata  String   @default("{}") // JSON: observed provider scopes/capabilities, never raw token
   credentialValidatedAt DateTime?
   // OAuth-specific (null for PAT-only providers like notion)
