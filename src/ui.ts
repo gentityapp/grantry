@@ -28,7 +28,6 @@ function jsString(s: string): string {
 }
 
 function authTypeLabel(providerKey: string, authType: string): string {
-  if (authType === "oauth" && providerKey === "google_ads") return "OAuth + API developer token";
   if (authType === "oauth") return "OAuth";
   if (providerKey === "hubspot") return "Private App token";
   return "paste token";
@@ -53,7 +52,7 @@ function serverCredentialHint(providerKey: string): string {
   const url = provider.serverCredentialUrl
     ? ` <a href="${provider.serverCredentialUrl}" target="_blank" rel="noopener">Get/manage ${escapeHtml(provider.serverCredentialLabel || "server credential")} →</a>`
     : "";
-  return `<div class="field-hint" style="margin-top:6px;">${status} Server credential required: <code>${escapeHtml(provider.serverCredentialEnv)}</code>. This is configured once on Railway, not pasted into this tenant connection.${url}</div>`;
+  return `<div class="field-hint" style="margin-top:6px;">${status} Google Ads API Center token: <code>${escapeHtml(provider.serverCredentialEnv)}</code>. This is a server setting from the Google Ads manager account, separate from this tenant's OAuth connection.${url}</div>`;
 }
 
 function pkceCodeVerifier(): string {
@@ -1318,7 +1317,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           if (serverCredentialHint) {
             if (sel.value === "google_ads") {
               const envSet = ${JSON.stringify(!!process.env.GOOGLE_ADS_DEVELOPER_TOKEN)};
-              serverCredentialHint.innerHTML = (envSet ? '<span class="badge ok">set</span>' : '<span class="badge denied">missing</span>') + ' Server credential required: <code>GOOGLE_ADS_DEVELOPER_TOKEN</code>. Configure it once on Railway. <a href="https://ads.google.com/aw/apicenter" target="_blank" rel="noopener">Open Google Ads API Center →</a>';
+              serverCredentialHint.innerHTML = (envSet ? '<span class="badge ok">set</span>' : '<span class="badge denied">missing</span>') + ' Google Ads API Center token: <code>GOOGLE_ADS_DEVELOPER_TOKEN</code>. This is a server setting from the Google Ads manager account, separate from this tenant OAuth connection. <a href="https://ads.google.com/aw/apicenter" target="_blank" rel="noopener">Open Google Ads API Center →</a>';
             } else {
               serverCredentialHint.innerHTML = "";
             }

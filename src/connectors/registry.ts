@@ -145,7 +145,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "google_ads",
     label: "Google Ads",
     authTypes: ["oauth"],
-    helpText: "Connect your Google Ads account with OAuth. Google Ads API calls also require a server-side Developer Token from the Google Ads manager account API Center.",
+    helpText: "Connect the Google user who can access the Ads account. Google Ads API calls also require GOOGLE_ADS_DEVELOPER_TOKEN from the manager account API Center as a separate server setting.",
     oauthSetupUrl: "https://console.cloud.google.com/apis/credentials",
     serverCredentialLabel: "Google Ads API Developer Token",
     serverCredentialEnv: "GOOGLE_ADS_DEVELOPER_TOKEN",
