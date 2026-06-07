@@ -192,9 +192,6 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       prefixes: { type: "array", items: { type: "string" }, description: "URL prefixes to purge." },
     };
   }
-  if (toolName === "clarity/list_projects") {
-    return {};
-  }
   if (toolName === "clarity/get_live_insights") {
     return {
       num_of_days: { type: "number", enum: [1, 2, 3], description: "Number of recent days to export: 1, 2, or 3." },

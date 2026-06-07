@@ -65,13 +65,6 @@ function normalizeDimension(value: unknown) {
 }
 
 export async function callClarityTool(tool: string, args: ClarityArgs, token: string) {
-  if (tool === "clarity/list_projects") {
-    const r = await fetchClarity("/projects", { headers: headers(token) }, { tool });
-    const j: any = await readJsonResponse(r);
-    if (!r.ok) throw new Error(`Microsoft Clarity list_projects failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
-    return { structuredContent: { results: Array.isArray(j) ? j : (j.projects ?? j.result ?? j) } };
-  }
-
   if (tool === "clarity/get_live_insights") {
     const params = new URLSearchParams();
     params.set("numOfDays", String(numOfDays(args.num_of_days ?? args.numOfDays ?? args.number_of_days)));

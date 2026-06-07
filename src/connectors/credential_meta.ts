@@ -96,22 +96,14 @@ export async function inspectCredential(provider: string, authType: string, toke
     }
 
     if (provider === "clarity") {
-      const resp = await fetchWithTimeout("https://www.clarity.ms/projects", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-        },
-      });
-      const body: any = await readJson(resp);
-      if (!resp.ok) {
-        return { provider, authType, status: "error", checkedAt, error: `Microsoft Clarity token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
-      }
       return {
         provider,
         authType,
         status: "ok",
-        resources: Array.isArray(body) ? body.slice(0, 50) : [{ projects: body.projects ?? body.result ?? body }],
-        notes: ["Microsoft Clarity Data Export API tokens are generated per project from Settings > Data Export."],
+        notes: [
+          "Microsoft Clarity Data Export API tokens are generated per project from Settings > Data Export.",
+          "Clarity does not expose a reliable non-consuming token introspection endpoint here; the token is validated on first get_live_insights call.",
+        ],
         checkedAt,
       };
     }
