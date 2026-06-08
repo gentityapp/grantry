@@ -41,6 +41,7 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
 
 function tokenLinkLabel(providerKey: string, providerLabel: string): string {
   if (providerKey === "hubspot") return "🔗 Get a new HubSpot Private App access token here →";
+  if (providerKey === "github") return "🔗 Manage GitHub PAT repository access here →";
   return `🔗 Get a new ${providerLabel} token here →`;
 }
 
@@ -1362,7 +1363,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           if (!usePat) credField.value = "";
           if (usePat && p.tokenUrl) {
             patLink.href = p.tokenUrl;
-            patLink.textContent = sel.value === "hubspot" ? "🔗 Get a new HubSpot Private App access token here →" : "🔗 Get a new " + p.label + " token here →";
+            patLink.textContent = sel.value === "hubspot"
+              ? "🔗 Get a new HubSpot Private App access token here →"
+              : (sel.value === "github" ? "🔗 Manage GitHub PAT repository access here →" : "🔗 Get a new " + p.label + " token here →");
             patLinkRow.style.display = "";
           } else {
             patLinkRow.style.display = "none";

@@ -58,7 +58,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     label: "GitHub",
     // Both PAT and OAuth are supported — users pick at the wizard.
     authTypes: ["pat", "oauth"],
-    helpText: "Either paste a Personal Access Token (Settings → Developer settings → Tokens) OR click Connect with OAuth to authorize this app.",
+    helpText: "Paste a fine-grained Personal Access Token and manage which repositories it can access from GitHub's token settings, or click Connect with OAuth to authorize this app.",
     /** Where to get a new PAT (clickable link shown in the wizard) */
     tokenUrl: "https://github.com/settings/personal-access-tokens",
     /** Where to register/manage an OAuth App (callback URL setup, etc.) */
