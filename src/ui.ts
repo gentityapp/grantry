@@ -2,7 +2,7 @@
 import { Hono } from "hono";
 import { auth } from "./auth.js";
 import { prisma } from "./db.js";
-import { encrypt } from "./crypto.js";
+import { decrypt, encrypt } from "./crypto.js";
 import { PROVIDERS, getProvider, listProviders, toolsForProvider } from "./connectors/registry.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 import { connectionsForAgent } from "./policy.js";
@@ -353,6 +353,17 @@ function renderCredentialSummary(cn: {
   if (!parts.length) parts.push(`<span style="color:#8a8d93;font-size:12px;">${escapeHtml(String(meta.status))}</span>`);
   const validated = cn.credentialValidatedAt ? ` title="Checked ${cn.credentialValidatedAt.toISOString()}"` : "";
   return `<div class="credential-summary"${validated}>${parts.join("<br>")}</div>`;
+}
+
+function oauthTokenStatus(cn: { authType: string; accessTokenExpiresAt?: Date | null; refreshToken?: string | null }) {
+  if (cn.authType !== "oauth" || !cn.accessTokenExpiresAt) return "";
+  if (cn.accessTokenExpiresAt >= new Date()) {
+    return `<span class="badge ok" title="Access token expires at ${cn.accessTokenExpiresAt.toISOString()}">access token active</span>`;
+  }
+  if (cn.refreshToken) {
+    return `<span class="badge unscoped" title="Access token expired at ${cn.accessTokenExpiresAt.toISOString()}, but calls will refresh it automatically.">refreshable</span>`;
+  }
+  return `<span class="badge denied" title="Access token expired at ${cn.accessTokenExpiresAt.toISOString()} and no refresh token is stored.">token expired</span>`;
 }
 
 async function getSessionUser(c: any) {
@@ -764,7 +775,7 @@ dashboardApp.get("/meta", async (c) => {
                   <td><code>${escapeHtml(cn.scope || "-")}</code></td>
                   <td><code>${escapeHtml(cn.provider)}</code></td>
                   <td><code>${escapeHtml(cn.authType)}</code></td>
-                  <td>${cn.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}${cn.accessTokenExpiresAt && cn.accessTokenExpiresAt < now ? ' <span class="badge denied">expired</span>' : ""}</td>
+                  <td>${cn.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'} ${oauthTokenStatus(cn)}</td>
                   <td>${renderCredentialSummary(cn)}</td>
                 </tr>
               `).join("")}
@@ -1149,13 +1160,14 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             <tbody>
             ${connections.map((cn) => {
               const canReconnect = cn.authType === "oauth";
-              const expired = cn.accessTokenExpiresAt ? cn.accessTokenExpiresAt < new Date() : false;
+              const needsReconnect = cn.authType === "oauth" && cn.accessTokenExpiresAt && cn.accessTokenExpiresAt < new Date() && !cn.refreshToken;
               return `
               <tr>
                 <td><code>${cn.provider}</code></td>
                 <td><code>${cn.authType}</code></td>
                 <td><code>${cn.scope}</code></td>
                 <td>
+                  ${oauthTokenStatus(cn)}
                   ${renderCredentialSummary(cn)}
                   ${cn.provider === "google_ads" ? `
                     <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #2a2d33;">
@@ -1178,8 +1190,8 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                 <td><label style="font-weight:normal;font-size:13px;"><input type="checkbox" name="conn_enabled_${cn.id}" ${cn.enabled ? "checked" : ""}> on</label></td>
                 <td><code>${cn.createdAt.toISOString().slice(0, 10)}</code></td>
                 <td><span class="stacked-actions">${canReconnect
-                  ? `<a href="/oauth/${cn.provider}/start?tenant=${encodeURIComponent(cn.scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run the OAuth consent flow and refresh this exact connection's tokens">↻ Reconnect</a>${expired ? '<span class="badge unscoped" style="color:#ff6b6b;">token expired</span>' : ""}`
-                  : '<span style="color:#8a8d93;font-size:12px;">token</span>'}
+                  ? `<a href="/oauth/${cn.provider}/start?tenant=${encodeURIComponent(cn.scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run the OAuth consent flow and refresh this exact connection's tokens">↻ Reconnect</a>${needsReconnect ? '<span class="badge denied">needs reconnect</span>' : ""}`
+                  : `<button type="submit" form="recheck_connection_${cn.id}" class="secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run credential validation without showing the saved token">Recheck</button>`}
                   <button type="submit" form="delete_connection_${cn.id}" class="danger" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Delete only this connection">Delete</button>
                 </span></td>
               </tr>
@@ -1228,6 +1240,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         });
       </script>
       ${connections.map((cn) => `
+        <form id="recheck_connection_${cn.id}" method="post" action="/tenants/${scope}/connections/${cn.id}/recheck"></form>
         <form id="delete_connection_${cn.id}" method="post" action="/tenants/${scope}/connections/${cn.id}/delete" onsubmit="return confirm(${jsString(`Delete connection ${cn.label}?\n\nProvider: ${cn.provider}\nScope: ${cn.scope}\n\nRoles and agents remain, but this provider credential will no longer be usable.`)});"></form>
       `).join("")}
       <form id="sync_role_tools_form" method="post" action="/tenants/${scope}/sync-role-tools"></form>
@@ -1800,6 +1813,46 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
   }
 
   return c.html("<h1>unknown action</h1>", 400);
+});
+
+// --- /tenants/:scope/connections/:connectionId/recheck (POST) — validate saved PAT-like credential ---
+dashboardApp.post("/tenants/:scope/connections/:connectionId/recheck", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ error: "not authenticated" }, 401);
+  const scope = c.req.param("scope");
+  const connectionId = c.req.param("connectionId");
+  if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
+
+  const conn = await prisma.connection.findFirst({
+    where: { id: connectionId, scope, ownerId: user.id },
+  });
+  if (!conn) {
+    return c.html(`<h1>connection not found</h1><p><a href="/tenants/${scope}/edit">← Back</a></p>`, 404);
+  }
+  if (conn.authType === "oauth") {
+    return c.html(`<h1>OAuth connection uses Reconnect</h1><p>Use the Reconnect button to refresh this credential.</p><p><a href="/tenants/${scope}/edit">← Back</a></p>`, 400);
+  }
+
+  const token = decrypt(conn.encryptedCredential);
+  const credentialMeta = await credentialMetadataForStorage(conn.provider, conn.authType, token);
+  await prisma.connection.update({
+    where: { id: conn.id },
+    data: credentialMeta,
+  });
+
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Connection rechecked — agent-oauth</title>
+    <style>${CSS}</style></head><body>
+    ${NAV("tenants")}
+    <main>
+      <h1>✓ Rechecked <code>${escapeHtml(conn.label)}</code></h1>
+      <div class="card">
+        <p>${renderCredentialSummary({ ...conn, ...credentialMeta })}</p>
+        <p class="field-hint">The saved token remains hidden. Only the validation result is updated.</p>
+      </div>
+      <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a></p>
+    </main></body></html>
+  `);
 });
 
 // --- /tenants/:scope/connections/:connectionId/delete (POST) — delete one connection ---
