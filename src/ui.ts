@@ -434,6 +434,7 @@ const OAUTH_LEGACY_CLIENT_ID_ALIASES: Record<string, string[]> = {
   google_ads: ["GOOGLE_CLIENT_ID"],
   google_drive: ["GOOGLE_CLIENT_ID"],
   gmail: ["GOOGLE_CLIENT_ID"],
+  yahoo_ads: ["YAHOO_CLIENT_ID"],
 };
 
 const OAUTH_LEGACY_CLIENT_SECRET_ALIASES: Record<string, string[]> = {
@@ -443,6 +444,7 @@ const OAUTH_LEGACY_CLIENT_SECRET_ALIASES: Record<string, string[]> = {
   google_ads: ["GOOGLE_CLIENT_SECRET"],
   google_drive: ["GOOGLE_CLIENT_SECRET"],
   gmail: ["GOOGLE_CLIENT_SECRET"],
+  yahoo_ads: ["YAHOO_CLIENT_SECRET"],
 };
 
 function oauthEnvCandidates(providerKey: string, kind: "CLIENT_ID" | "CLIENT_SECRET"): string[] {
@@ -1372,7 +1374,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           }
           if (useOauth && p.oauthSetupUrl) {
             oauthSetupLink.href = p.oauthSetupUrl;
-            oauthSetupLink.textContent = sel.value === "google_ads" ? "🔗 Register/manage Google OAuth client here →" : "🔗 Register/manage your " + p.label + " OAuth app here →";
+            oauthSetupLink.textContent = sel.value === "google_ads"
+              ? "🔗 Register/manage Google OAuth client here →"
+              : (sel.value === "yahoo_ads" ? "🔗 Register/manage LINE Yahoo Ads application here →" : "🔗 Register/manage your " + p.label + " OAuth app here →");
             oauthSetupLinkRow.style.display = "";
           } else {
             oauthSetupLinkRow.style.display = "none";
@@ -1996,7 +2000,7 @@ dashboardApp.get("/tenants/new", async (c) => {
               <div class="field oauth-row">
                 <div class="field-hint" style="margin-top:0;">${escapeHtml(p.helpText)} You'll be redirected to authorize after clicking <b>Create tenant</b>.</div>
                 ${serverCredentialHint(p.key)}
-                ${p.oauthSetupUrl ? `<div style="margin-top:4px;"><a href="${p.oauthSetupUrl}" target="_blank" rel="noopener" style="font-size:13px;">${p.key === "google_ads" ? "🔗 Register/manage Google OAuth client here →" : `🔗 Register/manage your ${p.label} OAuth app here →`}</a></div>` : ""}
+                ${p.oauthSetupUrl ? `<div style="margin-top:4px;"><a href="${p.oauthSetupUrl}" target="_blank" rel="noopener" style="font-size:13px;">${p.key === "google_ads" ? "🔗 Register/manage Google OAuth client here →" : p.key === "yahoo_ads" ? "🔗 Register/manage LINE Yahoo Ads application here →" : `🔗 Register/manage your ${p.label} OAuth app here →`}</a></div>` : ""}
               </div>` : ""}
               <div class="field" style="margin-bottom:0;">
                 <label style="font-size:13px;">Tools</label>
@@ -2807,6 +2811,7 @@ oauthApp.get("/:provider/start", async (c) => {
     google_ads: ["GOOGLE_CLIENT_ID"],
     google_drive: ["GOOGLE_CLIENT_ID"],
     gmail: ["GOOGLE_CLIENT_ID"],
+    yahoo_ads: ["YAHOO_CLIENT_ID"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
     || (legacyAliases[providerKey] || []).map(k => process.env[k]).find(Boolean);
@@ -2923,6 +2928,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     google_ads: ["GOOGLE_CLIENT_ID"],
     google_drive: ["GOOGLE_CLIENT_ID"],
     gmail: ["GOOGLE_CLIENT_ID"],
+    yahoo_ads: ["YAHOO_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
     github: ["GH_CLIENT_SECRET", "GENTITY_GITHUB_CLIENT_SECRET"],
@@ -2931,6 +2937,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     google_ads: ["GOOGLE_CLIENT_SECRET"],
     google_drive: ["GOOGLE_CLIENT_SECRET"],
     gmail: ["GOOGLE_CLIENT_SECRET"],
+    yahoo_ads: ["YAHOO_CLIENT_SECRET"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
     || (legacyAliases[providerKey] || []).map(k => process.env[k]).find(Boolean);

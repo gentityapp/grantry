@@ -159,6 +159,18 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     tools: ["google_ads/list_accessible_customers", "google_ads/search", "google_ads/mutate"],
     implemented: true,
   },
+  yahoo_ads: {
+    key: "yahoo_ads",
+    label: "LINE Yahoo Ads",
+    authTypes: ["oauth"],
+    helpText: "Connect the LINE Yahoo Business ID that can access Search Ads / Display Ads accounts. Access tokens expire after one hour; gentity-auth stores the refresh token and refreshes automatically.",
+    oauthSetupUrl: "https://connect-business.yahoo.co.jp/",
+    oauthScopes: ["yahooads"],
+    authorizeUrl: "https://biz-oauth.yahoo.co.jp/oauth/v1/authorize",
+    oauthTokenUrl: "https://biz-oauth.yahoo.co.jp/oauth/v1/token",
+    tools: ["yahoo_ads/list_base_accounts", "yahoo_ads/get", "yahoo_ads/mutate"],
+    implemented: true,
+  },
   gmail: {
     key: "gmail",
     label: "Gmail",

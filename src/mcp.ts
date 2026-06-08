@@ -15,6 +15,7 @@ import { callGoogleDriveTool } from "./connectors/google_drive.js";
 import { callGoogleGscTool } from "./connectors/google_gsc.js";
 import { callGoogleAnalyticsTool } from "./connectors/google_analytics.js";
 import { callGoogleAdsTool } from "./connectors/google_ads.js";
+import { callYahooAdsTool } from "./connectors/yahoo_ads.js";
 import { callHubSpotTool } from "./connectors/hubspot.js";
 import { callGmailTool } from "./connectors/gmail.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
@@ -347,6 +348,32 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       response_content_type: { type: "string", enum: ["MUTABLE_RESOURCE", "RESOURCE_NAME_ONLY"], description: "Google Ads response content type." },
     };
   }
+  if (toolName === "yahoo_ads/list_base_accounts") {
+    return {
+      product: { type: "string", enum: ["search", "display"], description: "Yahoo Ads product. Defaults to search." },
+      selector: { type: "object", description: "Optional raw BaseAccountService selector." },
+    };
+  }
+  if (toolName === "yahoo_ads/get") {
+    return {
+      product: { type: "string", enum: ["search", "display"], description: "Yahoo Ads product. Defaults to search." },
+      base_account_id: { type: "string", description: "Base account id for x-z-base-account-id header. Not required for BaseAccountService." },
+      service: { type: "string", description: "Service name, e.g. CampaignService, AccountService, AdGroupService." },
+      method: { type: "string", enum: ["get"], description: "Read method. Defaults to get." },
+      selector: { type: "object", description: "Raw selector object for the service." },
+      body: { type: "object", description: "Alias for selector." },
+    };
+  }
+  if (toolName === "yahoo_ads/mutate") {
+    return {
+      product: { type: "string", enum: ["search", "display"], description: "Yahoo Ads product. Defaults to search." },
+      base_account_id: { type: "string", description: "Base account id for x-z-base-account-id header." },
+      service: { type: "string", description: "Service name, e.g. CampaignService, AdGroupService, AdGroupAdService." },
+      method: { type: "string", enum: ["add", "set", "remove", "upload"], description: "Mutation method." },
+      operation: { type: "object", description: "Raw operation object for the service." },
+      body: { type: "object", description: "Alias for operation." },
+    };
+  }
   if (toolName === "hubspot/list_deals") {
     return {
       limit: { type: "number", minimum: 1, maximum: 100, description: "Deals to return, max 100." },
@@ -412,6 +439,8 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "google_analytics/run_report") return ["property_id", "start_date", "end_date"];
   if (toolName === "google_ads/search") return ["customer_id", "query"];
   if (toolName === "google_ads/mutate") return ["customer_id", "operations"];
+  if (toolName === "yahoo_ads/get") return ["base_account_id", "service"];
+  if (toolName === "yahoo_ads/mutate") return ["base_account_id", "service", "method"];
   if (toolName === "hubspot/get_contact") return ["contact_id"];
   if (toolName === "hubspot/create_deal") return ["properties"];
   if (toolName === "gmail/get_message") return ["message_id"];
@@ -527,6 +556,7 @@ async function refreshOAuthToken(provider: string, refreshToken: string) {
     google_ads: ["GOOGLE_CLIENT_ID"],
     google_drive: ["GOOGLE_CLIENT_ID"],
     gmail: ["GOOGLE_CLIENT_ID"],
+    yahoo_ads: ["YAHOO_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
     github: ["GH_CLIENT_SECRET", "GENTITY_GITHUB_CLIENT_SECRET"],
@@ -535,6 +565,7 @@ async function refreshOAuthToken(provider: string, refreshToken: string) {
     google_ads: ["GOOGLE_CLIENT_SECRET"],
     google_drive: ["GOOGLE_CLIENT_SECRET"],
     gmail: ["GOOGLE_CLIENT_SECRET"],
+    yahoo_ads: ["YAHOO_CLIENT_SECRET"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
     || (legacyAliases[provider] || []).map((k) => process.env[k]).find(Boolean);
@@ -782,6 +813,8 @@ mcpApp.post("/", async (c) => {
         result = await callGoogleAnalyticsTool(toolName, args, token);
       } else if (decision.provider === "google_ads") {
         result = await callGoogleAdsTool(toolName, args, token, conn.encryptedServerCredential ? decrypt(conn.encryptedServerCredential) : null);
+      } else if (decision.provider === "yahoo_ads") {
+        result = await callYahooAdsTool(toolName, args, token);
       } else if (decision.provider === "hubspot") {
         result = await callHubSpotTool(toolName, args, token);
       } else if (decision.provider === "gmail") {

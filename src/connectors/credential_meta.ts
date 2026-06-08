@@ -154,6 +154,20 @@ export async function inspectCredential(provider: string, authType: string, toke
       return meta;
     }
 
+    if (provider === "yahoo_ads") {
+      return {
+        provider,
+        authType,
+        status: "ok",
+        scopes: ["yahooads"],
+        notes: [
+          "LINE Yahoo Ads access tokens expire after one hour; gentity-auth refreshes them with the stored refresh token.",
+          "Use yahoo_ads/list_base_accounts to verify which base accounts this Business ID can access.",
+        ],
+        checkedAt,
+      };
+    }
+
     if (provider === "notion") {
       const resp = await fetchWithTimeout("https://api.notion.com/v1/users/me", {
         headers: {
