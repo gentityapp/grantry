@@ -3,7 +3,7 @@ name: gentity-auth
 description: |
   Use gentity-auth when the user wants an AI agent to call external SaaS APIs
   (GitHub, Notion, Google Drive/GSC/Ads, HubSpot, Attio, Clay, HeyReach,
-  Railway) under OAuth/PAT authentication
+  Chatwork, Railway, Resend) under OAuth/PAT authentication
   with tenant isolation. gentity-auth (deployed as "agent-oauth") is a
   Hono/TypeScript service that holds encrypted credentials and exposes them as
   MCP tools, so the agent never sees raw tokens. Triggers: mentions of
@@ -121,9 +121,12 @@ Go to `/ui/tenants/new` (or `/ui/tenants/:scope/edit` to add to an existing tena
 - **Attio**: paste a workspace access token from Settings > Developers > Access tokens.
 - **Clay**: paste the API key from Clay Settings > Account > API key.
 - **HeyReach**: paste a Public API key.
+- **Chatwork**: paste a Chatwork API token.
 - **Railway**: paste a Project Token from Project Settings > Tokens. Plain tokens
   are treated as project tokens. For account/workspace tokens, paste JSON like
   `{"token":"...","token_type":"account"}`.
+- **Resend**: paste a Resend API key. Sending requires `sending_access` or
+  `full_access` and a verified sending domain.
 Set the connection's **scope to the tenant name**; that's the scope callers must pass.
 
 ### 6. Grant an agent access to a scope
@@ -132,7 +135,7 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
    **Allowed scopes** (leave Allowed scopes empty for "any scope").
 3. Bind the role to the agent (`POST /ui/agents/:id/bind`).
 
-## Providers & tools (85)
+## Providers & tools (105)
 - `ping` — liveness (returns `pong from <agent>`)
 - **github** (PAT or OAuth; scopes `repo`, `read:user`):
   `list_repos`, `get_repo`, `get_file_contents`, `list_issues`, `create_issue`, `git_push_repo`, `create_repo`
@@ -153,8 +156,14 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
   `get_campaign`, `pause_campaign`, `resume_campaign`, `add_leads_to_campaign`,
   `list_leads`, `list_conversations`, `list_lead_lists`, `create_empty_list`,
   `get_overall_stats`
+- **chatwork** (API token): `get_me`, `list_contacts`, `list_rooms`, `get_room`,
+  `list_room_members`, `list_messages`, `get_message`, `send_message`,
+  `list_my_tasks`, `list_room_tasks`, `get_room_task`, `create_room_task`,
+  `list_room_files`, `get_room_file`
 - **railway** (Project token / API token): `graphql`, `project_token_info`,
   `introspect_schema`
+- **resend** (API key): `send_email`, `list_emails`, `get_email`,
+  `list_domains`, `get_domain`, `list_api_keys`
 
 ### GitHub tool arguments (besides `scope`)
 - `get_repo`, `list_issues`: `owner`, `repo` (list_issues also `state`, default `open`)
@@ -249,6 +258,26 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
   tokens are sent using the `Project-Access-Token` header; account/workspace/OAuth
   tokens are sent using `Authorization: Bearer`.
 
+### Chatwork tool arguments (besides `scope`)
+- `get_me`, `list_contacts`, `list_rooms` (read): no additional arguments.
+- `get_room`, `list_room_members`, `list_messages`, `list_room_tasks`,
+  `list_room_files` (read): `room_id`; optional filters where exposed.
+- `get_message` (read): `room_id`, `message_id`.
+- `send_message` (write): `room_id`, `body`; optional `self_unread`.
+- `list_my_tasks` (read): optional `assigned_by_account_id`, `status`.
+- `get_room_task` (read): `room_id`, `task_id`.
+- `create_room_task` (write): `room_id`, `body`, `to_ids`; optional `limit`.
+- `get_room_file` (read): `room_id`, `file_id`; optional `create_download_url`.
+
+### Resend tool arguments (besides `scope`)
+- `send_email` (write): `from`, `to`, `subject`; one of `html`, `text`, or
+  `react`; optional `cc`, `bcc`, `reply_to`, `scheduled_at`, `attachments`,
+  `tags`, `headers`. Raw Resend request body can be passed as `data`.
+- `list_emails` (read): optional `limit`, `after`, `before`.
+- `get_email` (read): `email_id`.
+- `list_domains` / `list_api_keys` (read): no additional arguments.
+- `get_domain` (read): `domain_id`.
+
 ## Output contract
 When asked to act via gentity-auth:
 1. If you don't already know the scope, call `connections/list` first to resolve
@@ -265,7 +294,9 @@ When asked to act via gentity-auth:
    `clay/update_row`, `clay/enrich_person`, `clay/enrich_company`,
    `heyreach/pause_campaign`,
    `heyreach/resume_campaign`, `heyreach/add_leads_to_campaign`,
-   `heyreach/create_empty_list`, `railway/graphql` with mutations, …)
+   `heyreach/create_empty_list`, `chatwork/send_message`,
+   `chatwork/create_room_task`, `railway/graphql` with mutations,
+   `resend/send_email`, …)
    get explicit confirmation first —
    these hit the real SaaS via real tokens and are not reversible. **Read-only**
    calls (incl. the connectivity smoke test) need no confirmation — just run them.

@@ -36,6 +36,7 @@ function authTypeLabel(providerKey: string, authType: string): string {
   if (providerKey === "heyreach") return "API key";
   if (providerKey === "chatwork") return "API token";
   if (providerKey === "railway") return "Project token";
+  if (providerKey === "resend") return "API key";
   return "paste token";
 }
 
@@ -47,6 +48,7 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
   if (providerKey === "heyreach") return "Paste your HeyReach Public API key";
   if (providerKey === "chatwork") return "Paste your Chatwork API token";
   if (providerKey === "railway") return "Paste your Railway Project Token from Project Settings > Tokens";
+  if (providerKey === "resend") return "Paste your Resend API key";
   return `Paste your ${providerLabel} token here`;
 }
 
@@ -57,6 +59,7 @@ function tokenLinkLabel(providerKey: string, providerLabel: string): string {
   if (providerKey === "heyreach") return "🔗 Open HeyReach app →";
   if (providerKey === "chatwork") return "🔗 Open Chatwork API token settings →";
   if (providerKey === "railway") return "🔗 Open Railway →";
+  if (providerKey === "resend") return "🔗 Open Resend API keys →";
   if (providerKey === "github") return "🔗 Manage GitHub PAT repository access here →";
   return `🔗 Get a new ${providerLabel} token here →`;
 }
@@ -1411,7 +1414,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                 ? "Clay API key"
                 : (sel.value === "heyreach"
                   ? "HeyReach Public API key"
-                  : (sel.value === "railway" ? "Railway Project Token" : p.label + " token"))));
+                  : (sel.value === "railway"
+                    ? "Railway Project Token"
+                    : (sel.value === "resend" ? "Resend API key" : p.label + " token")))));
           credField.placeholder = usePat ? "Paste your " + tokenLabel + (sel.value === "hubspot" ? " here (starts with pat-)" : " here") : "OAuth flow will start after submit";
           credField.disabled = !usePat;
           credField.required = usePat;
@@ -1430,7 +1435,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                     ? "🔗 Open HeyReach app →"
                     : (sel.value === "railway"
                       ? "🔗 Open Railway →"
-                      : (sel.value === "github" ? "🔗 Manage GitHub PAT repository access here →" : "🔗 Get a new " + p.label + " token here →")))));
+                      : (sel.value === "resend"
+                        ? "🔗 Open Resend API keys →"
+                        : (sel.value === "github" ? "🔗 Manage GitHub PAT repository access here →" : "🔗 Get a new " + p.label + " token here →"))))));
             patLinkRow.style.display = "";
           } else {
             patLinkRow.style.display = "none";
@@ -2157,7 +2164,9 @@ dashboardApp.get("/tenants/new", async (c) => {
                         ? "Paste a new HeyReach Public API key here (rotates credential)"
                         : (key === "railway"
                           ? "Paste a new Railway Project Token here (rotates credential)"
-                          : "Paste a new " + (PROVIDERS[key] ? PROVIDERS[key].label : key) + " token here (rotates credential)"))));
+                          : (key === "resend"
+                            ? "Paste a new Resend API key here (rotates credential)"
+                            : "Paste a new " + (PROVIDERS[key] ? PROVIDERS[key].label : key) + " token here (rotates credential)")))));
                 credInput.focus();
                 notice.style.display = "none";
               };

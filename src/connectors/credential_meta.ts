@@ -323,6 +323,26 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "resend") {
+      if (!token.trim()) {
+        return { provider, authType, status: "error", checkedAt, error: "Resend API key is required" };
+      }
+      const notes = [
+        "Resend API keys are sent as Authorization: Bearer.",
+        "Keys restricted to sending_access may not be able to call read endpoints like list_domains or list_api_keys.",
+      ];
+      if (!token.trim().startsWith("re_")) {
+        notes.push("Resend API keys commonly start with re_; this key will be validated on first API call.");
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        notes,
+        checkedAt,
+      };
+    }
+
     if (provider === "railway") {
       let rawToken = token.trim();
       let tokenType = "project";

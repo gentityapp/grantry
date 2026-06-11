@@ -305,6 +305,22 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  resend: {
+    key: "resend",
+    label: "Resend",
+    authTypes: ["pat"],
+    helpText: "Paste a Resend API key from the Resend API Keys dashboard. Sending email requires a key with sending_access or full_access and a verified sending domain.",
+    tokenUrl: "https://resend.com/api-keys",
+    tools: [
+      "resend/send_email",
+      "resend/list_emails",
+      "resend/get_email",
+      "resend/list_domains",
+      "resend/get_domain",
+      "resend/list_api_keys",
+    ],
+    implemented: true,
+  },
 };
 
 export function getProvider(key: string): ProviderDef | undefined {

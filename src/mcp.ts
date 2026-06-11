@@ -23,6 +23,7 @@ import { callClayTool } from "./connectors/clay.js";
 import { callHeyReachTool } from "./connectors/heyreach.js";
 import { callChatworkTool } from "./connectors/chatwork.js";
 import { callRailwayTool } from "./connectors/railway.js";
+import { callResendTool } from "./connectors/resend.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 
 export const mcpApp = new Hono();
@@ -769,6 +770,46 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "railway/introspect_schema") {
     return {};
   }
+  if (toolName === "resend/send_email") {
+    return {
+      from: { type: "string", description: "Sender email address, e.g. Name <sender@example.com>." },
+      to: { type: "array", items: { type: "string" }, description: "Recipient email address(es), max 50." },
+      subject: { type: "string", description: "Email subject." },
+      html: { type: "string", description: "HTML email body." },
+      text: { type: "string", description: "Plain text email body." },
+      cc: { type: "array", items: { type: "string" }, description: "Optional CC recipients." },
+      bcc: { type: "array", items: { type: "string" }, description: "Optional BCC recipients." },
+      reply_to: { type: "array", items: { type: "string" }, description: "Optional Reply-To address(es)." },
+      scheduled_at: { type: "string", description: "Optional scheduled send time, e.g. in 1 hour or ISO timestamp." },
+      attachments: { type: "array", items: { type: "object" }, description: "Optional Resend attachment objects." },
+      tags: { type: "array", items: { type: "object" }, description: "Optional Resend tag objects." },
+      headers: { type: "object", description: "Optional custom headers." },
+      data: { type: "object", description: "Raw Resend send email body; overrides individual fields." },
+    };
+  }
+  if (toolName === "resend/list_emails") {
+    return {
+      limit: { type: "number", minimum: 1, maximum: 100, description: "Emails to return." },
+      after: { type: "string", description: "Pagination cursor/date lower bound." },
+      before: { type: "string", description: "Pagination cursor/date upper bound." },
+    };
+  }
+  if (toolName === "resend/get_email") {
+    return {
+      email_id: { type: "string", description: "Resend email ID." },
+    };
+  }
+  if (toolName === "resend/list_domains") {
+    return {};
+  }
+  if (toolName === "resend/get_domain") {
+    return {
+      domain_id: { type: "string", description: "Resend domain ID." },
+    };
+  }
+  if (toolName === "resend/list_api_keys") {
+    return {};
+  }
   return {};
 }
 
@@ -837,6 +878,9 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "chatwork/list_room_files") return ["room_id"];
   if (toolName === "chatwork/get_room_file") return ["room_id", "file_id"];
   if (toolName === "railway/graphql") return ["query"];
+  if (toolName === "resend/send_email") return ["from", "to", "subject"];
+  if (toolName === "resend/get_email") return ["email_id"];
+  if (toolName === "resend/get_domain") return ["domain_id"];
   return [];
 }
 
@@ -1221,6 +1265,8 @@ mcpApp.post("/", async (c) => {
         result = await callChatworkTool(toolName, args, token);
       } else if (decision.provider === "railway") {
         result = await callRailwayTool(toolName, args, token);
+      } else if (decision.provider === "resend") {
+        result = await callResendTool(toolName, args, token);
       } else {
         throw new Error(`no dispatcher for provider: ${decision.provider}`);
       }
