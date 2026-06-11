@@ -11,7 +11,7 @@ OAuth credential broker for AI agents. **MCP-compatible.**
 - ✅ better-auth (email + password, Google OAuth, GitHub OAuth)
 - ✅ MCP `/mcp` JSON-RPC endpoint (ping tool)
 - ✅ Minimal `/ui` dashboard
-- ⏳ Phase 2: OAuth brokers + real tools (`github/*`, `notion/*`, `google_drive/*`, `google_gsc/*`, `google_ads/*`, `hubspot/*`)
+- ⏳ Phase 2: OAuth brokers + real tools (`github/*`, `notion/*`, `google_drive/*`, `google_gsc/*`, `google_ads/*`, `hubspot/*`, `attio/*`)
 - ⏳ Phase 3: Multi-tenant scope (already in schema)
 - ⏳ Phase 4: Full UI (login, tenant wizard, agent issuance, audit log)
 

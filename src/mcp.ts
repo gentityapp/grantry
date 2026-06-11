@@ -18,6 +18,7 @@ import { callGoogleAdsTool } from "./connectors/google_ads.js";
 import { callYahooAdsTool } from "./connectors/yahoo_ads.js";
 import { callHubSpotTool } from "./connectors/hubspot.js";
 import { callGmailTool } from "./connectors/gmail.js";
+import { callAttioTool } from "./connectors/attio.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 
 export const mcpApp = new Hono();
@@ -392,6 +393,50 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       properties: { type: "object", description: "HubSpot deal properties, e.g. dealname, amount, pipeline, dealstage, closedate." },
     };
   }
+  if (toolName === "attio/search_records") {
+    return {
+      query: { type: "string", maxLength: 256, description: "Fuzzy search query. An empty string returns Attio's default result set." },
+      objects: { type: "array", minItems: 1, items: { type: "string" }, description: "Attio object slugs or IDs to search, e.g. people, companies, deals." },
+      request_as: { type: "object", description: "Optional Attio request_as context. Defaults to { type: 'workspace' }." },
+      limit: { type: "number", minimum: 1, maximum: 25, description: "Results to return, max 25." },
+    };
+  }
+  if (toolName === "attio/list_records") {
+    return {
+      object: { type: "string", description: "Attio object slug or ID, e.g. people, companies, deals." },
+      filter: { type: "object", description: "Optional Attio record query filter." },
+      filter_view_id: { type: "string", description: "Optional Attio saved view UUID. Cannot be used with filter." },
+      sorts: { type: "array", items: { type: "object" }, description: "Optional Attio record query sort array." },
+      limit: { type: "number", minimum: 1, maximum: 500, description: "Records to return, max 500." },
+      offset: { type: "number", minimum: 0, description: "Pagination offset." },
+    };
+  }
+  if (toolName === "attio/get_record") {
+    return {
+      object: { type: "string", description: "Attio object slug or ID, e.g. people, companies, deals." },
+      record_id: { type: "string", description: "Attio record ID." },
+    };
+  }
+  if (toolName === "attio/create_record") {
+    return {
+      object: { type: "string", description: "Attio object slug or ID, e.g. people, companies, deals." },
+      values: { type: "object", description: "Attio record values keyed by attribute slug or ID." },
+    };
+  }
+  if (toolName === "attio/upsert_record") {
+    return {
+      object: { type: "string", description: "Attio object slug or ID, e.g. people, companies, deals." },
+      matching_attribute: { type: "string", description: "Unique Attio attribute slug or ID to match on, e.g. email_addresses or domains." },
+      values: { type: "object", description: "Attio record values keyed by attribute slug or ID." },
+    };
+  }
+  if (toolName === "attio/update_record") {
+    return {
+      object: { type: "string", description: "Attio object slug or ID, e.g. people, companies, deals." },
+      record_id: { type: "string", description: "Attio record ID." },
+      values: { type: "object", description: "Attio record values to append/update, keyed by attribute slug or ID." },
+    };
+  }
   if (toolName === "gmail/list_messages") {
     return {
       q: { type: "string", description: "Gmail search query." },
@@ -443,6 +488,12 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "yahoo_ads/mutate") return ["base_account_id", "service", "method"];
   if (toolName === "hubspot/get_contact") return ["contact_id"];
   if (toolName === "hubspot/create_deal") return ["properties"];
+  if (toolName === "attio/search_records") return ["query", "objects"];
+  if (toolName === "attio/list_records") return ["object"];
+  if (toolName === "attio/get_record") return ["object", "record_id"];
+  if (toolName === "attio/create_record") return ["object", "values"];
+  if (toolName === "attio/upsert_record") return ["object", "matching_attribute", "values"];
+  if (toolName === "attio/update_record") return ["object", "record_id", "values"];
   if (toolName === "gmail/get_message") return ["message_id"];
   if (toolName === "gmail/send_message") return ["to", "subject", "body"];
   return [];
@@ -819,6 +870,8 @@ mcpApp.post("/", async (c) => {
         result = await callHubSpotTool(toolName, args, token);
       } else if (decision.provider === "gmail") {
         result = await callGmailTool(toolName, args, token);
+      } else if (decision.provider === "attio") {
+        result = await callAttioTool(toolName, args, token);
       } else {
         throw new Error(`no dispatcher for provider: ${decision.provider}`);
       }

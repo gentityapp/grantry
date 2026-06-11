@@ -226,6 +226,33 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "attio") {
+      const resp = await fetchWithTimeout("https://app.attio.com/oauth/introspect", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok || body.active === false) {
+        return { provider, authType, status: "error", checkedAt, error: `Attio token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        scopes: splitScopes(body.scope),
+        subject: {
+          workspace_id: body.workspace_id,
+          workspace_name: body.workspace_name,
+          workspace_slug: body.workspace_slug,
+          authorized_by_workspace_member_id: body.authorized_by_workspace_member_id,
+        },
+        checkedAt,
+      };
+    }
+
     return {
       provider,
       authType,

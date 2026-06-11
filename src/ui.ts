@@ -30,17 +30,20 @@ function jsString(s: string): string {
 function authTypeLabel(providerKey: string, authType: string): string {
   if (authType === "oauth") return "OAuth";
   if (providerKey === "hubspot") return "Private App token";
+  if (providerKey === "attio") return "Access token";
   return "paste token";
 }
 
 function credentialPlaceholder(providerKey: string, providerLabel: string, authType: string): string {
   if (authType === "oauth") return "OAuth flow will start after submit";
   if (providerKey === "hubspot") return "Paste your HubSpot Private App access token here (starts with pat-)";
+  if (providerKey === "attio") return "Paste your Attio access token from Settings > Developers";
   return `Paste your ${providerLabel} token here`;
 }
 
 function tokenLinkLabel(providerKey: string, providerLabel: string): string {
   if (providerKey === "hubspot") return "🔗 Get a new HubSpot Private App access token here →";
+  if (providerKey === "attio") return "🔗 Manage Attio access tokens here →";
   if (providerKey === "github") return "🔗 Manage GitHub PAT repository access here →";
   return `🔗 Get a new ${providerLabel} token here →`;
 }
@@ -1356,7 +1359,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
               serverCredentialHint.innerHTML = "";
             }
           }
-          const tokenLabel = sel.value === "hubspot" ? "HubSpot Private App access token" : p.label + " token";
+          const tokenLabel = sel.value === "hubspot"
+            ? "HubSpot Private App access token"
+            : (sel.value === "attio" ? "Attio access token" : p.label + " token");
           credField.placeholder = usePat ? "Paste your " + tokenLabel + (sel.value === "hubspot" ? " here (starts with pat-)" : " here") : "OAuth flow will start after submit";
           credField.disabled = !usePat;
           credField.required = usePat;
@@ -1367,7 +1372,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             patLink.href = p.tokenUrl;
             patLink.textContent = sel.value === "hubspot"
               ? "🔗 Get a new HubSpot Private App access token here →"
-              : (sel.value === "github" ? "🔗 Manage GitHub PAT repository access here →" : "🔗 Get a new " + p.label + " token here →");
+              : (sel.value === "attio"
+                ? "🔗 Manage Attio access tokens here →"
+                : (sel.value === "github" ? "🔗 Manage GitHub PAT repository access here →" : "🔗 Get a new " + p.label + " token here →"));
             patLinkRow.style.display = "";
           } else {
             patLinkRow.style.display = "none";
@@ -2064,7 +2071,11 @@ dashboardApp.get("/tenants/new", async (c) => {
               if (rotate) rotate.onclick = (e) => {
                 e.preventDefault();
                 credInput.style.display = "";
-                credInput.placeholder = key === "hubspot" ? "Paste a new HubSpot Private App access token here (rotates credential)" : "Paste a new " + (PROVIDERS[key] ? PROVIDERS[key].label : key) + " token here (rotates credential)";
+                credInput.placeholder = key === "hubspot"
+                  ? "Paste a new HubSpot Private App access token here (rotates credential)"
+                  : (key === "attio"
+                    ? "Paste a new Attio access token here (rotates credential)"
+                    : "Paste a new " + (PROVIDERS[key] ? PROVIDERS[key].label : key) + " token here (rotates credential)");
                 credInput.focus();
                 notice.style.display = "none";
               };

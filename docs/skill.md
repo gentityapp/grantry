@@ -2,7 +2,7 @@
 name: gentity-auth
 description: |
   Use gentity-auth when the user wants an AI agent to call external SaaS APIs
-  (GitHub, Notion, Google Drive/GSC/Ads, HubSpot) under OAuth/PAT authentication
+  (GitHub, Notion, Google Drive/GSC/Ads, HubSpot, Attio) under OAuth/PAT authentication
   with tenant isolation. gentity-auth (deployed as "agent-oauth") is a
   Hono/TypeScript service that holds encrypted credentials and exposes them as
   MCP tools, so the agent never sees raw tokens. Triggers: mentions of
@@ -27,7 +27,7 @@ description: |
 - **Tenant model**: each `Connection` has a `scope` (the tenant name, e.g.
   `gentity-dev`). A `Role` has `allowedTools` + `allowedScopes`. Tool calls pass
   `scope` in `arguments` to pick the credential.
-- **26 tools** (incl. `ping`). Format: `<provider>/<tool>` (e.g. `github/git_push_repo`).
+- Format: `<provider>/<tool>` (e.g. `github/git_push_repo`).
 
 ## The scope rule (the #1 gotcha)
 A tool call is allowed only if **all three** hold (`src/policy.ts`):
@@ -115,7 +115,9 @@ Go to `/ui/tenants/new` (or `/ui/tenants/:scope/edit` to add to an existing tena
   secret set as Railway env vars; the OAuth callback is
   `https://agent-oauth-production.up.railway.app/oauth/github/callback`.
 - **Notion**: paste an internal integration token (`ntn_…` / `secret_…`).
-- **Google (Drive/GSC/Ads), HubSpot**: OAuth only, via `/oauth/<provider>/start`.
+- **Google (Drive/GSC/Ads)**: OAuth only, via `/oauth/<provider>/start`.
+- **HubSpot**: paste a Private App access token.
+- **Attio**: paste a workspace access token from Settings > Developers > Access tokens.
 Set the connection's **scope to the tenant name**; that's the scope callers must pass.
 
 ### 6. Grant an agent access to a scope
@@ -133,7 +135,9 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 - **google_drive** (OAuth, read-only): `list_files`, `get_file`, `search`
 - **google_gsc** (OAuth, read-only): `list_sites`, `search_analytics`
 - **google_ads** (OAuth, read-only): `list_campaigns`, `get_campaign`
-- **hubspot** (OAuth): `list_deals`, `get_contact`, `create_deal`
+- **hubspot** (Private App token): `list_deals`, `get_contact`, `create_deal`
+- **attio** (access token): `search_records`, `list_records`, `get_record`,
+  `create_record`, `upsert_record`, `update_record`
 
 ### GitHub tool arguments (besides `scope`)
 - `get_repo`, `list_issues`: `owner`, `repo` (list_issues also `state`, default `open`)
@@ -160,6 +164,16 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
   `archived`; max 25 operations. Use this for targeted block edits or archiving.
 - `update_page_status`: legacy helper; `page_id`, `status`, optional `status_name`.
 
+### Attio tool arguments (besides `scope`)
+- `search_records` (read): `query`, `objects[]` (e.g. `people`, `companies`, `deals`),
+  optional `limit` (max 25), `request_as`.
+- `list_records` (read): `object`; optional `filter`, `filter_view_id`, `sorts`,
+  `limit` (max 500), `offset`.
+- `get_record` (read): `object`, `record_id`.
+- `create_record` (write): `object`, `values` (attribute slug/ID keyed object).
+- `upsert_record` (write): `object`, `matching_attribute`, `values`.
+- `update_record` (write): `object`, `record_id`, `values`.
+
 ## Output contract
 When asked to act via gentity-auth:
 1. If you don't already know the scope, call `connections/list` first to resolve
@@ -168,7 +182,8 @@ When asked to act via gentity-auth:
 3. Show the JSON-RPC payload.
 4. For **write** actions (`git_push_repo`, `create_repo`, `create_issue`,
    `notion/create_page`, `notion/update_page`, `notion/append_blocks`,
-   `notion/update_blocks`, `hubspot/create_deal`, …) get explicit confirmation first —
+   `notion/update_blocks`, `hubspot/create_deal`, `attio/create_record`,
+   `attio/upsert_record`, `attio/update_record`, …) get explicit confirmation first —
    these hit the real SaaS via real tokens and are not reversible. **Read-only**
    calls (incl. the connectivity smoke test) need no confirmation — just run them.
 5. Report the result. The `scope` is recorded in the audit log (`/ui/audit`).

@@ -199,6 +199,22 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     tools: ["hubspot/list_deals", "hubspot/get_contact", "hubspot/create_deal"],
     implemented: true,
   },
+  attio: {
+    key: "attio",
+    label: "Attio",
+    authTypes: ["pat"],
+    helpText: "Paste an Attio workspace access token from Settings > Developers > Access tokens. Required scopes depend on the tools: object_configuration:read plus record_permission:read or record_permission:read-write.",
+    tokenUrl: "https://app.attio.com/settings/developers/access-tokens",
+    tools: [
+      "attio/search_records",
+      "attio/list_records",
+      "attio/get_record",
+      "attio/create_record",
+      "attio/upsert_record",
+      "attio/update_record",
+    ],
+    implemented: true,
+  },
 };
 
 export function getProvider(key: string): ProviderDef | undefined {
