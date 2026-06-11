@@ -320,7 +320,7 @@ const CSS = `
   }
 `;
 
-const NAV = (current: string) => `
+const NAV = (current: string, email?: string) => `
 <nav>
   <span class="brand">agent-oauth</span>
   <a href="/dashboard" class="${current === "dashboard" ? "active" : ""}">Dashboard</a>
@@ -328,7 +328,9 @@ const NAV = (current: string) => `
   <a href="/agents" class="${current === "agents" ? "active" : ""}">Agents</a>
   <a href="/audit" class="${current === "audit" ? "active" : ""}">Audit</a>
   <a href="/meta" class="${current === "meta" ? "active" : ""}">Meta</a>
+  <a href="/account" class="${current === "account" ? "active" : ""}">Account</a>
   <span style="flex:1"></span>
+  ${email ? `<a href="/account" title="Signed in as ${escapeHtml(email)}" style="font-size:12px;color:#8a8d93;margin-right:10px;">\u{1F464} <code style="font-size:12px;">${escapeHtml(email)}</code></a>` : ""}
   <form method="post" action="/logout" style="margin:0;">
     <button type="submit" class="secondary" style="font-size:13px;padding:6px 10px;">Sign out</button>
   </form>
@@ -503,7 +505,7 @@ dashboardApp.get("/dashboard", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("dashboard")}
+    ${NAV("dashboard", user?.email)}
     <main>
       <h1>Dashboard</h1>
       <div class="row" style="gap:16px; margin-bottom:24px;">
@@ -545,7 +547,7 @@ dashboardApp.get("/meta", async (c) => {
     return c.html(`
       <!doctype html><html><head><meta charset="utf-8"><title>Meta — agent-oauth</title>
       <style>${CSS}</style></head><body>
-      ${NAV("meta")}
+      ${NAV("meta", dbUser?.email)}
       <main>
         <h1>Meta</h1>
         <div class="card"><h2>Forbidden</h2><p>This screen is restricted to <code>admin</code> users.</p></div>
@@ -663,7 +665,7 @@ dashboardApp.get("/meta", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Meta — agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("meta")}
+    ${NAV("meta", dbUser?.email)}
     <main>
       <h1>Meta</h1>
       <p style="color:#8a8d93;margin-top:-12px;">System-wide operational view. No raw credentials are shown.</p>
@@ -992,6 +994,114 @@ dashboardApp.get("/register", async (c) => {
   `);
 });
 
+// --- /account — profile + change password ---
+dashboardApp.get("/account", async (c) => {
+  const user = await getDbSessionUser(c);
+  if (!user) return c.redirect("/login");
+
+  const [tenantCount, connectionCount, agentCount, roleCount, sessionCount] = await Promise.all([
+    prisma.tenant.count({ where: { ownerId: user.id } }),
+    prisma.connection.count({ where: { ownerId: user.id } }),
+    prisma.agent.count({ where: { ownerId: user.id } }),
+    prisma.role.count({ where: { ownerId: user.id } }),
+    prisma.session.count({ where: { userId: user.id, expiresAt: { gt: new Date() } } }),
+  ]);
+
+  const ok = c.req.query("ok");
+  const err = c.req.query("err");
+  const banner = ok
+    ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);margin-bottom:20px;">✓ Password updated. Other sessions have been signed out.</div>`
+    : err
+      ? `<div class="card" style="border-color:#ff6b6b;background:rgba(255,107,107,0.08);margin-bottom:20px;">⚠️ ${escapeHtml(err)}</div>`
+      : "";
+
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Account — agent-oauth</title>
+    <style>${CSS}</style></head><body>
+    ${NAV("account", user?.email)}
+    <main>
+      <h1>Account</h1>
+      ${banner}
+      <div class="card">
+        <h2>Signed in as</h2>
+        <p style="font-size:18px;margin:4px 0 12px;"><code>${escapeHtml(user.email)}</code></p>
+        <table>
+          <tbody>
+            <tr><td style="color:#8a8d93;">Name</td><td>${escapeHtml(user.name || "—")}</td></tr>
+            <tr><td style="color:#8a8d93;">User ID</td><td><code>${escapeHtml(user.id)}</code></td></tr>
+            <tr><td style="color:#8a8d93;">Role</td><td><code>${escapeHtml(user.role)}</code></td></tr>
+            <tr><td style="color:#8a8d93;">Registered</td><td><code>${user.createdAt.toISOString().slice(0, 10)}</code></td></tr>
+            <tr><td style="color:#8a8d93;">Active sessions</td><td>${sessionCount}</td></tr>
+          </tbody>
+        </table>
+        <p class="field-hint" style="margin-bottom:0;">
+          Everything below is owned by this account. If a tenant or agent you expect is missing,
+          it probably belongs to a different account — sign out and back in with that one.
+        </p>
+      </div>
+      <div class="card">
+        <h2>Owned by this account</h2>
+        <p>
+          <a href="/tenants">${tenantCount} tenant${tenantCount === 1 ? "" : "s"}</a> ·
+          ${connectionCount} connection${connectionCount === 1 ? "" : "s"} ·
+          <a href="/agents">${agentCount} agent${agentCount === 1 ? "" : "s"}</a> ·
+          ${roleCount} role${roleCount === 1 ? "" : "s"}
+        </p>
+      </div>
+      <div class="card">
+        <h2>Change password</h2>
+        <form method="post" action="/account/password">
+          <div class="field">
+            <label for="current_password">Current password</label>
+            <input type="password" name="current_password" id="current_password" required minlength="8" autocomplete="current-password">
+          </div>
+          <div class="field">
+            <label for="new_password">New password</label>
+            <input type="password" name="new_password" id="new_password" required minlength="8" autocomplete="new-password">
+          </div>
+          <div class="field">
+            <label for="new_password2">New password (again)</label>
+            <input type="password" name="new_password2" id="new_password2" required minlength="8" autocomplete="new-password">
+          </div>
+          <button type="submit">Change password</button>
+          <p class="field-hint">Changing the password signs out every other session.</p>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Locked out?</h2>
+        <p class="field-hint" style="margin:0;">
+          If you can't sign in at all, an operator can reset any account's password from the server:
+          <code>railway run npm run user:reset-password -- &lt;email&gt; &lt;new-password&gt;</code>
+        </p>
+      </div>
+    </main></body></html>
+  `);
+});
+
+dashboardApp.post("/account/password", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+
+  const body = await c.req.parseBody();
+  const currentPassword = String(body.current_password ?? "");
+  const newPassword = String(body.new_password ?? "");
+  const newPassword2 = String(body.new_password2 ?? "");
+
+  if (newPassword.length < 8) return c.redirect(`/account?err=${encodeURIComponent("New password must be at least 8 characters")}`);
+  if (newPassword !== newPassword2) return c.redirect(`/account?err=${encodeURIComponent("New passwords do not match")}`);
+
+  try {
+    await auth.api.changePassword({
+      body: { currentPassword, newPassword, revokeOtherSessions: true },
+      headers: c.req.raw.headers,
+    });
+  } catch (e: any) {
+    const message = e?.body?.message ?? e?.message ?? "Password change failed";
+    return c.redirect(`/account?err=${encodeURIComponent(message)}`);
+  }
+  return c.redirect("/account?ok=1");
+});
+
 // --- /tenants ---
 dashboardApp.get("/tenants", async (c) => {
   const user = await getSessionUser(c);
@@ -1024,7 +1134,7 @@ dashboardApp.get("/tenants", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Tenants — agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("tenants")}
+    ${NAV("tenants", user?.email)}
     <main>
       <div class="row spread" style="margin-bottom:16px;">
         <h1 style="margin:0;">Tenants</h1>
@@ -1145,7 +1255,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Edit ${scope} — agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("tenants")}
+    ${NAV("tenants", user?.email)}
     <main>
       <h1>Edit tenant ${tenantRow && tenantRow.displayName !== tenantRow.slug ? `${escapeHtml(tenantRow.displayName)} ` : ""}<code>${scope}</code></h1>
       <p style="color:#8a8d93;margin-top:-16px;margin-bottom:24px;">
@@ -1546,7 +1656,7 @@ dashboardApp.post("/tenants/:scope/sync-role-tools", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Role tools synced — agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("tenants")}
+    ${NAV("tenants", user?.email)}
     <main>
       <h1>✓ Granted connected tools for <code>${escapeHtml(scope)}</code></h1>
       <div class="card">
@@ -1593,7 +1703,7 @@ dashboardApp.post("/tenants/:scope/codex-mcp/create", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Codex MCP created — agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("tenants")}
+    ${NAV("tenants", user?.email)}
     <main>
       <h1>Codex MCP ready for <code>${escapeHtml(scope)}</code></h1>
       <div class="card">
@@ -1640,7 +1750,7 @@ dashboardApp.post("/tenants/:scope/codex-mcp/:agentId/rotate", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Codex MCP rotated — agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("tenants")}
+    ${NAV("tenants", user?.email)}
     <main>
       <h1>Codex MCP token rotated for <code>${escapeHtml(scope)}</code></h1>
       ${agentTokenCard(token)}
@@ -1764,7 +1874,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     return c.html(`
       <!doctype html><html><head><meta charset="utf-8"><title>Saved — agent-oauth</title>
       <style>${CSS}</style></head><body>
-      ${NAV("tenants")}
+      ${NAV("tenants", user?.email)}
       <main>
         <h1>✓ Settings saved for <code>${scope}</code></h1>
         <div class="card">
@@ -1889,7 +1999,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     return c.html(`
       <!doctype html><html><head><meta charset="utf-8"><title>Service added — agent-oauth</title>
       <style>${CSS}</style></head><body>
-      ${NAV("tenants")}
+      ${NAV("tenants", user?.email)}
       <main>
         <h1>✓ Service added to <code>${scope}</code></h1>
         <div class="card">
@@ -1937,7 +2047,7 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/recheck", async (c)
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Connection rechecked — agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("tenants")}
+    ${NAV("tenants", user?.email)}
     <main>
       <h1>✓ Rechecked <code>${escapeHtml(conn.label)}</code></h1>
       <div class="card">
@@ -1970,7 +2080,7 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/delete", async (c) 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Connection deleted — agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("tenants")}
+    ${NAV("tenants", user?.email)}
     <main>
       <h1>✓ Deleted connection <code>${escapeHtml(conn.label)}</code></h1>
       <div class="card">
@@ -2012,7 +2122,7 @@ dashboardApp.get("/tenants/new", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>New tenant — agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("tenants")}
+    ${NAV("tenants", user?.email)}
     <main>
       <h1>+ New tenant</h1>
       <p style="color:#8a8d93;margin-top:-16px;margin-bottom:24px;">
@@ -2372,7 +2482,7 @@ dashboardApp.post("/tenants/new", async (c) => {
     return c.html(`
       <!doctype html><html><head><meta charset="utf-8"><title>Agent name taken — agent-oauth</title>
       <style>${CSS}</style></head><body>
-      ${NAV("tenants")}
+      ${NAV("tenants", user?.email)}
       <main>
         <h1>⚠️  Agent name <code>${escapeHtml(agent)}</code> already exists</h1>
         <div class="card" style="border-color:#ff6b6b;">
@@ -2550,7 +2660,7 @@ dashboardApp.post("/tenants/new", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Tenant created — agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("tenants")}
+    ${NAV("tenants", user?.email)}
     <main>
       <h1>✓ Tenant <code>${tenant}</code> created</h1>
       <div class="card">
@@ -2600,7 +2710,7 @@ dashboardApp.get("/agents", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Agents — agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("agents")}
+    ${NAV("agents", user?.email)}
     <main>
       <div class="row spread" style="margin-bottom:16px;">
         <h1 style="margin:0;">Agents</h1>
@@ -2948,7 +3058,7 @@ dashboardApp.get("/agents/:id", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(agent.name)} — agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("agents")}
+    ${NAV("agents", user?.email)}
     <main>
       <h1>Agent <code>${escapeHtml(agent.name)}</code></h1>
       <div class="card">
@@ -3054,7 +3164,7 @@ dashboardApp.post("/agents/:id/rotate", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Token rotated — agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("agents")}
+    ${NAV("agents", user?.email)}
     <main>
       <h1>✓ Token rotated for <code>${agent.name}</code></h1>
       <div class="card" style="background:rgba(255,107,107,0.08); border-color:#ff6b6b;">
@@ -3102,7 +3212,7 @@ dashboardApp.get("/audit", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Audit — agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("audit")}
+    ${NAV("audit", user?.email)}
     <main>
       <h1>Audit log</h1>
       <p style="color:#8a8d93;">Latest 100 events.</p>
@@ -3497,7 +3607,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     return c.html(`
       <!doctype html><html><head><meta charset="utf-8"><title>Agent name taken — agent-oauth</title>
       <style>${CSS}</style></head><body>
-      ${NAV("tenants")}
+      ${NAV("tenants", user?.email)}
       <main>
         <h1>⚠️  Agent name <code>${escapeHtml(agent)}</code> already exists</h1>
         <div class="card" style="border-color:#ff6b6b;">
@@ -3533,7 +3643,7 @@ oauthApp.get("/:provider/callback", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(providerDef.label)} connected — agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("tenants")}
+    ${NAV("tenants", user?.email)}
     <main>
       <h1>✓ ${escapeHtml(providerDef.label)} connected · tenant <code>${effectiveTenant}</code> created</h1>
       ${googleAdsConnectionNeedsDeveloperToken ? `
@@ -3671,7 +3781,7 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
     return c.html(`
       <!doctype html><html><head><meta charset="utf-8"><title>Agent name taken — agent-oauth</title>
       <style>${CSS}</style></head><body>
-      ${NAV("tenants")}
+      ${NAV("tenants", user?.email)}
       <main>
         <h1>⚠️ Agent name <code>${escapeHtml(agent)}</code> already exists</h1>
         <div class="card" style="border-color:#ff6b6b;">
@@ -3717,7 +3827,7 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Agent created — agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("tenants")}
+    ${NAV("tenants", user?.email)}
     <main>
       <h1>✓ New agent <code>${agentRow.name}</code> added to <code>${scope}</code></h1>
       <div class="card">
@@ -3795,7 +3905,7 @@ dashboardApp.post("/tenants/:scope/delete", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Deleted — agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("tenants")}
+    ${NAV("tenants", user?.email)}
     <main>
       <h1>✓ Deleted tenant <code>${scope}</code></h1>
       <div class="card">
@@ -3840,7 +3950,7 @@ dashboardApp.post("/tenants/bulk-delete", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Bulk deleted — agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("tenants")}
+    ${NAV("tenants", user?.email)}
     <main>
       <h1>✓ Bulk deleted ${scopes.length} tenant(s)</h1>
       <div class="card">
@@ -3888,7 +3998,7 @@ dashboardApp.post("/agents/bulk-delete", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Bulk deleted — agent-oauth</title>
     <style>${CSS}</style></head><body>
-    ${NAV("agents")}
+    ${NAV("agents", user?.email)}
     <main>
       <h1>✓ Bulk deleted ${result.count} agent(s)</h1>
       <p>${result.count < ids.length ? `(${ids.length - result.count} skipped — not yours or not found)` : ""}</p>
