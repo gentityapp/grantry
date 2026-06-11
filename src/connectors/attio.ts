@@ -73,10 +73,42 @@ function valuesBody(args: AttioArgs) {
   return { data: { values } };
 }
 
+function dataBody(args: AttioArgs, fallbackKeys: string[]) {
+  if (args.data && typeof args.data === "object" && !Array.isArray(args.data)) {
+    return { data: args.data };
+  }
+  const data: Record<string, unknown> = {};
+  for (const key of fallbackKeys) {
+    if (args[key] !== undefined) data[key] = args[key];
+  }
+  if (!Object.keys(data).length) throw new Error(`data object or one of ${fallbackKeys.join(", ")} is required`);
+  return { data };
+}
+
 function boundedInteger(value: unknown, fallback: number, min: number, max: number) {
   const n = Number(value ?? fallback);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(Math.max(Math.floor(n), min), max);
+}
+
+function queryString(params: Record<string, unknown>) {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") continue;
+    if (Array.isArray(value)) {
+      if (value.length) search.set(key, value.map((v) => String(v)).join(","));
+      continue;
+    }
+    search.set(key, String(value));
+  }
+  const s = search.toString();
+  return s ? `?${s}` : "";
+}
+
+function idArg(args: AttioArgs, snake: string, camel: string = snake.replace(/_([a-z])/g, (_, c) => c.toUpperCase())) {
+  const id = String(args[snake] ?? args[camel] ?? "").trim();
+  if (!id) throw new Error(`${snake} is required`);
+  return id;
 }
 
 export async function callAttioTool(tool: string, args: AttioArgs, token: string) {
@@ -167,6 +199,176 @@ export async function callAttioTool(tool: string, args: AttioArgs, token: string
     }, { tool, object, recordId: id });
     const j: any = await readJsonResponse(r);
     if (!r.ok) throw new Error(`Attio update_record failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+    return { structuredContent: j };
+  }
+
+  if (tool === "attio/list_notes") {
+    const qs = queryString({
+      limit: boundedInteger(args.limit, 10, 1, 50),
+      offset: boundedInteger(args.offset, 0, 0, Number.MAX_SAFE_INTEGER),
+      parent_object: args.parent_object ?? args.parentObject,
+      parent_record_id: args.parent_record_id ?? args.parentRecordId,
+    });
+    const r = await fetchAttio(`/notes${qs}`, { headers: headers(token) }, { tool });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Attio list_notes failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+    return { structuredContent: { data: j.data ?? [] } };
+  }
+
+  if (tool === "attio/get_note") {
+    const noteId = idArg(args, "note_id");
+    const r = await fetchAttio(`/notes/${encodeURIComponent(noteId)}`, { headers: headers(token) }, { tool, noteId });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Attio get_note failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+    return { structuredContent: j };
+  }
+
+  if (tool === "attio/create_note") {
+    const r = await fetchAttio("/notes", {
+      method: "POST",
+      headers: headers(token),
+      body: JSON.stringify(dataBody(args, ["parent_object", "parent_record_id", "title", "content", "created_at", "meeting_id"])),
+    }, { tool });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Attio create_note failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+    return { structuredContent: j };
+  }
+
+  if (tool === "attio/delete_note") {
+    const noteId = idArg(args, "note_id");
+    const r = await fetchAttio(`/notes/${encodeURIComponent(noteId)}`, { method: "DELETE", headers: headers(token) }, { tool, noteId });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Attio delete_note failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+    return { structuredContent: j };
+  }
+
+  if (tool === "attio/list_tasks") {
+    const qs = queryString({
+      limit: boundedInteger(args.limit, 10, 1, 50),
+      offset: boundedInteger(args.offset, 0, 0, Number.MAX_SAFE_INTEGER),
+      linked_object: args.linked_object ?? args.linkedObject,
+      linked_record_id: args.linked_record_id ?? args.linkedRecordId,
+      assignee: args.assignee,
+      is_completed: args.is_completed ?? args.isCompleted,
+    });
+    const r = await fetchAttio(`/tasks${qs}`, { headers: headers(token) }, { tool });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Attio list_tasks failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+    return { structuredContent: { data: j.data ?? [] } };
+  }
+
+  if (tool === "attio/get_task") {
+    const taskId = idArg(args, "task_id");
+    const r = await fetchAttio(`/tasks/${encodeURIComponent(taskId)}`, { headers: headers(token) }, { tool, taskId });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Attio get_task failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+    return { structuredContent: j };
+  }
+
+  if (tool === "attio/create_task") {
+    const r = await fetchAttio("/tasks", {
+      method: "POST",
+      headers: headers(token),
+      body: JSON.stringify(dataBody(args, ["content", "format", "deadline_at", "is_completed", "linked_records", "assignees"])),
+    }, { tool });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Attio create_task failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+    return { structuredContent: j };
+  }
+
+  if (tool === "attio/update_task") {
+    const taskId = idArg(args, "task_id");
+    const r = await fetchAttio(`/tasks/${encodeURIComponent(taskId)}`, {
+      method: "PATCH",
+      headers: headers(token),
+      body: JSON.stringify(dataBody(args, ["deadline_at", "is_completed", "linked_records", "assignees"])),
+    }, { tool, taskId });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Attio update_task failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+    return { structuredContent: j };
+  }
+
+  if (tool === "attio/delete_task") {
+    const taskId = idArg(args, "task_id");
+    const r = await fetchAttio(`/tasks/${encodeURIComponent(taskId)}`, { method: "DELETE", headers: headers(token) }, { tool, taskId });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Attio delete_task failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+    return { structuredContent: j };
+  }
+
+  if (tool === "attio/list_threads") {
+    const qs = queryString({
+      record_id: args.record_id ?? args.recordId,
+      object: args.object,
+      entry_id: args.entry_id ?? args.entryId,
+      list: args.list,
+      limit: boundedInteger(args.limit, 10, 1, 50),
+      offset: boundedInteger(args.offset, 0, 0, Number.MAX_SAFE_INTEGER),
+    });
+    const r = await fetchAttio(`/threads${qs}`, { headers: headers(token) }, { tool });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Attio list_threads failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+    return { structuredContent: { data: j.data ?? [] } };
+  }
+
+  if (tool === "attio/get_thread") {
+    const threadId = idArg(args, "thread_id");
+    const r = await fetchAttio(`/threads/${encodeURIComponent(threadId)}`, { headers: headers(token) }, { tool, threadId });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Attio get_thread failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+    return { structuredContent: j };
+  }
+
+  if (tool === "attio/create_comment") {
+    const r = await fetchAttio("/comments", {
+      method: "POST",
+      headers: headers(token),
+      body: JSON.stringify(dataBody(args, ["format", "content", "author", "thread_id", "record", "entry", "created_at"])),
+    }, { tool });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Attio create_comment failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+    return { structuredContent: j };
+  }
+
+  if (tool === "attio/get_comment") {
+    const commentId = idArg(args, "comment_id");
+    const r = await fetchAttio(`/comments/${encodeURIComponent(commentId)}`, { headers: headers(token) }, { tool, commentId });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Attio get_comment failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+    return { structuredContent: j };
+  }
+
+  if (tool === "attio/delete_comment") {
+    const commentId = idArg(args, "comment_id");
+    const r = await fetchAttio(`/comments/${encodeURIComponent(commentId)}`, { method: "DELETE", headers: headers(token) }, { tool, commentId });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Attio delete_comment failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+    return { structuredContent: j };
+  }
+
+  if (tool === "attio/list_meetings") {
+    const qs = queryString({
+      limit: boundedInteger(args.limit, 50, 1, 200),
+      cursor: args.cursor,
+      linked_object: args.linked_object ?? args.linkedObject,
+      linked_record_id: args.linked_record_id ?? args.linkedRecordId,
+      participants: args.participants,
+      sort: args.sort,
+      ends_from: args.ends_from ?? args.endsFrom,
+      starts_before: args.starts_before ?? args.startsBefore,
+      timezone: args.timezone,
+    });
+    const r = await fetchAttio(`/meetings${qs}`, { headers: headers(token) }, { tool });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Attio list_meetings failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+    return { structuredContent: j };
+  }
+
+  if (tool === "attio/get_meeting") {
+    const meetingId = idArg(args, "meeting_id");
+    const r = await fetchAttio(`/meetings/${encodeURIComponent(meetingId)}`, { headers: headers(token) }, { tool, meetingId });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Attio get_meeting failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
     return { structuredContent: j };
   }
 

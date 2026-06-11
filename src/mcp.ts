@@ -437,6 +437,131 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       values: { type: "object", description: "Attio record values to append/update, keyed by attribute slug or ID." },
     };
   }
+  if (toolName === "attio/list_notes") {
+    return {
+      parent_object: { type: "string", description: "Optional Attio parent object slug or ID, e.g. people." },
+      parent_record_id: { type: "string", description: "Optional parent record ID. Use with parent_object." },
+      limit: { type: "number", minimum: 1, maximum: 50, description: "Notes to return, max 50." },
+      offset: { type: "number", minimum: 0, description: "Pagination offset." },
+    };
+  }
+  if (toolName === "attio/get_note") {
+    return {
+      note_id: { type: "string", description: "Attio note ID." },
+    };
+  }
+  if (toolName === "attio/create_note") {
+    return {
+      parent_object: { type: "string", description: "Attio parent object slug or ID, e.g. people." },
+      parent_record_id: { type: "string", description: "Attio parent record ID." },
+      title: { type: "string", description: "Note title." },
+      content: { type: "string", description: "Note content as Markdown." },
+      created_at: { type: "string", description: "Optional ISO timestamp to backdate the note." },
+      meeting_id: { type: "string", description: "Optional Attio meeting ID to associate with the note." },
+      data: { type: "object", description: "Raw Attio note data; overrides individual fields when provided." },
+    };
+  }
+  if (toolName === "attio/delete_note") {
+    return {
+      note_id: { type: "string", description: "Attio note ID." },
+    };
+  }
+  if (toolName === "attio/list_tasks") {
+    return {
+      linked_object: { type: "string", description: "Optional linked object slug or ID." },
+      linked_record_id: { type: "string", description: "Optional linked record ID. Use with linked_object." },
+      assignee: { type: "string", description: "Optional assignee workspace member ID/email, or null for unassigned." },
+      is_completed: { type: "boolean", description: "Filter tasks by completion state." },
+      limit: { type: "number", minimum: 1, maximum: 50, description: "Tasks to return, max 50." },
+      offset: { type: "number", minimum: 0, description: "Pagination offset." },
+    };
+  }
+  if (toolName === "attio/get_task") {
+    return {
+      task_id: { type: "string", description: "Attio task ID." },
+    };
+  }
+  if (toolName === "attio/create_task") {
+    return {
+      content: { type: "string", description: "Task content as plaintext." },
+      format: { type: "string", enum: ["plaintext"], description: "Task content format. Defaults to plaintext." },
+      deadline_at: { type: "string", description: "Optional ISO deadline timestamp." },
+      is_completed: { type: "boolean", description: "Initial completion state." },
+      linked_records: { type: "array", items: { type: "string" }, description: "Optional linked record references, e.g. email/domain strings." },
+      assignees: { type: "array", items: { type: "object" }, description: "Optional Attio assignee actor references." },
+      data: { type: "object", description: "Raw Attio task data; overrides individual fields when provided." },
+    };
+  }
+  if (toolName === "attio/update_task") {
+    return {
+      task_id: { type: "string", description: "Attio task ID." },
+      deadline_at: { type: "string", description: "Optional ISO deadline timestamp." },
+      is_completed: { type: "boolean", description: "Completion state." },
+      linked_records: { type: "array", items: { type: "string" }, description: "Linked record references." },
+      assignees: { type: "array", items: { type: "object" }, description: "Attio assignee actor references." },
+      data: { type: "object", description: "Raw Attio task patch data; overrides individual fields when provided." },
+    };
+  }
+  if (toolName === "attio/delete_task") {
+    return {
+      task_id: { type: "string", description: "Attio task ID." },
+    };
+  }
+  if (toolName === "attio/list_threads") {
+    return {
+      object: { type: "string", description: "Optional object slug or ID. Use with record_id." },
+      record_id: { type: "string", description: "Optional record ID. Use with object." },
+      list: { type: "string", description: "Optional list slug or ID. Use with entry_id." },
+      entry_id: { type: "string", description: "Optional list entry ID. Use with list." },
+      limit: { type: "number", minimum: 1, maximum: 50, description: "Threads to return, max 50." },
+      offset: { type: "number", minimum: 0, description: "Pagination offset." },
+    };
+  }
+  if (toolName === "attio/get_thread") {
+    return {
+      thread_id: { type: "string", description: "Attio thread ID." },
+    };
+  }
+  if (toolName === "attio/create_comment") {
+    return {
+      content: { type: "string", description: "Comment content as plaintext." },
+      format: { type: "string", enum: ["plaintext"], description: "Comment content format. Defaults to plaintext." },
+      author: { type: "object", description: "Optional Attio author actor reference." },
+      thread_id: { type: "string", description: "Existing thread ID for a reply." },
+      record: { type: "object", description: "Record target for a new record comment, e.g. { object_id, record_id }." },
+      entry: { type: "object", description: "List entry target for a new entry comment, e.g. { list_id, entry_id }." },
+      created_at: { type: "string", description: "Optional ISO timestamp to backdate the comment." },
+      data: { type: "object", description: "Raw Attio comment data; overrides individual fields when provided." },
+    };
+  }
+  if (toolName === "attio/get_comment") {
+    return {
+      comment_id: { type: "string", description: "Attio comment ID." },
+    };
+  }
+  if (toolName === "attio/delete_comment") {
+    return {
+      comment_id: { type: "string", description: "Attio comment ID." },
+    };
+  }
+  if (toolName === "attio/list_meetings") {
+    return {
+      cursor: { type: "string", description: "Optional Attio pagination cursor." },
+      linked_object: { type: "string", description: "Optional linked object slug or ID. Use with linked_record_id." },
+      linked_record_id: { type: "string", description: "Optional linked record ID. Use with linked_object." },
+      participants: { type: "string", description: "Optional comma-separated participant emails." },
+      sort: { type: "string", enum: ["start_asc", "start_desc"], description: "Meeting sort order." },
+      ends_from: { type: "string", description: "Optional inclusive end timestamp lower bound." },
+      starts_before: { type: "string", description: "Optional exclusive start timestamp upper bound." },
+      timezone: { type: "string", description: "Timezone for all-day meeting filters. Defaults to UTC." },
+      limit: { type: "number", minimum: 1, maximum: 200, description: "Meetings to return, max 200." },
+    };
+  }
+  if (toolName === "attio/get_meeting") {
+    return {
+      meeting_id: { type: "string", description: "Attio meeting ID." },
+    };
+  }
   if (toolName === "gmail/list_messages") {
     return {
       q: { type: "string", description: "Gmail search query." },
@@ -494,6 +619,18 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "attio/create_record") return ["object", "values"];
   if (toolName === "attio/upsert_record") return ["object", "matching_attribute", "values"];
   if (toolName === "attio/update_record") return ["object", "record_id", "values"];
+  if (toolName === "attio/get_note") return ["note_id"];
+  if (toolName === "attio/create_note") return ["parent_object", "parent_record_id", "title", "content"];
+  if (toolName === "attio/delete_note") return ["note_id"];
+  if (toolName === "attio/get_task") return ["task_id"];
+  if (toolName === "attio/create_task") return ["content"];
+  if (toolName === "attio/update_task") return ["task_id"];
+  if (toolName === "attio/delete_task") return ["task_id"];
+  if (toolName === "attio/get_thread") return ["thread_id"];
+  if (toolName === "attio/create_comment") return ["content"];
+  if (toolName === "attio/get_comment") return ["comment_id"];
+  if (toolName === "attio/delete_comment") return ["comment_id"];
+  if (toolName === "attio/get_meeting") return ["meeting_id"];
   if (toolName === "gmail/get_message") return ["message_id"];
   if (toolName === "gmail/send_message") return ["to", "subject", "body"];
   return [];

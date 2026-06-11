@@ -126,7 +126,7 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
    **Allowed scopes** (leave Allowed scopes empty for "any scope").
 3. Bind the role to the agent (`POST /ui/agents/:id/bind`).
 
-## Providers & tools (26)
+## Providers & tools (65)
 - `ping` — liveness (returns `pong from <agent>`)
 - **github** (PAT or OAuth; scopes `repo`, `read:user`):
   `list_repos`, `get_repo`, `get_file_contents`, `list_issues`, `create_issue`, `git_push_repo`, `create_repo`
@@ -137,7 +137,10 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 - **google_ads** (OAuth, read-only): `list_campaigns`, `get_campaign`
 - **hubspot** (Private App token): `list_deals`, `get_contact`, `create_deal`
 - **attio** (access token): `search_records`, `list_records`, `get_record`,
-  `create_record`, `upsert_record`, `update_record`
+  `create_record`, `upsert_record`, `update_record`, `list_notes`, `get_note`,
+  `create_note`, `delete_note`, `list_tasks`, `get_task`, `create_task`,
+  `update_task`, `delete_task`, `list_threads`, `get_thread`, `create_comment`,
+  `get_comment`, `delete_comment`, `list_meetings`, `get_meeting`
 
 ### GitHub tool arguments (besides `scope`)
 - `get_repo`, `list_issues`: `owner`, `repo` (list_issues also `state`, default `open`)
@@ -173,6 +176,31 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 - `create_record` (write): `object`, `values` (attribute slug/ID keyed object).
 - `upsert_record` (write): `object`, `matching_attribute`, `values`.
 - `update_record` (write): `object`, `record_id`, `values`.
+- `list_notes` (read): optional `parent_object`, `parent_record_id`, `limit` (max 50), `offset`.
+- `get_note` (read): `note_id`.
+- `create_note` (write): `parent_object`, `parent_record_id`, `title`, `content`;
+  optional `created_at`, `meeting_id`. Use this to record email summaries or
+  follow-up notes on a person/company/deal record.
+- `delete_note` (write): `note_id`.
+- `list_tasks` (read): optional `linked_object`, `linked_record_id`, `assignee`,
+  `is_completed`, `limit` (max 50), `offset`.
+- `get_task` (read): `task_id`.
+- `create_task` (write): `content`; optional `deadline_at`, `is_completed`,
+  `linked_records`, `assignees`.
+- `update_task` (write): `task_id`; optional `deadline_at`, `is_completed`,
+  `linked_records`, `assignees`.
+- `delete_task` (write): `task_id`.
+- `list_threads` (read): optional record filter (`object` + `record_id`) or list
+  entry filter (`list` + `entry_id`), plus `limit` (max 50), `offset`.
+- `get_thread` (read): `thread_id`.
+- `create_comment` (write): `content`; optional `thread_id` to reply, or `record`
+  / `entry` to create a new record/list-entry comment, plus `author`, `created_at`.
+- `get_comment` (read): `comment_id`.
+- `delete_comment` (write): `comment_id`.
+- `list_meetings` (read): optional `linked_object`, `linked_record_id`,
+  `participants`, `sort`, `ends_from`, `starts_before`, `timezone`, `cursor`,
+  `limit` (max 200).
+- `get_meeting` (read): `meeting_id`.
 
 ## Output contract
 When asked to act via gentity-auth:
@@ -183,7 +211,10 @@ When asked to act via gentity-auth:
 4. For **write** actions (`git_push_repo`, `create_repo`, `create_issue`,
    `notion/create_page`, `notion/update_page`, `notion/append_blocks`,
    `notion/update_blocks`, `hubspot/create_deal`, `attio/create_record`,
-   `attio/upsert_record`, `attio/update_record`, …) get explicit confirmation first —
+   `attio/upsert_record`, `attio/update_record`, `attio/create_note`,
+   `attio/delete_note`, `attio/create_task`, `attio/update_task`,
+   `attio/delete_task`, `attio/create_comment`, `attio/delete_comment`, …)
+   get explicit confirmation first —
    these hit the real SaaS via real tokens and are not reversible. **Read-only**
    calls (incl. the connectivity smoke test) need no confirmation — just run them.
 5. Report the result. The `scope` is recorded in the audit log (`/ui/audit`).
