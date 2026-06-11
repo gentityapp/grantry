@@ -253,6 +253,50 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "clay") {
+      const raw = token.trim();
+      let webhookUrl = raw;
+      let hasAuthToken = false;
+      if (raw.startsWith("{")) {
+        const parsed = JSON.parse(raw);
+        webhookUrl = String(parsed.webhook_url ?? parsed.webhookUrl ?? parsed.url ?? "").trim();
+        hasAuthToken = Boolean(String(parsed.auth_token ?? parsed.authToken ?? parsed.token ?? "").trim());
+      }
+      const parsedUrl = new URL(webhookUrl);
+      if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") {
+        return { provider, authType, status: "error", checkedAt, error: "Clay webhook URL must be http or https" };
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: { host: parsedUrl.host, pathname: parsedUrl.pathname, has_auth_token: hasAuthToken },
+        notes: ["Clay webhook credentials are validated for URL shape only; gentity-auth does not send a probe row during save."],
+        checkedAt,
+      };
+    }
+
+    if (provider === "heyreach") {
+      const resp = await fetchWithTimeout("https://api.heyreach.io/api/public/auth/CheckApiKey", {
+        headers: {
+          "X-API-KEY": token,
+          Accept: "application/json",
+        },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) {
+        return { provider, authType, status: "error", checkedAt, error: `HeyReach API key check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: typeof body === "object" && body ? body : undefined,
+        notes: ["HeyReach API key is sent as X-API-KEY."],
+        checkedAt,
+      };
+    }
+
     return {
       provider,
       authType,

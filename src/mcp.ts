@@ -19,6 +19,8 @@ import { callYahooAdsTool } from "./connectors/yahoo_ads.js";
 import { callHubSpotTool } from "./connectors/hubspot.js";
 import { callGmailTool } from "./connectors/gmail.js";
 import { callAttioTool } from "./connectors/attio.js";
+import { callClayTool } from "./connectors/clay.js";
+import { callHeyReachTool } from "./connectors/heyreach.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 
 export const mcpApp = new Hono();
@@ -587,6 +589,75 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       mime_type: { type: "string", description: "Content-Type, defaults to text/plain; charset=UTF-8." },
     };
   }
+  if (toolName === "clay/send_webhook") {
+    return {
+      data: { type: "object", description: "Payload to POST to the Clay webhook source." },
+      row: { type: "object", description: "Alias for data." },
+    };
+  }
+  if (toolName === "clay/send_batch") {
+    return {
+      rows: { type: "array", items: { type: "object" }, description: "Rows to POST to the Clay webhook source, one request per row." },
+      data: { type: "array", items: { type: "object" }, description: "Alias for rows." },
+    };
+  }
+  if (toolName === "heyreach/check_api_key") {
+    return {};
+  }
+  if (toolName === "heyreach/list_campaigns") {
+    return {
+      offset: { type: "number", minimum: 0, description: "Pagination offset." },
+      limit: { type: "number", minimum: 1, maximum: 100, description: "Campaigns to return, max 100." },
+      data: { type: "object", description: "Optional raw HeyReach request body filters." },
+    };
+  }
+  if (toolName === "heyreach/get_campaign" || toolName === "heyreach/pause_campaign" || toolName === "heyreach/resume_campaign") {
+    return {
+      campaign_id: { type: "string", description: "HeyReach campaign ID." },
+    };
+  }
+  if (toolName === "heyreach/add_leads_to_campaign") {
+    return {
+      campaign_id: { type: "string", description: "HeyReach campaign ID." },
+      leads: { type: "array", items: { type: "object" }, description: "Leads to add. Use raw HeyReach lead fields." },
+      data: { type: "object", description: "Raw HeyReach AddLeadsToCampaignV2 request body; overrides individual fields." },
+    };
+  }
+  if (toolName === "heyreach/list_leads") {
+    return {
+      campaign_id: { type: "string", description: "Optional campaign ID filter." },
+      lead_list_id: { type: "string", description: "Optional lead list ID filter." },
+      statuses: { type: "array", items: { type: "string" }, description: "Optional lead status filters." },
+      offset: { type: "number", minimum: 0, description: "Pagination offset." },
+      limit: { type: "number", minimum: 1, maximum: 100, description: "Leads to return, max 100." },
+      data: { type: "object", description: "Optional raw HeyReach request body filters." },
+    };
+  }
+  if (toolName === "heyreach/list_conversations") {
+    return {
+      offset: { type: "number", minimum: 0, description: "Pagination offset." },
+      limit: { type: "number", minimum: 1, maximum: 100, description: "Conversations to return, max 100." },
+      data: { type: "object", description: "Optional raw HeyReach GetConversationsV2 request body filters." },
+    };
+  }
+  if (toolName === "heyreach/list_lead_lists") {
+    return {
+      offset: { type: "number", minimum: 0, description: "Pagination offset." },
+      limit: { type: "number", minimum: 1, maximum: 100, description: "Lead lists to return, max 100." },
+      data: { type: "object", description: "Optional raw HeyReach request body filters." },
+    };
+  }
+  if (toolName === "heyreach/create_empty_list") {
+    return {
+      name: { type: "string", description: "New HeyReach list name." },
+      data: { type: "object", description: "Raw HeyReach CreateEmptyList request body; overrides name." },
+    };
+  }
+  if (toolName === "heyreach/get_overall_stats") {
+    return {
+      data: { type: "object", description: "Raw HeyReach GetOverallStats request body, e.g. date/campaign filters." },
+    };
+  }
   return {};
 }
 
@@ -633,6 +704,13 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "attio/get_meeting") return ["meeting_id"];
   if (toolName === "gmail/get_message") return ["message_id"];
   if (toolName === "gmail/send_message") return ["to", "subject", "body"];
+  if (toolName === "clay/send_webhook") return [];
+  if (toolName === "clay/send_batch") return [];
+  if (toolName === "heyreach/get_campaign") return ["campaign_id"];
+  if (toolName === "heyreach/pause_campaign") return ["campaign_id"];
+  if (toolName === "heyreach/resume_campaign") return ["campaign_id"];
+  if (toolName === "heyreach/add_leads_to_campaign") return [];
+  if (toolName === "heyreach/create_empty_list") return [];
   return [];
 }
 
@@ -1009,6 +1087,10 @@ mcpApp.post("/", async (c) => {
         result = await callGmailTool(toolName, args, token);
       } else if (decision.provider === "attio") {
         result = await callAttioTool(toolName, args, token);
+      } else if (decision.provider === "clay") {
+        result = await callClayTool(toolName, args, token);
+      } else if (decision.provider === "heyreach") {
+        result = await callHeyReachTool(toolName, args, token);
       } else {
         throw new Error(`no dispatcher for provider: ${decision.provider}`);
       }

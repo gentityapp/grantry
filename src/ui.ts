@@ -31,6 +31,8 @@ function authTypeLabel(providerKey: string, authType: string): string {
   if (authType === "oauth") return "OAuth";
   if (providerKey === "hubspot") return "Private App token";
   if (providerKey === "attio") return "Access token";
+  if (providerKey === "clay") return "Webhook URL";
+  if (providerKey === "heyreach") return "API key";
   return "paste token";
 }
 
@@ -38,12 +40,16 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
   if (authType === "oauth") return "OAuth flow will start after submit";
   if (providerKey === "hubspot") return "Paste your HubSpot Private App access token here (starts with pat-)";
   if (providerKey === "attio") return "Paste your Attio access token from Settings > Developers";
+  if (providerKey === "clay") return "Paste your Clay webhook URL, or JSON with webhook_url and auth_token";
+  if (providerKey === "heyreach") return "Paste your HeyReach Public API key";
   return `Paste your ${providerLabel} token here`;
 }
 
 function tokenLinkLabel(providerKey: string, providerLabel: string): string {
   if (providerKey === "hubspot") return "🔗 Get a new HubSpot Private App access token here →";
   if (providerKey === "attio") return "🔗 Manage Attio access tokens here →";
+  if (providerKey === "clay") return "🔗 Open Clay docs →";
+  if (providerKey === "heyreach") return "🔗 Open HeyReach app →";
   if (providerKey === "github") return "🔗 Manage GitHub PAT repository access here →";
   return `🔗 Get a new ${providerLabel} token here →`;
 }
@@ -1361,7 +1367,11 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           }
           const tokenLabel = sel.value === "hubspot"
             ? "HubSpot Private App access token"
-            : (sel.value === "attio" ? "Attio access token" : p.label + " token");
+            : (sel.value === "attio"
+              ? "Attio access token"
+              : (sel.value === "clay"
+                ? "Clay webhook URL"
+                : (sel.value === "heyreach" ? "HeyReach Public API key" : p.label + " token")));
           credField.placeholder = usePat ? "Paste your " + tokenLabel + (sel.value === "hubspot" ? " here (starts with pat-)" : " here") : "OAuth flow will start after submit";
           credField.disabled = !usePat;
           credField.required = usePat;
@@ -1374,7 +1384,11 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
               ? "🔗 Get a new HubSpot Private App access token here →"
               : (sel.value === "attio"
                 ? "🔗 Manage Attio access tokens here →"
-                : (sel.value === "github" ? "🔗 Manage GitHub PAT repository access here →" : "🔗 Get a new " + p.label + " token here →"));
+                : (sel.value === "clay"
+                  ? "🔗 Open Clay docs →"
+                  : (sel.value === "heyreach"
+                    ? "🔗 Open HeyReach app →"
+                    : (sel.value === "github" ? "🔗 Manage GitHub PAT repository access here →" : "🔗 Get a new " + p.label + " token here →"))));
             patLinkRow.style.display = "";
           } else {
             patLinkRow.style.display = "none";
@@ -2075,7 +2089,11 @@ dashboardApp.get("/tenants/new", async (c) => {
                   ? "Paste a new HubSpot Private App access token here (rotates credential)"
                   : (key === "attio"
                     ? "Paste a new Attio access token here (rotates credential)"
-                    : "Paste a new " + (PROVIDERS[key] ? PROVIDERS[key].label : key) + " token here (rotates credential)");
+                    : (key === "clay"
+                      ? "Paste a new Clay webhook URL here (rotates credential)"
+                      : (key === "heyreach"
+                        ? "Paste a new HeyReach Public API key here (rotates credential)"
+                        : "Paste a new " + (PROVIDERS[key] ? PROVIDERS[key].label : key) + " token here (rotates credential)")));
                 credInput.focus();
                 notice.style.display = "none";
               };

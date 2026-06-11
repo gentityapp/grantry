@@ -231,6 +231,39 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  clay: {
+    key: "clay",
+    label: "Clay",
+    authTypes: ["pat"],
+    helpText: "Paste a Clay webhook source URL, or JSON like {\"webhook_url\":\"https://...\",\"auth_token\":\"...\"} when the Clay webhook uses an auth token.",
+    tokenUrl: "https://docs.clay.com/",
+    tools: [
+      "clay/send_webhook",
+      "clay/send_batch",
+    ],
+    implemented: true,
+  },
+  heyreach: {
+    key: "heyreach",
+    label: "HeyReach",
+    authTypes: ["pat"],
+    helpText: "Paste a HeyReach Public API key. It is sent as the X-API-KEY header to the HeyReach Public API.",
+    tokenUrl: "https://app.heyreach.io/",
+    tools: [
+      "heyreach/check_api_key",
+      "heyreach/list_campaigns",
+      "heyreach/get_campaign",
+      "heyreach/pause_campaign",
+      "heyreach/resume_campaign",
+      "heyreach/add_leads_to_campaign",
+      "heyreach/list_leads",
+      "heyreach/list_conversations",
+      "heyreach/list_lead_lists",
+      "heyreach/create_empty_list",
+      "heyreach/get_overall_stats",
+    ],
+    implemented: true,
+  },
 };
 
 export function getProvider(key: string): ProviderDef | undefined {

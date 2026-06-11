@@ -2,7 +2,7 @@
 name: gentity-auth
 description: |
   Use gentity-auth when the user wants an AI agent to call external SaaS APIs
-  (GitHub, Notion, Google Drive/GSC/Ads, HubSpot, Attio) under OAuth/PAT authentication
+  (GitHub, Notion, Google Drive/GSC/Ads, HubSpot, Attio, Clay, HeyReach) under OAuth/PAT authentication
   with tenant isolation. gentity-auth (deployed as "agent-oauth") is a
   Hono/TypeScript service that holds encrypted credentials and exposes them as
   MCP tools, so the agent never sees raw tokens. Triggers: mentions of
@@ -118,6 +118,8 @@ Go to `/ui/tenants/new` (or `/ui/tenants/:scope/edit` to add to an existing tena
 - **Google (Drive/GSC/Ads)**: OAuth only, via `/oauth/<provider>/start`.
 - **HubSpot**: paste a Private App access token.
 - **Attio**: paste a workspace access token from Settings > Developers > Access tokens.
+- **Clay**: paste a Clay webhook source URL, or JSON with `webhook_url` and `auth_token`.
+- **HeyReach**: paste a Public API key.
 Set the connection's **scope to the tenant name**; that's the scope callers must pass.
 
 ### 6. Grant an agent access to a scope
@@ -126,7 +128,7 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
    **Allowed scopes** (leave Allowed scopes empty for "any scope").
 3. Bind the role to the agent (`POST /ui/agents/:id/bind`).
 
-## Providers & tools (65)
+## Providers & tools (78)
 - `ping` — liveness (returns `pong from <agent>`)
 - **github** (PAT or OAuth; scopes `repo`, `read:user`):
   `list_repos`, `get_repo`, `get_file_contents`, `list_issues`, `create_issue`, `git_push_repo`, `create_repo`
@@ -141,6 +143,11 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
   `create_note`, `delete_note`, `list_tasks`, `get_task`, `create_task`,
   `update_task`, `delete_task`, `list_threads`, `get_thread`, `create_comment`,
   `get_comment`, `delete_comment`, `list_meetings`, `get_meeting`
+- **clay** (webhook URL): `send_webhook`, `send_batch`
+- **heyreach** (Public API key): `check_api_key`, `list_campaigns`,
+  `get_campaign`, `pause_campaign`, `resume_campaign`, `add_leads_to_campaign`,
+  `list_leads`, `list_conversations`, `list_lead_lists`, `create_empty_list`,
+  `get_overall_stats`
 
 ### GitHub tool arguments (besides `scope`)
 - `get_repo`, `list_issues`: `owner`, `repo` (list_issues also `state`, default `open`)
@@ -202,6 +209,25 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
   `limit` (max 200).
 - `get_meeting` (read): `meeting_id`.
 
+### Clay tool arguments (besides `scope`)
+- `send_webhook` (write): `data` or `row` object. Posts one JSON row to the Clay
+  webhook source stored as the connection credential.
+- `send_batch` (write): `rows` or `data` array. Posts rows one by one to the Clay
+  webhook source.
+
+### HeyReach tool arguments (besides `scope`)
+- `check_api_key` (read): no additional arguments.
+- `list_campaigns` (read): optional `offset`, `limit` (max 100), `data` raw filters.
+- `get_campaign` (read): `campaign_id`.
+- `pause_campaign` / `resume_campaign` (write): `campaign_id`.
+- `add_leads_to_campaign` (write): `campaign_id`, `leads`; or raw `data`.
+- `list_leads` (read): optional `campaign_id`, `lead_list_id`, `statuses`,
+  `offset`, `limit` (max 100), `data` raw filters.
+- `list_conversations` (read): optional `offset`, `limit` (max 100), `data` raw filters.
+- `list_lead_lists` (read): optional `offset`, `limit` (max 100), `data` raw filters.
+- `create_empty_list` (write): `name`; or raw `data`.
+- `get_overall_stats` (read): optional raw `data` filters.
+
 ## Output contract
 When asked to act via gentity-auth:
 1. If you don't already know the scope, call `connections/list` first to resolve
@@ -213,7 +239,10 @@ When asked to act via gentity-auth:
    `notion/update_blocks`, `hubspot/create_deal`, `attio/create_record`,
    `attio/upsert_record`, `attio/update_record`, `attio/create_note`,
    `attio/delete_note`, `attio/create_task`, `attio/update_task`,
-   `attio/delete_task`, `attio/create_comment`, `attio/delete_comment`, …)
+   `attio/delete_task`, `attio/create_comment`, `attio/delete_comment`,
+   `clay/send_webhook`, `clay/send_batch`, `heyreach/pause_campaign`,
+   `heyreach/resume_campaign`, `heyreach/add_leads_to_campaign`,
+   `heyreach/create_empty_list`, …)
    get explicit confirmation first —
    these hit the real SaaS via real tokens and are not reversible. **Read-only**
    calls (incl. the connectivity smoke test) need no confirmation — just run them.
