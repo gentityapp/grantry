@@ -21,6 +21,7 @@ import { callGmailTool } from "./connectors/gmail.js";
 import { callAttioTool } from "./connectors/attio.js";
 import { callClayTool } from "./connectors/clay.js";
 import { callHeyReachTool } from "./connectors/heyreach.js";
+import { callChatworkTool } from "./connectors/chatwork.js";
 import { callRailwayTool } from "./connectors/railway.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 
@@ -687,6 +688,74 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       data: { type: "object", description: "Raw HeyReach GetOverallStats request body, e.g. date/campaign filters." },
     };
   }
+  if (toolName === "chatwork/get_me" || toolName === "chatwork/list_contacts" || toolName === "chatwork/list_rooms") {
+    return {};
+  }
+  if (toolName === "chatwork/get_room" || toolName === "chatwork/list_room_members") {
+    return {
+      room_id: { type: "string", description: "Chatwork room ID." },
+    };
+  }
+  if (toolName === "chatwork/list_messages") {
+    return {
+      room_id: { type: "string", description: "Chatwork room ID." },
+      force: { type: "boolean", description: "When true, fetch the newest 100 messages regardless of previous calls." },
+    };
+  }
+  if (toolName === "chatwork/get_message") {
+    return {
+      room_id: { type: "string", description: "Chatwork room ID." },
+      message_id: { type: "string", description: "Chatwork message ID." },
+    };
+  }
+  if (toolName === "chatwork/send_message") {
+    return {
+      room_id: { type: "string", description: "Chatwork room ID." },
+      body: { type: "string", description: "Message body." },
+      self_unread: { type: "boolean", description: "When true, leave the posted message unread for yourself." },
+    };
+  }
+  if (toolName === "chatwork/list_my_tasks") {
+    return {
+      assigned_by_account_id: { type: "string", description: "Optional assigner account ID filter." },
+      status: { type: "string", enum: ["open", "done"], description: "Task status filter." },
+    };
+  }
+  if (toolName === "chatwork/list_room_tasks") {
+    return {
+      room_id: { type: "string", description: "Chatwork room ID." },
+      account_id: { type: "string", description: "Optional assignee account ID filter." },
+      assigned_by_account_id: { type: "string", description: "Optional assigner account ID filter." },
+      status: { type: "string", enum: ["open", "done"], description: "Task status filter." },
+    };
+  }
+  if (toolName === "chatwork/get_room_task") {
+    return {
+      room_id: { type: "string", description: "Chatwork room ID." },
+      task_id: { type: "string", description: "Chatwork task ID." },
+    };
+  }
+  if (toolName === "chatwork/create_room_task") {
+    return {
+      room_id: { type: "string", description: "Chatwork room ID." },
+      body: { type: "string", description: "Task body." },
+      to_ids: { type: "array", items: { type: "string" }, description: "Assignee account IDs." },
+      limit: { type: "number", description: "Optional due date as Unix time." },
+    };
+  }
+  if (toolName === "chatwork/list_room_files") {
+    return {
+      room_id: { type: "string", description: "Chatwork room ID." },
+      account_id: { type: "string", description: "Optional uploader account ID filter." },
+    };
+  }
+  if (toolName === "chatwork/get_room_file") {
+    return {
+      room_id: { type: "string", description: "Chatwork room ID." },
+      file_id: { type: "string", description: "Chatwork file ID." },
+      create_download_url: { type: "boolean", description: "When true, create a temporary download URL." },
+    };
+  }
   if (toolName === "railway/graphql") {
     return {
       query: { type: "string", description: "Railway GraphQL query or mutation." },
@@ -757,6 +826,16 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "heyreach/resume_campaign") return ["campaign_id"];
   if (toolName === "heyreach/add_leads_to_campaign") return [];
   if (toolName === "heyreach/create_empty_list") return [];
+  if (toolName === "chatwork/get_room") return ["room_id"];
+  if (toolName === "chatwork/list_room_members") return ["room_id"];
+  if (toolName === "chatwork/list_messages") return ["room_id"];
+  if (toolName === "chatwork/get_message") return ["room_id", "message_id"];
+  if (toolName === "chatwork/send_message") return ["room_id", "body"];
+  if (toolName === "chatwork/list_room_tasks") return ["room_id"];
+  if (toolName === "chatwork/get_room_task") return ["room_id", "task_id"];
+  if (toolName === "chatwork/create_room_task") return ["room_id", "body", "to_ids"];
+  if (toolName === "chatwork/list_room_files") return ["room_id"];
+  if (toolName === "chatwork/get_room_file") return ["room_id", "file_id"];
   if (toolName === "railway/graphql") return ["query"];
   return [];
 }
@@ -1138,6 +1217,8 @@ mcpApp.post("/", async (c) => {
         result = await callClayTool(toolName, args, token);
       } else if (decision.provider === "heyreach") {
         result = await callHeyReachTool(toolName, args, token);
+      } else if (decision.provider === "chatwork") {
+        result = await callChatworkTool(toolName, args, token);
       } else if (decision.provider === "railway") {
         result = await callRailwayTool(toolName, args, token);
       } else {
