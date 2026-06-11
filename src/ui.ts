@@ -6,6 +6,7 @@ import { decrypt, encrypt } from "./crypto.js";
 import { PROVIDERS, getProvider, listProviders, toolsForProvider } from "./connectors/registry.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 import { connectionsForAgent } from "./policy.js";
+import { ensureTenant } from "./tenants.js";
 
 export const dashboardApp = new Hono();
 
@@ -991,18 +992,29 @@ dashboardApp.get("/tenants", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
 
-  const connections = await prisma.connection.findMany({
-    where: { ownerId: user.id },
-    orderBy: [{ scope: "asc" }, { provider: "asc" }],
-  });
+  const [tenants, connections] = await Promise.all([
+    prisma.tenant.findMany({
+      where: { ownerId: user.id },
+      orderBy: { slug: "asc" },
+    }),
+    prisma.connection.findMany({
+      where: { ownerId: user.id },
+      orderBy: [{ scope: "asc" }, { provider: "asc" }],
+    }),
+  ]);
 
-  // Group by scope
+  // The tenant table drives the list (so tenants with zero connections still
+  // show); connections group under their scope. Scoped connections whose
+  // tenant row hasn't been backfilled yet, plus legacy unscoped ones, get
+  // their own groups.
   const byScope = new Map<string, typeof connections>();
+  for (const t of tenants) byScope.set(t.slug, []);
   for (const conn of connections) {
     const key = conn.scope || "(unscoped)";
     if (!byScope.has(key)) byScope.set(key, []);
     byScope.get(key)!.push(conn);
   }
+  const tenantBySlug = new Map(tenants.map((t) => [t.slug, t]));
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Tenants — agent-oauth</title>
@@ -1023,7 +1035,12 @@ dashboardApp.get("/tenants", async (c) => {
         </div>
         ${Array.from(byScope.entries()).map(([scope, conns]) => `
         <div class="card">
-          <h2>${scope === "(unscoped)" ? '<span class="badge unscoped">unscoped</span> Legacy connections' : `<input type="checkbox" name="scopes" value="${scope}" class="rowCheck" style="margin-right:8px;transform:scale(1.2);"><span class="badge scoped">${scope}</span>`} ${scope !== "(unscoped)" ? `<a href="/tenants/${scope}/edit#codex-mcp" class="btn secondary" style="margin-left:8px;font-size:12px;padding:4px 10px;">Connect to Codex</a> <a href="/tenants/${scope}/edit" class="btn secondary" style="margin-left:4px;font-size:12px;padding:4px 10px;">+ Add service</a> <a href="/tenants/${scope}/edit" class="btn secondary" style="margin-left:4px;font-size:12px;padding:4px 10px;">✎ Edit</a>` : ""}</h2>
+          <h2>${scope === "(unscoped)" ? '<span class="badge unscoped">unscoped</span> Legacy connections' : (() => {
+            const t = tenantBySlug.get(scope);
+            const showName = t && t.displayName && t.displayName !== t.slug;
+            return `<input type="checkbox" name="scopes" value="${scope}" class="rowCheck" style="margin-right:8px;transform:scale(1.2);">${showName ? `${escapeHtml(t!.displayName)} ` : ""}<span class="badge scoped">${scope}</span>`;
+          })()} ${scope !== "(unscoped)" ? `<a href="/tenants/${scope}/edit#codex-mcp" class="btn secondary" style="margin-left:8px;font-size:12px;padding:4px 10px;">Connect to Codex</a> <a href="/tenants/${scope}/edit" class="btn secondary" style="margin-left:4px;font-size:12px;padding:4px 10px;">+ Add service</a> <a href="/tenants/${scope}/edit" class="btn secondary" style="margin-left:4px;font-size:12px;padding:4px 10px;">✎ Edit</a>` : ""}</h2>
+          ${conns.length === 0 ? `<div class="empty">No connections yet. <a href="/tenants/${scope}/edit">+ Add service</a></div>` : `
           <table>
             <thead><tr><th>Provider</th><th>Auth</th><th>Label</th><th>Status</th><th>Created</th></tr></thead>
             <tbody>
@@ -1037,7 +1054,7 @@ dashboardApp.get("/tenants", async (c) => {
               </tr>
             `).join("")}
             </tbody>
-          </table>
+          </table>`}
         </div>
       `).join("")}
         `}
@@ -1068,6 +1085,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
   if (!user) return c.redirect("/login");
 
   const scope = c.req.param("scope");
+  const tenantRow = await prisma.tenant.findUnique({
+    where: { ownerId_slug: { ownerId: user.id, slug: scope } },
+  });
   const connections = await prisma.connection.findMany({
     where: { scope, ownerId: user.id },
     orderBy: { createdAt: "asc" },
@@ -1122,7 +1142,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
     <style>${CSS}</style></head><body>
     ${NAV("tenants")}
     <main>
-      <h1>Edit tenant <code>${scope}</code></h1>
+      <h1>Edit tenant ${tenantRow && tenantRow.displayName !== tenantRow.slug ? `${escapeHtml(tenantRow.displayName)} ` : ""}<code>${scope}</code></h1>
       <p style="color:#8a8d93;margin-top:-16px;margin-bottom:24px;">
         Edit the tenant's display labels, role tools, and role scopes. To add a new service, scroll down.
       </p>
@@ -1167,6 +1187,18 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
       <form method="post" action="/tenants/${scope}/edit" id="settingsForm">
         <input type="hidden" name="_action" value="save_settings">
         <input type="hidden" name="role_tools_json" id="roleToolsJson" value="">
+
+        <h2>Tenant</h2>
+        <div class="card">
+          <p class="field-hint" style="margin-top:0;">
+            The slug <code>${scope}</code> is the wire key agents send as <code>scope</code> / <code>X-Gentity-Scope</code> — it cannot be changed.
+            The display name is only for dashboards and can be renamed freely.
+          </p>
+          <label for="tenant_display_name">Display name</label>
+          <input type="text" name="tenant_display_name" id="tenant_display_name" value="${escapeHtml(tenantRow?.displayName ?? scope)}" placeholder="${scope}">
+          <label for="tenant_description" style="margin-top:8px;">Description</label>
+          <input type="text" name="tenant_description" id="tenant_description" value="${escapeHtml(tenantRow?.description ?? "")}" placeholder="What this tenant is for">
+        </div>
 
         <h2>Connections (${connections.length})</h2>
         ${connections.length === 0 ? '<div class="card"><div class="empty">No connections yet. Add one below.</div></div>' : `
@@ -1620,6 +1652,19 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
 
   // --- save_settings: update connection labels/enabled + role desc/tools/scopes ---
   if (action === "save_settings") {
+    // Tenant display name/description. The slug itself is immutable (wire key).
+    if (body.tenant_display_name !== undefined || body.tenant_description !== undefined) {
+      const tenantRow = await ensureTenant(user.id, scope);
+      const displayName = String(body.tenant_display_name ?? "").trim() || scope;
+      const description = String(body.tenant_description ?? "").trim() || null;
+      if (displayName !== tenantRow.displayName || description !== tenantRow.description) {
+        await prisma.tenant.update({
+          where: { id: tenantRow.id },
+          data: { displayName, description },
+        });
+      }
+    }
+
     const connections = await prisma.connection.findMany({
       where: { scope, ownerId: user.id },
     });
@@ -1777,6 +1822,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     if (!credential) return c.html("<h1>credential required</h1>", 400);
 
     // 1) Create or rotate the PAT connection for this provider/auth type.
+    const tenantRow = await ensureTenant(user.id, scope);
     const existingConn = await prisma.connection.findFirst({
       where: { provider, authType: "pat", scope, ownerId: user.id },
     });
@@ -1797,6 +1843,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
             authType: "pat",
             label: `${provider}-${scope}-pat`,
             scope,
+            tenantId: tenantRow.id,
             ownerId: user.id,
             encryptedCredential: encrypt(credential),
             ...credentialMeta,
@@ -1969,7 +2016,12 @@ dashboardApp.get("/tenants/new", async (c) => {
           <div class="field field-primary">
             <label for="tenant">New tenant name</label>
             <input type="text" name="tenant" id="tenant" pattern="[a-z0-9_-]+" placeholder="my-new-tenant" autofocus required>
-            <div class="field-hint">lowercase, alphanumeric, hyphens, underscores. This is the <b>scope</b> for all your API calls.</div>
+            <div class="field-hint">lowercase, alphanumeric, hyphens, underscores. This is the <b>scope</b> for all your API calls — it cannot be changed later, so pick carefully.</div>
+          </div>
+          <div class="field">
+            <label for="display_name">Display name (optional)</label>
+            <input type="text" name="display_name" id="display_name" placeholder="e.g. Grantry 開発環境">
+            <div class="field-hint">Human-facing label shown in dashboards. Unlike the tenant name, you can rename this anytime.</div>
           </div>
           ${existingScopes.length > 0 ? `
           <details class="field-secondary">
@@ -2201,6 +2253,8 @@ dashboardApp.post("/tenants/new", async (c) => {
   const tenantText = String(body.tenant ?? "").trim();
   const tenantSelect = String(body.tenant_select ?? "").trim();
   const tenant = tenantText || tenantSelect;
+  // Optional human-facing name; the slug stays the immutable wire key.
+  const tenantDisplayName = String(body.display_name ?? "").trim();
   // Additional scopes the role should allow (comma-separated).
   const additionalScopesRaw = String(body.additional_scopes ?? "").trim();
   const additionalScopes = additionalScopesRaw
@@ -2338,6 +2392,11 @@ dashboardApp.post("/tenants/new", async (c) => {
   // a separate conflict on the connection create — but that's your own
   // legacy data, not another user's.
 
+  // 0) Materialize the tenant entity up front, before any connections. The
+  //    OAuth callback later upserts the same (ownerId, slug) and would lose
+  //    the display name, so it must be recorded here.
+  const tenantRow = await ensureTenant(user.id, tenant, tenantDisplayName);
+
   // 1) Resolve each selected provider into either an immediate connection
   //    (PAT pasted, or an existing connection we reuse) or an OAuth step that
   //    must be authorized via a redirect. OAuth providers are queued and
@@ -2373,6 +2432,7 @@ dashboardApp.post("/tenants/new", async (c) => {
               authType: "pat",
               label: `${provider}-${tenant}-pat`,
               scope: tenant,
+              tenantId: tenantRow.id,
               ownerId: user.id,
               encryptedCredential: encrypt(credential),
               ...credentialMeta,
@@ -3043,6 +3103,9 @@ oauthApp.get("/:provider/callback", async (c) => {
   if (!/^[a-z0-9_-]+$/.test(effectiveTenant)) {
     return c.html(`<h1>invalid tenant in saved payload</h1>`, 400);
   }
+  // The wizard already created the Tenant row (with its display name); this
+  // upsert only covers direct /oauth/:provider/start?tenant=… entry points.
+  const tenantRow = await ensureTenant(user.id, effectiveTenant);
 
   // --- Reconnect mode: refresh an existing connection's tokens in place. ---
   // No wizard, no agent: find the tenant's connection for this provider, update
@@ -3080,6 +3143,7 @@ oauthApp.get("/:provider/callback", async (c) => {
           authType: "oauth",
           label: `${providerKey}-${userLogin}-${effectiveTenant}-oauth`,
           scope: effectiveTenant,
+          tenantId: tenantRow.id,
           ownerId: user.id,
           ...data,
         },
@@ -3104,6 +3168,7 @@ oauthApp.get("/:provider/callback", async (c) => {
       authType: "oauth",
       label: `${providerKey}-${userLogin}-${effectiveTenant}-oauth`,
       scope: effectiveTenant,
+      tenantId: tenantRow.id,
       ownerId: user.id,
       encryptedCredential: encrypt(accessToken),
       accessTokenExpiresAt: tokenJson.expires_in ? new Date(Date.now() + tokenJson.expires_in * 1000) : null,
@@ -3273,7 +3338,12 @@ dashboardApp.get("/api/scopes", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
 
-  const [conns, roles, agents] = await Promise.all([
+  const [tenants, conns, roles, agents] = await Promise.all([
+    prisma.tenant.findMany({
+      where: { ownerId: user.id },
+      select: { id: true, slug: true, displayName: true, description: true, createdAt: true },
+      orderBy: { slug: "asc" },
+    }),
     prisma.connection.findMany({
       where: { ownerId: user.id },
       select: { id: true, provider: true, authType: true, scope: true, label: true, enabled: true, createdAt: true },
@@ -3296,7 +3366,11 @@ dashboardApp.get("/api/scopes", async (c) => {
 
   return c.json({
     user: { id: user.id, email: user.email, name: user.name },
-    scopes: Array.from(new Set(conns.map((cn) => cn.scope).filter((s) => s))),
+    tenants: tenants.map((t) => ({ ...t, createdAt: t.createdAt.toISOString() })),
+    scopes: Array.from(new Set([
+      ...tenants.map((t) => t.slug),
+      ...conns.map((cn) => cn.scope).filter((s) => s),
+    ])),
     connections: conns.map((cn) => ({ ...cn, createdAt: cn.createdAt.toISOString() })),
     roles: roles.map((r) => ({
       id: r.id, name: r.name, description: r.description,
@@ -3431,13 +3505,20 @@ dashboardApp.post("/tenants/:scope/delete", async (c) => {
   const scope = c.req.param("scope");
   if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
 
-  // 1) Find user's connections for this scope
-  const conns = await prisma.connection.findMany({
-    where: { scope, ownerId: user.id },
-    select: { id: true, label: true },
-  });
-  if (conns.length === 0) {
-    return c.html(`<h1>No connections found for scope '${scope}' (yours)</h1>`, 404);
+  // 1) Find user's connections + tenant row for this scope. A tenant with
+  //    zero connections is still deletable (the entity exists on its own).
+  const [conns, tenantRow] = await Promise.all([
+    prisma.connection.findMany({
+      where: { scope, ownerId: user.id },
+      select: { id: true, label: true },
+    }),
+    prisma.tenant.findUnique({
+      where: { ownerId_slug: { ownerId: user.id, slug: scope } },
+      select: { id: true },
+    }),
+  ]);
+  if (conns.length === 0 && !tenantRow) {
+    return c.html(`<h1>No tenant or connections found for scope '${scope}' (yours)</h1>`, 404);
   }
 
   // 2) Find user's role(s) for this scope (per-user naming)
@@ -3458,6 +3539,9 @@ dashboardApp.post("/tenants/:scope/delete", async (c) => {
   const roleDelete = await prisma.role.deleteMany({
     where: { id: { in: roles.map((r) => r.id) } },
   });
+
+  // 5) Delete the tenant entity itself.
+  await prisma.tenant.deleteMany({ where: { slug: scope, ownerId: user.id } });
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Deleted — agent-oauth</title>
@@ -3499,6 +3583,7 @@ dashboardApp.post("/tenants/bulk-delete", async (c) => {
       select: { id: true },
     });
     const roleDelete = await prisma.role.deleteMany({ where: { id: { in: roleList.map((r) => r.id) } } });
+    await prisma.tenant.deleteMany({ where: { slug: scope, ownerId: user.id } });
     conns += connDelete.count;
     roles += roleDelete.count;
     detail.push(`<li><code>${escapeHtml(scope)}</code>: ${connDelete.count} conn, ${roleDelete.count} role</li>`);
