@@ -913,10 +913,12 @@ dashboardApp.post("/meta/oauth-states/prune", async (c) => {
 dashboardApp.get("/login", async (c) => {
   const user = await getSessionUser(c);
   if (user) return c.redirect("/dashboard");
+  const resetDone = c.req.query("reset") === "1";
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Sign in — agent-oauth</title>
     <style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
     <h1>Sign in to agent-oauth</h1>
+    ${resetDone ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">✓ Password updated. Sign in with your new password.</div>` : ""}
     <div class="card">
       <form id="loginForm">
         <div class="field">
@@ -931,7 +933,7 @@ dashboardApp.get("/login", async (c) => {
         <div id="err" style="color:#ff6b6b;margin-top:8px;font-size:13px;"></div>
       </form>
     </div>
-    <p style="text-align:center;color:#8a8d93;font-size:13px;">No account? <a href="/register">Create one</a></p>
+    <p style="text-align:center;color:#8a8d93;font-size:13px;">No account? <a href="/register">Create one</a> · <a href="/forgot-password">Forgot password?</a></p>
     <script>
       document.getElementById('loginForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -992,6 +994,109 @@ dashboardApp.get("/register", async (c) => {
     </script>
     </body></html>
   `);
+});
+
+// --- /forgot-password — request a reset link by email ---
+dashboardApp.get("/forgot-password", async (c) => {
+  const sent = c.req.query("sent") === "1";
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Forgot password — agent-oauth</title>
+    <style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
+    <h1>Forgot password</h1>
+    ${sent ? `
+    <div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">
+      ✓ If an account exists for that address, a reset link is on its way. The link is valid for 1 hour.
+    </div>
+    <p style="text-align:center;color:#8a8d93;font-size:13px;"><a href="/login">← Back to sign in</a></p>
+    ` : `
+    <div class="card">
+      <form method="post" action="/forgot-password">
+        <div class="field">
+          <label for="email">Email</label>
+          <input type="email" name="email" id="email" required autofocus>
+        </div>
+        <button type="submit" style="width:100%;">Send reset link</button>
+      </form>
+    </div>
+    <p style="text-align:center;color:#8a8d93;font-size:13px;"><a href="/login">← Back to sign in</a></p>
+    `}
+    </body></html>
+  `);
+});
+
+dashboardApp.post("/forgot-password", async (c) => {
+  const body = await c.req.parseBody();
+  const email = String(body.email ?? "").trim();
+  if (email) {
+    try {
+      await auth.api.requestPasswordReset({
+        body: { email, redirectTo: "/reset-password" },
+      });
+    } catch (err) {
+      // Never reveal whether the account exists; log for the operator only.
+      console.warn(`[auth] requestPasswordReset for ${email} failed:`, err instanceof Error ? err.message : err);
+    }
+  }
+  return c.redirect("/forgot-password?sent=1");
+});
+
+// --- /reset-password — set a new password from an emailed token ---
+// better-auth's emailed link points at /api/auth/reset-password/:token,
+// which verifies the token and redirects here with ?token=… (or ?error=…).
+dashboardApp.get("/reset-password", async (c) => {
+  const token = String(c.req.query("token") ?? "");
+  const error = String(c.req.query("error") ?? "");
+  const err = c.req.query("err");
+  if (!token || error) {
+    return c.html(`
+      <!doctype html><html><head><meta charset="utf-8"><title>Reset password — agent-oauth</title>
+      <style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
+      <h1>Reset password</h1>
+      <div class="card" style="border-color:#ff6b6b;background:rgba(255,107,107,0.08);">
+        ⚠️ This reset link is invalid or has expired. <a href="/forgot-password">Request a new one</a>.
+      </div>
+      </body></html>
+    `, 400);
+  }
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Reset password — agent-oauth</title>
+    <style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
+    <h1>Choose a new password</h1>
+    ${err ? `<div class="card" style="border-color:#ff6b6b;background:rgba(255,107,107,0.08);">⚠️ ${escapeHtml(String(err))}</div>` : ""}
+    <div class="card">
+      <form method="post" action="/reset-password">
+        <input type="hidden" name="token" value="${escapeHtml(token)}">
+        <div class="field">
+          <label for="new_password">New password</label>
+          <input type="password" name="new_password" id="new_password" required minlength="8" autocomplete="new-password" autofocus>
+        </div>
+        <div class="field">
+          <label for="new_password2">New password (again)</label>
+          <input type="password" name="new_password2" id="new_password2" required minlength="8" autocomplete="new-password">
+        </div>
+        <button type="submit" style="width:100%;">Set new password</button>
+      </form>
+    </div>
+    </body></html>
+  `);
+});
+
+dashboardApp.post("/reset-password", async (c) => {
+  const body = await c.req.parseBody();
+  const token = String(body.token ?? "");
+  const newPassword = String(body.new_password ?? "");
+  const newPassword2 = String(body.new_password2 ?? "");
+  if (!token) return c.redirect("/forgot-password");
+  if (newPassword.length < 8) return c.redirect(`/reset-password?token=${encodeURIComponent(token)}&err=${encodeURIComponent("Password must be at least 8 characters")}`);
+  if (newPassword !== newPassword2) return c.redirect(`/reset-password?token=${encodeURIComponent(token)}&err=${encodeURIComponent("Passwords do not match")}`);
+
+  try {
+    await auth.api.resetPassword({ body: { newPassword, token } });
+  } catch (e: any) {
+    const message = e?.body?.message ?? e?.message ?? "Reset failed";
+    return c.redirect(`/reset-password?token=${encodeURIComponent(token)}&err=${encodeURIComponent(message)}`);
+  }
+  return c.redirect("/login?reset=1");
 });
 
 // --- /account — profile + change password ---
