@@ -2,7 +2,8 @@
 name: gentity-auth
 description: |
   Use gentity-auth when the user wants an AI agent to call external SaaS APIs
-  (GitHub, Notion, Google Drive/GSC/Ads, HubSpot, Attio, Clay, HeyReach) under OAuth/PAT authentication
+  (GitHub, Notion, Google Drive/GSC/Ads, HubSpot, Attio, Clay, HeyReach,
+  Railway) under OAuth/PAT authentication
   with tenant isolation. gentity-auth (deployed as "agent-oauth") is a
   Hono/TypeScript service that holds encrypted credentials and exposes them as
   MCP tools, so the agent never sees raw tokens. Triggers: mentions of
@@ -120,6 +121,9 @@ Go to `/ui/tenants/new` (or `/ui/tenants/:scope/edit` to add to an existing tena
 - **Attio**: paste a workspace access token from Settings > Developers > Access tokens.
 - **Clay**: paste the API key from Clay Settings > Account > API key.
 - **HeyReach**: paste a Public API key.
+- **Railway**: paste a Project Token from Project Settings > Tokens. Plain tokens
+  are treated as project tokens. For account/workspace tokens, paste JSON like
+  `{"token":"...","token_type":"account"}`.
 Set the connection's **scope to the tenant name**; that's the scope callers must pass.
 
 ### 6. Grant an agent access to a scope
@@ -128,7 +132,7 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
    **Allowed scopes** (leave Allowed scopes empty for "any scope").
 3. Bind the role to the agent (`POST /ui/agents/:id/bind`).
 
-## Providers & tools (82)
+## Providers & tools (85)
 - `ping` — liveness (returns `pong from <agent>`)
 - **github** (PAT or OAuth; scopes `repo`, `read:user`):
   `list_repos`, `get_repo`, `get_file_contents`, `list_issues`, `create_issue`, `git_push_repo`, `create_repo`
@@ -149,6 +153,8 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
   `get_campaign`, `pause_campaign`, `resume_campaign`, `add_leads_to_campaign`,
   `list_leads`, `list_conversations`, `list_lead_lists`, `create_empty_list`,
   `get_overall_stats`
+- **railway** (Project token / API token): `graphql`, `project_token_info`,
+  `introspect_schema`
 
 ### GitHub tool arguments (besides `scope`)
 - `get_repo`, `list_issues`: `owner`, `repo` (list_issues also `state`, default `open`)
@@ -233,6 +239,16 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 - `create_empty_list` (write): `name`; or raw `data`.
 - `get_overall_stats` (read): optional raw `data` filters.
 
+### Railway tool arguments (besides `scope`)
+- `project_token_info` (read): no additional arguments. For project tokens,
+  returns the project/environment IDs the token is scoped to.
+- `introspect_schema` (read): no additional arguments. Returns the Railway
+  GraphQL schema metadata.
+- `graphql` (read/write depending on query): `query`; optional `variables`,
+  `operation_name`. Use this for Railway GraphQL queries/mutations. Project
+  tokens are sent using the `Project-Access-Token` header; account/workspace/OAuth
+  tokens are sent using `Authorization: Bearer`.
+
 ## Output contract
 When asked to act via gentity-auth:
 1. If you don't already know the scope, call `connections/list` first to resolve
@@ -249,7 +265,7 @@ When asked to act via gentity-auth:
    `clay/update_row`, `clay/enrich_person`, `clay/enrich_company`,
    `heyreach/pause_campaign`,
    `heyreach/resume_campaign`, `heyreach/add_leads_to_campaign`,
-   `heyreach/create_empty_list`, …)
+   `heyreach/create_empty_list`, `railway/graphql` with mutations, …)
    get explicit confirmation first —
    these hit the real SaaS via real tokens and are not reversible. **Read-only**
    calls (incl. the connectivity smoke test) need no confirmation — just run them.

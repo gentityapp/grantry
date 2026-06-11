@@ -296,6 +296,79 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "chatwork") {
+      const resp = await fetchWithTimeout("https://api.chatwork.com/v2/me", {
+        headers: {
+          "x-chatworktoken": token,
+          Accept: "application/json",
+        },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) {
+        return { provider, authType, status: "error", checkedAt, error: `Chatwork API token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: {
+          account_id: body.account_id,
+          name: body.name,
+          chatwork_id: body.chatwork_id,
+          organization_id: body.organization_id,
+          organization_name: body.organization_name,
+        },
+        notes: ["Chatwork API tokens are sent as the x-chatworktoken header and can access the token owner's Chatwork data."],
+        checkedAt,
+      };
+    }
+
+    if (provider === "railway") {
+      let rawToken = token.trim();
+      let tokenType = "project";
+      if (rawToken.startsWith("{")) {
+        const parsed = JSON.parse(rawToken);
+        rawToken = String(parsed.token ?? parsed.api_token ?? parsed.apiToken ?? "").trim();
+        tokenType = String(parsed.token_type ?? parsed.tokenType ?? "project").trim().toLowerCase();
+      }
+      if (!rawToken) {
+        return { provider, authType, status: "error", checkedAt, error: "Railway token is required" };
+      }
+      if (!["project", "account", "workspace", "oauth"].includes(tokenType)) {
+        return { provider, authType, status: "error", checkedAt, error: "Railway token_type must be project, account, workspace, or oauth" };
+      }
+      const headers: Record<string, string> = {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      };
+      if (tokenType === "project") headers["Project-Access-Token"] = rawToken;
+      else headers.Authorization = `Bearer ${rawToken}`;
+      const query = tokenType === "project"
+        ? "query ProjectTokenInfo { projectToken { projectId environmentId } }"
+        : "query RailwaySchemaProbe { __schema { queryType { name } mutationType { name } } }";
+      const resp = await fetchWithTimeout("https://backboard.railway.app/graphql/v2", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ query }),
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok || (Array.isArray(body.errors) && body.errors.length)) {
+        return { provider, authType, status: "error", checkedAt, error: `Railway token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 500)}` };
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: tokenType === "project" ? body.data?.projectToken : { token_type: tokenType },
+        notes: [
+          tokenType === "project"
+            ? "Railway project tokens use the Project-Access-Token header and are scoped to one project environment."
+            : "Railway account/workspace/OAuth tokens use the Authorization: Bearer header.",
+        ],
+        checkedAt,
+      };
+    }
+
     return {
       provider,
       authType,

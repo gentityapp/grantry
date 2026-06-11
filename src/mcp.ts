@@ -21,6 +21,7 @@ import { callGmailTool } from "./connectors/gmail.js";
 import { callAttioTool } from "./connectors/attio.js";
 import { callClayTool } from "./connectors/clay.js";
 import { callHeyReachTool } from "./connectors/heyreach.js";
+import { callRailwayTool } from "./connectors/railway.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 
 export const mcpApp = new Hono();
@@ -686,6 +687,19 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       data: { type: "object", description: "Raw HeyReach GetOverallStats request body, e.g. date/campaign filters." },
     };
   }
+  if (toolName === "railway/graphql") {
+    return {
+      query: { type: "string", description: "Railway GraphQL query or mutation." },
+      variables: { type: "object", description: "GraphQL variables object." },
+      operation_name: { type: "string", description: "Optional GraphQL operation name." },
+    };
+  }
+  if (toolName === "railway/project_token_info") {
+    return {};
+  }
+  if (toolName === "railway/introspect_schema") {
+    return {};
+  }
   return {};
 }
 
@@ -743,6 +757,7 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "heyreach/resume_campaign") return ["campaign_id"];
   if (toolName === "heyreach/add_leads_to_campaign") return [];
   if (toolName === "heyreach/create_empty_list") return [];
+  if (toolName === "railway/graphql") return ["query"];
   return [];
 }
 
@@ -1123,6 +1138,8 @@ mcpApp.post("/", async (c) => {
         result = await callClayTool(toolName, args, token);
       } else if (decision.provider === "heyreach") {
         result = await callHeyReachTool(toolName, args, token);
+      } else if (decision.provider === "railway") {
+        result = await callRailwayTool(toolName, args, token);
       } else {
         throw new Error(`no dispatcher for provider: ${decision.provider}`);
       }

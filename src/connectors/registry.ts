@@ -268,6 +268,43 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  chatwork: {
+    key: "chatwork",
+    label: "Chatwork",
+    authTypes: ["pat"],
+    helpText: "Paste a Chatwork API token. It is sent as the x-chatworktoken header to the Chatwork API v2.",
+    tokenUrl: "https://www.chatwork.com/service/packages/chatwork/subpackages/api/token.php",
+    tools: [
+      "chatwork/get_me",
+      "chatwork/list_contacts",
+      "chatwork/list_rooms",
+      "chatwork/get_room",
+      "chatwork/list_room_members",
+      "chatwork/list_messages",
+      "chatwork/get_message",
+      "chatwork/send_message",
+      "chatwork/list_my_tasks",
+      "chatwork/list_room_tasks",
+      "chatwork/get_room_task",
+      "chatwork/create_room_task",
+      "chatwork/list_room_files",
+      "chatwork/get_room_file",
+    ],
+    implemented: true,
+  },
+  railway: {
+    key: "railway",
+    label: "Railway",
+    authTypes: ["pat"],
+    helpText: "Paste a Railway Project Token from Project Settings > Tokens. Plain tokens are treated as project tokens. For account/workspace tokens, paste JSON like {\"token\":\"...\",\"token_type\":\"account\"}.",
+    tokenUrl: "https://railway.com",
+    tools: [
+      "railway/graphql",
+      "railway/project_token_info",
+      "railway/introspect_schema",
+    ],
+    implemented: true,
+  },
 };
 
 export function getProvider(key: string): ProviderDef | undefined {
