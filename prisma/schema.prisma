@@ -25,6 +25,7 @@ model User {
   sessions      Session[]
   accounts      Account[]
   agents        Agent[]
+  tenants       Tenant[]
   connections   Connection[]
   roles         Role[]
   auditLogs     AuditLog[]
@@ -78,6 +79,27 @@ model Verification {
 
 // ---------- Agent / connection / role (the "agent-oauth" part) ----------
 
+// A tenant is a business/domain boundary owned by one user. `slug` is the
+// immutable wire key — it is what agents send as `scope` in tools/call and
+// in the X-Gentity-Scope header, so it must never change after creation.
+// `displayName` is the human-facing label and can be renamed freely.
+model Tenant {
+  id          String   @id @default(cuid())
+  slug        String   // immutable wire key, e.g. "grantry-dev"
+  displayName String
+  description String?
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  connections Connection[]
+
+  @@unique([ownerId, slug])
+  @@index([ownerId])
+  @@map("tenant")
+}
+
 model Agent {
   id            String   @id @default(cuid())
   name          String   @unique
@@ -129,7 +151,9 @@ model Connection {
   provider            String   // "github" | "cloudflare" | "clarity" | "notion" | "google_drive" | "google_gsc" | "google_analytics" | "google_ads" | "yahoo_ads" | "gmail" | "hubspot" | "attio"
   authType            String   @default("pat") // "pat" | "oauth" | "private_app" | "service_account"
   label               String
-  scope               String   @default("") // tenant scope, e.g. "rootteam", "acme"
+  scope               String   @default("") // denormalized tenant slug (immutable, always equals tenant.slug); "" = legacy unscoped
+  tenantId            String?  // null only for legacy unscoped (scope="") connections
+  tenant              Tenant?  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   ownerId             String
   owner               User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   encryptedCredential String   // Fernet-encrypted PAT/OAuth token
@@ -147,6 +171,7 @@ model Connection {
   @@index([provider, scope])
   @@index([ownerId, provider, scope])
   @@index([ownerId])
+  @@index([tenantId])
   @@map("connection")
 }
 

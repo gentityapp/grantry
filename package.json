@@ -11,6 +11,7 @@
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:dedupe-connections": "node scripts/dedupe-connections.mjs",
+    "db:backfill-tenants": "node scripts/backfill-tenants.mjs",
     "db:backfill-notion-tools": "node scripts/backfill-notion-tools.mjs",
     "db:harden-roles": "node scripts/harden-roles.mjs",
     "db:studio": "prisma studio"
