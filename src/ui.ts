@@ -326,6 +326,7 @@ const NAV = (current: string) => `
   <a href="/agents" class="${current === "agents" ? "active" : ""}">Agents</a>
   <a href="/audit" class="${current === "audit" ? "active" : ""}">Audit</a>
   <a href="/meta" class="${current === "meta" ? "active" : ""}">Meta</a>
+  <a href="/account" class="${current === "account" ? "active" : ""}">Account</a>
   <span style="flex:1"></span>
   <form method="post" action="/logout" style="margin:0;">
     <button type="submit" class="secondary" style="font-size:13px;padding:6px 10px;">Sign out</button>
@@ -988,6 +989,84 @@ dashboardApp.get("/register", async (c) => {
     </script>
     </body></html>
   `);
+});
+
+// --- /account — profile + change password ---
+dashboardApp.get("/account", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+
+  const ok = c.req.query("ok");
+  const err = c.req.query("err");
+  const banner = ok
+    ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);margin-bottom:20px;">✓ Password updated. Other sessions have been signed out.</div>`
+    : err
+      ? `<div class="card" style="border-color:#ff6b6b;background:rgba(255,107,107,0.08);margin-bottom:20px;">⚠️ ${escapeHtml(err)}</div>`
+      : "";
+
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Account — agent-oauth</title>
+    <style>${CSS}</style></head><body>
+    ${NAV("account")}
+    <main>
+      <h1>Account</h1>
+      ${banner}
+      <div class="card">
+        <h2>Profile</h2>
+        <p>Email: <code>${escapeHtml(user.email)}</code></p>
+      </div>
+      <div class="card">
+        <h2>Change password</h2>
+        <form method="post" action="/account/password">
+          <div class="field">
+            <label for="current_password">Current password</label>
+            <input type="password" name="current_password" id="current_password" required minlength="8" autocomplete="current-password">
+          </div>
+          <div class="field">
+            <label for="new_password">New password</label>
+            <input type="password" name="new_password" id="new_password" required minlength="8" autocomplete="new-password">
+          </div>
+          <div class="field">
+            <label for="new_password2">New password (again)</label>
+            <input type="password" name="new_password2" id="new_password2" required minlength="8" autocomplete="new-password">
+          </div>
+          <button type="submit">Change password</button>
+          <p class="field-hint">Changing the password signs out every other session.</p>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Locked out?</h2>
+        <p class="field-hint" style="margin:0;">
+          If you can't sign in at all, an operator can reset any account's password from the server:
+          <code>railway run npm run user:reset-password -- &lt;email&gt; &lt;new-password&gt;</code>
+        </p>
+      </div>
+    </main></body></html>
+  `);
+});
+
+dashboardApp.post("/account/password", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+
+  const body = await c.req.parseBody();
+  const currentPassword = String(body.current_password ?? "");
+  const newPassword = String(body.new_password ?? "");
+  const newPassword2 = String(body.new_password2 ?? "");
+
+  if (newPassword.length < 8) return c.redirect(`/account?err=${encodeURIComponent("New password must be at least 8 characters")}`);
+  if (newPassword !== newPassword2) return c.redirect(`/account?err=${encodeURIComponent("New passwords do not match")}`);
+
+  try {
+    await auth.api.changePassword({
+      body: { currentPassword, newPassword, revokeOtherSessions: true },
+      headers: c.req.raw.headers,
+    });
+  } catch (e: any) {
+    const message = e?.body?.message ?? e?.message ?? "Password change failed";
+    return c.redirect(`/account?err=${encodeURIComponent(message)}`);
+  }
+  return c.redirect("/account?ok=1");
 });
 
 // --- /tenants ---
