@@ -278,6 +278,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "chatwork/get_me",
       "chatwork/list_contacts",
       "chatwork/list_rooms",
+      "chatwork/create_room",
       "chatwork/get_room",
       "chatwork/list_room_members",
       "chatwork/list_messages",

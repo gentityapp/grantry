@@ -81,7 +81,8 @@ function formBody(args: ChatworkArgs, requiredKeys: string[], optionalKeys: stri
       if (requiredKeys.includes(key)) throw new Error(`${key} is required`);
       continue;
     }
-    const normalized = key === "self_unread" ? boolParam(value) : (Array.isArray(value) ? value.join(",") : String(value));
+    const isBoolKey = key === "self_unread" || key === "link" || key === "link_need_acceptance";
+    const normalized = isBoolKey ? boolParam(value) : (Array.isArray(value) ? value.join(",") : String(value));
     if (normalized !== undefined) params.set(key, normalized);
   }
   return params;
@@ -116,6 +117,15 @@ export async function callChatworkTool(tool: string, args: ChatworkArgs, apiToke
 
   if (tool === "chatwork/list_rooms") {
     return { structuredContent: { rooms: await getJson(apiToken, "/rooms", tool) } };
+  }
+
+  if (tool === "chatwork/create_room") {
+    const body = formBody(
+      args,
+      ["name", "members_admin_ids"],
+      ["description", "icon_preset", "link", "link_code", "link_need_acceptance", "members_member_ids", "members_readonly_ids"],
+    );
+    return { structuredContent: await postForm(apiToken, "/rooms", body, tool) };
   }
 
   if (tool === "chatwork/get_room") {

@@ -692,6 +692,19 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "chatwork/get_me" || toolName === "chatwork/list_contacts" || toolName === "chatwork/list_rooms") {
     return {};
   }
+  if (toolName === "chatwork/create_room") {
+    return {
+      name: { type: "string", description: "Group chat name (1-255 chars)." },
+      members_admin_ids: { type: "array", items: { type: "string" }, description: "Account IDs to make admins (at least one required)." },
+      members_member_ids: { type: "array", items: { type: "string" }, description: "Optional account IDs to add as members." },
+      members_readonly_ids: { type: "array", items: { type: "string" }, description: "Optional account IDs to add as read-only." },
+      description: { type: "string", description: "Optional chat overview." },
+      icon_preset: { type: "string", description: "Optional chat icon preset, e.g. group, meeting, check, document." },
+      link: { type: "boolean", description: "Optional: create an invite link." },
+      link_code: { type: "string", description: "Optional custom invite link path (1-50 chars)." },
+      link_need_acceptance: { type: "boolean", description: "Optional: require admin approval to join via the link." },
+    };
+  }
   if (toolName === "chatwork/get_room" || toolName === "chatwork/list_room_members") {
     return {
       room_id: { type: "string", description: "Chatwork room ID." },
@@ -867,6 +880,7 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "heyreach/resume_campaign") return ["campaign_id"];
   if (toolName === "heyreach/add_leads_to_campaign") return [];
   if (toolName === "heyreach/create_empty_list") return [];
+  if (toolName === "chatwork/create_room") return ["name", "members_admin_ids"];
   if (toolName === "chatwork/get_room") return ["room_id"];
   if (toolName === "chatwork/list_room_members") return ["room_id"];
   if (toolName === "chatwork/list_messages") return ["room_id"];
