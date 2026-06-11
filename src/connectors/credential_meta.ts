@@ -254,24 +254,23 @@ export async function inspectCredential(provider: string, authType: string, toke
     }
 
     if (provider === "clay") {
-      const raw = token.trim();
-      let webhookUrl = raw;
-      let hasAuthToken = false;
-      if (raw.startsWith("{")) {
-        const parsed = JSON.parse(raw);
-        webhookUrl = String(parsed.webhook_url ?? parsed.webhookUrl ?? parsed.url ?? "").trim();
-        hasAuthToken = Boolean(String(parsed.auth_token ?? parsed.authToken ?? parsed.token ?? "").trim());
-      }
-      const parsedUrl = new URL(webhookUrl);
-      if (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") {
-        return { provider, authType, status: "error", checkedAt, error: "Clay webhook URL must be http or https" };
+      if (/^https?:\/\//i.test(token.trim())) {
+        return {
+          provider,
+          authType,
+          status: "error",
+          checkedAt,
+          error: "Clay expects the API key from Settings > Account > API key, not a webhook URL.",
+        };
       }
       return {
         provider,
         authType,
         status: "ok",
-        subject: { host: parsedUrl.host, pathname: parsedUrl.pathname, has_auth_token: hasAuthToken },
-        notes: ["Clay webhook credentials are validated for URL shape only; gentity-auth does not send a probe row during save."],
+        notes: [
+          "Clay API keys are stored server-side and sent as a Bearer token to the Clay API.",
+          "No non-consuming Clay token introspection endpoint is called during save; validate with clay/raw_request or a read-only lookup.",
+        ],
         checkedAt,
       };
     }

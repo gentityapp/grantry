@@ -118,7 +118,7 @@ Go to `/ui/tenants/new` (or `/ui/tenants/:scope/edit` to add to an existing tena
 - **Google (Drive/GSC/Ads)**: OAuth only, via `/oauth/<provider>/start`.
 - **HubSpot**: paste a Private App access token.
 - **Attio**: paste a workspace access token from Settings > Developers > Access tokens.
-- **Clay**: paste a Clay webhook source URL, or JSON with `webhook_url` and `auth_token`.
+- **Clay**: paste the API key from Clay Settings > Account > API key.
 - **HeyReach**: paste a Public API key.
 Set the connection's **scope to the tenant name**; that's the scope callers must pass.
 
@@ -128,7 +128,7 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
    **Allowed scopes** (leave Allowed scopes empty for "any scope").
 3. Bind the role to the agent (`POST /ui/agents/:id/bind`).
 
-## Providers & tools (78)
+## Providers & tools (82)
 - `ping` — liveness (returns `pong from <agent>`)
 - **github** (PAT or OAuth; scopes `repo`, `read:user`):
   `list_repos`, `get_repo`, `get_file_contents`, `list_issues`, `create_issue`, `git_push_repo`, `create_repo`
@@ -143,7 +143,8 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
   `create_note`, `delete_note`, `list_tasks`, `get_task`, `create_task`,
   `update_task`, `delete_task`, `list_threads`, `get_thread`, `create_comment`,
   `get_comment`, `delete_comment`, `list_meetings`, `get_meeting`
-- **clay** (webhook URL): `send_webhook`, `send_batch`
+- **clay** (API key): `raw_request`, `lookup_row`, `create_row`, `update_row`,
+  `enrich_person`, `enrich_company`
 - **heyreach** (Public API key): `check_api_key`, `list_campaigns`,
   `get_campaign`, `pause_campaign`, `resume_campaign`, `add_leads_to_campaign`,
   `list_leads`, `list_conversations`, `list_lead_lists`, `create_empty_list`,
@@ -210,10 +211,14 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 - `get_meeting` (read): `meeting_id`.
 
 ### Clay tool arguments (besides `scope`)
-- `send_webhook` (write): `data` or `row` object. Posts one JSON row to the Clay
-  webhook source stored as the connection credential.
-- `send_batch` (write): `rows` or `data` array. Posts rows one by one to the Clay
-  webhook source.
+- `raw_request` (read/write depending on method): `path`; optional `method`
+  (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`) and `data`/`body`. The path must be a
+  Clay API path, not a full URL.
+- `lookup_row` (read): `table_id`; optional `column`, `value`, `limit`, or raw `data`.
+- `create_row` (write): `table_id`, `data`.
+- `update_row` (write): `table_id`, `row_id`, `data`.
+- `enrich_person` (write): `data` Clay person enrichment request body.
+- `enrich_company` (write): `data` Clay company enrichment request body.
 
 ### HeyReach tool arguments (besides `scope`)
 - `check_api_key` (read): no additional arguments.
@@ -240,7 +245,9 @@ When asked to act via gentity-auth:
    `attio/upsert_record`, `attio/update_record`, `attio/create_note`,
    `attio/delete_note`, `attio/create_task`, `attio/update_task`,
    `attio/delete_task`, `attio/create_comment`, `attio/delete_comment`,
-   `clay/send_webhook`, `clay/send_batch`, `heyreach/pause_campaign`,
+   `clay/raw_request` with non-GET methods, `clay/create_row`,
+   `clay/update_row`, `clay/enrich_person`, `clay/enrich_company`,
+   `heyreach/pause_campaign`,
    `heyreach/resume_campaign`, `heyreach/add_leads_to_campaign`,
    `heyreach/create_empty_list`, …)
    get explicit confirmation first —

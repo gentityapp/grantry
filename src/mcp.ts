@@ -589,16 +589,44 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       mime_type: { type: "string", description: "Content-Type, defaults to text/plain; charset=UTF-8." },
     };
   }
-  if (toolName === "clay/send_webhook") {
+  if (toolName === "clay/raw_request") {
     return {
-      data: { type: "object", description: "Payload to POST to the Clay webhook source." },
-      row: { type: "object", description: "Alias for data." },
+      method: { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE"], description: "HTTP method. Defaults to GET." },
+      path: { type: "string", description: "Clay API path, e.g. /v1/tables/{table_id}/rows. Do not include the host." },
+      data: { type: "object", description: "Optional JSON body for POST/PUT/PATCH." },
+      body: { type: "object", description: "Alias for data." },
     };
   }
-  if (toolName === "clay/send_batch") {
+  if (toolName === "clay/lookup_row") {
     return {
-      rows: { type: "array", items: { type: "object" }, description: "Rows to POST to the Clay webhook source, one request per row." },
-      data: { type: "array", items: { type: "object" }, description: "Alias for rows." },
+      table_id: { type: "string", description: "Clay table ID." },
+      column: { type: "string", description: "Column to match." },
+      value: { type: "string", description: "Value to match." },
+      limit: { type: "number", minimum: 1, maximum: 100, description: "Rows to return." },
+      data: { type: "object", description: "Raw Clay lookup request body; overrides individual fields." },
+    };
+  }
+  if (toolName === "clay/create_row") {
+    return {
+      table_id: { type: "string", description: "Clay table ID." },
+      data: { type: "object", description: "Row data to create." },
+    };
+  }
+  if (toolName === "clay/update_row") {
+    return {
+      table_id: { type: "string", description: "Clay table ID." },
+      row_id: { type: "string", description: "Clay row ID." },
+      data: { type: "object", description: "Row data to patch." },
+    };
+  }
+  if (toolName === "clay/enrich_person") {
+    return {
+      data: { type: "object", description: "Clay person enrichment request body." },
+    };
+  }
+  if (toolName === "clay/enrich_company") {
+    return {
+      data: { type: "object", description: "Clay company enrichment request body." },
     };
   }
   if (toolName === "heyreach/check_api_key") {
@@ -704,8 +732,12 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "attio/get_meeting") return ["meeting_id"];
   if (toolName === "gmail/get_message") return ["message_id"];
   if (toolName === "gmail/send_message") return ["to", "subject", "body"];
-  if (toolName === "clay/send_webhook") return [];
-  if (toolName === "clay/send_batch") return [];
+  if (toolName === "clay/raw_request") return ["path"];
+  if (toolName === "clay/lookup_row") return ["table_id"];
+  if (toolName === "clay/create_row") return ["table_id", "data"];
+  if (toolName === "clay/update_row") return ["table_id", "row_id", "data"];
+  if (toolName === "clay/enrich_person") return ["data"];
+  if (toolName === "clay/enrich_company") return ["data"];
   if (toolName === "heyreach/get_campaign") return ["campaign_id"];
   if (toolName === "heyreach/pause_campaign") return ["campaign_id"];
   if (toolName === "heyreach/resume_campaign") return ["campaign_id"];
