@@ -4,6 +4,7 @@ import { auth } from "./auth.js";
 import { prisma } from "./db.js";
 import { decrypt, encrypt } from "./crypto.js";
 import { PROVIDERS, getProvider, listProviders, toolsForProvider } from "./connectors/registry.js";
+import { providerIcon, providerIconMap } from "./connectors/icons.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 import { connectionsForAgent } from "./policy.js";
 import { ensureTenant } from "./tenants.js";
@@ -254,6 +255,8 @@ const CSS = `
   .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .row.spread { justify-content: space-between; }
   .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .provider-icon { flex-shrink: 0; vertical-align: -4px; }
+  .provider-cell { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
   .badge.scoped { background: rgba(110,168,254,0.16); color: #6ea8fe; }
   .badge.unscoped { background: rgba(160,160,160,0.16); color: #aaa; }
   .badge.denied { background: rgba(255,107,107,0.16); color: #ff6b6b; }
@@ -737,7 +740,7 @@ dashboardApp.get("/meta", async (c) => {
             <tbody>
               ${providerDefs.map((p) => `
                 <tr>
-                  <td><code>${escapeHtml(p.key)}</code><br><span style="color:#8a8d93;font-size:12px;">${escapeHtml(p.label)}</span></td>
+                  <td><span class="provider-cell">${providerIcon(p.key)}<code>${escapeHtml(p.key)}</code></span><br><span style="color:#8a8d93;font-size:12px;">${escapeHtml(p.label)}</span></td>
                   <td>${p.authTypes.map((a) => `<span class="tool-pill">${escapeHtml(authTypeLabel(p.key, a))}</span>`).join(" ")}</td>
                   <td>${p.serverCredentialEnv
                     ? `${okBadge(!!process.env[p.serverCredentialEnv], process.env[p.serverCredentialEnv] ? "set" : "missing")} <code>${escapeHtml(p.serverCredentialEnv)}</code>`
@@ -1161,7 +1164,7 @@ dashboardApp.get("/tenants", async (c) => {
             <tbody>
             ${conns.map((c) => `
               <tr>
-                <td><code>${c.provider}</code></td>
+                <td><span class="provider-cell">${providerIcon(c.provider)}<code>${c.provider}</code></span></td>
                 <td><code>${c.authType}</code></td>
                 <td>${c.label}</td>
                 <td>${c.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</td>
@@ -1328,7 +1331,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
               const needsReconnect = cn.authType === "oauth" && cn.accessTokenExpiresAt && cn.accessTokenExpiresAt < new Date() && !cn.refreshToken;
               return `
               <tr>
-                <td><code>${cn.provider}</code></td>
+                <td><span class="provider-cell">${providerIcon(cn.provider)}<code>${cn.provider}</code></span></td>
                 <td><code>${cn.authType}</code></td>
                 <td><code>${cn.scope}</code></td>
                 <td>
@@ -1459,9 +1462,12 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           <h2><span class="num">+</span> New service</h2>
           <div class="field">
             <label for="provider">Provider</label>
-            <select name="provider" id="provider" required>
-              ${availableToAdd.map(({ provider: p, authType }) => `<option value="${p.key}" data-auth-type="${authType}">${p.label} (${authTypeLabel(p.key, authType)})</option>`).join("")}
-            </select>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span id="providerIconBox" style="display:inline-flex;flex-shrink:0;">${providerIcon(availableToAdd[0].provider.key, 24)}</span>
+              <select name="provider" id="provider" required style="flex:1;">
+                ${availableToAdd.map(({ provider: p, authType }) => `<option value="${p.key}" data-auth-type="${authType}">${p.label} (${authTypeLabel(p.key, authType)})</option>`).join("")}
+              </select>
+            </div>
           </div>
           <input type="hidden" name="auth_method" id="authMethodHidden" value="">
           <div class="field" id="credFieldRow">
@@ -1489,6 +1495,8 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
       </form>
       <script>
         const PROVIDERS = ${JSON.stringify(Object.fromEntries(providers.map(p => [p.key, p])))};
+        const PROVIDER_ICONS = ${JSON.stringify(providerIconMap(24))};
+        const providerIconBox = document.getElementById('providerIconBox');
         const sel = document.getElementById('provider');
         const toolsList = document.getElementById('toolsList');
         const credHint = document.getElementById('credHint');
@@ -1505,6 +1513,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         function updateUI() {
           const p = PROVIDERS[sel.value];
           if (!p) return;
+          if (providerIconBox) providerIconBox.innerHTML = PROVIDER_ICONS[sel.value] || '';
           const authType = sel.options[sel.selectedIndex].dataset.authType;
           authMethodHidden.value = authType;
           const usePat = authType === "pat";
@@ -2182,7 +2191,7 @@ dashboardApp.get("/tenants/new", async (c) => {
             return `
           <div class="provider-block" data-provider="${p.key}" data-auth-type="${authType}" data-haspat="${hasPat}" data-hasoauth="${hasOauth}" data-implemented="${isImplemented}" style="border:1px solid #2a2d33;border-radius:8px;padding:12px 16px;margin-bottom:12px;${isImplemented ? "" : "opacity:.62;"}">
             <label style="font-weight:600;display:flex;align-items:center;gap:8px;cursor:${isImplemented ? "pointer" : "not-allowed"};margin:0;">
-              <input type="checkbox" class="provider-check" value="${optionKey}" ${isImplemented ? "" : "disabled"}> ${p.label}
+              <input type="checkbox" class="provider-check" value="${optionKey}" ${isImplemented ? "" : "disabled"}> ${providerIcon(p.key)} ${p.label}
               <span style="color:#8a8d93;font-weight:normal;font-size:13px;">(${authLabel})</span>
               ${isImplemented ? "" : '<span class="badge unscoped" style="margin-left:auto;">Coming soon</span>'}
             </label>
