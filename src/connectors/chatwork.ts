@@ -106,6 +106,17 @@ async function postForm(apiToken: string, path: string, body: URLSearchParams, t
   return j;
 }
 
+async function putForm(apiToken: string, path: string, body: URLSearchParams, tool: string, logContext: Record<string, unknown> = {}) {
+  const r = await fetchChatwork(path, {
+    method: "PUT",
+    headers: headers(apiToken, true),
+    body,
+  }, { tool, ...logContext });
+  const j: any = await readJsonResponse(r);
+  if (!r.ok) throw new Error(`Chatwork ${tool} failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+  return j;
+}
+
 export async function callChatworkTool(tool: string, args: ChatworkArgs, apiToken: string) {
   if (tool === "chatwork/get_me") {
     return { structuredContent: await getJson(apiToken, "/me", tool) };
@@ -131,6 +142,13 @@ export async function callChatworkTool(tool: string, args: ChatworkArgs, apiToke
   if (tool === "chatwork/get_room") {
     const roomId = idArg(args, "room_id");
     return { structuredContent: await getJson(apiToken, `/rooms/${encodeURIComponent(roomId)}`, tool, { roomId }) };
+  }
+
+  if (tool === "chatwork/update_room_members") {
+    const roomId = idArg(args, "room_id");
+    // Chatwork replaces the whole roster: pass the full desired member lists.
+    const body = formBody(args, ["members_admin_ids"], ["members_member_ids", "members_readonly_ids"]);
+    return { structuredContent: await putForm(apiToken, `/rooms/${encodeURIComponent(roomId)}/members`, body, tool, { roomId }) };
   }
 
   if (tool === "chatwork/list_room_members") {

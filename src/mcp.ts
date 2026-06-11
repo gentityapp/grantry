@@ -710,6 +710,14 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       room_id: { type: "string", description: "Chatwork room ID." },
     };
   }
+  if (toolName === "chatwork/update_room_members") {
+    return {
+      room_id: { type: "string", description: "Chatwork room ID." },
+      members_admin_ids: { type: "array", items: { type: "string" }, description: "Full desired list of admin account IDs (replaces the whole roster; at least one required)." },
+      members_member_ids: { type: "array", items: { type: "string" }, description: "Full desired list of member-level account IDs." },
+      members_readonly_ids: { type: "array", items: { type: "string" }, description: "Full desired list of read-only account IDs." },
+    };
+  }
   if (toolName === "chatwork/list_messages") {
     return {
       room_id: { type: "string", description: "Chatwork room ID." },
@@ -881,6 +889,7 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "heyreach/add_leads_to_campaign") return [];
   if (toolName === "heyreach/create_empty_list") return [];
   if (toolName === "chatwork/create_room") return ["name", "members_admin_ids"];
+  if (toolName === "chatwork/update_room_members") return ["room_id", "members_admin_ids"];
   if (toolName === "chatwork/get_room") return ["room_id"];
   if (toolName === "chatwork/list_room_members") return ["room_id"];
   if (toolName === "chatwork/list_messages") return ["room_id"];
