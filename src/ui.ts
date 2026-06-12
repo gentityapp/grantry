@@ -169,7 +169,7 @@ ${scope ? `X-Grantry-Scope = "${scope}"` : ""}`;
     },
   };
   const claudeJson = JSON.stringify(claudeConfig, null, 2);
-  const claudeCli = `claude mcp add --transport http ${serverName} \\
+  const claudeCli = `claude mcp add --scope user --transport http ${serverName} \\
   ${origin}/mcp \\
   --header "Authorization: Bearer ${token}"${scope ? ` \\
   --header "X-Grantry-Scope: ${scope}"` : ""}`;
@@ -204,7 +204,7 @@ ${scope ? `X-Grantry-Scope = "${scope}"` : ""}`;
         </div>
         <pre>${escapeHtml(codexToml)}</pre>
         <div class="row spread" style="margin:16px 0 8px;">
-          <h3 style="font-size:14px;margin:0;color:#c8ccd2;">Claude Code JSON</h3>
+          <h3 style="font-size:14px;margin:0;color:#c8ccd2;">Claude Code JSON <code>~/.claude.json</code></h3>
           ${copyButton("JSON", claudeJson)}
         </div>
         <pre>${escapeHtml(claudeJson)}</pre>
