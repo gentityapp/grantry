@@ -16,7 +16,9 @@ import { callGoogleDriveTool } from "./connectors/google_drive.js";
 import { callGoogleGscTool } from "./connectors/google_gsc.js";
 import { callGoogleAnalyticsTool } from "./connectors/google_analytics.js";
 import { callGoogleAdsTool } from "./connectors/google_ads.js";
+import { callGoogleMapsTool } from "./connectors/google_maps.js";
 import { callYahooAdsTool } from "./connectors/yahoo_ads.js";
+import { callMetaAdsTool } from "./connectors/meta_ads.js";
 import { callHubSpotTool } from "./connectors/hubspot.js";
 import { callGmailTool } from "./connectors/gmail.js";
 import { callYouTubeTool } from "./connectors/youtube.js";
@@ -27,6 +29,8 @@ import { callChatworkTool } from "./connectors/chatwork.js";
 import { callRailwayTool } from "./connectors/railway.js";
 import { callResendTool } from "./connectors/resend.js";
 import { callSlackTool } from "./connectors/slack.js";
+import { callFreeeTool } from "./connectors/freee.js";
+import { callMoneyForwardTool } from "./connectors/moneyforward.js";
 import { callRedditTool } from "./connectors/reddit.js";
 import { callXTool } from "./connectors/x.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
@@ -410,6 +414,78 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       method: { type: "string", enum: ["add", "set", "remove", "upload"], description: "Mutation method." },
       operation: { type: "object", description: "Raw operation object for the service." },
       body: { type: "object", description: "Alias for operation." },
+    };
+  }
+  if (toolName === "meta_ads/list_ad_accounts") {
+    return {
+      fields: { type: "string", description: "Comma-separated ad account fields. Defaults to id,account_id,name,account_status,currency,timezone_name." },
+      limit: { type: "number", minimum: 1, maximum: 500, description: "Accounts to return." },
+      after: { type: "string", description: "Graph API paging cursor." },
+    };
+  }
+  if (toolName === "meta_ads/get_ad_account") {
+    return {
+      account_id: { type: "string", description: "Meta ad account id, with or without the act_ prefix." },
+      fields: { type: "string", description: "Comma-separated fields to include." },
+    };
+  }
+  if (toolName === "meta_ads/list_campaigns") {
+    return {
+      account_id: { type: "string", description: "Meta ad account id, with or without the act_ prefix." },
+      fields: { type: "string", description: "Comma-separated campaign fields." },
+      effective_status: { type: "string", description: "Optional JSON array string to filter, e.g. [\"ACTIVE\",\"PAUSED\"]." },
+      limit: { type: "number", minimum: 1, maximum: 500, description: "Campaigns to return." },
+      after: { type: "string", description: "Graph API paging cursor." },
+    };
+  }
+  if (toolName === "meta_ads/get_campaign") {
+    return {
+      campaign_id: { type: "string", description: "Meta campaign id." },
+      fields: { type: "string", description: "Comma-separated fields to include." },
+    };
+  }
+  if (toolName === "meta_ads/list_ad_sets") {
+    return {
+      account_id: { type: "string", description: "Meta ad account id (used when campaign_id is omitted)." },
+      campaign_id: { type: "string", description: "Optional campaign id to list its ad sets." },
+      fields: { type: "string", description: "Comma-separated ad set fields." },
+      limit: { type: "number", minimum: 1, maximum: 500, description: "Ad sets to return." },
+      after: { type: "string", description: "Graph API paging cursor." },
+    };
+  }
+  if (toolName === "meta_ads/list_ads") {
+    return {
+      account_id: { type: "string", description: "Meta ad account id (used when campaign_id/adset_id are omitted)." },
+      campaign_id: { type: "string", description: "Optional campaign id." },
+      adset_id: { type: "string", description: "Optional ad set id." },
+      fields: { type: "string", description: "Comma-separated ad fields." },
+      limit: { type: "number", minimum: 1, maximum: 500, description: "Ads to return." },
+      after: { type: "string", description: "Graph API paging cursor." },
+    };
+  }
+  if (toolName === "meta_ads/get_insights") {
+    return {
+      object_id: { type: "string", description: "Object to report on: ad account (act_…), campaign, ad set, or ad id." },
+      account_id: { type: "string", description: "Ad account id, used when object_id is omitted." },
+      fields: { type: "string", description: "Comma-separated insight metrics. Defaults to impressions,clicks,spend,cpc,cpm,ctr,reach,actions." },
+      level: { type: "string", enum: ["account", "campaign", "adset", "ad"], description: "Aggregation level." },
+      date_preset: { type: "string", description: "Date preset, e.g. today, yesterday, last_7d, last_30d. Ignored when time_range is set." },
+      time_range: { type: "object", description: "Explicit range, e.g. { since: \"2026-01-01\", until: \"2026-01-31\" }." },
+      breakdowns: { type: "string", description: "Comma-separated breakdowns, e.g. age,gender." },
+      limit: { type: "number", minimum: 1, maximum: 500, description: "Rows to return." },
+      after: { type: "string", description: "Graph API paging cursor." },
+    };
+  }
+  if (toolName === "meta_ads/create_campaign") {
+    return {
+      account_id: { type: "string", description: "Meta ad account id, with or without the act_ prefix." },
+      campaign: { type: "object", description: "Campaign object, e.g. { name, objective, status, special_ad_categories }." },
+    };
+  }
+  if (toolName === "meta_ads/update_campaign") {
+    return {
+      campaign_id: { type: "string", description: "Meta campaign id to update." },
+      updates: { type: "object", description: "Fields to update, e.g. { name, status, daily_budget }." },
     };
   }
   if (toolName === "hubspot/list_deals") {
@@ -908,6 +984,73 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "railway/introspect_schema") {
     return {};
   }
+  if (toolName === "google_maps/geocode") {
+    return {
+      address: { type: "string", description: "Street address or place name to geocode, e.g. \"1600 Amphitheatre Parkway, Mountain View, CA\"." },
+      components: { type: "string", description: "Optional component filter, e.g. \"country:JP|postal_code:100-0005\"." },
+      bounds: { type: "string", description: "Optional viewport bias as \"lat,lng|lat,lng\"." },
+      region: { type: "string", description: "Optional ccTLD region bias, e.g. jp." },
+      language: { type: "string", description: "Optional result language, e.g. ja or en." },
+    };
+  }
+  if (toolName === "google_maps/reverse_geocode") {
+    return {
+      latlng: { type: "string", description: "Latitude,longitude pair, e.g. \"35.6895,139.6917\". Alternatively pass lat and lng." },
+      lat: { type: "number", description: "Latitude (used when latlng is not provided)." },
+      lng: { type: "number", description: "Longitude (used when latlng is not provided)." },
+      result_type: { type: "string", description: "Optional pipe-separated result types filter, e.g. \"street_address|locality\"." },
+      location_type: { type: "string", description: "Optional pipe-separated location types filter, e.g. \"ROOFTOP\"." },
+      language: { type: "string", description: "Optional result language, e.g. ja or en." },
+    };
+  }
+  if (toolName === "google_maps/place_search") {
+    return {
+      query: { type: "string", description: "Free-text place search query, e.g. \"ramen near Shibuya station\"." },
+      location: { type: "string", description: "Optional bias center as \"lat,lng\"." },
+      radius: { type: "number", description: "Optional bias radius in meters (max 50000)." },
+      type: { type: "string", description: "Optional place type filter, e.g. restaurant." },
+      open_now: { type: "boolean", description: "When true, only return places open now." },
+      page_token: { type: "string", description: "Pagination token (next_page_token) from a previous search." },
+      region: { type: "string", description: "Optional ccTLD region bias, e.g. jp." },
+      language: { type: "string", description: "Optional result language, e.g. ja or en." },
+    };
+  }
+  if (toolName === "google_maps/place_details") {
+    return {
+      place_id: { type: "string", description: "Google place_id from a place_search result." },
+      fields: { type: "string", description: "Optional comma-separated fields to return, e.g. \"name,formatted_address,geometry,opening_hours\"." },
+      region: { type: "string", description: "Optional ccTLD region bias, e.g. jp." },
+      language: { type: "string", description: "Optional result language, e.g. ja or en." },
+    };
+  }
+  if (toolName === "google_maps/directions") {
+    return {
+      origin: { type: "string", description: "Start point: address, \"lat,lng\", or \"place_id:...\"." },
+      destination: { type: "string", description: "End point: address, \"lat,lng\", or \"place_id:...\"." },
+      mode: { type: "string", enum: ["driving", "walking", "bicycling", "transit"], description: "Travel mode. Defaults to driving." },
+      waypoints: { type: "string", description: "Optional pipe-separated waypoints, e.g. \"Tokyo|Yokohama\"." },
+      alternatives: { type: "boolean", description: "When true, return alternative routes." },
+      avoid: { type: "string", description: "Optional pipe-separated features to avoid, e.g. \"tolls|highways\"." },
+      departure_time: { type: "string", description: "Optional departure time (epoch seconds or \"now\")." },
+      arrival_time: { type: "string", description: "Optional arrival time (epoch seconds), transit mode only." },
+      units: { type: "string", enum: ["metric", "imperial"], description: "Unit system for distances." },
+      language: { type: "string", description: "Optional result language, e.g. ja or en." },
+      region: { type: "string", description: "Optional ccTLD region bias, e.g. jp." },
+    };
+  }
+  if (toolName === "google_maps/distance_matrix") {
+    return {
+      origins: { type: "string", description: "Pipe-separated origins: addresses or \"lat,lng\", e.g. \"Tokyo|Osaka\"." },
+      destinations: { type: "string", description: "Pipe-separated destinations: addresses or \"lat,lng\"." },
+      mode: { type: "string", enum: ["driving", "walking", "bicycling", "transit"], description: "Travel mode. Defaults to driving." },
+      avoid: { type: "string", description: "Optional pipe-separated features to avoid, e.g. \"tolls|highways\"." },
+      departure_time: { type: "string", description: "Optional departure time (epoch seconds or \"now\")." },
+      arrival_time: { type: "string", description: "Optional arrival time (epoch seconds), transit mode only." },
+      units: { type: "string", enum: ["metric", "imperial"], description: "Unit system for distances." },
+      language: { type: "string", description: "Optional result language, e.g. ja or en." },
+      region: { type: "string", description: "Optional ccTLD region bias, e.g. jp." },
+    };
+  }
   if (toolName === "resend/send_email") {
     return {
       from: { type: "string", description: "Sender email address, e.g. Name <sender@example.com>." },
@@ -1020,6 +1163,122 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "slack/get_user") {
     return {
       user: { type: "string", description: "User ID, e.g. U0123456789." },
+    };
+  }
+  if (toolName === "freee/get_me") {
+    return {};
+  }
+  if (toolName === "freee/list_companies") {
+    return {};
+  }
+  if (toolName === "freee/list_deals") {
+    return {
+      company_id: { type: "string", description: "freee company (事業所) id. Required." },
+      partner_id: { type: "string", description: "Filter by partner (取引先) id." },
+      account_item_id: { type: "string", description: "Filter by account item (勘定科目) id." },
+      status: { type: "string", enum: ["unsettled", "settled"], description: "Settlement status filter." },
+      type: { type: "string", enum: ["income", "expense"], description: "Deal type filter." },
+      start_issue_date: { type: "string", description: "Issue date lower bound, YYYY-MM-DD." },
+      end_issue_date: { type: "string", description: "Issue date upper bound, YYYY-MM-DD." },
+      offset: { type: "number", description: "Pagination offset." },
+      limit: { type: "number", minimum: 1, maximum: 100, description: "Deals to return, max 100." },
+    };
+  }
+  if (toolName === "freee/get_deal") {
+    return {
+      company_id: { type: "string", description: "freee company (事業所) id. Required." },
+      deal_id: { type: "string", description: "freee deal (取引) id. Required." },
+    };
+  }
+  if (toolName === "freee/create_deal") {
+    return {
+      company_id: { type: "string", description: "freee company (事業所) id. Required." },
+      issue_date: { type: "string", description: "Issue date, YYYY-MM-DD. Required." },
+      type: { type: "string", enum: ["income", "expense"], description: "Deal type. Required." },
+      details: { type: "array", items: { type: "object" }, description: "Deal line items (account_item_id, tax_code, amount, etc.)." },
+      deal: { type: "object", description: "Raw freee deal body; overrides individual fields." },
+    };
+  }
+  if (toolName === "freee/list_account_items") {
+    return {
+      company_id: { type: "string", description: "freee company (事業所) id. Required." },
+    };
+  }
+  if (toolName === "freee/list_partners") {
+    return {
+      company_id: { type: "string", description: "freee company (事業所) id. Required." },
+      keyword: { type: "string", description: "Partner name keyword filter." },
+      offset: { type: "number", description: "Pagination offset." },
+      limit: { type: "number", minimum: 1, maximum: 3000, description: "Partners to return." },
+    };
+  }
+  if (toolName === "freee/create_partner") {
+    return {
+      company_id: { type: "string", description: "freee company (事業所) id. Required." },
+      name: { type: "string", description: "Partner (取引先) name. Required." },
+      partner: { type: "object", description: "Raw freee partner body; overrides individual fields." },
+    };
+  }
+  if (toolName === "freee/trial_pl" || toolName === "freee/trial_bs") {
+    return {
+      company_id: { type: "string", description: "freee company (事業所) id. Required." },
+      fiscal_year: { type: "number", description: "Fiscal year, e.g. 2026." },
+      start_month: { type: "number", minimum: 1, maximum: 12, description: "Start month." },
+      end_month: { type: "number", minimum: 1, maximum: 12, description: "End month." },
+      breakdown_display_type: { type: "string", enum: ["partner", "item", "section", "account_item"], description: "Breakdown axis." },
+    };
+  }
+  if (toolName === "moneyforward/get_office") {
+    return {};
+  }
+  if (toolName === "moneyforward/list_partners") {
+    return {
+      page: { type: "number", description: "Page number." },
+      per_page: { type: "number", minimum: 1, maximum: 100, description: "Results per page, max 100." },
+      q: { type: "string", description: "Search keyword." },
+    };
+  }
+  if (toolName === "moneyforward/get_partner") {
+    return {
+      partner_id: { type: "string", description: "Money Forward partner (取引先) id. Required." },
+    };
+  }
+  if (toolName === "moneyforward/create_partner") {
+    return {
+      name: { type: "string", description: "Partner (取引先) name. Required." },
+      partner: { type: "object", description: "Raw Money Forward partner body; overrides individual fields." },
+    };
+  }
+  if (toolName === "moneyforward/list_billings") {
+    return {
+      page: { type: "number", description: "Page number." },
+      per_page: { type: "number", minimum: 1, maximum: 100, description: "Results per page, max 100." },
+      range_key: { type: "string", description: "Date field to filter on, e.g. billing_date." },
+      from: { type: "string", description: "Range lower bound, YYYY-MM-DD." },
+      to: { type: "string", description: "Range upper bound, YYYY-MM-DD." },
+      q: { type: "string", description: "Search keyword." },
+    };
+  }
+  if (toolName === "moneyforward/get_billing") {
+    return {
+      billing_id: { type: "string", description: "Money Forward billing (請求書) id. Required." },
+    };
+  }
+  if (toolName === "moneyforward/list_quotes") {
+    return {
+      page: { type: "number", description: "Page number." },
+      per_page: { type: "number", minimum: 1, maximum: 100, description: "Results per page, max 100." },
+      range_key: { type: "string", description: "Date field to filter on, e.g. quote_date." },
+      from: { type: "string", description: "Range lower bound, YYYY-MM-DD." },
+      to: { type: "string", description: "Range upper bound, YYYY-MM-DD." },
+      q: { type: "string", description: "Search keyword." },
+    };
+  }
+  if (toolName === "moneyforward/list_items") {
+    return {
+      page: { type: "number", description: "Page number." },
+      per_page: { type: "number", minimum: 1, maximum: 100, description: "Results per page, max 100." },
+      q: { type: "string", description: "Search keyword." },
     };
   }
   if (toolName === "reddit/get_me") {
@@ -1149,6 +1408,11 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "google_ads/mutate") return ["customer_id", "operations"];
   if (toolName === "yahoo_ads/get") return ["base_account_id", "service"];
   if (toolName === "yahoo_ads/mutate") return ["base_account_id", "service", "method"];
+  if (toolName === "meta_ads/get_ad_account") return ["account_id"];
+  if (toolName === "meta_ads/list_campaigns") return ["account_id"];
+  if (toolName === "meta_ads/get_campaign") return ["campaign_id"];
+  if (toolName === "meta_ads/create_campaign") return ["account_id", "campaign"];
+  if (toolName === "meta_ads/update_campaign") return ["campaign_id", "updates"];
   if (toolName === "hubspot/get_contact") return ["contact_id"];
   if (toolName === "hubspot/create_deal") return ["properties"];
   if (toolName === "attio/search_records") return ["query", "objects"];
@@ -1203,6 +1467,12 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "chatwork/list_room_files") return ["room_id"];
   if (toolName === "chatwork/get_room_file") return ["room_id", "file_id"];
   if (toolName === "railway/graphql") return ["query"];
+  if (toolName === "google_maps/geocode") return ["address"];
+  if (toolName === "google_maps/reverse_geocode") return [];
+  if (toolName === "google_maps/place_search") return ["query"];
+  if (toolName === "google_maps/place_details") return ["place_id"];
+  if (toolName === "google_maps/directions") return ["origin", "destination"];
+  if (toolName === "google_maps/distance_matrix") return ["origins", "destinations"];
   if (toolName === "resend/send_email") return ["from", "to", "subject"];
   if (toolName === "resend/get_email") return ["email_id"];
   if (toolName === "resend/get_domain") return ["domain_id"];
@@ -1212,6 +1482,17 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "slack/post_message") return ["channel"];
   if (toolName === "slack/update_message") return ["channel", "ts"];
   if (toolName === "slack/get_user") return ["user"];
+  if (toolName === "freee/list_deals") return ["company_id"];
+  if (toolName === "freee/get_deal") return ["company_id", "deal_id"];
+  if (toolName === "freee/create_deal") return ["company_id", "issue_date", "type"];
+  if (toolName === "freee/list_account_items") return ["company_id"];
+  if (toolName === "freee/list_partners") return ["company_id"];
+  if (toolName === "freee/create_partner") return ["company_id", "name"];
+  if (toolName === "freee/trial_pl") return ["company_id"];
+  if (toolName === "freee/trial_bs") return ["company_id"];
+  if (toolName === "moneyforward/get_partner") return ["partner_id"];
+  if (toolName === "moneyforward/create_partner") return ["name"];
+  if (toolName === "moneyforward/get_billing") return ["billing_id"];
   if (toolName === "reddit/get_subreddit") return ["subreddit"];
   if (toolName === "reddit/list_posts") return ["subreddit"];
   if (toolName === "reddit/search") return ["query"];
@@ -1774,6 +2055,8 @@ mcpApp.post("/", async (c) => {
         result = await callGoogleAdsTool(toolName, args, token, conn.encryptedServerCredential ? decrypt(conn.encryptedServerCredential) : null);
       } else if (decision.provider === "yahoo_ads") {
         result = await callYahooAdsTool(toolName, args, token);
+      } else if (decision.provider === "meta_ads") {
+        result = await callMetaAdsTool(toolName, args, token);
       } else if (decision.provider === "hubspot") {
         result = await callHubSpotTool(toolName, args, token);
       } else if (decision.provider === "gmail") {
@@ -1790,10 +2073,16 @@ mcpApp.post("/", async (c) => {
         result = await callChatworkTool(toolName, args, token);
       } else if (decision.provider === "railway") {
         result = await callRailwayTool(toolName, args, token);
+      } else if (decision.provider === "google_maps") {
+        result = await callGoogleMapsTool(toolName, args, token);
       } else if (decision.provider === "resend") {
         result = await callResendTool(toolName, args, token);
       } else if (decision.provider === "slack") {
         result = await callSlackTool(toolName, args, token);
+      } else if (decision.provider === "freee") {
+        result = await callFreeeTool(toolName, args, token);
+      } else if (decision.provider === "moneyforward") {
+        result = await callMoneyForwardTool(toolName, args, token);
       } else if (decision.provider === "reddit") {
         result = await callRedditTool(toolName, args, token);
       } else if (decision.provider === "x") {

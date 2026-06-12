@@ -112,10 +112,12 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
   }
 
   if (tool === "github/git_push_repo") {
-    // Uses the Git Data API (blobs -> tree -> commit -> update ref) so that all
-    // listed files land in a SINGLE commit, existing files are updated (the
-    // Contents API requires a per-file sha for updates; the tree API does not),
-    // and the result matches a normal `git push`. Empty repos (no commits yet)
+    // Uses the Git Data API (tree -> commit -> update ref) so that all listed
+    // files land in a SINGLE commit, existing files are updated (the Contents
+    // API requires a per-file sha for updates; the tree API does not), and the
+    // result matches a normal `git push`. File contents are inlined into the
+    // tree (no per-file blob calls), so the request count stays constant and
+    // doesn't trip GitHub's secondary rate limit. Empty repos (no commits yet)
     // are handled by omitting base_tree/parents and creating the ref.
     const owner = String(args.owner ?? "");
     const repo = String(args.repo ?? "");
@@ -126,10 +128,26 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
     if (Object.keys(files).length === 0) throw new Error("files (object) is required");
 
     const base = `https://api.github.com/repos/${owner}/${repo}/git`;
+    // GitHub's secondary (abuse) rate limit answers with 429 — or 403 carrying a
+    // `Retry-After` header / `x-ratelimit-remaining: 0` + `x-ratelimit-reset`.
+    // Retry those with backoff instead of aborting the whole push on one blip.
     const gh = async (path: string, init?: RequestInit) => {
-      const r = await fetch(`${base}${path}`, { ...init, headers });
-      if (!r.ok) throw new Error(`git_push_repo ${init?.method ?? "GET"} ${path} failed: ${r.status} ${await r.text()}`);
-      return r.json() as Promise<any>;
+      const method = init?.method ?? "GET";
+      for (let attempt = 0; ; attempt++) {
+        const r = await fetch(`${base}${path}`, { ...init, headers });
+        if (r.ok) return r.json() as Promise<any>;
+        if ((r.status !== 429 && r.status !== 403) || attempt >= 5) {
+          throw new Error(`git_push_repo ${method} ${path} failed: ${r.status} ${await r.text()}`);
+        }
+        const retryAfter = Number(r.headers.get("retry-after"));
+        const reset = Number(r.headers.get("x-ratelimit-reset"));
+        const waitMs =
+          retryAfter > 0 ? retryAfter * 1000
+          : reset > 0 ? Math.max(1000, reset * 1000 - Date.now())
+          : Math.min(2 ** attempt * 1000, 30_000); // exponential backoff, capped at 30s
+        await r.text(); // drain the body before retrying
+        await new Promise((res) => setTimeout(res, waitMs));
+      }
     };
 
     // 1. Resolve the branch's current commit + base tree (404 => empty repo).
@@ -145,16 +163,18 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
       throw new Error(`git_push_repo resolve ref failed: ${refRes.status} ${await refRes.text()}`);
     }
 
-    // 2. Create a blob per file (base64 preserves exact bytes).
-    const tree = await Promise.all(
-      Object.entries(files).map(async ([path, content]) => {
-        const blob = await gh("/blobs", {
-          method: "POST",
-          body: JSON.stringify({ content: Buffer.from(content, "utf8").toString("base64"), encoding: "base64" }),
-        });
-        return { path, mode: "100644", type: "blob", sha: blob.sha };
-      })
-    );
+    // 2. Build tree entries with each file's content inlined. The Git Trees API
+    // accepts `content` directly, so we skip the per-file POST /blobs round trips.
+    // Those blob calls were fired concurrently (Promise.all), which tripped
+    // GitHub's secondary rate limit on multi-file pushes; inlining makes the
+    // request count constant (~4) regardless of how many files are pushed.
+    // `files` arrives as a JSON string map, so contents are already UTF-8 text.
+    const tree = Object.entries(files).map(([path, content]) => ({
+      path,
+      mode: "100644",
+      type: "blob",
+      content,
+    }));
 
     // 3. Build a tree (on top of base_tree when the branch already exists).
     const newTree = await gh("/trees", {

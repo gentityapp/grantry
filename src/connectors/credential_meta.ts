@@ -108,6 +108,33 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "google_maps") {
+      if (!token.trim()) {
+        return { provider, authType, status: "error", checkedAt, error: "Google Maps API key is required" };
+      }
+      // Validate with a cheap Geocoding call; the status field reports key problems.
+      const resp = await fetchWithTimeout(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=Tokyo&key=${encodeURIComponent(token.trim())}`,
+        { headers: { Accept: "application/json" } },
+      );
+      const body: any = await readJson(resp);
+      const status = body?.status;
+      if (!resp.ok || status === "REQUEST_DENIED" || status === "INVALID_REQUEST") {
+        return { provider, authType, status: "error", checkedAt, error: `Google Maps API key check failed: ${resp.status} ${status ?? ""} ${body?.error_message ?? ""}`.trim() };
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        notes: [
+          "Google Maps Platform API keys are sent as the `key` query parameter.",
+          "Enable the Geocoding, Places, Directions, and Distance Matrix APIs and apply key restrictions in Google Cloud Console.",
+          status === "OVER_QUERY_LIMIT" ? "Key validated but currently OVER_QUERY_LIMIT — check billing/quota." : `Geocoding probe returned ${status ?? "no status"}.`,
+        ],
+        checkedAt,
+      };
+    }
+
     if (provider.startsWith("google_") || provider === "gmail" || provider === "youtube") {
       const tokenInfo = await fetchWithTimeout(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(token)}`);
       const info: any = await readJson(tokenInfo);
@@ -166,6 +193,47 @@ export async function inspectCredential(provider: string, authType: string, toke
         ],
         checkedAt,
       };
+    }
+
+    if (provider === "meta_ads") {
+      const apiVersion = process.env.META_ADS_API_VERSION || "v21.0";
+      const resp = await fetchWithTimeout(`https://graph.facebook.com/${apiVersion}/me?fields=id,name`, {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok || body.error) {
+        return { provider, authType, status: "error", checkedAt, error: `Meta token check failed: ${resp.status} ${JSON.stringify(body.error ?? body).slice(0, 300)}` };
+      }
+      const meta: CredentialMetadata = {
+        provider,
+        authType,
+        status: "ok",
+        subject: { id: body.id, name: body.name },
+        notes: [
+          "Meta access tokens are long-lived (~60 days); reconnect when expired since Meta does not issue refresh tokens.",
+          "Use meta_ads/list_ad_accounts to verify which ad accounts this user can access.",
+        ],
+        checkedAt,
+      };
+      // Best-effort scope/granular-permission introspection via debug_token.
+      try {
+        const appToken = process.env.META_ADS_CLIENT_ID && process.env.META_ADS_CLIENT_SECRET
+          ? `${process.env.META_ADS_CLIENT_ID}|${process.env.META_ADS_CLIENT_SECRET}`
+          : null;
+        if (appToken) {
+          const dbg = await fetchWithTimeout(
+            `https://graph.facebook.com/${apiVersion}/debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(appToken)}`
+          );
+          const dbgBody: any = await readJson(dbg);
+          if (dbg.ok && dbgBody.data) {
+            if (Array.isArray(dbgBody.data.scopes)) meta.scopes = dbgBody.data.scopes;
+            if (dbgBody.data.expires_at) {
+              meta.subject = { ...meta.subject, token_expires_at: new Date(dbgBody.data.expires_at * 1000).toISOString() };
+            }
+          }
+        }
+      } catch { /* debug_token is best-effort */ }
+      return meta;
     }
 
     if (provider === "notion") {
@@ -416,6 +484,51 @@ export async function inspectCredential(provider: string, authType: string, toke
           url: body.url,
         },
         notes: ["Slack token scopes are configured in the app's OAuth & Permissions page; the granted scopes are reported in the x-oauth-scopes response header."],
+        checkedAt,
+      };
+    }
+
+    if (provider === "freee") {
+      const resp = await fetchWithTimeout("https://api.freee.co.jp/api/1/users/me?companies=true", {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) {
+        return { provider, authType, status: "error", checkedAt, error: `freee token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      }
+      const user = body.user ?? body;
+      return {
+        provider,
+        authType,
+        status: "ok",
+        scopes: ["read", "write"],
+        subject: { id: user.id, email: user.email, display_name: user.display_name },
+        resources: Array.isArray(user.companies)
+          ? user.companies.slice(0, 50).map((co: any) => ({ id: co.id, name: co.name ?? co.display_name, role: co.role }))
+          : undefined,
+        notes: ["freee access tokens expire after a few hours; grantry refreshes them with the stored refresh token."],
+        checkedAt,
+      };
+    }
+
+    if (provider === "moneyforward") {
+      const resp = await fetchWithTimeout("https://invoice.moneyforward.com/api/v3/office", {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) {
+        return { provider, authType, status: "error", checkedAt, error: `Money Forward token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      }
+      const office = body.office ?? body.data ?? body;
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: { id: office.id, name: office.name ?? office.office_name },
+        notes: [
+          "Money Forward Cloud Invoice API v3 tokens are scoped to one office.",
+          "Scopes (mfc/invoice/data.read / .write) are configured in the Money Forward app portal and are not enumerated by this check.",
+        ],
         checkedAt,
       };
     }

@@ -39,6 +39,7 @@ function authTypeLabel(providerKey: string, authType: string): string {
   if (providerKey === "railway") return "Project token";
   if (providerKey === "resend") return "API key";
   if (providerKey === "slack") return "Bot token";
+  if (providerKey === "google_maps") return "API key";
   return "paste token";
 }
 
@@ -52,6 +53,7 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
   if (providerKey === "railway") return "Paste your Railway Project Token from Project Settings > Tokens";
   if (providerKey === "resend") return "Paste your Resend API key";
   if (providerKey === "slack") return "Paste your Slack Bot User OAuth Token (starts with xoxb-)";
+  if (providerKey === "google_maps") return "Paste your Google Maps Platform API key";
   return `Paste your ${providerLabel} token here`;
 }
 
@@ -64,6 +66,7 @@ function tokenLinkLabel(providerKey: string, providerLabel: string): string {
   if (providerKey === "railway") return "🔗 Open Railway →";
   if (providerKey === "resend") return "🔗 Open Resend API keys →";
   if (providerKey === "slack") return "🔗 Open Slack apps (create app / get Bot token) →";
+  if (providerKey === "google_maps") return "🔗 Open Google Maps Platform credentials →";
   if (providerKey === "github") return "🔗 Manage GitHub PAT repository access here →";
   return `🔗 Get a new ${providerLabel} token here →`;
 }
@@ -1645,7 +1648,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                   ? "HeyReach Public API key"
                   : (sel.value === "railway"
                     ? "Railway Project Token"
-                    : (sel.value === "resend" ? "Resend API key" : p.label + " token")))));
+                    : (sel.value === "resend"
+                      ? "Resend API key"
+                      : (sel.value === "google_maps" ? "Google Maps Platform API key" : p.label + " token"))))));
           credField.placeholder = usePat ? "Paste your " + tokenLabel + (sel.value === "hubspot" ? " here (starts with pat-)" : " here") : "OAuth flow will start after submit";
           credField.disabled = !usePat;
           credField.required = usePat;
@@ -1666,7 +1671,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                       ? "🔗 Open Railway →"
                       : (sel.value === "resend"
                         ? "🔗 Open Resend API keys →"
-                        : (sel.value === "github" ? "🔗 Manage GitHub PAT repository access here →" : "🔗 Get a new " + p.label + " token here →"))))));
+                        : (sel.value === "google_maps"
+                          ? "🔗 Open Google Maps Platform credentials →"
+                          : (sel.value === "github" ? "🔗 Manage GitHub PAT repository access here →" : "🔗 Get a new " + p.label + " token here →")))))));
             patLinkRow.style.display = "";
           } else {
             patLinkRow.style.display = "none";
@@ -3575,6 +3582,27 @@ oauthApp.get("/:provider/callback", async (c) => {
   if (tokenJson.error || !tokenJson.access_token) {
     return c.html(`<h1>${escapeHtml(providerDef.label)} token exchange error</h1><pre>${escapeHtml(JSON.stringify(tokenJson, null, 2))}</pre>`, 500);
   }
+  // Meta returns a short-lived token from the code exchange and issues no refresh
+  // token. Swap it for a long-lived (~60 day) token so the connection stays usable.
+  if (providerKey === "meta_ads") {
+    try {
+      const metaVersion = process.env.META_ADS_API_VERSION || "v21.0";
+      const llParams = new URLSearchParams({
+        grant_type: "fb_exchange_token",
+        client_id: clientId,
+        client_secret: clientSecret,
+        fb_exchange_token: tokenJson.access_token,
+      });
+      const llResp = await fetch(`https://graph.facebook.com/${metaVersion}/oauth/access_token?${llParams.toString()}`, {
+        headers: { Accept: "application/json" },
+      });
+      const llJson: any = await llResp.json();
+      if (llResp.ok && llJson.access_token) {
+        tokenJson.access_token = llJson.access_token;
+        tokenJson.expires_in = llJson.expires_in ?? tokenJson.expires_in;
+      }
+    } catch { /* fall back to the short-lived token if the exchange fails */ }
+  }
   const accessToken = tokenJson.access_token;
   const refreshToken = tokenJson.refresh_token || null;
 
@@ -3595,6 +3623,18 @@ oauthApp.get("/:provider/callback", async (c) => {
       // we don't need an extra API call to name the connection.
       if (tokenJson.team?.name) userLogin = tokenJson.team.name;
       else if (tokenJson.team?.id) userLogin = tokenJson.team.id;
+    } else if (providerKey === "freee") {
+      const u: any = await (await fetch("https://api.freee.co.jp/api/1/users/me", { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } })).json();
+      if (u?.user?.email) userLogin = u.user.email;
+    } else if (providerKey === "moneyforward") {
+      const u: any = await (await fetch("https://invoice.moneyforward.com/api/v3/office", { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } })).json();
+      const office = u?.office ?? u?.data ?? u;
+      if (office?.name) userLogin = office.name;
+    } else if (providerKey === "meta_ads") {
+      const metaVersion = process.env.META_ADS_API_VERSION || "v21.0";
+      const u: any = await (await fetch(`https://graph.facebook.com/${metaVersion}/me?fields=id,name`, { headers: { Authorization: `Bearer ${accessToken}` } })).json();
+      if (u.name) userLogin = String(u.name).replace(/\s+/g, "-").toLowerCase();
+      else if (u.id) userLogin = `fb-${u.id}`;
     } else if (providerKey === "reddit") {
       const u: any = await (await fetch("https://oauth.reddit.com/api/v1/me", { headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "grantry/1.0 (MCP connector)" } })).json();
       if (u.name) userLogin = u.name;
