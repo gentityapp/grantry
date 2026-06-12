@@ -3569,6 +3569,27 @@ oauthApp.get("/:provider/callback", async (c) => {
   if (tokenJson.error || !tokenJson.access_token) {
     return c.html(`<h1>${escapeHtml(providerDef.label)} token exchange error</h1><pre>${escapeHtml(JSON.stringify(tokenJson, null, 2))}</pre>`, 500);
   }
+  // Meta returns a short-lived token from the code exchange and issues no refresh
+  // token. Swap it for a long-lived (~60 day) token so the connection stays usable.
+  if (providerKey === "meta_ads") {
+    try {
+      const metaVersion = process.env.META_ADS_API_VERSION || "v21.0";
+      const llParams = new URLSearchParams({
+        grant_type: "fb_exchange_token",
+        client_id: clientId,
+        client_secret: clientSecret,
+        fb_exchange_token: tokenJson.access_token,
+      });
+      const llResp = await fetch(`https://graph.facebook.com/${metaVersion}/oauth/access_token?${llParams.toString()}`, {
+        headers: { Accept: "application/json" },
+      });
+      const llJson: any = await llResp.json();
+      if (llResp.ok && llJson.access_token) {
+        tokenJson.access_token = llJson.access_token;
+        tokenJson.expires_in = llJson.expires_in ?? tokenJson.expires_in;
+      }
+    } catch { /* fall back to the short-lived token if the exchange fails */ }
+  }
   const accessToken = tokenJson.access_token;
   const refreshToken = tokenJson.refresh_token || null;
 
@@ -3584,6 +3605,11 @@ oauthApp.get("/:provider/callback", async (c) => {
     } else if (providerKey === "hubspot") {
       const u: any = await (await fetch("https://api.hubapi.com/oauth/v1/access-tokens/" + accessToken)).json();
       if (u.hub_id) userLogin = `hub-${u.hub_id}`;
+    } else if (providerKey === "meta_ads") {
+      const metaVersion = process.env.META_ADS_API_VERSION || "v21.0";
+      const u: any = await (await fetch(`https://graph.facebook.com/${metaVersion}/me?fields=id,name`, { headers: { Authorization: `Bearer ${accessToken}` } })).json();
+      if (u.name) userLogin = String(u.name).replace(/\s+/g, "-").toLowerCase();
+      else if (u.id) userLogin = `fb-${u.id}`;
     } else if (providerKey === "reddit") {
       const u: any = await (await fetch("https://oauth.reddit.com/api/v1/me", { headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "grantry/1.0 (MCP connector)" } })).json();
       if (u.name) userLogin = u.name;

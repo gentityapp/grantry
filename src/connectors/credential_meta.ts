@@ -168,6 +168,47 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "meta_ads") {
+      const apiVersion = process.env.META_ADS_API_VERSION || "v21.0";
+      const resp = await fetchWithTimeout(`https://graph.facebook.com/${apiVersion}/me?fields=id,name`, {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok || body.error) {
+        return { provider, authType, status: "error", checkedAt, error: `Meta token check failed: ${resp.status} ${JSON.stringify(body.error ?? body).slice(0, 300)}` };
+      }
+      const meta: CredentialMetadata = {
+        provider,
+        authType,
+        status: "ok",
+        subject: { id: body.id, name: body.name },
+        notes: [
+          "Meta access tokens are long-lived (~60 days); reconnect when expired since Meta does not issue refresh tokens.",
+          "Use meta_ads/list_ad_accounts to verify which ad accounts this user can access.",
+        ],
+        checkedAt,
+      };
+      // Best-effort scope/granular-permission introspection via debug_token.
+      try {
+        const appToken = process.env.META_ADS_CLIENT_ID && process.env.META_ADS_CLIENT_SECRET
+          ? `${process.env.META_ADS_CLIENT_ID}|${process.env.META_ADS_CLIENT_SECRET}`
+          : null;
+        if (appToken) {
+          const dbg = await fetchWithTimeout(
+            `https://graph.facebook.com/${apiVersion}/debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(appToken)}`
+          );
+          const dbgBody: any = await readJson(dbg);
+          if (dbg.ok && dbgBody.data) {
+            if (Array.isArray(dbgBody.data.scopes)) meta.scopes = dbgBody.data.scopes;
+            if (dbgBody.data.expires_at) {
+              meta.subject = { ...meta.subject, token_expires_at: new Date(dbgBody.data.expires_at * 1000).toISOString() };
+            }
+          }
+        }
+      } catch { /* debug_token is best-effort */ }
+      return meta;
+    }
+
     if (provider === "notion") {
       const resp = await fetchWithTimeout("https://api.notion.com/v1/users/me", {
         headers: {

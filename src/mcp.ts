@@ -17,6 +17,7 @@ import { callGoogleGscTool } from "./connectors/google_gsc.js";
 import { callGoogleAnalyticsTool } from "./connectors/google_analytics.js";
 import { callGoogleAdsTool } from "./connectors/google_ads.js";
 import { callYahooAdsTool } from "./connectors/yahoo_ads.js";
+import { callMetaAdsTool } from "./connectors/meta_ads.js";
 import { callHubSpotTool } from "./connectors/hubspot.js";
 import { callGmailTool } from "./connectors/gmail.js";
 import { callYouTubeTool } from "./connectors/youtube.js";
@@ -409,6 +410,78 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       method: { type: "string", enum: ["add", "set", "remove", "upload"], description: "Mutation method." },
       operation: { type: "object", description: "Raw operation object for the service." },
       body: { type: "object", description: "Alias for operation." },
+    };
+  }
+  if (toolName === "meta_ads/list_ad_accounts") {
+    return {
+      fields: { type: "string", description: "Comma-separated ad account fields. Defaults to id,account_id,name,account_status,currency,timezone_name." },
+      limit: { type: "number", minimum: 1, maximum: 500, description: "Accounts to return." },
+      after: { type: "string", description: "Graph API paging cursor." },
+    };
+  }
+  if (toolName === "meta_ads/get_ad_account") {
+    return {
+      account_id: { type: "string", description: "Meta ad account id, with or without the act_ prefix." },
+      fields: { type: "string", description: "Comma-separated fields to include." },
+    };
+  }
+  if (toolName === "meta_ads/list_campaigns") {
+    return {
+      account_id: { type: "string", description: "Meta ad account id, with or without the act_ prefix." },
+      fields: { type: "string", description: "Comma-separated campaign fields." },
+      effective_status: { type: "string", description: "Optional JSON array string to filter, e.g. [\"ACTIVE\",\"PAUSED\"]." },
+      limit: { type: "number", minimum: 1, maximum: 500, description: "Campaigns to return." },
+      after: { type: "string", description: "Graph API paging cursor." },
+    };
+  }
+  if (toolName === "meta_ads/get_campaign") {
+    return {
+      campaign_id: { type: "string", description: "Meta campaign id." },
+      fields: { type: "string", description: "Comma-separated fields to include." },
+    };
+  }
+  if (toolName === "meta_ads/list_ad_sets") {
+    return {
+      account_id: { type: "string", description: "Meta ad account id (used when campaign_id is omitted)." },
+      campaign_id: { type: "string", description: "Optional campaign id to list its ad sets." },
+      fields: { type: "string", description: "Comma-separated ad set fields." },
+      limit: { type: "number", minimum: 1, maximum: 500, description: "Ad sets to return." },
+      after: { type: "string", description: "Graph API paging cursor." },
+    };
+  }
+  if (toolName === "meta_ads/list_ads") {
+    return {
+      account_id: { type: "string", description: "Meta ad account id (used when campaign_id/adset_id are omitted)." },
+      campaign_id: { type: "string", description: "Optional campaign id." },
+      adset_id: { type: "string", description: "Optional ad set id." },
+      fields: { type: "string", description: "Comma-separated ad fields." },
+      limit: { type: "number", minimum: 1, maximum: 500, description: "Ads to return." },
+      after: { type: "string", description: "Graph API paging cursor." },
+    };
+  }
+  if (toolName === "meta_ads/get_insights") {
+    return {
+      object_id: { type: "string", description: "Object to report on: ad account (act_…), campaign, ad set, or ad id." },
+      account_id: { type: "string", description: "Ad account id, used when object_id is omitted." },
+      fields: { type: "string", description: "Comma-separated insight metrics. Defaults to impressions,clicks,spend,cpc,cpm,ctr,reach,actions." },
+      level: { type: "string", enum: ["account", "campaign", "adset", "ad"], description: "Aggregation level." },
+      date_preset: { type: "string", description: "Date preset, e.g. today, yesterday, last_7d, last_30d. Ignored when time_range is set." },
+      time_range: { type: "object", description: "Explicit range, e.g. { since: \"2026-01-01\", until: \"2026-01-31\" }." },
+      breakdowns: { type: "string", description: "Comma-separated breakdowns, e.g. age,gender." },
+      limit: { type: "number", minimum: 1, maximum: 500, description: "Rows to return." },
+      after: { type: "string", description: "Graph API paging cursor." },
+    };
+  }
+  if (toolName === "meta_ads/create_campaign") {
+    return {
+      account_id: { type: "string", description: "Meta ad account id, with or without the act_ prefix." },
+      campaign: { type: "object", description: "Campaign object, e.g. { name, objective, status, special_ad_categories }." },
+    };
+  }
+  if (toolName === "meta_ads/update_campaign") {
+    return {
+      campaign_id: { type: "string", description: "Meta campaign id to update." },
+      updates: { type: "object", description: "Fields to update, e.g. { name, status, daily_budget }." },
     };
   }
   if (toolName === "hubspot/list_deals") {
@@ -1074,6 +1147,11 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "google_ads/mutate") return ["customer_id", "operations"];
   if (toolName === "yahoo_ads/get") return ["base_account_id", "service"];
   if (toolName === "yahoo_ads/mutate") return ["base_account_id", "service", "method"];
+  if (toolName === "meta_ads/get_ad_account") return ["account_id"];
+  if (toolName === "meta_ads/list_campaigns") return ["account_id"];
+  if (toolName === "meta_ads/get_campaign") return ["campaign_id"];
+  if (toolName === "meta_ads/create_campaign") return ["account_id", "campaign"];
+  if (toolName === "meta_ads/update_campaign") return ["campaign_id", "updates"];
   if (toolName === "hubspot/get_contact") return ["contact_id"];
   if (toolName === "hubspot/create_deal") return ["properties"];
   if (toolName === "attio/search_records") return ["query", "objects"];
@@ -1693,6 +1771,8 @@ mcpApp.post("/", async (c) => {
         result = await callGoogleAdsTool(toolName, args, token, conn.encryptedServerCredential ? decrypt(conn.encryptedServerCredential) : null);
       } else if (decision.provider === "yahoo_ads") {
         result = await callYahooAdsTool(toolName, args, token);
+      } else if (decision.provider === "meta_ads") {
+        result = await callMetaAdsTool(toolName, args, token);
       } else if (decision.provider === "hubspot") {
         result = await callHubSpotTool(toolName, args, token);
       } else if (decision.provider === "gmail") {
