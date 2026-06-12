@@ -166,6 +166,9 @@ If you didn't request this, you can safely ignore this email.`,
     // unaffected — both auth styles work side by side.
     mcp({
       loginPage: "/login",
+      // RFC 9728: the resource identifier must match the MCP server URL the
+      // client connects to (origin alone fails strict client validation).
+      resource: `${process.env.BETTER_AUTH_URL ?? "http://localhost:3000"}/mcp`,
       oidcConfig: {
         loginPage: "/login",
         allowDynamicClientRegistration: true,

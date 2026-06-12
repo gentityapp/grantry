@@ -31,6 +31,13 @@ app.get("/.well-known/oauth-authorization-server", (c) =>
 app.get("/.well-known/oauth-protected-resource", (c) =>
   oAuthProtectedResourceMetadata(auth)(c.req.raw),
 );
+// RFC 9728 path-insertion form: for the resource https://host/mcp, clients
+// derive https://host/.well-known/oauth-protected-resource/mcp and fetch it
+// FIRST. Serving only the root form makes spec-compliant clients (claude.ai,
+// Claude Desktop) fail before ever opening the authorize popup.
+app.get("/.well-known/oauth-protected-resource/mcp", (c) =>
+  oAuthProtectedResourceMetadata(auth)(c.req.raw),
+);
 
 // Mount MCP gateway
 app.route("/mcp", mcpApp);

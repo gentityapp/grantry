@@ -2446,7 +2446,7 @@ mcpApp.post("/", async (c) => {
       : requestOrigin;
     c.header(
       "WWW-Authenticate",
-      `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
+      `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"`,
     );
     return c.json({
       jsonrpc: "2.0",
