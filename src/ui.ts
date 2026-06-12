@@ -3413,9 +3413,11 @@ oauthApp.get("/:provider/start", async (c) => {
     reauth,
     userId: user.id,
   };
-  const hubspotPkceVerifier = providerKey === "hubspot" ? pkceCodeVerifier() : "";
-  if (hubspotPkceVerifier) {
-    payload.pkce_code_verifier = hubspotPkceVerifier;
+  // Providers that require PKCE (Authorization Code + S256) for the token exchange.
+  const usesPkce = providerKey === "hubspot" || providerKey === "x";
+  const pkceVerifier = usesPkce ? pkceCodeVerifier() : "";
+  if (pkceVerifier) {
+    payload.pkce_code_verifier = pkceVerifier;
   }
   if (!/^[a-z0-9_-]+$/.test(payload.tenant)) {
     return c.html(`<h1>invalid tenant</h1><p>Tenant must match <code>[a-z0-9_-]+</code>. <a href="/tenants/new">← Back</a></p>`, 400);
@@ -3440,6 +3442,8 @@ oauthApp.get("/:provider/start", async (c) => {
     extraParams = `&allow_signup=true`;
   } else if (providerKey.startsWith("google_") || providerKey === "gmail") {
     extraParams = `&access_type=offline&prompt=consent`; // request refresh_token
+  } else if (providerKey === "reddit") {
+    extraParams = `&duration=permanent`; // request a refresh_token (default is temporary/1h)
   }
   const scopeStr = (providerDef.oauthScopes || []).join(" ");
   const params = new URLSearchParams({
@@ -3449,8 +3453,8 @@ oauthApp.get("/:provider/start", async (c) => {
     scope: scopeStr,
     state,
   });
-  if (hubspotPkceVerifier) {
-    params.set("code_challenge", await pkceCodeChallenge(hubspotPkceVerifier));
+  if (pkceVerifier) {
+    params.set("code_challenge", await pkceCodeChallenge(pkceVerifier));
     params.set("code_challenge_method", "S256");
   }
   return c.redirect(`${providerDef.authorizeUrl}?${params.toString()}${extraParams}`);
@@ -3523,21 +3527,36 @@ oauthApp.get("/:provider/callback", async (c) => {
   }
   const redirectUri = `${publicUrl.replace(/\/+$/, "")}/oauth/${providerKey}/callback`;
 
+  // Reddit and X authenticate the confidential client with HTTP Basic auth at
+  // the token endpoint rather than client credentials in the body.
+  const usesBasicAuth = providerKey === "reddit" || providerKey === "x";
   const tokenBody = new URLSearchParams({
     client_id: clientId,
-    client_secret: clientSecret,
     code,
     redirect_uri: redirectUri,
     state,
     grant_type: "authorization_code",
   });
+  if (!usesBasicAuth) {
+    tokenBody.set("client_secret", clientSecret);
+  }
   const pkceVerifier = String(payload.pkce_code_verifier || "");
-  if (providerKey === "hubspot" && pkceVerifier) {
+  if (pkceVerifier) {
     tokenBody.set("code_verifier", pkceVerifier);
+  }
+  const tokenHeaders: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+    "Accept": "application/json",
+  };
+  if (usesBasicAuth) {
+    tokenHeaders.Authorization = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`;
+  }
+  if (providerKey === "reddit") {
+    tokenHeaders["User-Agent"] = "grantry/1.0 (MCP connector)";
   }
   const tokenResp = await fetch(providerDef.oauthTokenUrl!, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+    headers: tokenHeaders,
     body: tokenBody,
   });
   if (!tokenResp.ok) {
@@ -3562,6 +3581,12 @@ oauthApp.get("/:provider/callback", async (c) => {
     } else if (providerKey === "hubspot") {
       const u: any = await (await fetch("https://api.hubapi.com/oauth/v1/access-tokens/" + accessToken)).json();
       if (u.hub_id) userLogin = `hub-${u.hub_id}`;
+    } else if (providerKey === "reddit") {
+      const u: any = await (await fetch("https://oauth.reddit.com/api/v1/me", { headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "grantry/1.0 (MCP connector)" } })).json();
+      if (u.name) userLogin = u.name;
+    } else if (providerKey === "x") {
+      const u: any = await (await fetch("https://api.x.com/2/users/me", { headers: { Authorization: `Bearer ${accessToken}` } })).json();
+      if (u?.data?.username) userLogin = u.data.username;
     }
   } catch { /* non-fatal */ }
 

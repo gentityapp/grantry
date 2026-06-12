@@ -25,6 +25,8 @@ import { callHeyReachTool } from "./connectors/heyreach.js";
 import { callChatworkTool } from "./connectors/chatwork.js";
 import { callRailwayTool } from "./connectors/railway.js";
 import { callResendTool } from "./connectors/resend.js";
+import { callRedditTool } from "./connectors/reddit.js";
+import { callXTool } from "./connectors/x.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 
 export const mcpApp = new Hono();
@@ -859,6 +861,108 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "resend/list_api_keys") {
     return {};
   }
+  if (toolName === "reddit/get_me") {
+    return {};
+  }
+  if (toolName === "reddit/get_subreddit") {
+    return {
+      subreddit: { type: "string", description: "Subreddit name without the r/ prefix, e.g. programming." },
+    };
+  }
+  if (toolName === "reddit/list_posts") {
+    return {
+      subreddit: { type: "string", description: "Subreddit name without the r/ prefix." },
+      sort: { type: "string", enum: ["hot", "new", "top", "rising", "controversial"], description: "Listing sort. Defaults to hot." },
+      time: { type: "string", enum: ["hour", "day", "week", "month", "year", "all"], description: "Time window for top/controversial sort." },
+      limit: { type: "number", minimum: 1, maximum: 100, description: "Number of posts to return, max 100." },
+      after: { type: "string", description: "Pagination fullname cursor (after) from a previous listing." },
+    };
+  }
+  if (toolName === "reddit/search") {
+    return {
+      query: { type: "string", description: "Search query." },
+      subreddit: { type: "string", description: "Optional subreddit to restrict the search to (without r/ prefix)." },
+      sort: { type: "string", enum: ["relevance", "hot", "top", "new", "comments"], description: "Search result sort." },
+      time: { type: "string", enum: ["hour", "day", "week", "month", "year", "all"], description: "Time window for the search." },
+      limit: { type: "number", minimum: 1, maximum: 100, description: "Number of results to return, max 100." },
+      after: { type: "string", description: "Pagination fullname cursor (after) from a previous search." },
+    };
+  }
+  if (toolName === "reddit/get_comments") {
+    return {
+      article: { type: "string", description: "Post ID (base36, with or without the t3_ prefix)." },
+      subreddit: { type: "string", description: "Optional subreddit name (without r/ prefix)." },
+      sort: { type: "string", enum: ["confidence", "top", "new", "controversial", "old", "qa"], description: "Comment sort." },
+      limit: { type: "number", minimum: 1, maximum: 500, description: "Maximum number of comments to return." },
+    };
+  }
+  if (toolName === "reddit/submit_post") {
+    return {
+      subreddit: { type: "string", description: "Target subreddit name without the r/ prefix." },
+      title: { type: "string", description: "Post title." },
+      kind: { type: "string", enum: ["self", "link"], description: "Post kind. Defaults to self (text) unless a url is given." },
+      text: { type: "string", description: "Body text for a self post (markdown)." },
+      url: { type: "string", description: "URL for a link post." },
+      flair_id: { type: "string", description: "Optional flair template id." },
+    };
+  }
+  if (toolName === "reddit/submit_comment") {
+    return {
+      parent: { type: "string", description: "Fullname of the thing to reply to, e.g. t3_<postid> or t1_<commentid>." },
+      text: { type: "string", description: "Comment body (markdown)." },
+    };
+  }
+  if (toolName === "reddit/vote") {
+    return {
+      id: { type: "string", description: "Fullname of the post or comment to vote on, e.g. t3_<id> or t1_<id>." },
+      dir: { type: "string", enum: ["1", "0", "-1"], description: "Vote direction: 1 upvote, 0 clear, -1 downvote." },
+    };
+  }
+  if (toolName === "x/get_me") {
+    return {
+      user_fields: { type: "string", description: "Optional comma-separated user.fields to expand." },
+    };
+  }
+  if (toolName === "x/get_user") {
+    return {
+      username: { type: "string", description: "X username/handle without the @." },
+      user_fields: { type: "string", description: "Optional comma-separated user.fields to expand." },
+    };
+  }
+  if (toolName === "x/get_user_tweets") {
+    return {
+      user_id: { type: "string", description: "Numeric X user ID (use x/get_user to resolve a handle)." },
+      max_results: { type: "number", minimum: 5, maximum: 100, description: "Tweets per page, 5-100." },
+      pagination_token: { type: "string", description: "next_token from a previous page for pagination." },
+      tweet_fields: { type: "string", description: "Optional comma-separated tweet.fields to expand." },
+    };
+  }
+  if (toolName === "x/search_recent") {
+    return {
+      query: { type: "string", description: "Search query using X search operators." },
+      max_results: { type: "number", minimum: 10, maximum: 100, description: "Tweets per page, 10-100." },
+      next_token: { type: "string", description: "next_token from a previous page for pagination." },
+      tweet_fields: { type: "string", description: "Optional comma-separated tweet.fields to expand." },
+    };
+  }
+  if (toolName === "x/get_tweet") {
+    return {
+      id: { type: "string", description: "Tweet ID." },
+      tweet_fields: { type: "string", description: "Optional comma-separated tweet.fields to expand." },
+    };
+  }
+  if (toolName === "x/post_tweet") {
+    return {
+      text: { type: "string", description: "Tweet text, max 280 characters." },
+      reply_to: { type: "string", description: "Optional tweet ID to reply to." },
+      quote_tweet_id: { type: "string", description: "Optional tweet ID to quote." },
+    };
+  }
+  if (toolName === "x/delete_tweet") {
+    return {
+      id: { type: "string", description: "ID of a tweet owned by the authorized account to delete." },
+    };
+  }
   return {};
 }
 
@@ -933,6 +1037,19 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "resend/send_email") return ["from", "to", "subject"];
   if (toolName === "resend/get_email") return ["email_id"];
   if (toolName === "resend/get_domain") return ["domain_id"];
+  if (toolName === "reddit/get_subreddit") return ["subreddit"];
+  if (toolName === "reddit/list_posts") return ["subreddit"];
+  if (toolName === "reddit/search") return ["query"];
+  if (toolName === "reddit/get_comments") return ["article"];
+  if (toolName === "reddit/submit_post") return ["subreddit", "title"];
+  if (toolName === "reddit/submit_comment") return ["parent", "text"];
+  if (toolName === "reddit/vote") return ["id"];
+  if (toolName === "x/get_user") return ["username"];
+  if (toolName === "x/get_user_tweets") return ["user_id"];
+  if (toolName === "x/search_recent") return ["query"];
+  if (toolName === "x/get_tweet") return ["id"];
+  if (toolName === "x/post_tweet") return ["text"];
+  if (toolName === "x/delete_tweet") return ["id"];
   return [];
 }
 
@@ -1202,18 +1319,35 @@ async function refreshOAuthToken(provider: string, refreshToken: string) {
     throw new Error(`${provider} OAuth refresh credentials missing: set ${envPrefix}_CLIENT_ID and ${envPrefix}_CLIENT_SECRET`);
   }
 
+  // Reddit and X authenticate the confidential client with HTTP Basic auth at
+  // the token endpoint rather than client credentials in the body.
+  const usesBasicAuth = provider === "reddit" || provider === "x";
+  const refreshBody = new URLSearchParams({
+    client_id: clientId,
+    refresh_token: refreshToken,
+    grant_type: "refresh_token",
+  });
+  if (!usesBasicAuth) {
+    refreshBody.set("client_secret", clientSecret);
+  }
+  const refreshHeaders: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+    Accept: "application/json",
+  };
+  if (usesBasicAuth) {
+    refreshHeaders.Authorization = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`;
+  }
+  if (provider === "reddit") {
+    refreshHeaders["User-Agent"] = "grantry/1.0 (MCP connector)";
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TOKEN_REFRESH_TIMEOUT_MS);
   try {
     const resp = await fetch(providerDef.oauthTokenUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-      body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        refresh_token: refreshToken,
-        grant_type: "refresh_token",
-      }),
+      headers: refreshHeaders,
+      body: refreshBody,
       signal: controller.signal,
     });
     const text = await resp.text();
@@ -1479,6 +1613,10 @@ mcpApp.post("/", async (c) => {
         result = await callRailwayTool(toolName, args, token);
       } else if (decision.provider === "resend") {
         result = await callResendTool(toolName, args, token);
+      } else if (decision.provider === "reddit") {
+        result = await callRedditTool(toolName, args, token);
+      } else if (decision.provider === "x") {
+        result = await callXTool(toolName, args, token);
       } else {
         throw new Error(`no dispatcher for provider: ${decision.provider}`);
       }

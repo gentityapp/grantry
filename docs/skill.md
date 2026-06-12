@@ -3,7 +3,7 @@ name: grantry
 description: |
   Use grantry when the user wants an AI agent to call external SaaS APIs
   (GitHub, Notion, Google Drive/GSC/Ads, HubSpot, Attio, Clay, HeyReach,
-  Chatwork, Railway, Resend) under OAuth/PAT authentication
+  Chatwork, Railway, Resend, Reddit, X) under OAuth/PAT authentication
   with tenant isolation. grantry (formerly "grantry-auth", deployed as "agent-oauth") is a
   Hono/TypeScript service that holds encrypted credentials and exposes them as
   MCP tools, so the agent never sees raw tokens. Triggers: mentions of
@@ -136,6 +136,14 @@ Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing tenant):
   `{"token":"...","token_type":"account"}`.
 - **Resend**: paste a Resend API key. Sending requires `sending_access` or
   `full_access` and a verified sending domain.
+- **Reddit**: OAuth only, via `/oauth/reddit/start`. Needs `REDDIT_CLIENT_ID` /
+  `REDDIT_CLIENT_SECRET` (register a "web app" at `reddit.com/prefs/apps` with the
+  callback `https://app.grantry.ai/oauth/reddit/callback`). Grants read + posting,
+  commenting, and voting as the authorized account.
+- **X (Twitter)**: OAuth only, via `/oauth/x/start`. Needs `X_CLIENT_ID` /
+  `X_CLIENT_SECRET` (OAuth 2.0 Confidential client / Web App with callback
+  `https://app.grantry.ai/oauth/x/callback`). Grants read + posting and deleting
+  tweets as the authorized account.
 Set the connection's **scope to the tenant name**; that's the scope callers must pass.
 
 ### 6. Grant an agent access to a scope
@@ -145,7 +153,7 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 3. Bind the role to the agent (`POST /agents/:id/bind`) — or skip role wrangling
    entirely and create the agent via `/agents/new`.
 
-## Providers & tools (109)
+## Providers & tools (124)
 - `ping` — liveness (returns `pong from <agent>`)
 - **grantry** (system metadata, no SaaS credential required): `get_skill`,
   `get_providers`
@@ -176,6 +184,10 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
   `introspect_schema`
 - **resend** (API key): `send_email`, `list_emails`, `get_email`,
   `list_domains`, `get_domain`, `list_api_keys`
+- **reddit** (OAuth; read + write): `get_me`, `get_subreddit`, `list_posts`,
+  `search`, `get_comments`, `submit_post`, `submit_comment`, `vote`
+- **x** (OAuth; read + write): `get_me`, `get_user`, `get_user_tweets`,
+  `search_recent`, `get_tweet`, `post_tweet`, `delete_tweet`
 
 ### GitHub tool arguments (besides `scope`)
 - `get_repo`, `list_issues`: `owner`, `repo` (list_issues also `state`, default `open`)
@@ -296,6 +308,33 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 - `list_domains` / `list_api_keys` (read): no additional arguments.
 - `get_domain` (read): `domain_id`.
 
+### Reddit tool arguments (besides `scope`)
+- `get_me` (read): no additional arguments.
+- `get_subreddit` (read): `subreddit` (without the `r/` prefix).
+- `list_posts` (read): `subreddit`; optional `sort` (`hot`/`new`/`top`/`rising`/
+  `controversial`, default `hot`), `time` (for top/controversial), `limit` (max
+  100), `after` (pagination fullname).
+- `search` (read): `query`; optional `subreddit` (restricts to that subreddit),
+  `sort`, `time`, `limit`, `after`.
+- `get_comments` (read): `article` (post id, with/without `t3_`); optional
+  `subreddit`, `sort`, `limit`.
+- `submit_post` (write): `subreddit`, `title`; `kind` (`self`/`link`, default
+  inferred); `text` for self posts or `url` for link posts; optional `flair_id`.
+- `submit_comment` (write): `parent` (fullname, e.g. `t3_<post>` or `t1_<comment>`),
+  `text`.
+- `vote` (write): `id` (fullname), `dir` (`1` up / `0` clear / `-1` down).
+
+### X tool arguments (besides `scope`)
+- `get_me` (read): optional `user_fields`.
+- `get_user` (read): `username` (handle, with or without `@`); optional `user_fields`.
+- `get_user_tweets` (read): `user_id` (numeric — resolve a handle via `get_user`);
+  optional `max_results` (5-100), `pagination_token`, `tweet_fields`.
+- `search_recent` (read): `query`; optional `max_results` (10-100), `next_token`,
+  `tweet_fields`.
+- `get_tweet` (read): `id`; optional `tweet_fields`.
+- `post_tweet` (write): `text` (≤280 chars); optional `reply_to`, `quote_tweet_id`.
+- `delete_tweet` (write): `id` (a tweet owned by the authorized account).
+
 ## Output contract
 When asked to act via grantry:
 1. If you don't already know the scope, call `connections/list` first to resolve
@@ -314,7 +353,8 @@ When asked to act via grantry:
    `heyreach/resume_campaign`, `heyreach/add_leads_to_campaign`,
    `heyreach/create_empty_list`, `chatwork/send_message`,
    `chatwork/create_room_task`, `railway/graphql` with mutations,
-   `resend/send_email`, …)
+   `resend/send_email`, `reddit/submit_post`, `reddit/submit_comment`,
+   `reddit/vote`, `x/post_tweet`, `x/delete_tweet`, …)
    get explicit confirmation first —
    these hit the real SaaS via real tokens and are not reversible. **Read-only**
    calls (incl. the connectivity smoke test) need no confirmation — just run them.

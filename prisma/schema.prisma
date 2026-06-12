@@ -148,7 +148,7 @@ model AgentRole {
 
 model Connection {
   id                  String   @id @default(cuid())
-  provider            String   // "github" | "cloudflare" | "clarity" | "notion" | "google_drive" | "google_gsc" | "google_analytics" | "google_ads" | "yahoo_ads" | "gmail" | "hubspot" | "attio"
+  provider            String   // "github" | "cloudflare" | "clarity" | "notion" | "google_drive" | "google_gsc" | "google_analytics" | "google_ads" | "yahoo_ads" | "gmail" | "hubspot" | "attio" | "reddit" | "x"
   authType            String   @default("pat") // "pat" | "oauth" | "private_app" | "service_account"
   label               String
   scope               String   @default("") // denormalized tenant slug (immutable, always equals tenant.slug); "" = legacy unscoped
