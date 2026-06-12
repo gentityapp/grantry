@@ -41,6 +41,7 @@ function authTypeLabel(providerKey: string, authType: string): string {
   if (providerKey === "slack") return "Bot token";
   if (providerKey === "google_maps") return "API key";
   if (providerKey === "discord") return "Bot token";
+  if (providerKey === "line") return "Channel access token";
   return "paste token";
 }
 
@@ -56,6 +57,7 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
   if (providerKey === "slack") return "Paste your Slack Bot User OAuth Token (starts with xoxb-)";
   if (providerKey === "google_maps") return "Paste your Google Maps Platform API key";
   if (providerKey === "discord") return "Paste your Discord Bot Token from the Developer Portal > Bot";
+  if (providerKey === "line") return "Paste your LINE Channel Access Token (Messaging API > Channel access token)";
   return `Paste your ${providerLabel} token here`;
 }
 
@@ -70,6 +72,7 @@ function tokenLinkLabel(providerKey: string, providerLabel: string): string {
   if (providerKey === "slack") return "🔗 Open Slack apps (create app / get Bot token) →";
   if (providerKey === "google_maps") return "🔗 Open Google Maps Platform credentials →";
   if (providerKey === "discord") return "🔗 Open Discord Developer Portal (create app / get Bot token) →";
+  if (providerKey === "line") return "🔗 Open LINE Developers console (Messaging API channel) →";
   if (providerKey === "github") return "🔗 Manage GitHub PAT repository access here →";
   return `🔗 Get a new ${providerLabel} token here →`;
 }
