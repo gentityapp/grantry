@@ -3388,6 +3388,7 @@ oauthApp.get("/:provider/start", async (c) => {
     google_ads: ["GOOGLE_CLIENT_ID"],
     google_drive: ["GOOGLE_CLIENT_ID"],
     gmail: ["GOOGLE_CLIENT_ID"],
+    youtube: ["GOOGLE_CLIENT_ID"],
     yahoo_ads: ["YAHOO_CLIENT_ID"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
@@ -3416,9 +3417,11 @@ oauthApp.get("/:provider/start", async (c) => {
     reauth,
     userId: user.id,
   };
-  const hubspotPkceVerifier = providerKey === "hubspot" ? pkceCodeVerifier() : "";
-  if (hubspotPkceVerifier) {
-    payload.pkce_code_verifier = hubspotPkceVerifier;
+  // Providers that require PKCE (Authorization Code + S256) for the token exchange.
+  const usesPkce = providerKey === "hubspot" || providerKey === "x";
+  const pkceVerifier = usesPkce ? pkceCodeVerifier() : "";
+  if (pkceVerifier) {
+    payload.pkce_code_verifier = pkceVerifier;
   }
   if (!/^[a-z0-9_-]+$/.test(payload.tenant)) {
     return c.html(`<h1>invalid tenant</h1><p>Tenant must match <code>[a-z0-9_-]+</code>. <a href="/tenants/new">← Back</a></p>`, 400);
@@ -3441,8 +3444,10 @@ oauthApp.get("/:provider/start", async (c) => {
   let extraParams = "";
   if (providerKey === "github") {
     extraParams = `&allow_signup=true`;
-  } else if (providerKey.startsWith("google_") || providerKey === "gmail") {
+  } else if (providerKey.startsWith("google_") || providerKey === "gmail" || providerKey === "youtube") {
     extraParams = `&access_type=offline&prompt=consent`; // request refresh_token
+  } else if (providerKey === "reddit") {
+    extraParams = `&duration=permanent`; // request a refresh_token (default is temporary/1h)
   }
   // Slack's OAuth v2 authorize endpoint expects a comma-separated scope list
   // (bot scopes in `scope`); most other providers use space-separated scopes.
@@ -3455,8 +3460,8 @@ oauthApp.get("/:provider/start", async (c) => {
     scope: scopeStr,
     state,
   });
-  if (hubspotPkceVerifier) {
-    params.set("code_challenge", await pkceCodeChallenge(hubspotPkceVerifier));
+  if (pkceVerifier) {
+    params.set("code_challenge", await pkceCodeChallenge(pkceVerifier));
     params.set("code_challenge_method", "S256");
   }
   return c.redirect(`${providerDef.authorizeUrl}?${params.toString()}${extraParams}`);
@@ -3508,6 +3513,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     google_ads: ["GOOGLE_CLIENT_ID"],
     google_drive: ["GOOGLE_CLIENT_ID"],
     gmail: ["GOOGLE_CLIENT_ID"],
+    youtube: ["GOOGLE_CLIENT_ID"],
     yahoo_ads: ["YAHOO_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
@@ -3517,6 +3523,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     google_ads: ["GOOGLE_CLIENT_SECRET"],
     google_drive: ["GOOGLE_CLIENT_SECRET"],
     gmail: ["GOOGLE_CLIENT_SECRET"],
+    youtube: ["GOOGLE_CLIENT_SECRET"],
     yahoo_ads: ["YAHOO_CLIENT_SECRET"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
@@ -3529,21 +3536,36 @@ oauthApp.get("/:provider/callback", async (c) => {
   }
   const redirectUri = `${publicUrl.replace(/\/+$/, "")}/oauth/${providerKey}/callback`;
 
+  // Reddit and X authenticate the confidential client with HTTP Basic auth at
+  // the token endpoint rather than client credentials in the body.
+  const usesBasicAuth = providerKey === "reddit" || providerKey === "x";
   const tokenBody = new URLSearchParams({
     client_id: clientId,
-    client_secret: clientSecret,
     code,
     redirect_uri: redirectUri,
     state,
     grant_type: "authorization_code",
   });
+  if (!usesBasicAuth) {
+    tokenBody.set("client_secret", clientSecret);
+  }
   const pkceVerifier = String(payload.pkce_code_verifier || "");
-  if (providerKey === "hubspot" && pkceVerifier) {
+  if (pkceVerifier) {
     tokenBody.set("code_verifier", pkceVerifier);
+  }
+  const tokenHeaders: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+    "Accept": "application/json",
+  };
+  if (usesBasicAuth) {
+    tokenHeaders.Authorization = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`;
+  }
+  if (providerKey === "reddit") {
+    tokenHeaders["User-Agent"] = "grantry/1.0 (MCP connector)";
   }
   const tokenResp = await fetch(providerDef.oauthTokenUrl!, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+    headers: tokenHeaders,
     body: tokenBody,
   });
   if (!tokenResp.ok) {
@@ -3573,6 +3595,12 @@ oauthApp.get("/:provider/callback", async (c) => {
       // we don't need an extra API call to name the connection.
       if (tokenJson.team?.name) userLogin = tokenJson.team.name;
       else if (tokenJson.team?.id) userLogin = tokenJson.team.id;
+    } else if (providerKey === "reddit") {
+      const u: any = await (await fetch("https://oauth.reddit.com/api/v1/me", { headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "grantry/1.0 (MCP connector)" } })).json();
+      if (u.name) userLogin = u.name;
+    } else if (providerKey === "x") {
+      const u: any = await (await fetch("https://api.x.com/2/users/me", { headers: { Authorization: `Bearer ${accessToken}` } })).json();
+      if (u?.data?.username) userLogin = u.data.username;
     }
   } catch { /* non-fatal */ }
 

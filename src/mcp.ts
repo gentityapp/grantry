@@ -19,6 +19,7 @@ import { callGoogleAdsTool } from "./connectors/google_ads.js";
 import { callYahooAdsTool } from "./connectors/yahoo_ads.js";
 import { callHubSpotTool } from "./connectors/hubspot.js";
 import { callGmailTool } from "./connectors/gmail.js";
+import { callYouTubeTool } from "./connectors/youtube.js";
 import { callAttioTool } from "./connectors/attio.js";
 import { callClayTool } from "./connectors/clay.js";
 import { callHeyReachTool } from "./connectors/heyreach.js";
@@ -26,6 +27,8 @@ import { callChatworkTool } from "./connectors/chatwork.js";
 import { callRailwayTool } from "./connectors/railway.js";
 import { callResendTool } from "./connectors/resend.js";
 import { callSlackTool } from "./connectors/slack.js";
+import { callRedditTool } from "./connectors/reddit.js";
+import { callXTool } from "./connectors/x.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 
 export const mcpApp = new Hono();
@@ -621,6 +624,91 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       mime_type: { type: "string", description: "Content-Type, defaults to text/plain; charset=UTF-8." },
     };
   }
+  if (toolName === "youtube/list_channels") {
+    return {
+      id: { type: "string", description: "Channel id(s) to fetch, comma-separated. Omit to fetch the authenticated user's channel." },
+      for_username: { type: "string", description: "Optional legacy YouTube username to look up instead of id." },
+      part: { type: "string", description: "Comma-separated channel parts. Defaults to snippet,contentDetails,statistics." },
+      max_results: { type: "number", minimum: 1, maximum: 50, description: "Items to return, max 50." },
+      page_token: { type: "string", description: "Optional pagination token." },
+    };
+  }
+  if (toolName === "youtube/list_videos") {
+    return {
+      id: { type: "string", description: "Video id(s) to fetch, comma-separated." },
+      part: { type: "string", description: "Comma-separated video parts. Defaults to snippet,contentDetails,statistics,status." },
+      max_results: { type: "number", minimum: 1, maximum: 50, description: "Items to return, max 50." },
+    };
+  }
+  if (toolName === "youtube/search") {
+    return {
+      q: { type: "string", description: "Search query string." },
+      type: { type: "string", enum: ["video", "channel", "playlist"], description: "Restrict results to one resource type." },
+      channel_id: { type: "string", description: "Restrict the search to one channel id." },
+      order: { type: "string", enum: ["date", "rating", "relevance", "title", "videoCount", "viewCount"], description: "Result ordering. Defaults to relevance." },
+      mine: { type: "boolean", description: "When true, search only the authenticated user's videos (sets forMine)." },
+      max_results: { type: "number", minimum: 1, maximum: 50, description: "Items to return, max 50." },
+      page_token: { type: "string", description: "Optional pagination token." },
+    };
+  }
+  if (toolName === "youtube/list_playlists") {
+    return {
+      id: { type: "string", description: "Playlist id(s) to fetch, comma-separated." },
+      channel_id: { type: "string", description: "List playlists for this channel id." },
+      part: { type: "string", description: "Comma-separated playlist parts. Defaults to snippet,contentDetails,status." },
+      max_results: { type: "number", minimum: 1, maximum: 50, description: "Items to return, max 50." },
+      page_token: { type: "string", description: "Optional pagination token." },
+    };
+  }
+  if (toolName === "youtube/list_playlist_items") {
+    return {
+      playlist_id: { type: "string", description: "Playlist id to list items for." },
+      part: { type: "string", description: "Comma-separated parts. Defaults to snippet,contentDetails,status." },
+      max_results: { type: "number", minimum: 1, maximum: 50, description: "Items to return, max 50." },
+      page_token: { type: "string", description: "Optional pagination token." },
+    };
+  }
+  if (toolName === "youtube/update_video") {
+    return {
+      id: { type: "string", description: "Video id to update." },
+      snippet: { type: "object", description: "Video snippet fields to set, e.g. title, description, tags, categoryId. categoryId is required when a snippet is sent." },
+      status: { type: "object", description: "Video status fields to set, e.g. privacyStatus, embeddable, license." },
+    };
+  }
+  if (toolName === "youtube/create_playlist") {
+    return {
+      title: { type: "string", description: "Playlist title." },
+      description: { type: "string", description: "Optional playlist description." },
+      tags: { type: "array", items: { type: "string" }, description: "Optional playlist tags." },
+      privacy_status: { type: "string", enum: ["private", "public", "unlisted"], description: "Playlist visibility. Defaults to private." },
+    };
+  }
+  if (toolName === "youtube/update_playlist") {
+    return {
+      id: { type: "string", description: "Playlist id to update." },
+      title: { type: "string", description: "Playlist title. Required because the YouTube API replaces the snippet on update." },
+      description: { type: "string", description: "Optional playlist description." },
+      tags: { type: "array", items: { type: "string" }, description: "Optional playlist tags." },
+      privacy_status: { type: "string", enum: ["private", "public", "unlisted"], description: "Optional new visibility." },
+    };
+  }
+  if (toolName === "youtube/delete_playlist") {
+    return {
+      id: { type: "string", description: "Playlist id to delete." },
+    };
+  }
+  if (toolName === "youtube/add_playlist_item") {
+    return {
+      playlist_id: { type: "string", description: "Playlist id to add the video to." },
+      video_id: { type: "string", description: "Video id to add." },
+      position: { type: "number", minimum: 0, description: "Optional zero-based position within the playlist." },
+    };
+  }
+  if (toolName === "youtube/delete_playlist_item") {
+    return {
+      id: { type: "string", description: "PlaylistItem id to remove (from list_playlist_items), not the video id." },
+    };
+  }
   if (toolName === "clay/raw_request") {
     return {
       method: { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE"], description: "HTTP method. Defaults to GET." },
@@ -934,6 +1022,108 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       user: { type: "string", description: "User ID, e.g. U0123456789." },
     };
   }
+  if (toolName === "reddit/get_me") {
+    return {};
+  }
+  if (toolName === "reddit/get_subreddit") {
+    return {
+      subreddit: { type: "string", description: "Subreddit name without the r/ prefix, e.g. programming." },
+    };
+  }
+  if (toolName === "reddit/list_posts") {
+    return {
+      subreddit: { type: "string", description: "Subreddit name without the r/ prefix." },
+      sort: { type: "string", enum: ["hot", "new", "top", "rising", "controversial"], description: "Listing sort. Defaults to hot." },
+      time: { type: "string", enum: ["hour", "day", "week", "month", "year", "all"], description: "Time window for top/controversial sort." },
+      limit: { type: "number", minimum: 1, maximum: 100, description: "Number of posts to return, max 100." },
+      after: { type: "string", description: "Pagination fullname cursor (after) from a previous listing." },
+    };
+  }
+  if (toolName === "reddit/search") {
+    return {
+      query: { type: "string", description: "Search query." },
+      subreddit: { type: "string", description: "Optional subreddit to restrict the search to (without r/ prefix)." },
+      sort: { type: "string", enum: ["relevance", "hot", "top", "new", "comments"], description: "Search result sort." },
+      time: { type: "string", enum: ["hour", "day", "week", "month", "year", "all"], description: "Time window for the search." },
+      limit: { type: "number", minimum: 1, maximum: 100, description: "Number of results to return, max 100." },
+      after: { type: "string", description: "Pagination fullname cursor (after) from a previous search." },
+    };
+  }
+  if (toolName === "reddit/get_comments") {
+    return {
+      article: { type: "string", description: "Post ID (base36, with or without the t3_ prefix)." },
+      subreddit: { type: "string", description: "Optional subreddit name (without r/ prefix)." },
+      sort: { type: "string", enum: ["confidence", "top", "new", "controversial", "old", "qa"], description: "Comment sort." },
+      limit: { type: "number", minimum: 1, maximum: 500, description: "Maximum number of comments to return." },
+    };
+  }
+  if (toolName === "reddit/submit_post") {
+    return {
+      subreddit: { type: "string", description: "Target subreddit name without the r/ prefix." },
+      title: { type: "string", description: "Post title." },
+      kind: { type: "string", enum: ["self", "link"], description: "Post kind. Defaults to self (text) unless a url is given." },
+      text: { type: "string", description: "Body text for a self post (markdown)." },
+      url: { type: "string", description: "URL for a link post." },
+      flair_id: { type: "string", description: "Optional flair template id." },
+    };
+  }
+  if (toolName === "reddit/submit_comment") {
+    return {
+      parent: { type: "string", description: "Fullname of the thing to reply to, e.g. t3_<postid> or t1_<commentid>." },
+      text: { type: "string", description: "Comment body (markdown)." },
+    };
+  }
+  if (toolName === "reddit/vote") {
+    return {
+      id: { type: "string", description: "Fullname of the post or comment to vote on, e.g. t3_<id> or t1_<id>." },
+      dir: { type: "string", enum: ["1", "0", "-1"], description: "Vote direction: 1 upvote, 0 clear, -1 downvote." },
+    };
+  }
+  if (toolName === "x/get_me") {
+    return {
+      user_fields: { type: "string", description: "Optional comma-separated user.fields to expand." },
+    };
+  }
+  if (toolName === "x/get_user") {
+    return {
+      username: { type: "string", description: "X username/handle without the @." },
+      user_fields: { type: "string", description: "Optional comma-separated user.fields to expand." },
+    };
+  }
+  if (toolName === "x/get_user_tweets") {
+    return {
+      user_id: { type: "string", description: "Numeric X user ID (use x/get_user to resolve a handle)." },
+      max_results: { type: "number", minimum: 5, maximum: 100, description: "Tweets per page, 5-100." },
+      pagination_token: { type: "string", description: "next_token from a previous page for pagination." },
+      tweet_fields: { type: "string", description: "Optional comma-separated tweet.fields to expand." },
+    };
+  }
+  if (toolName === "x/search_recent") {
+    return {
+      query: { type: "string", description: "Search query using X search operators." },
+      max_results: { type: "number", minimum: 10, maximum: 100, description: "Tweets per page, 10-100." },
+      next_token: { type: "string", description: "next_token from a previous page for pagination." },
+      tweet_fields: { type: "string", description: "Optional comma-separated tweet.fields to expand." },
+    };
+  }
+  if (toolName === "x/get_tweet") {
+    return {
+      id: { type: "string", description: "Tweet ID." },
+      tweet_fields: { type: "string", description: "Optional comma-separated tweet.fields to expand." },
+    };
+  }
+  if (toolName === "x/post_tweet") {
+    return {
+      text: { type: "string", description: "Tweet text, max 280 characters." },
+      reply_to: { type: "string", description: "Optional tweet ID to reply to." },
+      quote_tweet_id: { type: "string", description: "Optional tweet ID to quote." },
+    };
+  }
+  if (toolName === "x/delete_tweet") {
+    return {
+      id: { type: "string", description: "ID of a tweet owned by the authorized account to delete." },
+    };
+  }
   return {};
 }
 
@@ -981,6 +1171,14 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "attio/get_meeting") return ["meeting_id"];
   if (toolName === "gmail/get_message") return ["message_id"];
   if (toolName === "gmail/send_message") return ["to", "subject", "body"];
+  if (toolName === "youtube/list_videos") return ["id"];
+  if (toolName === "youtube/list_playlist_items") return ["playlist_id"];
+  if (toolName === "youtube/update_video") return ["id"];
+  if (toolName === "youtube/create_playlist") return ["title"];
+  if (toolName === "youtube/update_playlist") return ["id", "title"];
+  if (toolName === "youtube/delete_playlist") return ["id"];
+  if (toolName === "youtube/add_playlist_item") return ["playlist_id", "video_id"];
+  if (toolName === "youtube/delete_playlist_item") return ["id"];
   if (toolName === "clay/raw_request") return ["path"];
   if (toolName === "clay/lookup_row") return ["table_id"];
   if (toolName === "clay/create_row") return ["table_id", "data"];
@@ -1014,6 +1212,19 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "slack/post_message") return ["channel"];
   if (toolName === "slack/update_message") return ["channel", "ts"];
   if (toolName === "slack/get_user") return ["user"];
+  if (toolName === "reddit/get_subreddit") return ["subreddit"];
+  if (toolName === "reddit/list_posts") return ["subreddit"];
+  if (toolName === "reddit/search") return ["query"];
+  if (toolName === "reddit/get_comments") return ["article"];
+  if (toolName === "reddit/submit_post") return ["subreddit", "title"];
+  if (toolName === "reddit/submit_comment") return ["parent", "text"];
+  if (toolName === "reddit/vote") return ["id"];
+  if (toolName === "x/get_user") return ["username"];
+  if (toolName === "x/get_user_tweets") return ["user_id"];
+  if (toolName === "x/search_recent") return ["query"];
+  if (toolName === "x/get_tweet") return ["id"];
+  if (toolName === "x/post_tweet") return ["text"];
+  if (toolName === "x/delete_tweet") return ["id"];
   return [];
 }
 
@@ -1264,6 +1475,7 @@ async function refreshOAuthToken(provider: string, refreshToken: string) {
     google_ads: ["GOOGLE_CLIENT_ID"],
     google_drive: ["GOOGLE_CLIENT_ID"],
     gmail: ["GOOGLE_CLIENT_ID"],
+    youtube: ["GOOGLE_CLIENT_ID"],
     yahoo_ads: ["YAHOO_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
@@ -1273,6 +1485,7 @@ async function refreshOAuthToken(provider: string, refreshToken: string) {
     google_ads: ["GOOGLE_CLIENT_SECRET"],
     google_drive: ["GOOGLE_CLIENT_SECRET"],
     gmail: ["GOOGLE_CLIENT_SECRET"],
+    youtube: ["GOOGLE_CLIENT_SECRET"],
     yahoo_ads: ["YAHOO_CLIENT_SECRET"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
@@ -1283,18 +1496,35 @@ async function refreshOAuthToken(provider: string, refreshToken: string) {
     throw new Error(`${provider} OAuth refresh credentials missing: set ${envPrefix}_CLIENT_ID and ${envPrefix}_CLIENT_SECRET`);
   }
 
+  // Reddit and X authenticate the confidential client with HTTP Basic auth at
+  // the token endpoint rather than client credentials in the body.
+  const usesBasicAuth = provider === "reddit" || provider === "x";
+  const refreshBody = new URLSearchParams({
+    client_id: clientId,
+    refresh_token: refreshToken,
+    grant_type: "refresh_token",
+  });
+  if (!usesBasicAuth) {
+    refreshBody.set("client_secret", clientSecret);
+  }
+  const refreshHeaders: Record<string, string> = {
+    "Content-Type": "application/x-www-form-urlencoded",
+    Accept: "application/json",
+  };
+  if (usesBasicAuth) {
+    refreshHeaders.Authorization = `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString("base64")}`;
+  }
+  if (provider === "reddit") {
+    refreshHeaders["User-Agent"] = "grantry/1.0 (MCP connector)";
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TOKEN_REFRESH_TIMEOUT_MS);
   try {
     const resp = await fetch(providerDef.oauthTokenUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
-      body: new URLSearchParams({
-        client_id: clientId,
-        client_secret: clientSecret,
-        refresh_token: refreshToken,
-        grant_type: "refresh_token",
-      }),
+      headers: refreshHeaders,
+      body: refreshBody,
       signal: controller.signal,
     });
     const text = await resp.text();
@@ -1548,6 +1778,8 @@ mcpApp.post("/", async (c) => {
         result = await callHubSpotTool(toolName, args, token);
       } else if (decision.provider === "gmail") {
         result = await callGmailTool(toolName, args, token);
+      } else if (decision.provider === "youtube") {
+        result = await callYouTubeTool(toolName, args, token);
       } else if (decision.provider === "attio") {
         result = await callAttioTool(toolName, args, token);
       } else if (decision.provider === "clay") {
@@ -1562,6 +1794,10 @@ mcpApp.post("/", async (c) => {
         result = await callResendTool(toolName, args, token);
       } else if (decision.provider === "slack") {
         result = await callSlackTool(toolName, args, token);
+      } else if (decision.provider === "reddit") {
+        result = await callRedditTool(toolName, args, token);
+      } else if (decision.provider === "x") {
+        result = await callXTool(toolName, args, token);
       } else {
         throw new Error(`no dispatcher for provider: ${decision.provider}`);
       }

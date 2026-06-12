@@ -108,7 +108,7 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
-    if (provider.startsWith("google_") || provider === "gmail") {
+    if (provider.startsWith("google_") || provider === "gmail" || provider === "youtube") {
       const tokenInfo = await fetchWithTimeout(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(token)}`);
       const info: any = await readJson(tokenInfo);
       if (!tokenInfo.ok) {
@@ -416,6 +416,49 @@ export async function inspectCredential(provider: string, authType: string, toke
           url: body.url,
         },
         notes: ["Slack token scopes are configured in the app's OAuth & Permissions page; the granted scopes are reported in the x-oauth-scopes response header."],
+        checkedAt,
+      };
+    }
+
+    if (provider === "reddit") {
+      const resp = await fetchWithTimeout("https://oauth.reddit.com/api/v1/me", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+          "User-Agent": "grantry/1.0 (MCP connector)",
+        },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) {
+        return { provider, authType, status: "error", checkedAt, error: `Reddit token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: { name: body.name, id: body.id, total_karma: body.total_karma },
+        notes: ["Reddit access tokens expire after one hour; grantry refreshes them with the stored refresh token."],
+        checkedAt,
+      };
+    }
+
+    if (provider === "x") {
+      const resp = await fetchWithTimeout("https://api.x.com/2/users/me", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) {
+        return { provider, authType, status: "error", checkedAt, error: `X token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: { id: body?.data?.id, username: body?.data?.username, name: body?.data?.name },
+        notes: ["X access tokens are short-lived; grantry refreshes them with the stored refresh token (requires the offline.access scope)."],
         checkedAt,
       };
     }
