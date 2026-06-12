@@ -161,7 +161,7 @@ export async function inspectCredential(provider: string, authType: string, toke
         status: "ok",
         scopes: ["yahooads"],
         notes: [
-          "LINE Yahoo Ads access tokens expire after one hour; gentity-auth refreshes them with the stored refresh token.",
+          "LINE Yahoo Ads access tokens expire after one hour; grantry-auth refreshes them with the stored refresh token.",
           "Use yahoo_ads/list_base_accounts to verify which base accounts this Business ID can access.",
         ],
         checkedAt,

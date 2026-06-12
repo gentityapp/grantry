@@ -81,7 +81,7 @@ model Verification {
 
 // A tenant is a business/domain boundary owned by one user. `slug` is the
 // immutable wire key — it is what agents send as `scope` in tools/call and
-// in the X-Gentity-Scope header, so it must never change after creation.
+// in the X-Grantry-Scope header, so it must never change after creation.
 // `displayName` is the human-facing label and can be renamed freely.
 model Tenant {
   id          String   @id @default(cuid())

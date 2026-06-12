@@ -136,14 +136,14 @@ function mcpConfigCard(origin: string, agentName: string, token: string, exactTo
 }
 
 function mcpConfigBlock(origin: string, agentName: string, token: string, exactToken: boolean, scope?: string): string {
-  const serverName = `gentity-${scope || agentName}`.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase();
+  const serverName = `grantry-${scope || agentName}`.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase();
   const codexToml = `[mcp_servers.${serverName}]
 type = "streamable-http"
 url = "${origin}/mcp"
 
 [mcp_servers.${serverName}.http_headers]
 Authorization = "Bearer ${token}"
-${scope ? `X-Gentity-Scope = "${scope}"` : ""}`;
+${scope ? `X-Grantry-Scope = "${scope}"` : ""}`;
   const claudeConfig = {
     mcpServers: {
       [serverName]: {
@@ -151,7 +151,7 @@ ${scope ? `X-Gentity-Scope = "${scope}"` : ""}`;
         url: `${origin}/mcp`,
         headers: {
           Authorization: `Bearer ${token}`,
-          ...(scope ? { "X-Gentity-Scope": scope } : {}),
+          ...(scope ? { "X-Grantry-Scope": scope } : {}),
         },
       },
     },
@@ -160,7 +160,7 @@ ${scope ? `X-Gentity-Scope = "${scope}"` : ""}`;
   const claudeCli = `claude mcp add --transport http ${serverName} \\
   ${origin}/mcp \\
   --header "Authorization: Bearer ${token}"${scope ? ` \\
-  --header "X-Gentity-Scope: ${scope}"` : ""}`;
+  --header "X-Grantry-Scope: ${scope}"` : ""}`;
   const claudeDesktopConfig = {
     mcpServers: {
       [serverName]: {
@@ -171,7 +171,7 @@ ${scope ? `X-Gentity-Scope = "${scope}"` : ""}`;
           `${origin}/mcp`,
           "--header",
           `Authorization: Bearer ${token}`,
-          ...(scope ? ["--header", `X-Gentity-Scope: ${scope}`] : []),
+          ...(scope ? ["--header", `X-Grantry-Scope: ${scope}`] : []),
         ],
       },
     },
@@ -183,7 +183,7 @@ ${scope ? `X-Gentity-Scope = "${scope}"` : ""}`;
         <h2>MCP config</h2>
         <p style="font-size:13px;color:#8a8d93;margin-top:0;">
           ${scope
-            ? `Use one MCP server entry per tenant. Tool names stay stable; the token and <code>X-Gentity-Scope</code> lock this entry to the selected tenant.`
+            ? `Use one MCP server entry per tenant. Tool names stay stable; the token and <code>X-Grantry-Scope</code> lock this entry to the selected tenant.`
             : `This entry is <b>not</b> scope-locked: the token decides what it can reach, and each call picks its tenant via the <code>scope</code> argument.`}
         </p>
         <div class="row spread" style="margin:16px 0 8px;">
@@ -454,7 +454,7 @@ function publicOrigin(c: any): string {
 }
 
 const OAUTH_LEGACY_CLIENT_ID_ALIASES: Record<string, string[]> = {
-  github: ["GH_CLIENT_ID", "GENTITY_GITHUB_CLIENT_ID"],
+  github: ["GH_CLIENT_ID", "GRANTRY_GITHUB_CLIENT_ID"],
   google_gsc: ["GOOGLE_CLIENT_ID"],
   google_analytics: ["GOOGLE_CLIENT_ID"],
   google_ads: ["GOOGLE_CLIENT_ID"],
@@ -464,7 +464,7 @@ const OAUTH_LEGACY_CLIENT_ID_ALIASES: Record<string, string[]> = {
 };
 
 const OAUTH_LEGACY_CLIENT_SECRET_ALIASES: Record<string, string[]> = {
-  github: ["GH_CLIENT_SECRET", "GENTITY_GITHUB_CLIENT_SECRET"],
+  github: ["GH_CLIENT_SECRET", "GRANTRY_GITHUB_CLIENT_SECRET"],
   google_gsc: ["GOOGLE_CLIENT_SECRET"],
   google_analytics: ["GOOGLE_CLIENT_SECRET"],
   google_ads: ["GOOGLE_CLIENT_SECRET"],
@@ -1414,7 +1414,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         <h2>Tenant</h2>
         <div class="card">
           <p class="field-hint" style="margin-top:0;">
-            The slug <code>${scope}</code> is the wire key agents send as <code>scope</code> / <code>X-Gentity-Scope</code> — it cannot be changed.
+            The slug <code>${scope}</code> is the wire key agents send as <code>scope</code> / <code>X-Grantry-Scope</code> — it cannot be changed.
             The display name is only for dashboards and can be renamed freely.
           </p>
           <label for="tenant_display_name">Display name</label>
@@ -2616,8 +2616,8 @@ dashboardApp.post("/tenants/new", async (c) => {
   // Per-user role naming: each user gets their own role row for a given
   // tenant scope. The role NAME is just an internal label; the
   // `allowedScopes` field is what actually controls access. So two users
-  // can both have a tenant called `gentity-dev` without colliding —
-  // each gets role `gentity-dev-dev-${userIdShort}`.
+  // can both have a tenant called `grantry-dev` without colliding —
+  // each gets role `grantry-dev-dev-${userIdShort}`.
   const userIdShort = user.id.slice(0, 8);
   const roleName = `${tenant}-dev-${userIdShort}`;
 
@@ -3137,7 +3137,7 @@ dashboardApp.post("/agents/new", async (c) => {
       ${mcpConfigCard(publicOrigin(c), agentRow.name, token, true)}
       <div class="card">
         <h2>Cross-tenant calls</h2>
-        <p class="field-hint" style="margin-top:0;">This config has <b>no</b> <code>X-Gentity-Scope</code> lock. Pass the target tenant per call:</p>
+        <p class="field-hint" style="margin-top:0;">This config has <b>no</b> <code>X-Grantry-Scope</code> lock. Pass the target tenant per call:</p>
         <pre>curl -X POST ${publicOrigin(c)}/mcp \\
   -H "Authorization: Bearer ${token}" \\
   -H "Content-Type: application/json" \\
@@ -3377,9 +3377,9 @@ oauthApp.get("/:provider/start", async (c) => {
   // Per-provider env var names: GITHUB_CLIENT_ID / GOOGLE_GSC_CLIENT_ID / HUBSPOT_CLIENT_ID
   // (Simple uppercase-with-underscores convention.)
   const envPrefix = providerKey.toUpperCase();
-  // Backwards compat: also accept GH_CLIENT_ID (legacy) and GENTITY_GITHUB_CLIENT_ID
+  // Backwards compat: also accept GH_CLIENT_ID (legacy) and GRANTRY_GITHUB_CLIENT_ID
   const legacyAliases: Record<string, string[]> = {
-    github: ["GH_CLIENT_ID", "GENTITY_GITHUB_CLIENT_ID"],
+    github: ["GH_CLIENT_ID", "GRANTRY_GITHUB_CLIENT_ID"],
     google_gsc: ["GOOGLE_CLIENT_ID"],
     google_analytics: ["GOOGLE_CLIENT_ID"],
     google_ads: ["GOOGLE_CLIENT_ID"],
@@ -3496,7 +3496,7 @@ oauthApp.get("/:provider/callback", async (c) => {
   // Exchange code for token
   const envPrefix = providerKey.toUpperCase();
   const legacyAliases: Record<string, string[]> = {
-    github: ["GH_CLIENT_ID", "GENTITY_GITHUB_CLIENT_ID"],
+    github: ["GH_CLIENT_ID", "GRANTRY_GITHUB_CLIENT_ID"],
     google_gsc: ["GOOGLE_CLIENT_ID"],
     google_analytics: ["GOOGLE_CLIENT_ID"],
     google_ads: ["GOOGLE_CLIENT_ID"],
@@ -3505,7 +3505,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     yahoo_ads: ["YAHOO_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
-    github: ["GH_CLIENT_SECRET", "GENTITY_GITHUB_CLIENT_SECRET"],
+    github: ["GH_CLIENT_SECRET", "GRANTRY_GITHUB_CLIENT_SECRET"],
     google_gsc: ["GOOGLE_CLIENT_SECRET"],
     google_analytics: ["GOOGLE_CLIENT_SECRET"],
     google_ads: ["GOOGLE_CLIENT_SECRET"],

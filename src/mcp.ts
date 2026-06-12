@@ -36,8 +36,8 @@ const MCP_PROTOCOL_VERSION = "2024-11-05";
 const SKILL_URL = new URL("../docs/skill.md", import.meta.url);
 
 const SYSTEM_TOOLS = [
-  "gentity/get_skill",
-  "gentity/get_providers",
+  "grantry/get_skill",
+  "grantry/get_providers",
 ] as const;
 
 type McpSession = {
@@ -57,7 +57,10 @@ function cleanupExpiredMcpSessions() {
 }
 
 function configuredMcpScope(c: any): string {
-  return String(c.req.header("x-gentity-scope") ?? c.req.header("x-gentity-tenant") ?? "").trim();
+  return String(
+    c.req.header("x-grantry-scope") ?? c.req.header("x-grantry-tenant") ??
+    c.req.header("x-gentity-scope") ?? c.req.header("x-gentity-tenant") ?? ""
+  ).trim();
 }
 
 function publicToolName(canonicalName: string): string {
@@ -67,6 +70,11 @@ function publicToolName(canonicalName: string): string {
 function canonicalToolName(name: unknown): string {
   const raw = String(name ?? "");
   if (raw === "ping") return raw;
+  // Legacy aliases: system tools were renamed gentity/* -> grantry/* (2026-06).
+  // Keep accepting the old names (canonical "/" form and public "_" form) so
+  // existing agent configs never break.
+  if (raw === "gentity/get_skill" || raw === "gentity_get_skill") return "grantry/get_skill";
+  if (raw === "gentity/get_providers" || raw === "gentity_get_providers") return "grantry/get_providers";
   for (const tool of SYSTEM_TOOLS) {
     if (raw === tool || raw === publicToolName(tool)) return tool;
   }
@@ -79,12 +87,12 @@ function canonicalToolName(name: unknown): string {
 }
 
 function toolSpecificInputProperties(toolName: string): Record<string, any> {
-  if (toolName === "gentity/get_skill") {
+  if (toolName === "grantry/get_skill") {
     return {
       format: { type: "string", enum: ["markdown"], description: "Output format. Defaults to markdown." },
     };
   }
-  if (toolName === "gentity/get_providers") {
+  if (toolName === "grantry/get_providers") {
     return {
       include_tools: { type: "boolean", description: "When true, include each provider's tool names. Defaults to true." },
     };
@@ -978,7 +986,7 @@ function getProviderMetadata(includeTools = true) {
 }
 
 async function callSystemTool(toolName: string, args: Record<string, unknown>) {
-  if (toolName === "gentity/get_skill") {
+  if (toolName === "grantry/get_skill") {
     const skill = await getSkillContent();
     return {
       content: [{ type: "text", text: skill.markdown }],
@@ -986,7 +994,7 @@ async function callSystemTool(toolName: string, args: Record<string, unknown>) {
       isError: false,
     };
   }
-  if (toolName === "gentity/get_providers") {
+  if (toolName === "grantry/get_providers") {
     const includeTools = args.include_tools !== false && args.includeTools !== false;
     const providers = getProviderMetadata(includeTools);
     return {
@@ -1057,20 +1065,20 @@ function buildToolList(connections: Awaited<ReturnType<typeof connectionsForAgen
   const tools: any[] = [
     { name: "ping", description: "Liveness check", inputSchema: { type: "object", properties: {} } },
     {
-      name: publicToolName("gentity/get_skill"),
-      description: "gentity-auth: latest MCP skill markdown and usage instructions",
+      name: publicToolName("grantry/get_skill"),
+      description: "grantry-auth: latest MCP skill markdown and usage instructions",
       inputSchema: {
         type: "object",
-        properties: toolSpecificInputProperties("gentity/get_skill"),
+        properties: toolSpecificInputProperties("grantry/get_skill"),
         required: [],
       },
     },
     {
-      name: publicToolName("gentity/get_providers"),
-      description: "gentity-auth: implemented providers, auth types, and tool names",
+      name: publicToolName("grantry/get_providers"),
+      description: "grantry-auth: implemented providers, auth types, and tool names",
       inputSchema: {
         type: "object",
-        properties: toolSpecificInputProperties("gentity/get_providers"),
+        properties: toolSpecificInputProperties("grantry/get_providers"),
         required: [],
       },
     },
@@ -1169,7 +1177,7 @@ async function refreshOAuthToken(provider: string, refreshToken: string) {
 
   const envPrefix = provider.toUpperCase();
   const legacyAliases: Record<string, string[]> = {
-    github: ["GH_CLIENT_ID", "GENTITY_GITHUB_CLIENT_ID"],
+    github: ["GH_CLIENT_ID", "GRANTRY_GITHUB_CLIENT_ID"],
     google_gsc: ["GOOGLE_CLIENT_ID"],
     google_analytics: ["GOOGLE_CLIENT_ID"],
     google_ads: ["GOOGLE_CLIENT_ID"],
@@ -1178,7 +1186,7 @@ async function refreshOAuthToken(provider: string, refreshToken: string) {
     yahoo_ads: ["YAHOO_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
-    github: ["GH_CLIENT_SECRET", "GENTITY_GITHUB_CLIENT_SECRET"],
+    github: ["GH_CLIENT_SECRET", "GRANTRY_GITHUB_CLIENT_SECRET"],
     google_gsc: ["GOOGLE_CLIENT_SECRET"],
     google_analytics: ["GOOGLE_CLIENT_SECRET"],
     google_ads: ["GOOGLE_CLIENT_SECRET"],
@@ -1290,7 +1298,7 @@ mcpApp.post("/", async (c) => {
           tools: {},
         },
         serverInfo: {
-          name: "gentity-auth",
+          name: "grantry-auth",
           version: "0.1.0",
         },
       },

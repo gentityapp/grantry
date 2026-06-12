@@ -1,23 +1,23 @@
 ---
-name: gentity-auth
+name: grantry-auth
 description: |
-  Use gentity-auth when the user wants an AI agent to call external SaaS APIs
+  Use grantry-auth when the user wants an AI agent to call external SaaS APIs
   (GitHub, Notion, Google Drive/GSC/Ads, HubSpot, Attio, Clay, HeyReach,
   Chatwork, Railway, Resend) under OAuth/PAT authentication
-  with tenant isolation. gentity-auth (deployed as "agent-oauth") is a
+  with tenant isolation. grantry-auth (deployed as "agent-oauth") is a
   Hono/TypeScript service that holds encrypted credentials and exposes them as
   MCP tools, so the agent never sees raw tokens. Triggers: mentions of
-  "gentity-auth" / "agent-oauth", wiring an agent to a SaaS via OAuth or PAT,
+  "grantry-auth" / "agent-oauth", wiring an agent to a SaaS via OAuth or PAT,
   "ツール権限管理", "テナント分離 / scope ベースの認可", or any request to give
   an AI agent controlled API access. Do NOT trigger for: general OAuth-flow
   questions, building a brand-new OAuth app from scratch, or unrelated API docs.
 ---
 
-# gentity-auth (agent-oauth)
+# grantry-auth (agent-oauth)
 
 ## Quick facts
 - **Service**: Hono/TypeScript app at `https://agent-oauth-production.up.railway.app`
-- **Source**: `github.com/gentityapp/gentity-auth`
+- **Source**: `github.com/gentityapp/grantry-auth`
 - **MCP endpoint**: `POST https://agent-oauth-production.up.railway.app/mcp`
   (JSON-RPC 2.0: `tools/list`, `connections/list`, `tools/call`; `tools/list`
   needs no auth, `connections/list` and `tools/call` require the agent token)
@@ -26,7 +26,7 @@ description: |
   **no `/admin` HTTP API** and **no `X-Admin-Token`** — tokens are minted through
   the UI only.
 - **Tenant model**: each `Connection` has a `scope` (the tenant name, e.g.
-  `gentity-dev`). A `Role` has `allowedTools` + `allowedScopes`. Tool calls pass
+  `grantry-dev`). A `Role` has `allowedTools` + `allowedScopes`. Tool calls pass
   `scope` in `arguments` to pick the credential.
 - Format: `<provider>/<tool>` (e.g. `github/git_push_repo`).
 
@@ -62,7 +62,7 @@ Authorization: Bearer gn_agt_<token>
 ```
 ```json
 { "jsonrpc": "2.0", "id": 1, "result": { "connections": [
-  { "provider": "google_gsc", "scope": "gentity-dev", "label": "GSC – gentity",
+  { "provider": "google_gsc", "scope": "grantry-dev", "label": "GSC – grantry",
     "tools": ["google_gsc/list_sites", "google_gsc/search_analytics"] }
 ] } }
 ```
@@ -71,7 +71,7 @@ smoke test — pass the returned `scope` verbatim. Read-only calls (`*/list_*`,
 `*/get_*`, `*/search*`, `query_db`) are safe, so do this **without asking for
 confirmation**:
 ```json
-{ "name": "google_gsc/list_sites", "arguments": { "scope": "gentity-dev" } }
+{ "name": "google_gsc/list_sites", "arguments": { "scope": "grantry-dev" } }
 ```
 That single round-trip *is* the connectivity check — report the result.
 
@@ -98,7 +98,7 @@ Authorization: Bearer gn_agt_<token>
   "jsonrpc": "2.0", "id": 1, "method": "tools/call",
   "params": {
     "name": "github/list_repos",
-    "arguments": { "scope": "gentity-dev" }
+    "arguments": { "scope": "grantry-dev" }
   }
 }
 ```
@@ -137,7 +137,7 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 
 ## Providers & tools (107)
 - `ping` — liveness (returns `pong from <agent>`)
-- **gentity** (system metadata, no SaaS credential required): `get_skill`,
+- **grantry** (system metadata, no SaaS credential required): `get_skill`,
   `get_providers`
 - **github** (PAT or OAuth; scopes `repo`, `read:user`):
   `list_repos`, `get_repo`, `get_file_contents`, `list_issues`, `create_issue`, `git_push_repo`, `create_repo`
@@ -178,7 +178,7 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
   empty and non-empty repos.
 - `create_repo`: `name`, `org?` (omit = personal account), `description?`, `private?`
 
-### Gentity system tool arguments
+### Grantry system tool arguments
 - `get_skill` (read): optional `format` (`markdown`). Returns the latest
   `docs/skill.md` content plus metadata (`updated_at`, `commit_sha`, version).
 - `get_providers` (read): optional `include_tools` boolean. Returns implemented
@@ -287,7 +287,7 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 - `get_domain` (read): `domain_id`.
 
 ## Output contract
-When asked to act via gentity-auth:
+When asked to act via grantry-auth:
 1. If you don't already know the scope, call `connections/list` first to resolve
    it from the token — don't ask the user for a scope you can discover yourself.
 2. State which tool(s) and which **scope** you'll use.
@@ -327,11 +327,11 @@ When asked to act via gentity-auth:
 
 ## Examples
 
-**1 — list repos (read) for tenant `gentity-dev`:**
+**1 — list repos (read) for tenant `grantry-dev`:**
 ```json
 POST /mcp   Authorization: Bearer gn_agt_<token>
 { "jsonrpc":"2.0","id":1,"method":"tools/call",
-  "params":{ "name":"github/list_repos","arguments":{ "scope":"gentity-dev" } } }
+  "params":{ "name":"github/list_repos","arguments":{ "scope":"grantry-dev" } } }
 ```
 
 **2 — push files (write, confirm first):**
@@ -339,8 +339,8 @@ POST /mcp   Authorization: Bearer gn_agt_<token>
 POST /mcp   Authorization: Bearer gn_agt_<token>
 { "jsonrpc":"2.0","id":1,"method":"tools/call",
   "params":{ "name":"github/git_push_repo","arguments":{
-    "scope":"gentity-dev",
-    "owner":"gentityapp","repo":"gentity-auth","branch":"main",
+    "scope":"grantry-dev",
+    "owner":"gentityapp","repo":"grantry-auth","branch":"main",
     "commit_message":"docs: update skill",
     "files":{ "SKILL.md":"...", "docs/notes.md":"..." } } } }
 ```
@@ -348,7 +348,7 @@ POST /mcp   Authorization: Bearer gn_agt_<token>
 **3 — create an issue (write):**
 ```json
 { "name":"github/create_issue","arguments":{
-    "scope":"gentity-dev","owner":"gentityapp","repo":"gentity",
+    "scope":"grantry-dev","owner":"gentityapp","repo":"gentity",
     "title":"Bug: …","body":"Steps to reproduce …" } }
 ```
 
@@ -366,6 +366,6 @@ POST /mcp   Authorization: Bearer gn_agt_<token>
 - Connection scope match is **exact**. `scope=""` is its own bucket: it only serves
   calls that send no scope.
 - A role with empty `allowedScopes` permits **any** scope; a role with
-  `allowedScopes=["gentity-dev"]` permits only `scope="gentity-dev"`.
+  `allowedScopes=["grantry-dev"]` permits only `scope="grantry-dev"`.
 - Every call is audited with its `scope` (`/ui/audit`).
 - Token issuance/rotation is UI-only — there is no admin HTTP API.
