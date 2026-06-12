@@ -1,33 +1,39 @@
 ---
-name: grantry-auth
+name: grantry
 description: |
-  Use grantry-auth when the user wants an AI agent to call external SaaS APIs
+  Use grantry when the user wants an AI agent to call external SaaS APIs
   (GitHub, Notion, Google Drive/GSC/Ads, HubSpot, Attio, Clay, HeyReach,
   Chatwork, Railway, Resend) under OAuth/PAT authentication
-  with tenant isolation. grantry-auth (deployed as "agent-oauth") is a
+  with tenant isolation. grantry (formerly "grantry-auth", deployed as "agent-oauth") is a
   Hono/TypeScript service that holds encrypted credentials and exposes them as
   MCP tools, so the agent never sees raw tokens. Triggers: mentions of
-  "grantry-auth" / "agent-oauth", wiring an agent to a SaaS via OAuth or PAT,
+  "grantry" / "grantry-auth" / "agent-oauth", wiring an agent to a SaaS via OAuth or PAT,
   "ツール権限管理", "テナント分離 / scope ベースの認可", or any request to give
   an AI agent controlled API access. Do NOT trigger for: general OAuth-flow
   questions, building a brand-new OAuth app from scratch, or unrelated API docs.
 ---
 
-# grantry-auth (agent-oauth)
+# grantry (formerly grantry-auth / agent-oauth)
 
 ## Quick facts
-- **Service**: Hono/TypeScript app at `https://agent-oauth-production.up.railway.app`
-- **Source**: `github.com/gentityapp/grantry-auth`
-- **MCP endpoint**: `POST https://agent-oauth-production.up.railway.app/mcp`
+- **Service**: Hono/TypeScript app. **Dashboard + OAuth**: `https://app.grantry.ai`.
+  **MCP (agent-facing, stable)**: `https://api.grantry.ai` — split on purpose so the
+  MCP URL never moves. The legacy `https://agent-oauth-production.up.railway.app`
+  still works as an alias (same service, same DB).
+- **Source**: `github.com/gentityapp/grantry`
+- **MCP endpoint**: `POST https://api.grantry.ai/mcp`
   (JSON-RPC 2.0: `tools/list`, `connections/list`, `tools/call`; `tools/list`
   needs no auth, `connections/list` and `tools/call` require the agent token)
 - **Auth**: `Authorization: Bearer gn_agt_<token>` for MCP. The dashboard `/ui/*`
   uses a **better-auth email+password session** (NOT the agent token). There is
   **no `/admin` HTTP API** and **no `X-Admin-Token`** — tokens are minted through
   the UI only.
-- **Tenant model**: each `Connection` has a `scope` (the tenant name, e.g.
-  `grantry-dev`). A `Role` has `allowedTools` + `allowedScopes`. Tool calls pass
-  `scope` in `arguments` to pick the credential.
+- **Tenant model**: a `Tenant` is a real entity with an **immutable `slug`**
+  (the wire key, e.g. `grantry-dev` — this is what callers pass as `scope`) and a
+  freely **renameable `displayName`** (dashboard label only). Each `Connection`
+  belongs to a tenant; `scope` always equals the tenant slug. A `Role` has
+  `allowedTools` + `allowedScopes`. Tool calls pass `scope` in `arguments` to
+  pick the credential. Renaming a tenant's display name never breaks agents.
 - Format: `<provider>/<tool>` (e.g. `github/git_push_repo`).
 
 ## The scope rule (the #1 gotcha)
@@ -62,7 +68,7 @@ Authorization: Bearer gn_agt_<token>
 ```
 ```json
 { "jsonrpc": "2.0", "id": 1, "result": { "connections": [
-  { "provider": "google_gsc", "scope": "grantry-dev", "label": "GSC – grantry",
+  { "provider": "google_gsc", "scope": "grantry-dev", "label": "GSC – gentity",
     "tools": ["google_gsc/list_sites", "google_gsc/search_analytics"] }
 ] } }
 ```
@@ -84,7 +90,7 @@ or ask which tenant — never brute-force scope names against `tools/call`.
 want the full advertised set (with input schemas) instead, use `tools/list` —
 it needs no auth and, with the token, is already scoped to this agent's tools:
 ```bash
-curl -s -X POST https://agent-oauth-production.up.railway.app/mcp \
+curl -s -X POST https://api.grantry.ai/mcp \
   -H "Content-Type: application/json" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 ```
@@ -104,17 +110,20 @@ Authorization: Bearer gn_agt_<token>
 ```
 
 ### 4. Issue / rotate an agent token (UI only)
-1. Log in at `/ui/login` (or register at `/ui/register`).
-2. Tokens are minted by the **tenant wizard** (`/ui/tenants/new`) when you create a
-   tenant + agent, and can be rotated from `/ui/agents` (`POST /ui/agents/:id/rotate`).
+1. Log in at `/login` (register at `/register`; forgot password → `/forgot-password`).
+2. Tokens are minted by the **tenant wizard** (`/tenants/new`) when you create a
+   tenant + agent, by **`/agents/new`** for a cross-tenant agent (check multiple
+   tenants, untick tools — a dedicated 1:1 role is auto-created), and can be
+   rotated from `/agents` (`POST /agents/:id/rotate`).
    The plaintext `gn_agt_…` is shown **once** — copy it then.
 
 ### 5. Add a new connection (credential)
-Go to `/ui/tenants/new` (or `/ui/tenants/:scope/edit` to add to an existing tenant):
+Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing tenant):
 - **GitHub**: paste a **PAT** (`github.com/settings/personal-access-tokens`) *or*
   click Connect → OAuth (`/oauth/github/start`). OAuth needs `GITHUB_CLIENT_ID` /
   secret set as Railway env vars; the OAuth callback is
-  `https://agent-oauth-production.up.railway.app/oauth/github/callback`.
+  `https://app.grantry.ai/oauth/github/callback` (register this URL in the
+  provider's OAuth app settings — the legacy Railway domain may also be listed).
 - **Notion**: paste an internal integration token (`ntn_…` / `secret_…`).
 - **Google (Drive/GSC/Ads)**: OAuth only, via `/oauth/<provider>/start`.
 - **HubSpot**: paste a Private App access token.
@@ -133,9 +142,10 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 1. Ensure a connection exists at that scope (step 5).
 2. The tenant's role must include the tool in **Allowed tools** and the scope in
    **Allowed scopes** (leave Allowed scopes empty for "any scope").
-3. Bind the role to the agent (`POST /ui/agents/:id/bind`).
+3. Bind the role to the agent (`POST /agents/:id/bind`) — or skip role wrangling
+   entirely and create the agent via `/agents/new`.
 
-## Providers & tools (107)
+## Providers & tools (109)
 - `ping` — liveness (returns `pong from <agent>`)
 - **grantry** (system metadata, no SaaS credential required): `get_skill`,
   `get_providers`
@@ -287,7 +297,7 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 - `get_domain` (read): `domain_id`.
 
 ## Output contract
-When asked to act via grantry-auth:
+When asked to act via grantry:
 1. If you don't already know the scope, call `connections/list` first to resolve
    it from the token — don't ask the user for a scope you can discover yourself.
 2. State which tool(s) and which **scope** you'll use.
@@ -308,7 +318,7 @@ When asked to act via grantry-auth:
    get explicit confirmation first —
    these hit the real SaaS via real tokens and are not reversible. **Read-only**
    calls (incl. the connectivity smoke test) need no confirmation — just run them.
-5. Report the result. The `scope` is recorded in the audit log (`/ui/audit`).
+5. Report the result. The `scope` is recorded in the audit log (`/audit`).
 
 ## Failure handling (error codes)
 - `-32700` → JSON parse error (malformed body).
@@ -321,6 +331,8 @@ When asked to act via grantry-auth:
     enabled connection at that exact scope**. Almost always means you passed the
     wrong/empty `scope`. Call `connections/list` to get the exact scope, then resend.
 - `-32011` → connection row vanished mid-call (rare).
+- `-32029` → rate limited (default 120 `tools/call`/min per agent; HTTP 429).
+  Back off and retry after a minute.
 - `-32601` → unknown JSON-RPC method.
 - Tool-level errors come back as `result.isError = true` with `content[].text`
   (e.g. a GitHub 4xx body), not as a JSON-RPC error.
@@ -340,7 +352,7 @@ POST /mcp   Authorization: Bearer gn_agt_<token>
 { "jsonrpc":"2.0","id":1,"method":"tools/call",
   "params":{ "name":"github/git_push_repo","arguments":{
     "scope":"grantry-dev",
-    "owner":"gentityapp","repo":"grantry-auth","branch":"main",
+    "owner":"gentityapp","repo":"grantry","branch":"main",
     "commit_message":"docs: update skill",
     "files":{ "SKILL.md":"...", "docs/notes.md":"..." } } } }
 ```
@@ -352,13 +364,19 @@ POST /mcp   Authorization: Bearer gn_agt_<token>
     "title":"Bug: …","body":"Steps to reproduce …" } }
 ```
 
-## UI routes — note: there is no `/ui/add`
-- `/ui/login`, `/ui/register` — auth (better-auth email+password)
-- `/ui/` — dashboard (requires login)
-- `/ui/tenants`, `/ui/tenants/new`, `/ui/tenants/:scope/edit` — tenant + connection wizard
-- `/ui/agents` — agents; `POST /ui/agents/:id/bind`, `POST /ui/agents/:id/rotate`
-- `/ui/audit` — audit log (per-call scope, status, duration)
-- `/oauth/<provider>/start`, `/oauth/<provider>/callback` — OAuth connect (under `/oauth`, not `/ui`)
+## UI routes (top-level; legacy `/ui/*` URLs 308-redirect here)
+- `/login`, `/register`, `/forgot-password`, `/reset-password` — auth
+  (better-auth email+password; reset links are emailed via Resend, 1h expiry)
+- `/dashboard` — overview (requires login)
+- `/tenants`, `/tenants/new`, `/tenants/:scope/edit` — tenant + connection wizard;
+  the edit page also renames the tenant's display name (slug is immutable)
+- `/agents`, `/agents/new` — agents; `/agents/new` creates a **cross-tenant**
+  agent (tenant checkboxes + per-tool unticks, dedicated role auto-created)
+- `/account` — signed-in identity (email shown in every page's nav), owned
+  resource counts, change password
+- `/audit` — audit log (per-call scope, status, duration; request args are
+  **masked**: file payloads / message bodies / token-like values are redacted)
+- `/oauth/<provider>/start`, `/oauth/<provider>/callback` — OAuth connect
 
 ## Key invariants
 - The raw credential is never returned to the agent. The gateway decrypts and
@@ -367,5 +385,7 @@ POST /mcp   Authorization: Bearer gn_agt_<token>
   calls that send no scope.
 - A role with empty `allowedScopes` permits **any** scope; a role with
   `allowedScopes=["grantry-dev"]` permits only `scope="grantry-dev"`.
-- Every call is audited with its `scope` (`/ui/audit`).
+- Every call is audited with its `scope` (`/audit`); sensitive request args are
+  masked before storage.
 - Token issuance/rotation is UI-only — there is no admin HTTP API.
+- `tools/call` is rate-limited per agent (default 120/min → `-32029`).

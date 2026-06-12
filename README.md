@@ -1,4 +1,4 @@
-# agent-oauth
+# grantry
 
 OAuth credential broker for AI agents. **MCP-compatible.**
 

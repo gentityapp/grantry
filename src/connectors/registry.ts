@@ -163,7 +163,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "yahoo_ads",
     label: "LINE Yahoo Ads",
     authTypes: ["oauth"],
-    helpText: "Connect the LINE Yahoo Business ID that can access Search Ads / Display Ads accounts. Access tokens expire after one hour; grantry-auth stores the refresh token and refreshes automatically.",
+    helpText: "Connect the LINE Yahoo Business ID that can access Search Ads / Display Ads accounts. Access tokens expire after one hour; grantry stores the refresh token and refreshes automatically.",
     oauthSetupUrl: "https://connect-business.yahoo.co.jp/",
     oauthScopes: ["yahooads"],
     authorizeUrl: "https://biz-oauth.yahoo.co.jp/oauth/v1/authorize",

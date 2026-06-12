@@ -11,7 +11,7 @@ export async function sendSystemEmail(args: {
   html?: string;
 }): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
-  const from = process.env.SYSTEM_EMAIL_FROM ?? "agent-oauth <noreply@app.grantry.ai>";
+  const from = process.env.SYSTEM_EMAIL_FROM ?? "grantry <noreply@app.grantry.ai>";
 
   if (!apiKey) {
     console.warn(`[email] RESEND_API_KEY unset — NOT sending to ${args.to} (${args.subject}). Body:\n${args.text}`);

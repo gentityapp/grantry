@@ -7,7 +7,7 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
     Authorization: `Bearer ${token}`,
     Accept: "application/vnd.github+json",
     "X-GitHub-Api-Version": "2022-11-28",
-    "User-Agent": "agent-oauth",
+    "User-Agent": "grantry",
   };
 
   if (tool === "github/list_repos") {
@@ -120,7 +120,7 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
     const owner = String(args.owner ?? "");
     const repo = String(args.repo ?? "");
     const branch = String(args.branch ?? "main");
-    const commit_message = String(args.commit_message ?? "chore: update via agent-oauth");
+    const commit_message = String(args.commit_message ?? "chore: update via grantry");
     const files = (args.files ?? {}) as Record<string, string>;
     if (!owner || !repo) throw new Error("owner and repo are required");
     if (Object.keys(files).length === 0) throw new Error("files (object) is required");

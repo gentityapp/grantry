@@ -1,4 +1,4 @@
-// agent-oauth UI — login, dashboard, tenant wizard, audit log
+// grantry UI — login, dashboard, tenant wizard, audit log
 import { Hono } from "hono";
 import { auth } from "./auth.js";
 import { prisma } from "./db.js";
@@ -325,7 +325,7 @@ const CSS = `
 
 const NAV = (current: string, email?: string) => `
 <nav>
-  <span class="brand">agent-oauth</span>
+  <span class="brand">grantry</span>
   <a href="/dashboard" class="${current === "dashboard" ? "active" : ""}">Dashboard</a>
   <a href="/tenants" class="${current === "tenants" ? "active" : ""}">Tenants</a>
   <a href="/agents" class="${current === "agents" ? "active" : ""}">Agents</a>
@@ -506,7 +506,7 @@ dashboardApp.get("/dashboard", async (c) => {
   ]);
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("dashboard", user?.email)}
     <main>
@@ -548,7 +548,7 @@ dashboardApp.get("/meta", async (c) => {
   const bootstrapMode = adminCount === 0;
   if (dbUser.role !== "admin" && !bootstrapMode) {
     return c.html(`
-      <!doctype html><html><head><meta charset="utf-8"><title>Meta — agent-oauth</title>
+      <!doctype html><html><head><meta charset="utf-8"><title>Meta — grantry</title>
       <style>${CSS}</style></head><body>
       ${NAV("meta", dbUser?.email)}
       <main>
@@ -666,7 +666,7 @@ dashboardApp.get("/meta", async (c) => {
     : `<span class="badge denied">${escapeHtml(label || "missing")}</span>`;
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Meta — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Meta — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("meta", dbUser?.email)}
     <main>
@@ -918,9 +918,9 @@ dashboardApp.get("/login", async (c) => {
   if (user) return c.redirect("/dashboard");
   const resetDone = c.req.query("reset") === "1";
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Sign in — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Sign in — grantry</title>
     <style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
-    <h1>Sign in to agent-oauth</h1>
+    <h1>Sign in to grantry</h1>
     ${resetDone ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">✓ Password updated. Sign in with your new password.</div>` : ""}
     <div class="card">
       <form id="loginForm">
@@ -960,7 +960,7 @@ dashboardApp.post("/logout", async (c) => signOutAndRedirect(c));
 // --- /register ---
 dashboardApp.get("/register", async (c) => {
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Create account — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Create account — grantry</title>
     <style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
     <h1>Create account</h1>
     <div class="card">
@@ -1003,7 +1003,7 @@ dashboardApp.get("/register", async (c) => {
 dashboardApp.get("/forgot-password", async (c) => {
   const sent = c.req.query("sent") === "1";
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Forgot password — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Forgot password — grantry</title>
     <style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
     <h1>Forgot password</h1>
     ${sent ? `
@@ -1052,7 +1052,7 @@ dashboardApp.get("/reset-password", async (c) => {
   const err = c.req.query("err");
   if (!token || error) {
     return c.html(`
-      <!doctype html><html><head><meta charset="utf-8"><title>Reset password — agent-oauth</title>
+      <!doctype html><html><head><meta charset="utf-8"><title>Reset password — grantry</title>
       <style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
       <h1>Reset password</h1>
       <div class="card" style="border-color:#ff6b6b;background:rgba(255,107,107,0.08);">
@@ -1062,7 +1062,7 @@ dashboardApp.get("/reset-password", async (c) => {
     `, 400);
   }
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Reset password — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Reset password — grantry</title>
     <style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
     <h1>Choose a new password</h1>
     ${err ? `<div class="card" style="border-color:#ff6b6b;background:rgba(255,107,107,0.08);">⚠️ ${escapeHtml(String(err))}</div>` : ""}
@@ -1124,7 +1124,7 @@ dashboardApp.get("/account", async (c) => {
       : "";
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Account — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Account — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("account", user?.email)}
     <main>
@@ -1240,7 +1240,7 @@ dashboardApp.get("/tenants", async (c) => {
   const tenantBySlug = new Map(tenants.map((t) => [t.slug, t]));
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Tenants — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Tenants — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
@@ -1361,7 +1361,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
     : "";
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Edit ${scope} — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Edit ${scope} — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
@@ -1483,7 +1483,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           </div>
           <div class="field">
             <label>Agent tool allowlist</label>
-            <p class="field-hint" style="margin-top:0;">These are agent-oauth permissions, not SaaS permissions. The SaaS credential above may still reject calls if its own scopes are narrower.</p>
+            <p class="field-hint" style="margin-top:0;">These are grantry permissions, not SaaS permissions. The SaaS credential above may still reject calls if its own scopes are narrower.</p>
             <div class="field-hint" style="margin:8px 0 12px;">
               ${allAvailableTools.filter((t) => !roleTools.includes(t)).length > 0
                 ? `<span style="color:#f0b429;">${allAvailableTools.filter((t) => !roleTools.includes(t)).length} connected tool(s) are not granted to this role yet.</span>`
@@ -1768,7 +1768,7 @@ dashboardApp.post("/tenants/:scope/sync-role-tools", async (c) => {
 
   const { role, addedTools, connectedTools } = await syncTenantRoleTools(user.id, scope);
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Role tools synced — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Role tools synced — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
@@ -1815,7 +1815,7 @@ dashboardApp.post("/tenants/:scope/codex-mcp/create", async (c) => {
   });
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Codex MCP created — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Codex MCP created — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
@@ -1862,7 +1862,7 @@ dashboardApp.post("/tenants/:scope/codex-mcp/:agentId/rotate", async (c) => {
   });
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Codex MCP rotated — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Codex MCP rotated — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
@@ -1986,7 +1986,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     }
 
     return c.html(`
-      <!doctype html><html><head><meta charset="utf-8"><title>Saved — agent-oauth</title>
+      <!doctype html><html><head><meta charset="utf-8"><title>Saved — grantry</title>
       <style>${CSS}</style></head><body>
       ${NAV("tenants", user?.email)}
       <main>
@@ -2111,7 +2111,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     }
 
     return c.html(`
-      <!doctype html><html><head><meta charset="utf-8"><title>Service added — agent-oauth</title>
+      <!doctype html><html><head><meta charset="utf-8"><title>Service added — grantry</title>
       <style>${CSS}</style></head><body>
       ${NAV("tenants", user?.email)}
       <main>
@@ -2159,7 +2159,7 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/recheck", async (c)
   });
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Connection rechecked — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Connection rechecked — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
@@ -2192,7 +2192,7 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/delete", async (c) 
   await prisma.connection.delete({ where: { id: conn.id } });
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Connection deleted — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Connection deleted — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
@@ -2234,7 +2234,7 @@ dashboardApp.get("/tenants/new", async (c) => {
   }
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>New tenant — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>New tenant — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
@@ -2594,7 +2594,7 @@ dashboardApp.post("/tenants/new", async (c) => {
   const existingAgent = await prisma.agent.findUnique({ where: { name: agent } });
   if (existingAgent) {
     return c.html(`
-      <!doctype html><html><head><meta charset="utf-8"><title>Agent name taken — agent-oauth</title>
+      <!doctype html><html><head><meta charset="utf-8"><title>Agent name taken — grantry</title>
       <style>${CSS}</style></head><body>
       ${NAV("tenants", user?.email)}
       <main>
@@ -2608,7 +2608,7 @@ dashboardApp.post("/tenants/new", async (c) => {
             <li><a href="/tenants/new">← Back to wizard</a></li>
           </ul>
         </div>
-        <p style="color:#8a8d93;font-size:13px;">Why globally unique? Agent names double as the agent's display ID in audit logs and MCP routing. <a href="https://github.com/gentityapp/agent-oauth/issues/new">file an issue</a> if you want per-user uniqueness.</p>
+        <p style="color:#8a8d93;font-size:13px;">Why globally unique? Agent names double as the agent's display ID in audit logs and MCP routing. <a href="https://github.com/gentityapp/grantry/issues/new">file an issue</a> if you want per-user uniqueness.</p>
       </main></body></html>
     `, 409);
   }
@@ -2772,7 +2772,7 @@ dashboardApp.post("/tenants/new", async (c) => {
   });
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Tenant created — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Tenant created — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
@@ -2822,7 +2822,7 @@ dashboardApp.get("/agents", async (c) => {
   const roles = await prisma.role.findMany({ where: { ownerId: user.id }, orderBy: { name: "asc" } });
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Agents — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Agents — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("agents", user?.email)}
     <main>
@@ -2942,7 +2942,7 @@ dashboardApp.get("/agents/new", async (c) => {
   }
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>New agent — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>New agent — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("agents")}
     <main>
@@ -3124,7 +3124,7 @@ dashboardApp.post("/agents/new", async (c) => {
   });
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Agent created — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Agent created — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("agents")}
     <main>
@@ -3170,7 +3170,7 @@ dashboardApp.get("/agents/:id", async (c) => {
   const tokenPlaceholder = `${agent.tokenPrefix}...ROTATE_TO_VIEW_FULL_TOKEN`;
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(agent.name)} — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(agent.name)} — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("agents", user?.email)}
     <main>
@@ -3276,7 +3276,7 @@ dashboardApp.post("/agents/:id/rotate", async (c) => {
   const rotatedScopes = Array.from(new Set(rotatedConnections.map((conn) => conn.scope))).sort();
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Token rotated — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Token rotated — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("agents", user?.email)}
     <main>
@@ -3324,7 +3324,7 @@ dashboardApp.get("/audit", async (c) => {
   });
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Audit — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Audit — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("audit", user?.email)}
     <main>
@@ -3554,7 +3554,7 @@ oauthApp.get("/:provider/callback", async (c) => {
   let userLogin = providerKey;
   try {
     if (providerKey === "github") {
-      const u: any = await (await fetch("https://api.github.com/user", { headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "agent-oauth" } })).json();
+      const u: any = await (await fetch("https://api.github.com/user", { headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "grantry" } })).json();
       if (u.login) userLogin = u.login;
     } else if (providerKey.startsWith("google_") || providerKey === "gmail") {
       const u: any = await (await fetch(`https://www.googleapis.com/oauth2/v2/userinfo?access_token=${accessToken}`)).json();
@@ -3719,7 +3719,7 @@ oauthApp.get("/:provider/callback", async (c) => {
   const existingAgent = await prisma.agent.findUnique({ where: { name: agent } });
   if (existingAgent) {
     return c.html(`
-      <!doctype html><html><head><meta charset="utf-8"><title>Agent name taken — agent-oauth</title>
+      <!doctype html><html><head><meta charset="utf-8"><title>Agent name taken — grantry</title>
       <style>${CSS}</style></head><body>
       ${NAV("tenants", user?.email)}
       <main>
@@ -3755,7 +3755,7 @@ oauthApp.get("/:provider/callback", async (c) => {
   );
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(providerDef.label)} connected — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(providerDef.label)} connected — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
@@ -3789,7 +3789,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     console.error(`[oauth callback] ${providerKeyForError} failed:`, err);
     const detail = err instanceof Error ? err.message : String(err);
     return c.html(`
-      <!doctype html><html><head><meta charset="utf-8"><title>OAuth failed — agent-oauth</title>
+      <!doctype html><html><head><meta charset="utf-8"><title>OAuth failed — grantry</title>
       <style>${CSS}</style></head><body>
       ${NAV("tenants")}
       <main>
@@ -3893,7 +3893,7 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
   const existingAgent = await prisma.agent.findUnique({ where: { name: agent } });
   if (existingAgent) {
     return c.html(`
-      <!doctype html><html><head><meta charset="utf-8"><title>Agent name taken — agent-oauth</title>
+      <!doctype html><html><head><meta charset="utf-8"><title>Agent name taken — grantry</title>
       <style>${CSS}</style></head><body>
       ${NAV("tenants", user?.email)}
       <main>
@@ -3939,7 +3939,7 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
   });
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Agent created — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Agent created — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
@@ -4017,7 +4017,7 @@ dashboardApp.post("/tenants/:scope/delete", async (c) => {
   await prisma.tenant.deleteMany({ where: { slug: scope, ownerId: user.id } });
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Deleted — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Deleted — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
@@ -4062,7 +4062,7 @@ dashboardApp.post("/tenants/bulk-delete", async (c) => {
     detail.push(`<li><code>${escapeHtml(scope)}</code>: ${connDelete.count} conn, ${roleDelete.count} role</li>`);
   }
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Bulk deleted — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Bulk deleted — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
@@ -4110,7 +4110,7 @@ dashboardApp.post("/agents/bulk-delete", async (c) => {
     where: { id: { in: ids }, ownerId: user.id },
   });
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Bulk deleted — agent-oauth</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Bulk deleted — grantry</title>
     <style>${CSS}</style></head><body>
     ${NAV("agents", user?.email)}
     <main>

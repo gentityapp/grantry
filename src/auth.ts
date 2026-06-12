@@ -22,17 +22,17 @@ export const auth = betterAuth({
     sendResetPassword: async ({ user, url }) => {
       await sendSystemEmail({
         to: user.email,
-        subject: "Reset your agent-oauth password",
+        subject: "Reset your grantry password",
         text: `Hi ${user.name || user.email},
 
-Someone requested a password reset for your agent-oauth account.
+Someone requested a password reset for your grantry account.
 Open this link to choose a new password (valid for 1 hour):
 
 ${url}
 
 If you didn't request this, you can safely ignore this email.`,
         html: `<p>Hi ${user.name || user.email},</p>
-<p>Someone requested a password reset for your <b>agent-oauth</b> account.</p>
+<p>Someone requested a password reset for your <b>grantry</b> account.</p>
 <p><a href="${url}">Choose a new password</a> (valid for 1 hour)</p>
 <p style="color:#888;font-size:13px;">If you didn't request this, you can safely ignore this email.</p>`,
       });

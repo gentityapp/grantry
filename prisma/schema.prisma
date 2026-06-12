@@ -1,4 +1,4 @@
-// agent-oauth — Prisma schema
+// grantry — Prisma schema
 // PostgreSQL (Railway). Replaces the SQLite schema from the Python prototype.
 
 generator client {
@@ -77,7 +77,7 @@ model Verification {
   @@map("verification")
 }
 
-// ---------- Agent / connection / role (the "agent-oauth" part) ----------
+// ---------- Agent / connection / role (the "grantry" part) ----------
 
 // A tenant is a business/domain boundary owned by one user. `slug` is the
 // immutable wire key — it is what agents send as `scope` in tools/call and

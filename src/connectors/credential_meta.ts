@@ -46,7 +46,7 @@ export async function inspectCredential(provider: string, authType: string, toke
           Authorization: `Bearer ${token}`,
           Accept: "application/vnd.github+json",
           "X-GitHub-Api-Version": "2022-11-28",
-          "User-Agent": "agent-oauth",
+          "User-Agent": "grantry",
         },
       });
       const body: any = await readJson(resp);
@@ -161,7 +161,7 @@ export async function inspectCredential(provider: string, authType: string, toke
         status: "ok",
         scopes: ["yahooads"],
         notes: [
-          "LINE Yahoo Ads access tokens expire after one hour; grantry-auth refreshes them with the stored refresh token.",
+          "LINE Yahoo Ads access tokens expire after one hour; grantry refreshes them with the stored refresh token.",
           "Use yahoo_ads/list_base_accounts to verify which base accounts this Business ID can access.",
         ],
         checkedAt,

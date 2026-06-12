@@ -1066,7 +1066,7 @@ function buildToolList(connections: Awaited<ReturnType<typeof connectionsForAgen
     { name: "ping", description: "Liveness check", inputSchema: { type: "object", properties: {} } },
     {
       name: publicToolName("grantry/get_skill"),
-      description: "grantry-auth: latest MCP skill markdown and usage instructions",
+      description: "grantry: latest MCP skill markdown and usage instructions",
       inputSchema: {
         type: "object",
         properties: toolSpecificInputProperties("grantry/get_skill"),
@@ -1075,7 +1075,7 @@ function buildToolList(connections: Awaited<ReturnType<typeof connectionsForAgen
     },
     {
       name: publicToolName("grantry/get_providers"),
-      description: "grantry-auth: implemented providers, auth types, and tool names",
+      description: "grantry: implemented providers, auth types, and tool names",
       inputSchema: {
         type: "object",
         properties: toolSpecificInputProperties("grantry/get_providers"),
@@ -1298,7 +1298,7 @@ mcpApp.post("/", async (c) => {
           tools: {},
         },
         serverInfo: {
-          name: "grantry-auth",
+          name: "grantry",
           version: "0.1.0",
         },
       },
