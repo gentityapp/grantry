@@ -356,6 +356,22 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  google_maps: {
+    key: "google_maps",
+    label: "Google Maps",
+    authTypes: ["pat"],
+    helpText: "Paste a Google Maps Platform API key from Google Cloud Console > APIs & Services > Credentials. Enable the Geocoding, Places, Directions, and Distance Matrix APIs for the key. The key is sent as the `key` query parameter.",
+    tokenUrl: "https://console.cloud.google.com/google/maps-apis/credentials",
+    tools: [
+      "google_maps/geocode",
+      "google_maps/reverse_geocode",
+      "google_maps/place_search",
+      "google_maps/place_details",
+      "google_maps/directions",
+      "google_maps/distance_matrix",
+    ],
+    implemented: true,
+  },
   resend: {
     key: "resend",
     label: "Resend",

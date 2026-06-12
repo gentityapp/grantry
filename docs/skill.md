@@ -2,7 +2,7 @@
 name: grantry
 description: |
   Use grantry when the user wants an AI agent to call external SaaS APIs
-  (GitHub, Notion, Google Drive/GSC/Ads, HubSpot, Attio, Clay, HeyReach,
+  (GitHub, Notion, Google Drive/GSC/Ads/Maps, HubSpot, Attio, Clay, HeyReach,
   Chatwork, Railway, Resend, Reddit, X) under OAuth/PAT authentication
   with tenant isolation. grantry (formerly "grantry-auth", deployed as "agent-oauth") is a
   Hono/TypeScript service that holds encrypted credentials and exposes them as
@@ -136,6 +136,9 @@ Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing tenant):
   `{"token":"...","token_type":"account"}`.
 - **Resend**: paste a Resend API key. Sending requires `sending_access` or
   `full_access` and a verified sending domain.
+- **Google Maps**: paste a Google Maps Platform API key from Google Cloud Console
+  > APIs & Services > Credentials. Enable the Geocoding, Places, Directions, and
+  Distance Matrix APIs for the key.
 - **Reddit**: OAuth only, via `/oauth/reddit/start`. Needs `REDDIT_CLIENT_ID` /
   `REDDIT_CLIENT_SECRET` (register a "web app" at `reddit.com/prefs/apps` with the
   callback `https://app.grantry.ai/oauth/reddit/callback`). Grants read + posting,
@@ -153,7 +156,7 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 3. Bind the role to the agent (`POST /agents/:id/bind`) — or skip role wrangling
    entirely and create the agent via `/agents/new`.
 
-## Providers & tools (124)
+## Providers & tools (130)
 - `ping` — liveness (returns `pong from <agent>`)
 - **grantry** (system metadata, no SaaS credential required): `get_skill`,
   `get_providers`
@@ -184,6 +187,8 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
   `introspect_schema`
 - **resend** (API key): `send_email`, `list_emails`, `get_email`,
   `list_domains`, `get_domain`, `list_api_keys`
+- **google_maps** (API key): `geocode`, `reverse_geocode`, `place_search`,
+  `place_details`, `directions`, `distance_matrix`
 - **reddit** (OAuth; read + write): `get_me`, `get_subreddit`, `list_posts`,
   `search`, `get_comments`, `submit_post`, `submit_comment`, `vote`
 - **x** (OAuth; read + write): `get_me`, `get_user`, `get_user_tweets`,
@@ -307,6 +312,21 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 - `get_email` (read): `email_id`.
 - `list_domains` / `list_api_keys` (read): no additional arguments.
 - `get_domain` (read): `domain_id`.
+
+### Google Maps tool arguments (besides `scope`)
+All tools are read-only and send the API key as the `key` query parameter.
+- `geocode` (read): `address`; optional `components`, `bounds`, `region`, `language`.
+- `reverse_geocode` (read): `latlng` (e.g. `"35.6895,139.6917"`) or separate
+  `lat`/`lng`; optional `result_type`, `location_type`, `language`.
+- `place_search` (read): `query` (free text); optional `location`, `radius`,
+  `type`, `open_now`, `page_token`, `region`, `language`.
+- `place_details` (read): `place_id`; optional `fields` (comma-separated),
+  `language`, `region`.
+- `directions` (read): `origin`, `destination`; optional `mode`
+  (`driving`/`walking`/`bicycling`/`transit`), `waypoints`, `alternatives`,
+  `avoid`, `departure_time`, `arrival_time`, `units`, `language`, `region`.
+- `distance_matrix` (read): `origins`, `destinations` (pipe-separated); optional
+  `mode`, `avoid`, `departure_time`, `arrival_time`, `units`, `language`, `region`.
 
 ### Reddit tool arguments (besides `scope`)
 - `get_me` (read): no additional arguments.

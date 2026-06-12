@@ -16,6 +16,7 @@ import { callGoogleDriveTool } from "./connectors/google_drive.js";
 import { callGoogleGscTool } from "./connectors/google_gsc.js";
 import { callGoogleAnalyticsTool } from "./connectors/google_analytics.js";
 import { callGoogleAdsTool } from "./connectors/google_ads.js";
+import { callGoogleMapsTool } from "./connectors/google_maps.js";
 import { callYahooAdsTool } from "./connectors/yahoo_ads.js";
 import { callMetaAdsTool } from "./connectors/meta_ads.js";
 import { callHubSpotTool } from "./connectors/hubspot.js";
@@ -980,6 +981,73 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "railway/introspect_schema") {
     return {};
   }
+  if (toolName === "google_maps/geocode") {
+    return {
+      address: { type: "string", description: "Street address or place name to geocode, e.g. \"1600 Amphitheatre Parkway, Mountain View, CA\"." },
+      components: { type: "string", description: "Optional component filter, e.g. \"country:JP|postal_code:100-0005\"." },
+      bounds: { type: "string", description: "Optional viewport bias as \"lat,lng|lat,lng\"." },
+      region: { type: "string", description: "Optional ccTLD region bias, e.g. jp." },
+      language: { type: "string", description: "Optional result language, e.g. ja or en." },
+    };
+  }
+  if (toolName === "google_maps/reverse_geocode") {
+    return {
+      latlng: { type: "string", description: "Latitude,longitude pair, e.g. \"35.6895,139.6917\". Alternatively pass lat and lng." },
+      lat: { type: "number", description: "Latitude (used when latlng is not provided)." },
+      lng: { type: "number", description: "Longitude (used when latlng is not provided)." },
+      result_type: { type: "string", description: "Optional pipe-separated result types filter, e.g. \"street_address|locality\"." },
+      location_type: { type: "string", description: "Optional pipe-separated location types filter, e.g. \"ROOFTOP\"." },
+      language: { type: "string", description: "Optional result language, e.g. ja or en." },
+    };
+  }
+  if (toolName === "google_maps/place_search") {
+    return {
+      query: { type: "string", description: "Free-text place search query, e.g. \"ramen near Shibuya station\"." },
+      location: { type: "string", description: "Optional bias center as \"lat,lng\"." },
+      radius: { type: "number", description: "Optional bias radius in meters (max 50000)." },
+      type: { type: "string", description: "Optional place type filter, e.g. restaurant." },
+      open_now: { type: "boolean", description: "When true, only return places open now." },
+      page_token: { type: "string", description: "Pagination token (next_page_token) from a previous search." },
+      region: { type: "string", description: "Optional ccTLD region bias, e.g. jp." },
+      language: { type: "string", description: "Optional result language, e.g. ja or en." },
+    };
+  }
+  if (toolName === "google_maps/place_details") {
+    return {
+      place_id: { type: "string", description: "Google place_id from a place_search result." },
+      fields: { type: "string", description: "Optional comma-separated fields to return, e.g. \"name,formatted_address,geometry,opening_hours\"." },
+      region: { type: "string", description: "Optional ccTLD region bias, e.g. jp." },
+      language: { type: "string", description: "Optional result language, e.g. ja or en." },
+    };
+  }
+  if (toolName === "google_maps/directions") {
+    return {
+      origin: { type: "string", description: "Start point: address, \"lat,lng\", or \"place_id:...\"." },
+      destination: { type: "string", description: "End point: address, \"lat,lng\", or \"place_id:...\"." },
+      mode: { type: "string", enum: ["driving", "walking", "bicycling", "transit"], description: "Travel mode. Defaults to driving." },
+      waypoints: { type: "string", description: "Optional pipe-separated waypoints, e.g. \"Tokyo|Yokohama\"." },
+      alternatives: { type: "boolean", description: "When true, return alternative routes." },
+      avoid: { type: "string", description: "Optional pipe-separated features to avoid, e.g. \"tolls|highways\"." },
+      departure_time: { type: "string", description: "Optional departure time (epoch seconds or \"now\")." },
+      arrival_time: { type: "string", description: "Optional arrival time (epoch seconds), transit mode only." },
+      units: { type: "string", enum: ["metric", "imperial"], description: "Unit system for distances." },
+      language: { type: "string", description: "Optional result language, e.g. ja or en." },
+      region: { type: "string", description: "Optional ccTLD region bias, e.g. jp." },
+    };
+  }
+  if (toolName === "google_maps/distance_matrix") {
+    return {
+      origins: { type: "string", description: "Pipe-separated origins: addresses or \"lat,lng\", e.g. \"Tokyo|Osaka\"." },
+      destinations: { type: "string", description: "Pipe-separated destinations: addresses or \"lat,lng\"." },
+      mode: { type: "string", enum: ["driving", "walking", "bicycling", "transit"], description: "Travel mode. Defaults to driving." },
+      avoid: { type: "string", description: "Optional pipe-separated features to avoid, e.g. \"tolls|highways\"." },
+      departure_time: { type: "string", description: "Optional departure time (epoch seconds or \"now\")." },
+      arrival_time: { type: "string", description: "Optional arrival time (epoch seconds), transit mode only." },
+      units: { type: "string", enum: ["metric", "imperial"], description: "Unit system for distances." },
+      language: { type: "string", description: "Optional result language, e.g. ja or en." },
+      region: { type: "string", description: "Optional ccTLD region bias, e.g. jp." },
+    };
+  }
   if (toolName === "resend/send_email") {
     return {
       from: { type: "string", description: "Sender email address, e.g. Name <sender@example.com>." },
@@ -1206,6 +1274,12 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "chatwork/list_room_files") return ["room_id"];
   if (toolName === "chatwork/get_room_file") return ["room_id", "file_id"];
   if (toolName === "railway/graphql") return ["query"];
+  if (toolName === "google_maps/geocode") return ["address"];
+  if (toolName === "google_maps/reverse_geocode") return [];
+  if (toolName === "google_maps/place_search") return ["query"];
+  if (toolName === "google_maps/place_details") return ["place_id"];
+  if (toolName === "google_maps/directions") return ["origin", "destination"];
+  if (toolName === "google_maps/distance_matrix") return ["origins", "destinations"];
   if (toolName === "resend/send_email") return ["from", "to", "subject"];
   if (toolName === "resend/get_email") return ["email_id"];
   if (toolName === "resend/get_domain") return ["domain_id"];
@@ -1789,6 +1863,8 @@ mcpApp.post("/", async (c) => {
         result = await callChatworkTool(toolName, args, token);
       } else if (decision.provider === "railway") {
         result = await callRailwayTool(toolName, args, token);
+      } else if (decision.provider === "google_maps") {
+        result = await callGoogleMapsTool(toolName, args, token);
       } else if (decision.provider === "resend") {
         result = await callResendTool(toolName, args, token);
       } else if (decision.provider === "reddit") {

@@ -38,6 +38,7 @@ function authTypeLabel(providerKey: string, authType: string): string {
   if (providerKey === "chatwork") return "API token";
   if (providerKey === "railway") return "Project token";
   if (providerKey === "resend") return "API key";
+  if (providerKey === "google_maps") return "API key";
   return "paste token";
 }
 
@@ -50,6 +51,7 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
   if (providerKey === "chatwork") return "Paste your Chatwork API token";
   if (providerKey === "railway") return "Paste your Railway Project Token from Project Settings > Tokens";
   if (providerKey === "resend") return "Paste your Resend API key";
+  if (providerKey === "google_maps") return "Paste your Google Maps Platform API key";
   return `Paste your ${providerLabel} token here`;
 }
 
@@ -61,6 +63,7 @@ function tokenLinkLabel(providerKey: string, providerLabel: string): string {
   if (providerKey === "chatwork") return "🔗 Open Chatwork API token settings →";
   if (providerKey === "railway") return "🔗 Open Railway →";
   if (providerKey === "resend") return "🔗 Open Resend API keys →";
+  if (providerKey === "google_maps") return "🔗 Open Google Maps Platform credentials →";
   if (providerKey === "github") return "🔗 Manage GitHub PAT repository access here →";
   return `🔗 Get a new ${providerLabel} token here →`;
 }
@@ -1642,7 +1645,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                   ? "HeyReach Public API key"
                   : (sel.value === "railway"
                     ? "Railway Project Token"
-                    : (sel.value === "resend" ? "Resend API key" : p.label + " token")))));
+                    : (sel.value === "resend"
+                      ? "Resend API key"
+                      : (sel.value === "google_maps" ? "Google Maps Platform API key" : p.label + " token"))))));
           credField.placeholder = usePat ? "Paste your " + tokenLabel + (sel.value === "hubspot" ? " here (starts with pat-)" : " here") : "OAuth flow will start after submit";
           credField.disabled = !usePat;
           credField.required = usePat;
@@ -1663,7 +1668,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                       ? "🔗 Open Railway →"
                       : (sel.value === "resend"
                         ? "🔗 Open Resend API keys →"
-                        : (sel.value === "github" ? "🔗 Manage GitHub PAT repository access here →" : "🔗 Get a new " + p.label + " token here →"))))));
+                        : (sel.value === "google_maps"
+                          ? "🔗 Open Google Maps Platform credentials →"
+                          : (sel.value === "github" ? "🔗 Manage GitHub PAT repository access here →" : "🔗 Get a new " + p.label + " token here →")))))));
             patLinkRow.style.display = "";
           } else {
             patLinkRow.style.display = "none";

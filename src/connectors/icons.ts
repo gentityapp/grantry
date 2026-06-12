@@ -74,6 +74,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   heyreach: "#6A5CFF",
   chatwork: "#EA3C3C",
   yahoo_ads: "#FF0033", // Yahoo! JAPAN red
+  google_maps: "#34A853", // Google Maps green
   reddit: "#FF4500", // Reddit orange-red
   x: "#000000", // X black
 };

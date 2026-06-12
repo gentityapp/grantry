@@ -108,6 +108,33 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "google_maps") {
+      if (!token.trim()) {
+        return { provider, authType, status: "error", checkedAt, error: "Google Maps API key is required" };
+      }
+      // Validate with a cheap Geocoding call; the status field reports key problems.
+      const resp = await fetchWithTimeout(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=Tokyo&key=${encodeURIComponent(token.trim())}`,
+        { headers: { Accept: "application/json" } },
+      );
+      const body: any = await readJson(resp);
+      const status = body?.status;
+      if (!resp.ok || status === "REQUEST_DENIED" || status === "INVALID_REQUEST") {
+        return { provider, authType, status: "error", checkedAt, error: `Google Maps API key check failed: ${resp.status} ${status ?? ""} ${body?.error_message ?? ""}`.trim() };
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        notes: [
+          "Google Maps Platform API keys are sent as the `key` query parameter.",
+          "Enable the Geocoding, Places, Directions, and Distance Matrix APIs and apply key restrictions in Google Cloud Console.",
+          status === "OVER_QUERY_LIMIT" ? "Key validated but currently OVER_QUERY_LIMIT — check billing/quota." : `Geocoding probe returned ${status ?? "no status"}.`,
+        ],
+        checkedAt,
+      };
+    }
+
     if (provider.startsWith("google_") || provider === "gmail" || provider === "youtube") {
       const tokenInfo = await fetchWithTimeout(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(token)}`);
       const info: any = await readJson(tokenInfo);
