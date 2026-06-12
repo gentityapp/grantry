@@ -108,7 +108,7 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
-    if (provider.startsWith("google_") || provider === "gmail") {
+    if (provider.startsWith("google_") || provider === "gmail" || provider === "youtube") {
       const tokenInfo = await fetchWithTimeout(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(token)}`);
       const info: any = await readJson(tokenInfo);
       if (!tokenInfo.ok) {

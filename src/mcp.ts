@@ -19,6 +19,7 @@ import { callGoogleAdsTool } from "./connectors/google_ads.js";
 import { callYahooAdsTool } from "./connectors/yahoo_ads.js";
 import { callHubSpotTool } from "./connectors/hubspot.js";
 import { callGmailTool } from "./connectors/gmail.js";
+import { callYouTubeTool } from "./connectors/youtube.js";
 import { callAttioTool } from "./connectors/attio.js";
 import { callClayTool } from "./connectors/clay.js";
 import { callHeyReachTool } from "./connectors/heyreach.js";
@@ -622,6 +623,91 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       mime_type: { type: "string", description: "Content-Type, defaults to text/plain; charset=UTF-8." },
     };
   }
+  if (toolName === "youtube/list_channels") {
+    return {
+      id: { type: "string", description: "Channel id(s) to fetch, comma-separated. Omit to fetch the authenticated user's channel." },
+      for_username: { type: "string", description: "Optional legacy YouTube username to look up instead of id." },
+      part: { type: "string", description: "Comma-separated channel parts. Defaults to snippet,contentDetails,statistics." },
+      max_results: { type: "number", minimum: 1, maximum: 50, description: "Items to return, max 50." },
+      page_token: { type: "string", description: "Optional pagination token." },
+    };
+  }
+  if (toolName === "youtube/list_videos") {
+    return {
+      id: { type: "string", description: "Video id(s) to fetch, comma-separated." },
+      part: { type: "string", description: "Comma-separated video parts. Defaults to snippet,contentDetails,statistics,status." },
+      max_results: { type: "number", minimum: 1, maximum: 50, description: "Items to return, max 50." },
+    };
+  }
+  if (toolName === "youtube/search") {
+    return {
+      q: { type: "string", description: "Search query string." },
+      type: { type: "string", enum: ["video", "channel", "playlist"], description: "Restrict results to one resource type." },
+      channel_id: { type: "string", description: "Restrict the search to one channel id." },
+      order: { type: "string", enum: ["date", "rating", "relevance", "title", "videoCount", "viewCount"], description: "Result ordering. Defaults to relevance." },
+      mine: { type: "boolean", description: "When true, search only the authenticated user's videos (sets forMine)." },
+      max_results: { type: "number", minimum: 1, maximum: 50, description: "Items to return, max 50." },
+      page_token: { type: "string", description: "Optional pagination token." },
+    };
+  }
+  if (toolName === "youtube/list_playlists") {
+    return {
+      id: { type: "string", description: "Playlist id(s) to fetch, comma-separated." },
+      channel_id: { type: "string", description: "List playlists for this channel id." },
+      part: { type: "string", description: "Comma-separated playlist parts. Defaults to snippet,contentDetails,status." },
+      max_results: { type: "number", minimum: 1, maximum: 50, description: "Items to return, max 50." },
+      page_token: { type: "string", description: "Optional pagination token." },
+    };
+  }
+  if (toolName === "youtube/list_playlist_items") {
+    return {
+      playlist_id: { type: "string", description: "Playlist id to list items for." },
+      part: { type: "string", description: "Comma-separated parts. Defaults to snippet,contentDetails,status." },
+      max_results: { type: "number", minimum: 1, maximum: 50, description: "Items to return, max 50." },
+      page_token: { type: "string", description: "Optional pagination token." },
+    };
+  }
+  if (toolName === "youtube/update_video") {
+    return {
+      id: { type: "string", description: "Video id to update." },
+      snippet: { type: "object", description: "Video snippet fields to set, e.g. title, description, tags, categoryId. categoryId is required when a snippet is sent." },
+      status: { type: "object", description: "Video status fields to set, e.g. privacyStatus, embeddable, license." },
+    };
+  }
+  if (toolName === "youtube/create_playlist") {
+    return {
+      title: { type: "string", description: "Playlist title." },
+      description: { type: "string", description: "Optional playlist description." },
+      tags: { type: "array", items: { type: "string" }, description: "Optional playlist tags." },
+      privacy_status: { type: "string", enum: ["private", "public", "unlisted"], description: "Playlist visibility. Defaults to private." },
+    };
+  }
+  if (toolName === "youtube/update_playlist") {
+    return {
+      id: { type: "string", description: "Playlist id to update." },
+      title: { type: "string", description: "Playlist title. Required because the YouTube API replaces the snippet on update." },
+      description: { type: "string", description: "Optional playlist description." },
+      tags: { type: "array", items: { type: "string" }, description: "Optional playlist tags." },
+      privacy_status: { type: "string", enum: ["private", "public", "unlisted"], description: "Optional new visibility." },
+    };
+  }
+  if (toolName === "youtube/delete_playlist") {
+    return {
+      id: { type: "string", description: "Playlist id to delete." },
+    };
+  }
+  if (toolName === "youtube/add_playlist_item") {
+    return {
+      playlist_id: { type: "string", description: "Playlist id to add the video to." },
+      video_id: { type: "string", description: "Video id to add." },
+      position: { type: "number", minimum: 0, description: "Optional zero-based position within the playlist." },
+    };
+  }
+  if (toolName === "youtube/delete_playlist_item") {
+    return {
+      id: { type: "string", description: "PlaylistItem id to remove (from list_playlist_items), not the video id." },
+    };
+  }
   if (toolName === "clay/raw_request") {
     return {
       method: { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE"], description: "HTTP method. Defaults to GET." },
@@ -1010,6 +1096,14 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "attio/get_meeting") return ["meeting_id"];
   if (toolName === "gmail/get_message") return ["message_id"];
   if (toolName === "gmail/send_message") return ["to", "subject", "body"];
+  if (toolName === "youtube/list_videos") return ["id"];
+  if (toolName === "youtube/list_playlist_items") return ["playlist_id"];
+  if (toolName === "youtube/update_video") return ["id"];
+  if (toolName === "youtube/create_playlist") return ["title"];
+  if (toolName === "youtube/update_playlist") return ["id", "title"];
+  if (toolName === "youtube/delete_playlist") return ["id"];
+  if (toolName === "youtube/add_playlist_item") return ["playlist_id", "video_id"];
+  if (toolName === "youtube/delete_playlist_item") return ["id"];
   if (toolName === "clay/raw_request") return ["path"];
   if (toolName === "clay/lookup_row") return ["table_id"];
   if (toolName === "clay/create_row") return ["table_id", "data"];
@@ -1300,6 +1394,7 @@ async function refreshOAuthToken(provider: string, refreshToken: string) {
     google_ads: ["GOOGLE_CLIENT_ID"],
     google_drive: ["GOOGLE_CLIENT_ID"],
     gmail: ["GOOGLE_CLIENT_ID"],
+    youtube: ["GOOGLE_CLIENT_ID"],
     yahoo_ads: ["YAHOO_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
@@ -1309,6 +1404,7 @@ async function refreshOAuthToken(provider: string, refreshToken: string) {
     google_ads: ["GOOGLE_CLIENT_SECRET"],
     google_drive: ["GOOGLE_CLIENT_SECRET"],
     gmail: ["GOOGLE_CLIENT_SECRET"],
+    youtube: ["GOOGLE_CLIENT_SECRET"],
     yahoo_ads: ["YAHOO_CLIENT_SECRET"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
@@ -1601,6 +1697,8 @@ mcpApp.post("/", async (c) => {
         result = await callHubSpotTool(toolName, args, token);
       } else if (decision.provider === "gmail") {
         result = await callGmailTool(toolName, args, token);
+      } else if (decision.provider === "youtube") {
+        result = await callYouTubeTool(toolName, args, token);
       } else if (decision.provider === "attio") {
         result = await callAttioTool(toolName, args, token);
       } else if (decision.provider === "clay") {

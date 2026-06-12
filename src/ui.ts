@@ -3385,6 +3385,7 @@ oauthApp.get("/:provider/start", async (c) => {
     google_ads: ["GOOGLE_CLIENT_ID"],
     google_drive: ["GOOGLE_CLIENT_ID"],
     gmail: ["GOOGLE_CLIENT_ID"],
+    youtube: ["GOOGLE_CLIENT_ID"],
     yahoo_ads: ["YAHOO_CLIENT_ID"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
@@ -3440,7 +3441,7 @@ oauthApp.get("/:provider/start", async (c) => {
   let extraParams = "";
   if (providerKey === "github") {
     extraParams = `&allow_signup=true`;
-  } else if (providerKey.startsWith("google_") || providerKey === "gmail") {
+  } else if (providerKey.startsWith("google_") || providerKey === "gmail" || providerKey === "youtube") {
     extraParams = `&access_type=offline&prompt=consent`; // request refresh_token
   } else if (providerKey === "reddit") {
     extraParams = `&duration=permanent`; // request a refresh_token (default is temporary/1h)
@@ -3506,6 +3507,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     google_ads: ["GOOGLE_CLIENT_ID"],
     google_drive: ["GOOGLE_CLIENT_ID"],
     gmail: ["GOOGLE_CLIENT_ID"],
+    youtube: ["GOOGLE_CLIENT_ID"],
     yahoo_ads: ["YAHOO_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
@@ -3515,6 +3517,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     google_ads: ["GOOGLE_CLIENT_SECRET"],
     google_drive: ["GOOGLE_CLIENT_SECRET"],
     gmail: ["GOOGLE_CLIENT_SECRET"],
+    youtube: ["GOOGLE_CLIENT_SECRET"],
     yahoo_ads: ["YAHOO_CLIENT_SECRET"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
