@@ -38,6 +38,7 @@ function authTypeLabel(providerKey: string, authType: string): string {
   if (providerKey === "chatwork") return "API token";
   if (providerKey === "railway") return "Project token";
   if (providerKey === "resend") return "API key";
+  if (providerKey === "slack") return "Bot token";
   if (providerKey === "google_maps") return "API key";
   return "paste token";
 }
@@ -51,6 +52,7 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
   if (providerKey === "chatwork") return "Paste your Chatwork API token";
   if (providerKey === "railway") return "Paste your Railway Project Token from Project Settings > Tokens";
   if (providerKey === "resend") return "Paste your Resend API key";
+  if (providerKey === "slack") return "Paste your Slack Bot User OAuth Token (starts with xoxb-)";
   if (providerKey === "google_maps") return "Paste your Google Maps Platform API key";
   return `Paste your ${providerLabel} token here`;
 }
@@ -63,6 +65,7 @@ function tokenLinkLabel(providerKey: string, providerLabel: string): string {
   if (providerKey === "chatwork") return "🔗 Open Chatwork API token settings →";
   if (providerKey === "railway") return "🔗 Open Railway →";
   if (providerKey === "resend") return "🔗 Open Resend API keys →";
+  if (providerKey === "slack") return "🔗 Open Slack apps (create app / get Bot token) →";
   if (providerKey === "google_maps") return "🔗 Open Google Maps Platform credentials →";
   if (providerKey === "github") return "🔗 Manage GitHub PAT repository access here →";
   return `🔗 Get a new ${providerLabel} token here →`;
@@ -3453,7 +3456,10 @@ oauthApp.get("/:provider/start", async (c) => {
   } else if (providerKey === "reddit") {
     extraParams = `&duration=permanent`; // request a refresh_token (default is temporary/1h)
   }
-  const scopeStr = (providerDef.oauthScopes || []).join(" ");
+  // Slack's OAuth v2 authorize endpoint expects a comma-separated scope list
+  // (bot scopes in `scope`); most other providers use space-separated scopes.
+  const scopeSeparator = providerKey === "slack" ? "," : " ";
+  const scopeStr = (providerDef.oauthScopes || []).join(scopeSeparator);
   const params = new URLSearchParams({
     response_type: "code",
     client_id: clientId,
@@ -3612,6 +3618,11 @@ oauthApp.get("/:provider/callback", async (c) => {
     } else if (providerKey === "hubspot") {
       const u: any = await (await fetch("https://api.hubapi.com/oauth/v1/access-tokens/" + accessToken)).json();
       if (u.hub_id) userLogin = `hub-${u.hub_id}`;
+    } else if (providerKey === "slack") {
+      // Slack's oauth.v2.access response already carries the workspace info, so
+      // we don't need an extra API call to name the connection.
+      if (tokenJson.team?.name) userLogin = tokenJson.team.name;
+      else if (tokenJson.team?.id) userLogin = tokenJson.team.id;
     } else if (providerKey === "freee") {
       const u: any = await (await fetch("https://api.freee.co.jp/api/1/users/me", { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } })).json();
       if (u?.user?.email) userLogin = u.user.email;

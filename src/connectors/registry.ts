@@ -432,6 +432,33 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  slack: {
+    key: "slack",
+    label: "Slack",
+    // Both PAT (paste a Bot User OAuth Token) and OAuth (authorize an installed
+    // Slack app) are supported — users pick at the wizard.
+    authTypes: ["pat", "oauth"],
+    helpText: "Paste a Bot User OAuth Token (starts with xoxb-) from your Slack app's OAuth & Permissions page, or click Connect with OAuth to install the app and authorize it. Required Bot Token Scopes: channels:read, groups:read, channels:history, groups:history, chat:write, users:read. The token is sent as Authorization: Bearer to the Slack Web API.",
+    tokenUrl: "https://api.slack.com/apps",
+    // OAuth uses Slack's v2 flow. The redirect/callback URL to register in the
+    // app's OAuth & Permissions page is https://app.grantry.ai/oauth/slack/callback.
+    oauthSetupUrl: "https://api.slack.com/apps",
+    oauthScopes: ["channels:read", "groups:read", "channels:history", "groups:history", "chat:write", "users:read"],
+    authorizeUrl: "https://slack.com/oauth/v2/authorize",
+    oauthTokenUrl: "https://slack.com/api/oauth.v2.access",
+    tools: [
+      "slack/auth_test",
+      "slack/list_channels",
+      "slack/get_channel",
+      "slack/list_messages",
+      "slack/get_thread",
+      "slack/post_message",
+      "slack/update_message",
+      "slack/list_users",
+      "slack/get_user",
+    ],
+    implemented: true,
+  },
   reddit: {
     key: "reddit",
     label: "Reddit",

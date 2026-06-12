@@ -28,6 +28,7 @@ import { callHeyReachTool } from "./connectors/heyreach.js";
 import { callChatworkTool } from "./connectors/chatwork.js";
 import { callRailwayTool } from "./connectors/railway.js";
 import { callResendTool } from "./connectors/resend.js";
+import { callSlackTool } from "./connectors/slack.js";
 import { callFreeeTool } from "./connectors/freee.js";
 import { callMoneyForwardTool } from "./connectors/moneyforward.js";
 import { callRedditTool } from "./connectors/reddit.js";
@@ -1090,6 +1091,80 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "resend/list_api_keys") {
     return {};
   }
+  if (toolName === "slack/auth_test") {
+    return {};
+  }
+  if (toolName === "slack/list_channels") {
+    return {
+      types: { type: "string", description: "Comma-separated conversation types: public_channel, private_channel, mpim, im. Defaults to public_channel." },
+      limit: { type: "number", minimum: 1, maximum: 1000, description: "Max channels to return per page." },
+      cursor: { type: "string", description: "Pagination cursor from a previous response_metadata.next_cursor." },
+      exclude_archived: { type: "boolean", description: "When true, exclude archived channels." },
+      team_id: { type: "string", description: "Encoded team id, required for org-level tokens." },
+    };
+  }
+  if (toolName === "slack/get_channel") {
+    return {
+      channel: { type: "string", description: "Channel ID, e.g. C0123456789." },
+      include_num_members: { type: "boolean", description: "When true, include the member count." },
+    };
+  }
+  if (toolName === "slack/list_messages") {
+    return {
+      channel: { type: "string", description: "Channel ID to read history from." },
+      limit: { type: "number", minimum: 1, maximum: 1000, description: "Max messages to return." },
+      cursor: { type: "string", description: "Pagination cursor for the next page." },
+      oldest: { type: "string", description: "Only messages after this timestamp (inclusive depends on inclusive)." },
+      latest: { type: "string", description: "Only messages before this timestamp." },
+      inclusive: { type: "boolean", description: "Include messages with oldest/latest timestamps." },
+    };
+  }
+  if (toolName === "slack/get_thread") {
+    return {
+      channel: { type: "string", description: "Channel ID the thread is in." },
+      ts: { type: "string", description: "Timestamp (ts) of the thread's parent message." },
+      limit: { type: "number", minimum: 1, maximum: 1000, description: "Max replies to return." },
+      cursor: { type: "string", description: "Pagination cursor for the next page." },
+      oldest: { type: "string", description: "Only replies after this timestamp." },
+      latest: { type: "string", description: "Only replies before this timestamp." },
+      inclusive: { type: "boolean", description: "Include messages with oldest/latest timestamps." },
+    };
+  }
+  if (toolName === "slack/post_message") {
+    return {
+      channel: { type: "string", description: "Channel ID, channel name (#general), or user ID for a DM." },
+      text: { type: "string", description: "Message text. Required unless blocks or attachments are provided." },
+      blocks: { type: "array", items: { type: "object" }, description: "Slack Block Kit blocks." },
+      attachments: { type: "array", items: { type: "object" }, description: "Legacy message attachments." },
+      thread_ts: { type: "string", description: "Parent message ts to post this as a threaded reply." },
+      reply_broadcast: { type: "boolean", description: "When replying in a thread, also send to the channel." },
+      unfurl_links: { type: "boolean", description: "Enable/disable link unfurling." },
+      unfurl_media: { type: "boolean", description: "Enable/disable media unfurling." },
+      mrkdwn: { type: "boolean", description: "Disable Slack markdown when false." },
+    };
+  }
+  if (toolName === "slack/update_message") {
+    return {
+      channel: { type: "string", description: "Channel ID containing the message." },
+      ts: { type: "string", description: "Timestamp (ts) of the message to update." },
+      text: { type: "string", description: "New message text. Required unless blocks or attachments are provided." },
+      blocks: { type: "array", items: { type: "object" }, description: "Replacement Block Kit blocks." },
+      attachments: { type: "array", items: { type: "object" }, description: "Replacement attachments." },
+      reply_broadcast: { type: "boolean", description: "Broadcast the threaded reply update to the channel." },
+    };
+  }
+  if (toolName === "slack/list_users") {
+    return {
+      limit: { type: "number", minimum: 1, maximum: 1000, description: "Max users to return per page." },
+      cursor: { type: "string", description: "Pagination cursor for the next page." },
+      team_id: { type: "string", description: "Encoded team id, required for org-level tokens." },
+    };
+  }
+  if (toolName === "slack/get_user") {
+    return {
+      user: { type: "string", description: "User ID, e.g. U0123456789." },
+    };
+  }
   if (toolName === "freee/get_me") {
     return {};
   }
@@ -1401,6 +1476,12 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "resend/send_email") return ["from", "to", "subject"];
   if (toolName === "resend/get_email") return ["email_id"];
   if (toolName === "resend/get_domain") return ["domain_id"];
+  if (toolName === "slack/get_channel") return ["channel"];
+  if (toolName === "slack/list_messages") return ["channel"];
+  if (toolName === "slack/get_thread") return ["channel", "ts"];
+  if (toolName === "slack/post_message") return ["channel"];
+  if (toolName === "slack/update_message") return ["channel", "ts"];
+  if (toolName === "slack/get_user") return ["user"];
   if (toolName === "freee/list_deals") return ["company_id"];
   if (toolName === "freee/get_deal") return ["company_id", "deal_id"];
   if (toolName === "freee/create_deal") return ["company_id", "issue_date", "type"];
@@ -1996,6 +2077,8 @@ mcpApp.post("/", async (c) => {
         result = await callGoogleMapsTool(toolName, args, token);
       } else if (decision.provider === "resend") {
         result = await callResendTool(toolName, args, token);
+      } else if (decision.provider === "slack") {
+        result = await callSlackTool(toolName, args, token);
       } else if (decision.provider === "freee") {
         result = await callFreeeTool(toolName, args, token);
       } else if (decision.provider === "moneyforward") {
