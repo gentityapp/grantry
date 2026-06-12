@@ -91,6 +91,30 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   google_maps: "#34A853", // Google Maps green
   reddit: "#FF4500", // Reddit orange-red
   x: "#000000", // X black
+  airtable: "#18BFFF",
+  linear: "#5E6AD2",
+  sendgrid: "#1A82E2",
+  vercel: "#000000",
+  stripe: "#635BFF",
+  webflow: "#146EF5",
+  intercom: "#1F8DED",
+  customerio: "#7131FF",
+  mailchimp: "#FFE01B",
+  zendesk: "#03363D",
+  wordpress: "#21759B",
+  shopify: "#95BF47",
+  jira: "#2684FF",
+  salesforce: "#00A1E0",
+  linkedin_ads: "#0A66C2",
+  tiktok_ads: "#000000",
+  microsoft_ads: "#0078D4",
+  aws: "#FF9900",
+  snowflake: "#29B5E8",
+  google_calendar: "#4285F4",
+  google_sheets: "#0F9D58",
+  google_tag_manager: "#246FDB",
+  google_cloud: "#4285F4",
+  bigquery: "#669DF6",
 };
 
 /** Letter overrides where the label's first character is not the recognizable one. */

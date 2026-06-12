@@ -42,6 +42,9 @@ function authTypeLabel(providerKey: string, authType: string): string {
   if (providerKey === "google_maps") return "API key";
   if (providerKey === "discord") return "Bot token";
   if (providerKey === "line") return "Channel access token";
+  if (["airtable", "linear", "sendgrid", "vercel", "stripe", "webflow", "intercom", "customerio", "mailchimp"].includes(providerKey)) return "API key";
+  if (providerKey === "linkedin_ads" || providerKey === "tiktok_ads") return "Access token";
+  if (["zendesk", "wordpress", "shopify", "jira", "salesforce", "microsoft_ads", "aws", "snowflake"].includes(providerKey)) return "JSON credential";
   return "paste token";
 }
 
@@ -58,6 +61,25 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
   if (providerKey === "google_maps") return "Paste your Google Maps Platform API key";
   if (providerKey === "discord") return "Paste your Discord Bot Token from the Developer Portal > Bot";
   if (providerKey === "line") return "Paste your LINE Channel Access Token (Messaging API > Channel access token)";
+  if (providerKey === "airtable") return "Paste your Airtable Personal Access Token (patXXXX...)";
+  if (providerKey === "linear") return "Paste your Linear Personal API Key (lin_api_...)";
+  if (providerKey === "sendgrid") return "Paste your SendGrid API key (SG....)";
+  if (providerKey === "vercel") return "Paste your Vercel access token";
+  if (providerKey === "stripe") return "Paste your Stripe secret key (sk_live_... or sk_test_...)";
+  if (providerKey === "webflow") return "Paste your Webflow API token";
+  if (providerKey === "intercom") return "Paste your Intercom Access Token";
+  if (providerKey === "customerio") return 'App API key, or JSON {"token":"...","region":"eu"} for the EU region';
+  if (providerKey === "mailchimp") return "Paste your Mailchimp API key (e.g. abc123-us21)";
+  if (providerKey === "zendesk") return 'JSON: {"subdomain":"acme","email":"you@example.com","token":"..."}';
+  if (providerKey === "wordpress") return 'JSON: {"site":"https://blog.example.com","username":"admin","app_password":"xxxx xxxx ..."}';
+  if (providerKey === "shopify") return 'JSON: {"shop":"acme.myshopify.com","token":"shpat_..."}';
+  if (providerKey === "jira") return 'JSON: {"site":"https://acme.atlassian.net","email":"you@example.com","token":"..."}';
+  if (providerKey === "salesforce") return 'JSON: {"instance_url":"https://acme.my.salesforce.com","token":"..."}';
+  if (providerKey === "linkedin_ads") return "Paste your LinkedIn OAuth access token (r_ads/rw_ads scopes)";
+  if (providerKey === "tiktok_ads") return "Paste your TikTok for Business access token";
+  if (providerKey === "microsoft_ads") return 'JSON: {"developer_token":"...","access_token":"...","customer_id":"...","account_id":"..."}';
+  if (providerKey === "aws") return 'JSON: {"accessKeyId":"AKIA...","secretAccessKey":"...","region":"us-east-1"}';
+  if (providerKey === "snowflake") return 'JSON: {"account":"orgname-accountname","token":"...","warehouse":"...","database":"..."}';
   return `Paste your ${providerLabel} token here`;
 }
 
@@ -472,6 +494,11 @@ const OAUTH_LEGACY_CLIENT_ID_ALIASES: Record<string, string[]> = {
   google_ads: ["GOOGLE_CLIENT_ID"],
   google_drive: ["GOOGLE_CLIENT_ID"],
   gmail: ["GOOGLE_CLIENT_ID"],
+  google_calendar: ["GOOGLE_CLIENT_ID"],
+  google_sheets: ["GOOGLE_CLIENT_ID"],
+  google_tag_manager: ["GOOGLE_CLIENT_ID"],
+  google_cloud: ["GOOGLE_CLIENT_ID"],
+  bigquery: ["GOOGLE_CLIENT_ID"],
   yahoo_ads: ["YAHOO_CLIENT_ID"],
 };
 
@@ -482,6 +509,11 @@ const OAUTH_LEGACY_CLIENT_SECRET_ALIASES: Record<string, string[]> = {
   google_ads: ["GOOGLE_CLIENT_SECRET"],
   google_drive: ["GOOGLE_CLIENT_SECRET"],
   gmail: ["GOOGLE_CLIENT_SECRET"],
+  google_calendar: ["GOOGLE_CLIENT_SECRET"],
+  google_sheets: ["GOOGLE_CLIENT_SECRET"],
+  google_tag_manager: ["GOOGLE_CLIENT_SECRET"],
+  google_cloud: ["GOOGLE_CLIENT_SECRET"],
+  bigquery: ["GOOGLE_CLIENT_SECRET"],
   yahoo_ads: ["YAHOO_CLIENT_SECRET"],
 };
 
@@ -3402,6 +3434,11 @@ oauthApp.get("/:provider/start", async (c) => {
     google_drive: ["GOOGLE_CLIENT_ID"],
     gmail: ["GOOGLE_CLIENT_ID"],
     youtube: ["GOOGLE_CLIENT_ID"],
+    google_calendar: ["GOOGLE_CLIENT_ID"],
+    google_sheets: ["GOOGLE_CLIENT_ID"],
+    google_tag_manager: ["GOOGLE_CLIENT_ID"],
+    google_cloud: ["GOOGLE_CLIENT_ID"],
+    bigquery: ["GOOGLE_CLIENT_ID"],
     yahoo_ads: ["YAHOO_CLIENT_ID"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
@@ -3457,7 +3494,7 @@ oauthApp.get("/:provider/start", async (c) => {
   let extraParams = "";
   if (providerKey === "github") {
     extraParams = `&allow_signup=true`;
-  } else if (providerKey.startsWith("google_") || providerKey === "gmail" || providerKey === "youtube") {
+  } else if (providerKey.startsWith("google_") || providerKey === "gmail" || providerKey === "youtube" || providerKey === "bigquery") {
     extraParams = `&access_type=offline&prompt=consent`; // request refresh_token
   } else if (providerKey === "reddit") {
     extraParams = `&duration=permanent`; // request a refresh_token (default is temporary/1h)
@@ -3527,6 +3564,11 @@ oauthApp.get("/:provider/callback", async (c) => {
     google_drive: ["GOOGLE_CLIENT_ID"],
     gmail: ["GOOGLE_CLIENT_ID"],
     youtube: ["GOOGLE_CLIENT_ID"],
+    google_calendar: ["GOOGLE_CLIENT_ID"],
+    google_sheets: ["GOOGLE_CLIENT_ID"],
+    google_tag_manager: ["GOOGLE_CLIENT_ID"],
+    google_cloud: ["GOOGLE_CLIENT_ID"],
+    bigquery: ["GOOGLE_CLIENT_ID"],
     yahoo_ads: ["YAHOO_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
@@ -3537,6 +3579,11 @@ oauthApp.get("/:provider/callback", async (c) => {
     google_drive: ["GOOGLE_CLIENT_SECRET"],
     gmail: ["GOOGLE_CLIENT_SECRET"],
     youtube: ["GOOGLE_CLIENT_SECRET"],
+    google_calendar: ["GOOGLE_CLIENT_SECRET"],
+    google_sheets: ["GOOGLE_CLIENT_SECRET"],
+    google_tag_manager: ["GOOGLE_CLIENT_SECRET"],
+    google_cloud: ["GOOGLE_CLIENT_SECRET"],
+    bigquery: ["GOOGLE_CLIENT_SECRET"],
     yahoo_ads: ["YAHOO_CLIENT_SECRET"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
@@ -3618,7 +3665,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     if (providerKey === "github") {
       const u: any = await (await fetch("https://api.github.com/user", { headers: { Authorization: `Bearer ${accessToken}`, "User-Agent": "grantry" } })).json();
       if (u.login) userLogin = u.login;
-    } else if (providerKey.startsWith("google_") || providerKey === "gmail") {
+    } else if (providerKey.startsWith("google_") || providerKey === "gmail" || providerKey === "bigquery") {
       const u: any = await (await fetch(`https://www.googleapis.com/oauth2/v2/userinfo?access_token=${accessToken}`)).json();
       if (u.email) userLogin = u.email;
     } else if (providerKey === "hubspot") {

@@ -3,7 +3,10 @@ name: grantry
 description: |
   Use grantry when the user wants an AI agent to call external SaaS APIs
   (GitHub, Notion, Google Drive/GSC/Ads/Maps, HubSpot, Attio, Clay, HeyReach,
-  Chatwork, Railway, Resend, Slack, Reddit, X, Discord, LINE) under OAuth/PAT authentication
+  Chatwork, Railway, Resend, Slack, Reddit, X, Discord, LINE, Airtable, Linear,
+  SendGrid, Vercel, Stripe, Webflow, Intercom, Customer.io, Mailchimp, Zendesk,
+  WordPress, Shopify, Jira, Salesforce, LinkedIn Ads, TikTok Ads, Microsoft Ads,
+  AWS, Snowflake, Google Calendar/Sheets/Tag Manager/Cloud, BigQuery) under OAuth/PAT authentication
   with tenant isolation. grantry (formerly "grantry-auth", deployed as "agent-oauth") is a
   Hono/TypeScript service that holds encrypted credentials and exposes them as
   MCP tools, so the agent never sees raw tokens. Triggers: mentions of
@@ -157,6 +160,20 @@ Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing tenant):
 - **LINE**: paste a **Channel Access Token** from the LINE Developers console
   (`developers.line.biz/console`) > your Messaging API channel > Messaging API tab.
   Scoped to one official account / channel.
+- **PAT (paste an API key / token)**: **Airtable** (PAT), **Linear** (personal API
+  key, no Bearer prefix), **SendGrid** (API key), **Vercel** (token), **Stripe**
+  (secret key), **Webflow** (token), **Intercom** (access token), **Customer.io**
+  (App API key; JSON `{"token","region"}` for EU), **Mailchimp** (key with `-dc`
+  suffix), **LinkedIn Ads** / **TikTok Ads** (OAuth access token pasted in).
+- **JSON credential blobs (paste JSON)**: **Zendesk** `{"subdomain","email","token"}`,
+  **WordPress** `{"site","username","app_password"}`, **Shopify** `{"shop","token"}`,
+  **Jira** `{"site","email","token"}`, **Salesforce** `{"instance_url","token"}`,
+  **Microsoft Ads** `{"developer_token","access_token","customer_id","account_id"}`,
+  **AWS** `{"accessKeyId","secretAccessKey","region"}`, **Snowflake**
+  `{"account","token","warehouse","database","schema","role"}`.
+- **Google OAuth (via `/oauth/<provider>/start`, reuse `GOOGLE_CLIENT_ID/SECRET`)**:
+  **google_calendar**, **google_sheets**, **google_tag_manager**, **google_cloud**,
+  **bigquery** — enable the matching API in the Google Cloud project.
 Set the connection's **scope to the tenant name**; that's the scope callers must pass.
 
 ### 6. Grant an agent access to a scope
@@ -166,7 +183,7 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 3. Bind the role to the agent (`POST /agents/:id/bind`) — or skip role wrangling
    entirely and create the agent via `/agents/new`.
 
-## Providers & tools (200)
+## Providers & tools (335)
 - `ping` — liveness (returns `pong from <agent>`)
 - **grantry** (system metadata, no SaaS credential required): `get_skill`,
   `get_providers`
@@ -214,6 +231,30 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
   `get_quota_consumption`, `get_profile`, `push_message`, `reply_message`,
   `multicast`, `broadcast`, `get_group_summary`, `get_group_member_count`,
   `get_group_member_profile`
+- **airtable** (PAT; read+write): `list_bases`, `list_tables`, `list_records`, `get_record`, `create_record`, `update_record`, `delete_record`
+- **linear** (PAT; read+write): `get_me`, `list_teams`, `list_issues`, `get_issue`, `search_issues`, `create_issue`, `update_issue`
+- **sendgrid** (API key; read+write): `send_email`, `list_templates`, `get_template`, `get_stats`, `list_bounces`, `list_api_keys`
+- **vercel** (PAT; read): `get_user`, `list_projects`, `get_project`, `list_deployments`, `get_deployment`, `list_domains`
+- **stripe** (secret key; read+write): `list_customers`, `get_customer`, `create_customer`, `list_charges`, `list_payment_intents`, `create_payment_intent`, `list_invoices`
+- **webflow** (PAT; read+write): `list_sites`, `get_site`, `list_collections`, `list_items`, `create_item`, `publish_site`
+- **intercom** (PAT; read+write): `get_me`, `list_contacts`, `get_contact`, `search_contacts`, `create_contact`, `list_conversations`, `reply_conversation`
+- **customerio** (App API key; read+write): `send_transactional`, `list_campaigns`, `get_campaign`, `get_campaign_metrics`, `get_customer`, `list_newsletters`
+- **mailchimp** (API key; read+write): `ping`, `list_lists`, `get_list`, `list_members`, `add_member`, `list_campaigns`
+- **zendesk** (JSON cred; read+write): `list_tickets`, `get_ticket`, `create_ticket`, `update_ticket`, `add_comment`, `search`, `list_users`
+- **wordpress** (JSON cred; read+write): `list_posts`, `get_post`, `create_post`, `update_post`, `list_pages`, `list_categories`
+- **shopify** (JSON cred; read+write): `list_products`, `get_product`, `create_product`, `list_orders`, `get_order`, `list_customers`
+- **jira** (JSON cred; read+write): `search`, `get_issue`, `create_issue`, `update_issue`, `add_comment`, `list_projects`, `transition_issue`
+- **salesforce** (JSON cred; read+write): `query`, `search`, `get_record`, `create_record`, `update_record`, `delete_record`
+- **linkedin_ads** (access token; read): `list_ad_accounts`, `get_ad_account`, `list_campaigns`, `get_campaign`, `get_analytics`
+- **tiktok_ads** (access token; read): `get_user_info`, `get_advertiser_info`, `list_campaigns`, `list_adgroups`, `list_ads`, `get_report`
+- **microsoft_ads** (JSON cred; read; SOAP): `get_user`, `get_accounts_info`
+- **aws** (JSON cred; SigV4; read): `get_caller_identity`, `s3_list_buckets`, `s3_list_objects`
+- **snowflake** (JSON cred; read+write): `execute_statement`, `get_statement`, `cancel_statement`
+- **google_calendar** (OAuth; read+write): `list_calendars`, `list_events`, `get_event`, `create_event`, `update_event`, `delete_event`
+- **google_sheets** (OAuth; read+write): `get_spreadsheet`, `get_values`, `batch_get_values`, `update_values`, `append_values`, `create_spreadsheet`
+- **google_tag_manager** (OAuth; read-only): `list_accounts`, `list_containers`, `get_container`, `list_workspaces`, `list_tags`
+- **google_cloud** (OAuth; read-only): `list_projects`, `get_project`, `list_services`, `list_log_entries`
+- **bigquery** (OAuth; read+query): `list_datasets`, `list_tables`, `get_table`, `query`, `get_job`
 
 ### GitHub tool arguments (besides `scope`)
 - `get_repo`, `list_issues`: `owner`, `repo` (list_issues also `state`, default `open`)
@@ -430,6 +471,105 @@ plain `text` string is accepted and wrapped into a single text message.
 - `get_group_summary` / `get_group_member_count` (read): `group_id`.
 - `get_group_member_profile` (read): `group_id`, `user_id`.
 
+### Airtable tool arguments (besides `scope`)
+- `list_bases` (read): none. `list_tables` (read): `base_id`.
+- `list_records` (read): `base_id`, `table`; opt `max_records`, `view`, `page_size`, `offset`, `filter_by_formula`.
+- `get_record` (read): `base_id`, `table`, `record_id`.
+- `create_record` (write): `base_id`, `table`; one of `fields` (object) or `records` (array).
+- `update_record` (write): `base_id`, `table`, `record_id`, `fields`. `delete_record` (write): `base_id`, `table`, `record_id`.
+
+### Linear tool arguments (besides `scope`)
+- `get_me` / `list_teams` (read): none. `list_issues` (read): opt `first`.
+- `get_issue` (read): `id`. `search_issues` (read): `query`.
+- `create_issue` (write): `team_id`, `title`; opt `description`. `update_issue` (write): `id`; opt `title`, `description`, `stateId`, or raw `input`.
+
+### SendGrid tool arguments (besides `scope`)
+- `send_email` (write): `from`, `to`, `subject`, one of `text`/`html`; or raw `data`.
+- `list_templates` (read): opt `page_size`. `get_template` (read): `template_id`.
+- `get_stats` (read): `start_date`; opt `end_date`, `aggregated_by`. `list_bounces` / `list_api_keys` (read): opt time bounds / none.
+
+### Vercel tool arguments (besides `scope`)
+- `get_user` / `list_projects` / `list_domains` (read): opt `limit`, `team_id`.
+- `get_project` (read): `project_id`. `get_deployment` (read): `deployment_id`. `list_deployments` (read): opt `project_id`, `app`, `limit`, `team_id`.
+
+### Stripe tool arguments (besides `scope`)
+- `list_customers` / `list_charges` / `list_payment_intents` / `list_invoices` (read): opt `limit`, `customer`, `starting_after`, `status`/`email`.
+- `get_customer` (read): `customer_id`.
+- `create_customer` (write): opt `email`, `name`, `description`, `phone`, `metadata`, raw `params`.
+- `create_payment_intent` (write): `amount`, `currency`; opt `customer`, `description`, `metadata`.
+
+### Webflow tool arguments (besides `scope`)
+- `list_sites` (read): none. `get_site` / `list_collections` (read): `site_id`.
+- `list_items` (read): `collection_id`; opt `limit`, `offset`.
+- `create_item` (write): `collection_id`, `field_data`. `publish_site` (write): `site_id`.
+
+### Intercom tool arguments (besides `scope`)
+- `get_me` (read): none. `list_contacts` / `list_conversations` (read): opt `per_page`, `starting_after`.
+- `get_contact` (read): `contact_id`. `search_contacts` (read): `query` (object).
+- `create_contact` (write): `email` and/or `external_id`; opt `name`. `reply_conversation` (write): `conversation_id`, `admin_id`, `body`.
+
+### Customer.io tool arguments (besides `scope`)
+- `send_transactional` (write): `to`; opt `transactional_message_id`, `identifiers`, `message_data`, raw `data`.
+- `list_campaigns` / `list_newsletters` (read): none. `get_campaign` / `get_campaign_metrics` (read): `campaign_id`. `get_customer` (read): `customer_id`.
+
+### Mailchimp tool arguments (besides `scope`)
+- `ping` / `list_lists` / `list_campaigns` (read): opt `count`, `offset`.
+- `get_list` (read): `list_id`. `list_members` (read): `list_id`; opt `count`, `offset`, `status`.
+- `add_member` (write): `list_id`, `email_address`; opt `status`, `merge_fields`.
+
+### Zendesk tool arguments (besides `scope`)
+- `list_tickets` / `list_users` (read): opt `page`, `per_page`, `sort_by`/`role`. `get_ticket` (read): `ticket_id`. `search` (read): `query`.
+- `create_ticket` (write): `subject`, `body`. `update_ticket` (write): `ticket_id`; opt `status`, `priority`, `assignee_id`, raw `ticket`. `add_comment` (write): `ticket_id`, `body`; opt `public`.
+
+### WordPress tool arguments (besides `scope`)
+- `list_posts` / `list_pages` (read): opt `per_page`, `page`, `search`, `status`. `get_post` (read): `post_id`. `list_categories` (read): opt `per_page`.
+- `create_post` (write): `title`; opt `content`, `status`. `update_post` (write): `post_id`; opt `title`, `content`, `status`.
+
+### Shopify tool arguments (besides `scope`)
+- `list_products` / `list_orders` / `list_customers` (read): opt `limit`, `status`, `financial_status`. `get_product` (read): `product_id`. `get_order` (read): `order_id`.
+- `create_product` (write): `title`; opt `body_html`, `vendor`, `status`.
+
+### Jira tool arguments (besides `scope`)
+- `search` (read): `jql`; opt `max_results`, `fields`. `get_issue` (read): `issue_key`. `list_projects` (read): opt `max_results`, `query`.
+- `create_issue` (write): `project_key`, `summary`, `issue_type`; opt `description`. `update_issue` (write): `issue_key`, `fields`. `add_comment` (write): `issue_key`, `body`. `transition_issue` (write): `issue_key`, `transition_id`.
+
+### Salesforce tool arguments (besides `scope`)
+- `query` (read): `soql`. `search` (read): `sosl`. `get_record` (read): `sobject`, `record_id`.
+- `create_record` (write): `sobject`, `fields`. `update_record` (write): `sobject`, `record_id`, `fields`. `delete_record` (write): `sobject`, `record_id`.
+
+### LinkedIn Ads tool arguments (besides `scope`)
+- `list_ad_accounts` (read): opt `start`, `count`. `get_ad_account` / `list_campaigns` (read): `account_id`. `get_campaign` (read): `campaign_id`. `get_analytics` (read): `params` (object of adAnalytics query params).
+
+### TikTok Ads tool arguments (besides `scope`)
+- `get_user_info` (read): none. `get_advertiser_info` (read): `advertiser_ids`. `list_campaigns` / `list_adgroups` / `list_ads` (read): `advertiser_id`; opt `page`, `page_size`. `get_report` (read): `advertiser_id`, `params`.
+
+### Microsoft Ads tool arguments (besides `scope`)
+- SOAP-based. `get_user` (read): none. `get_accounts_info` (read): opt `customer_id` (defaults to the credential).
+
+### AWS tool arguments (besides `scope`)
+- `get_caller_identity` / `s3_list_buckets` (read): none. `s3_list_objects` (read): `bucket`. Requests are SigV4-signed; permissions follow the IAM identity.
+
+### Snowflake tool arguments (besides `scope`)
+- `execute_statement` (write): `statement`; opt `warehouse`, `database`, `schema`, `role`, `timeout`. `get_statement` (read) / `cancel_statement` (write): `statement_handle`.
+
+### Google Calendar tool arguments (besides `scope`)
+- `list_calendars` (read): none. `list_events` (read): `calendar_id`; opt `time_min`, `time_max`, `q`, `max_results`, `single_events`, `order_by`. `get_event` (read): `calendar_id`, `event_id`.
+- `create_event` (write): `calendar_id`, `start`, `end`; opt `summary`, `description`, `location`, `attendees`. `update_event` (write): `calendar_id`, `event_id`; opt fields. `delete_event` (write): `calendar_id`, `event_id`.
+
+### Google Sheets tool arguments (besides `scope`)
+- `get_spreadsheet` (read): `spreadsheet_id`; opt `ranges`, `include_grid_data`. `get_values` (read): `spreadsheet_id`, `range`. `batch_get_values` (read): `spreadsheet_id`, `ranges`.
+- `update_values` / `append_values` (write): `spreadsheet_id`, `range`, `values`; opt `value_input_option`. `create_spreadsheet` (write): `title`.
+
+### Google Tag Manager tool arguments (besides `scope`)
+- `list_accounts` (read): none. `list_containers` (read): `account_id`. `get_container` / `list_workspaces` (read): `account_id`, `container_id`. `list_tags` (read): `account_id`, `container_id`, `workspace_id`.
+
+### Google Cloud tool arguments (besides `scope`)
+- `list_projects` (read): opt `filter`, `page_size`, `page_token`. `get_project` (read): `project_id`. `list_services` (read): `project_id`. `list_log_entries` (read): `project_id`; opt `filter`, `order_by`, `page_size`.
+
+### BigQuery tool arguments (besides `scope`)
+- `list_datasets` (read): `project_id`. `list_tables` (read): `project_id`, `dataset_id`. `get_table` (read): `project_id`, `dataset_id`, `table_id`. `get_job` (read): `project_id`, `job_id`.
+- `query` (read/query): `project_id`, `query`; opt `max_results`, `use_legacy_sql`, `dry_run`.
+
 ## Output contract
 When asked to act via grantry:
 1. If you don't already know the scope, call `connections/list` first to resolve
@@ -452,7 +592,20 @@ When asked to act via grantry:
    `reddit/submit_post`, `reddit/submit_comment`, `reddit/vote`,
    `x/post_tweet`, `x/delete_tweet`, `discord/send_message`,
    `discord/edit_message`, `discord/delete_message`, `line/push_message`,
-   `line/reply_message`, `line/multicast`, `line/broadcast`, …)
+   `line/reply_message`, `line/multicast`, `line/broadcast`,
+   `airtable/create_record`, `airtable/update_record`, `airtable/delete_record`,
+   `linear/create_issue`, `linear/update_issue`, `sendgrid/send_email`,
+   `stripe/create_customer`, `stripe/create_payment_intent`, `webflow/create_item`,
+   `webflow/publish_site`, `intercom/create_contact`, `intercom/reply_conversation`,
+   `customerio/send_transactional`, `mailchimp/add_member`, `zendesk/create_ticket`,
+   `zendesk/update_ticket`, `zendesk/add_comment`, `wordpress/create_post`,
+   `wordpress/update_post`, `shopify/create_product`, `jira/create_issue`,
+   `jira/update_issue`, `jira/add_comment`, `jira/transition_issue`,
+   `salesforce/create_record`, `salesforce/update_record`, `salesforce/delete_record`,
+   `snowflake/execute_statement`, `snowflake/cancel_statement`,
+   `google_calendar/create_event`, `google_calendar/update_event`,
+   `google_calendar/delete_event`, `google_sheets/update_values`,
+   `google_sheets/append_values`, `google_sheets/create_spreadsheet`, …)
    get explicit confirmation first —
    these hit the real SaaS via real tokens and are not reversible. **Read-only**
    calls (incl. the connectivity smoke test) need no confirmation — just run them.

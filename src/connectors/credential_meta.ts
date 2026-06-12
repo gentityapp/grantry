@@ -135,7 +135,7 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
-    if (provider.startsWith("google_") || provider === "gmail" || provider === "youtube") {
+    if (provider.startsWith("google_") || provider === "gmail" || provider === "youtube" || provider === "bigquery") {
       const tokenInfo = await fetchWithTimeout(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(token)}`);
       const info: any = await readJson(tokenInfo);
       if (!tokenInfo.ok) {
@@ -635,6 +635,171 @@ export async function inspectCredential(provider: string, authType: string, toke
         ],
         checkedAt,
       };
+    }
+
+    if (provider === "airtable") {
+      const resp = await fetchWithTimeout("https://api.airtable.com/v0/meta/whoami", { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `Airtable token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      return { provider, authType, status: "ok", subject: { id: body.id }, scopes: Array.isArray(body.scopes) ? body.scopes : [], notes: ["Airtable PATs are sent as Authorization: Bearer and scoped to the permissions chosen at token creation."], checkedAt };
+    }
+
+    if (provider === "linear") {
+      const resp = await fetchWithTimeout("https://api.linear.app/graphql", { method: "POST", headers: { Authorization: token, Accept: "application/json", "Content-Type": "application/json" }, body: JSON.stringify({ query: "query { viewer { id name email } }" }) });
+      const body: any = await readJson(resp);
+      if (!resp.ok || (Array.isArray(body.errors) && body.errors.length)) return { provider, authType, status: "error", checkedAt, error: `Linear token check failed: ${resp.status} ${JSON.stringify(body.errors ?? body).slice(0, 300)}` };
+      const viewer = body.data?.viewer ?? {};
+      return { provider, authType, status: "ok", subject: { id: viewer.id, name: viewer.name, email: viewer.email }, notes: ["Linear personal API keys are sent as the Authorization header value (no Bearer prefix)."], checkedAt };
+    }
+
+    if (provider === "sendgrid") {
+      const resp = await fetchWithTimeout("https://api.sendgrid.com/v3/scopes", { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `SendGrid API key check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      return { provider, authType, status: "ok", scopes: Array.isArray(body.scopes) ? body.scopes : [], notes: ["SendGrid API keys are sent as Authorization: Bearer. Restrict to mail.send for send-only use."], checkedAt };
+    }
+
+    if (provider === "vercel") {
+      const resp = await fetchWithTimeout("https://api.vercel.com/v2/user", { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `Vercel token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      const user = body.user ?? body;
+      return { provider, authType, status: "ok", subject: { uid: user.uid, username: user.username, email: user.email }, notes: ["Vercel tokens are sent as Authorization: Bearer. Team-scoped tokens only access that team."], checkedAt };
+    }
+
+    if (provider === "stripe") {
+      const resp = await fetchWithTimeout("https://api.stripe.com/v1/balance", { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `Stripe key check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      return { provider, authType, status: "ok", notes: ["Stripe secret keys are sent as Authorization: Bearer. Use a restricted key to limit access."], checkedAt };
+    }
+
+    if (provider === "webflow") {
+      const resp = await fetchWithTimeout("https://api.webflow.com/v2/sites", { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `Webflow token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      const sites = Array.isArray(body.sites) ? body.sites : [];
+      return { provider, authType, status: "ok", resources: sites.slice(0, 50).map((s: any) => ({ id: s.id, displayName: s.displayName })), notes: ["Webflow tokens are sent as Authorization: Bearer to the Data API v2."], checkedAt };
+    }
+
+    if (provider === "intercom") {
+      const resp = await fetchWithTimeout("https://api.intercom.io/me", { headers: { Authorization: `Bearer ${token}`, Accept: "application/json", "Intercom-Version": "2.11" } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `Intercom token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      return { provider, authType, status: "ok", subject: { type: body.type, email: body.email, name: body.name, app: body.app?.name }, notes: ["Intercom access tokens are sent as Authorization: Bearer."], checkedAt };
+    }
+
+    if (provider === "customerio") {
+      const t = token.trim();
+      let tok = t; let region = "us";
+      if (t.startsWith("{")) { const o = JSON.parse(t); tok = String(o.token ?? o.api_key ?? o.apiKey ?? "").trim(); region = String(o.region ?? "us").trim().toLowerCase(); }
+      if (!tok) return { provider, authType, status: "error", checkedAt, error: "Customer.io token is empty" };
+      const base = region === "eu" ? "https://api-eu.customer.io" : "https://api.customer.io";
+      const resp = await fetchWithTimeout(`${base}/v1/campaigns`, { headers: { Authorization: `Bearer ${tok}`, Accept: "application/json" } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `Customer.io key check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      return { provider, authType, status: "ok", subject: { region }, notes: ["Customer.io App API key is sent as Authorization: Bearer."], checkedAt };
+    }
+
+    if (provider === "mailchimp") {
+      const key = token.trim();
+      const dash = key.lastIndexOf("-");
+      if (dash === -1 || dash === key.length - 1) return { provider, authType, status: "error", checkedAt, error: "Mailchimp API key must end with a datacenter suffix like -us21" };
+      const dc = key.slice(dash + 1);
+      const resp = await fetchWithTimeout(`https://${dc}.api.mailchimp.com/3.0/`, { headers: { Authorization: "Basic " + Buffer.from("anystring:" + key).toString("base64"), Accept: "application/json" } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `Mailchimp key check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      return { provider, authType, status: "ok", subject: { account_name: body.account_name, email: body.email, datacenter: dc }, notes: ["Mailchimp API keys carry their datacenter as the suffix after the last '-' and use HTTP Basic auth."], checkedAt };
+    }
+
+    if (provider === "zendesk") {
+      let p: any; try { p = JSON.parse(token.trim()); } catch { return { provider, authType, status: "error", checkedAt, error: 'Zendesk credential must be JSON {"subdomain","email","token"}' }; }
+      if (!p.subdomain || !p.email || !p.token) return { provider, authType, status: "error", checkedAt, error: "Zendesk JSON must include subdomain, email, and token" };
+      const resp = await fetchWithTimeout(`https://${p.subdomain}.zendesk.com/api/v2/users/me.json`, { headers: { Authorization: "Basic " + Buffer.from(`${p.email}/token:${p.token}`).toString("base64"), Accept: "application/json" } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `Zendesk check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      return { provider, authType, status: "ok", subject: { name: body.user?.name, role: body.user?.role, subdomain: p.subdomain }, notes: ["Zendesk API tokens use HTTP Basic auth as email/token:token."], checkedAt };
+    }
+
+    if (provider === "wordpress") {
+      let p: any; try { p = JSON.parse(token.trim()); } catch { return { provider, authType, status: "error", checkedAt, error: 'WordPress credential must be JSON {"site","username","app_password"}' }; }
+      if (!p.site || !p.username || !p.app_password) return { provider, authType, status: "error", checkedAt, error: "WordPress JSON must include site, username, and app_password" };
+      const base = String(p.site).replace(/\/+$/, "");
+      const resp = await fetchWithTimeout(`${base}/wp-json/wp/v2/users/me?context=edit`, { headers: { Authorization: "Basic " + Buffer.from(`${p.username}:${p.app_password}`).toString("base64"), Accept: "application/json" } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `WordPress check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      return { provider, authType, status: "ok", subject: { id: body.id, name: body.name, site: base }, notes: ["WordPress Application Passwords use HTTP Basic auth over the REST API."], checkedAt };
+    }
+
+    if (provider === "shopify") {
+      let p: any; try { p = JSON.parse(token.trim()); } catch { return { provider, authType, status: "error", checkedAt, error: 'Shopify credential must be JSON {"shop","token"}' }; }
+      if (!p.shop || !p.token) return { provider, authType, status: "error", checkedAt, error: "Shopify JSON must include shop and token" };
+      const resp = await fetchWithTimeout(`https://${p.shop}/admin/api/2024-10/shop.json`, { headers: { "X-Shopify-Access-Token": p.token, Accept: "application/json" } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `Shopify check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      return { provider, authType, status: "ok", subject: { name: body.shop?.name, domain: body.shop?.domain, plan: body.shop?.plan_name }, notes: ["Shopify Admin API tokens are sent via the X-Shopify-Access-Token header."], checkedAt };
+    }
+
+    if (provider === "jira") {
+      let p: any; try { p = JSON.parse(token.trim()); } catch { return { provider, authType, status: "error", checkedAt, error: 'Jira credential must be JSON {"site","email","token"}' }; }
+      const site = String(p.site ?? "").trim().replace(/\/+$/, "");
+      if (!site || !p.email || !p.token) return { provider, authType, status: "error", checkedAt, error: "Jira JSON must include site, email, and token" };
+      const resp = await fetchWithTimeout(`${site}/rest/api/3/myself`, { headers: { Authorization: "Basic " + Buffer.from(`${p.email}:${p.token}`).toString("base64"), Accept: "application/json" } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `Jira check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      return { provider, authType, status: "ok", subject: { accountId: body.accountId, displayName: body.displayName, emailAddress: body.emailAddress }, notes: ["Jira API tokens use HTTP Basic auth as email:token. Permissions follow Jira project roles."], checkedAt };
+    }
+
+    if (provider === "salesforce") {
+      let p: any; try { p = JSON.parse(token.trim()); } catch { return { provider, authType, status: "error", checkedAt, error: 'Salesforce credential must be JSON {"instance_url","token"}' }; }
+      const instanceUrl = String(p.instance_url ?? p.instanceUrl ?? "").trim().replace(/\/+$/, "");
+      const sfToken = String(p.token ?? p.access_token ?? "").trim();
+      if (!instanceUrl || !sfToken) return { provider, authType, status: "error", checkedAt, error: "Salesforce JSON must include instance_url and token" };
+      const resp = await fetchWithTimeout(`${instanceUrl}/services/oauth2/userinfo`, { headers: { Authorization: `Bearer ${sfToken}`, Accept: "application/json" } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `Salesforce check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      return { provider, authType, status: "ok", subject: { user_id: body.user_id, name: body.name, email: body.email, organization_id: body.organization_id }, notes: ["Salesforce access tokens expire (default ~2h); re-paste when expired."], checkedAt };
+    }
+
+    if (provider === "linkedin_ads") {
+      const resp = await fetchWithTimeout("https://api.linkedin.com/v2/userinfo", { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `LinkedIn Ads token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      return { provider, authType, status: "ok", subject: { sub: body.sub, name: body.name, email: body.email }, notes: ["LinkedIn access tokens expire (~60 days) and are not auto-refreshed here. Requires r_ads/rw_ads scopes."], checkedAt };
+    }
+
+    if (provider === "tiktok_ads") {
+      const resp = await fetchWithTimeout("https://business-api.tiktok.com/open_api/v1.3/user/info/", { headers: { "Access-Token": token, "Content-Type": "application/json", Accept: "application/json" } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `TikTok Ads token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      if (body.code !== 0) return { provider, authType, status: "error", checkedAt, error: `TikTok Ads token check failed: code=${body.code} ${body.message}` };
+      const data = body.data ?? {};
+      return { provider, authType, status: "ok", subject: { display_name: data.display_name, email: data.email }, notes: ["TikTok for Business API uses the Access-Token header (not Bearer); responses use code=0 for success."], checkedAt };
+    }
+
+    if (provider === "microsoft_ads") {
+      let p: any; try { p = JSON.parse(token.trim()); } catch { return { provider, authType, status: "error", checkedAt, error: 'Microsoft Ads credential must be JSON {"developer_token","access_token",...}' }; }
+      if (!p.developer_token || !p.access_token) return { provider, authType, status: "error", checkedAt, error: "Microsoft Ads JSON must include developer_token and access_token" };
+      return { provider, authType, status: "ok", notes: ["Microsoft Ads is SOAP-based; the credential is validated on the first call.", "The access_token is short-lived and must be refreshed externally via the Microsoft identity platform."], checkedAt };
+    }
+
+    if (provider === "aws") {
+      let p: any; try { p = JSON.parse(token.trim()); } catch { return { provider, authType, status: "error", checkedAt, error: 'AWS credential must be JSON {"accessKeyId","secretAccessKey","region"}' }; }
+      if (!p.accessKeyId || !p.secretAccessKey) return { provider, authType, status: "error", checkedAt, error: "AWS JSON must include accessKeyId and secretAccessKey" };
+      try {
+        const { callAwsTool } = await import("./aws.js");
+        const res: any = await callAwsTool("aws/get_caller_identity", {}, token);
+        const sc = res?.structuredContent ?? {};
+        return { provider, authType, status: "ok", subject: { Account: sc.Account, Arn: sc.Arn, region: p.region ?? "us-east-1" }, notes: ["AWS requests are signed with SigV4. Permissions follow the IAM identity's policies."], checkedAt };
+      } catch (e: any) {
+        return { provider, authType, status: "error", checkedAt, error: `AWS GetCallerIdentity failed: ${String(e?.message ?? e).slice(0, 300)}` };
+      }
+    }
+
+    if (provider === "snowflake") {
+      let p: any; try { p = JSON.parse(token.trim()); } catch { return { provider, authType, status: "error", checkedAt, error: 'Snowflake credential must be JSON {"account","token",...}' }; }
+      if (!p.account || !p.token) return { provider, authType, status: "error", checkedAt, error: "Snowflake JSON must include account and token" };
+      return { provider, authType, status: "ok", subject: { account: p.account }, notes: ["Snowflake tokens are validated on the first execute_statement call.", "Uses the SQL API v2 with Authorization: Bearer and X-Snowflake-Authorization-Token-Type."], checkedAt };
     }
 
     return {

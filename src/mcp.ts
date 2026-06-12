@@ -35,6 +35,30 @@ import { callRedditTool } from "./connectors/reddit.js";
 import { callXTool } from "./connectors/x.js";
 import { callDiscordTool } from "./connectors/discord.js";
 import { callLineTool } from "./connectors/line.js";
+import { callAirtableTool } from "./connectors/airtable.js";
+import { callLinearTool } from "./connectors/linear.js";
+import { callSendGridTool } from "./connectors/sendgrid.js";
+import { callVercelTool } from "./connectors/vercel.js";
+import { callStripeTool } from "./connectors/stripe.js";
+import { callWebflowTool } from "./connectors/webflow.js";
+import { callIntercomTool } from "./connectors/intercom.js";
+import { callCustomerioTool } from "./connectors/customerio.js";
+import { callMailchimpTool } from "./connectors/mailchimp.js";
+import { callZendeskTool } from "./connectors/zendesk.js";
+import { callWordpressTool } from "./connectors/wordpress.js";
+import { callShopifyTool } from "./connectors/shopify.js";
+import { callJiraTool } from "./connectors/jira.js";
+import { callSalesforceTool } from "./connectors/salesforce.js";
+import { callLinkedinAdsTool } from "./connectors/linkedin_ads.js";
+import { callTiktokAdsTool } from "./connectors/tiktok_ads.js";
+import { callMicrosoftAdsTool } from "./connectors/microsoft_ads.js";
+import { callAwsTool } from "./connectors/aws.js";
+import { callSnowflakeTool } from "./connectors/snowflake.js";
+import { callGoogleCalendarTool } from "./connectors/google_calendar.js";
+import { callGoogleSheetsTool } from "./connectors/google_sheets.js";
+import { callGoogleTagManagerTool } from "./connectors/google_tag_manager.js";
+import { callGoogleCloudTool } from "./connectors/google_cloud.js";
+import { callBigQueryTool } from "./connectors/bigquery.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 
 export const mcpApp = new Hono();
@@ -1519,6 +1543,273 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       user_id: { type: "string", description: "LINE user ID of a group member." },
     };
   }
+  // --- airtable ---
+  if (toolName === "airtable/list_tables") { return { base_id: { type: "string", description: "Airtable base id (appXXXXXXXXXXXXXX)." } }; }
+  if (toolName === "airtable/list_records") {
+    return {
+      base_id: { type: "string", description: "Airtable base id." },
+      table: { type: "string", description: "Table name or id." },
+      max_records: { type: "number", description: "Maximum records to return." },
+      view: { type: "string", description: "Optional view name or id." },
+      page_size: { type: "number", description: "Records per page, max 100." },
+      offset: { type: "string", description: "Pagination offset token." },
+      filter_by_formula: { type: "string", description: "Airtable formula filter, e.g. {Status}='Active'." },
+    };
+  }
+  if (toolName === "airtable/get_record" || toolName === "airtable/delete_record") {
+    return {
+      base_id: { type: "string", description: "Airtable base id." },
+      table: { type: "string", description: "Table name or id." },
+      record_id: { type: "string", description: "Airtable record id (recXXXXXXXXXXXXXX)." },
+    };
+  }
+  if (toolName === "airtable/create_record") {
+    return {
+      base_id: { type: "string", description: "Airtable base id." },
+      table: { type: "string", description: "Table name or id." },
+      fields: { type: "object", description: "Field values for a single new record." },
+      records: { type: "array", items: { type: "object" }, description: "Array of { fields } objects to create multiple records." },
+    };
+  }
+  if (toolName === "airtable/update_record") {
+    return {
+      base_id: { type: "string", description: "Airtable base id." },
+      table: { type: "string", description: "Table name or id." },
+      record_id: { type: "string", description: "Airtable record id to update." },
+      fields: { type: "object", description: "Field values to patch onto the record." },
+    };
+  }
+  // --- linear ---
+  if (toolName === "linear/list_issues") { return { first: { type: "number", description: "Number of issues to return. Defaults to 50." } }; }
+  if (toolName === "linear/get_issue") { return { id: { type: "string", description: "Linear issue id (UUID or identifier like ENG-123)." } }; }
+  if (toolName === "linear/search_issues") { return { query: { type: "string", description: "Full-text search term." } }; }
+  if (toolName === "linear/create_issue") {
+    return {
+      team_id: { type: "string", description: "Linear team id (UUID)." },
+      title: { type: "string", description: "Issue title." },
+      description: { type: "string", description: "Optional issue description in Markdown." },
+    };
+  }
+  if (toolName === "linear/update_issue") {
+    return {
+      id: { type: "string", description: "Linear issue id to update." },
+      title: { type: "string", description: "New issue title." },
+      description: { type: "string", description: "New issue description in Markdown." },
+      stateId: { type: "string", description: "New workflow state id." },
+      input: { type: "object", description: "Raw Linear IssueUpdateInput; overrides individual fields." },
+    };
+  }
+  // --- sendgrid ---
+  if (toolName === "sendgrid/send_email") {
+    return {
+      from: { type: "string", description: "Sender email (must be a verified sender)." },
+      to: { type: "string", description: "Recipient email." },
+      subject: { type: "string", description: "Subject line." },
+      text: { type: "string", description: "Plain-text body." },
+      html: { type: "string", description: "HTML body." },
+      data: { type: "object", description: "Raw SendGrid /mail/send body; overrides individual fields." },
+    };
+  }
+  if (toolName === "sendgrid/list_templates") { return { page_size: { type: "number", description: "Templates per page." } }; }
+  if (toolName === "sendgrid/get_template") { return { template_id: { type: "string", description: "SendGrid dynamic template id (d-...)." } }; }
+  if (toolName === "sendgrid/get_stats") {
+    return {
+      start_date: { type: "string", description: "Start date YYYY-MM-DD." },
+      end_date: { type: "string", description: "End date YYYY-MM-DD." },
+      aggregated_by: { type: "string", enum: ["day", "week", "month"], description: "Aggregation period." },
+    };
+  }
+  if (toolName === "sendgrid/list_bounces") { return { start_time: { type: "number", description: "Unix timestamp lower bound." }, end_time: { type: "number", description: "Unix timestamp upper bound." } }; }
+  // --- vercel ---
+  if (toolName === "vercel/list_projects") { return { limit: { type: "number", description: "Projects to return." }, team_id: { type: "string", description: "Optional Vercel team id." } }; }
+  if (toolName === "vercel/get_project") { return { project_id: { type: "string", description: "Vercel project id or name." } }; }
+  if (toolName === "vercel/list_deployments") {
+    return {
+      limit: { type: "number", description: "Deployments to return." },
+      project_id: { type: "string", description: "Filter by project id or name." },
+      app: { type: "string", description: "Filter by app name." },
+      team_id: { type: "string", description: "Optional Vercel team id." },
+    };
+  }
+  if (toolName === "vercel/get_deployment") { return { deployment_id: { type: "string", description: "Vercel deployment id (dpl_...) or URL." } }; }
+  if (toolName === "vercel/list_domains") { return { limit: { type: "number", description: "Domains to return." }, team_id: { type: "string", description: "Optional Vercel team id." } }; }
+  // --- stripe ---
+  if (toolName === "stripe/list_customers") { return { limit: { type: "number", description: "Max results." }, email: { type: "string", description: "Filter by email." }, starting_after: { type: "string", description: "Pagination cursor." } }; }
+  if (toolName === "stripe/get_customer") { return { customer_id: { type: "string", description: "Stripe customer id (cus_...)." } }; }
+  if (toolName === "stripe/create_customer") {
+    return {
+      email: { type: "string", description: "Customer email." },
+      name: { type: "string", description: "Customer name." },
+      description: { type: "string", description: "Internal description." },
+      phone: { type: "string", description: "Phone number." },
+      metadata: { type: "object", description: "Key-value metadata." },
+      params: { type: "object", description: "Raw Stripe params passthrough." },
+    };
+  }
+  if (toolName === "stripe/list_charges") { return { limit: { type: "number", description: "Max results." }, customer: { type: "string", description: "Filter by customer id." }, starting_after: { type: "string", description: "Pagination cursor." } }; }
+  if (toolName === "stripe/list_payment_intents") { return { limit: { type: "number", description: "Max results." }, customer: { type: "string", description: "Filter by customer id." } }; }
+  if (toolName === "stripe/create_payment_intent") {
+    return {
+      amount: { type: "number", description: "Amount in the smallest currency unit (e.g. cents)." },
+      currency: { type: "string", description: "3-letter ISO currency code (e.g. usd)." },
+      customer: { type: "string", description: "Customer id to attach." },
+      description: { type: "string", description: "Description." },
+      metadata: { type: "object", description: "Key-value metadata." },
+    };
+  }
+  if (toolName === "stripe/list_invoices") { return { limit: { type: "number", description: "Max results." }, customer: { type: "string", description: "Filter by customer id." }, status: { type: "string", description: "draft, open, paid, uncollectible, or void." } }; }
+  // --- webflow ---
+  if (toolName === "webflow/get_site") { return { site_id: { type: "string", description: "Webflow site id." } }; }
+  if (toolName === "webflow/list_collections") { return { site_id: { type: "string", description: "Webflow site id." } }; }
+  if (toolName === "webflow/list_items") { return { collection_id: { type: "string", description: "Collection id." }, limit: { type: "number", description: "Max results." }, offset: { type: "number", description: "Pagination offset." } }; }
+  if (toolName === "webflow/create_item") { return { collection_id: { type: "string", description: "Collection id." }, field_data: { type: "object", description: "Item field values keyed by field slug." } }; }
+  if (toolName === "webflow/publish_site") { return { site_id: { type: "string", description: "Webflow site id to publish." } }; }
+  // --- intercom ---
+  if (toolName === "intercom/list_contacts" || toolName === "intercom/list_conversations") { return { per_page: { type: "number", description: "Results per page." }, starting_after: { type: "string", description: "Pagination cursor." } }; }
+  if (toolName === "intercom/get_contact") { return { contact_id: { type: "string", description: "Intercom contact id." } }; }
+  if (toolName === "intercom/search_contacts") { return { query: { type: "object", description: "Intercom search query object (field, operator, value)." } }; }
+  if (toolName === "intercom/create_contact") {
+    return {
+      email: { type: "string", description: "Contact email (at least one of email/external_id required)." },
+      name: { type: "string", description: "Contact name." },
+      external_id: { type: "string", description: "Your system's user id." },
+    };
+  }
+  if (toolName === "intercom/reply_conversation") {
+    return {
+      conversation_id: { type: "string", description: "Conversation id." },
+      admin_id: { type: "string", description: "Admin/agent id sending the reply." },
+      body: { type: "string", description: "Reply message text." },
+    };
+  }
+  // --- customerio ---
+  if (toolName === "customerio/send_transactional") {
+    return {
+      to: { type: "string", description: "Recipient email address." },
+      transactional_message_id: { type: "string", description: "Transactional message template id." },
+      identifiers: { type: "object", description: "Customer identifiers, e.g. {id:'123'}." },
+      message_data: { type: "object", description: "Template variable data." },
+      data: { type: "object", description: "Raw Customer.io send body passthrough." },
+    };
+  }
+  if (toolName === "customerio/get_campaign" || toolName === "customerio/get_campaign_metrics") { return { campaign_id: { type: "string", description: "Campaign id." } }; }
+  if (toolName === "customerio/get_customer") { return { customer_id: { type: "string", description: "Customer identifier." } }; }
+  // --- mailchimp ---
+  if (toolName === "mailchimp/get_list") { return { list_id: { type: "string", description: "Mailchimp audience/list id." } }; }
+  if (toolName === "mailchimp/list_members") { return { list_id: { type: "string", description: "Mailchimp audience/list id." }, count: { type: "number", description: "Records to return." }, offset: { type: "number", description: "Pagination offset." }, status: { type: "string", description: "subscribed, unsubscribed, cleaned, or pending." } }; }
+  if (toolName === "mailchimp/add_member") { return { list_id: { type: "string", description: "Mailchimp audience/list id." }, email_address: { type: "string", description: "Email to add." }, status: { type: "string", description: "Subscription status (default subscribed)." }, merge_fields: { type: "object", description: "Merge fields, e.g. {FNAME, LNAME}." } }; }
+  if (toolName === "mailchimp/list_lists" || toolName === "mailchimp/list_campaigns") { return { count: { type: "number", description: "Records to return." }, offset: { type: "number", description: "Pagination offset." } }; }
+  // --- zendesk ---
+  if (toolName === "zendesk/list_tickets") { return { page: { type: "number", description: "Page number." }, per_page: { type: "number", description: "Results per page (max 100)." }, sort_by: { type: "string", description: "Sort field, e.g. created_at." } }; }
+  if (toolName === "zendesk/get_ticket") { return { ticket_id: { type: "string", description: "Zendesk ticket id." } }; }
+  if (toolName === "zendesk/create_ticket") { return { subject: { type: "string", description: "Ticket subject." }, body: { type: "string", description: "Initial comment body." } }; }
+  if (toolName === "zendesk/update_ticket") { return { ticket_id: { type: "string", description: "Zendesk ticket id." }, status: { type: "string", description: "open, pending, solved, closed." }, priority: { type: "string", description: "low, normal, high, urgent." }, assignee_id: { type: "number", description: "Assignee user id." }, ticket: { type: "object", description: "Full ticket update object (overrides individual fields)." } }; }
+  if (toolName === "zendesk/add_comment") { return { ticket_id: { type: "string", description: "Zendesk ticket id." }, body: { type: "string", description: "Comment text." }, public: { type: "boolean", description: "Public comment (default true)." } }; }
+  if (toolName === "zendesk/search") { return { query: { type: "string", description: "Zendesk search query, e.g. type:ticket status:open." } }; }
+  if (toolName === "zendesk/list_users") { return { page: { type: "number", description: "Page number." }, per_page: { type: "number", description: "Results per page." }, role: { type: "string", description: "end-user, agent, or admin." } }; }
+  // --- wordpress ---
+  if (toolName === "wordpress/list_posts") { return { per_page: { type: "number", description: "Posts per page (max 100)." }, page: { type: "number", description: "Page number." }, search: { type: "string", description: "Search keyword." }, status: { type: "string", description: "publish, draft, pending, private." } }; }
+  if (toolName === "wordpress/get_post") { return { post_id: { type: "string", description: "WordPress post id." } }; }
+  if (toolName === "wordpress/create_post") { return { title: { type: "string", description: "Post title." }, content: { type: "string", description: "Post body (HTML)." }, status: { type: "string", description: "publish, draft (default), pending, private." } }; }
+  if (toolName === "wordpress/update_post") { return { post_id: { type: "string", description: "WordPress post id." }, title: { type: "string", description: "Post title." }, content: { type: "string", description: "Post body (HTML)." }, status: { type: "string", description: "Post status." } }; }
+  if (toolName === "wordpress/list_pages") { return { per_page: { type: "number", description: "Pages per page." }, page: { type: "number", description: "Page number." }, search: { type: "string", description: "Search keyword." } }; }
+  if (toolName === "wordpress/list_categories") { return { per_page: { type: "number", description: "Categories per page." } }; }
+  // --- shopify ---
+  if (toolName === "shopify/list_products") { return { limit: { type: "number", description: "Results (max 250)." }, status: { type: "string", description: "active, archived, draft." } }; }
+  if (toolName === "shopify/get_product") { return { product_id: { type: "string", description: "Shopify product id." } }; }
+  if (toolName === "shopify/create_product") { return { title: { type: "string", description: "Product title." }, body_html: { type: "string", description: "Product description HTML." }, vendor: { type: "string", description: "Product vendor/brand." }, status: { type: "string", description: "active, draft, archived." } }; }
+  if (toolName === "shopify/list_orders") { return { limit: { type: "number", description: "Results (max 250)." }, status: { type: "string", description: "open, closed, cancelled, any." }, financial_status: { type: "string", description: "paid, pending, refunded, etc." } }; }
+  if (toolName === "shopify/get_order") { return { order_id: { type: "string", description: "Shopify order id." } }; }
+  if (toolName === "shopify/list_customers") { return { limit: { type: "number", description: "Results (max 250)." } }; }
+  // --- jira ---
+  if (toolName === "jira/search") { return { jql: { type: "string", description: "JQL query, e.g. project = ABC AND status = Open." }, max_results: { type: "number", description: "Max results (default 50)." }, fields: { type: "string", description: "Comma-separated fields to include." } }; }
+  if (toolName === "jira/get_issue") { return { issue_key: { type: "string", description: "Jira issue key, e.g. PROJ-123." } }; }
+  if (toolName === "jira/create_issue") { return { project_key: { type: "string", description: "Project key, e.g. PROJ." }, summary: { type: "string", description: "Issue summary/title." }, issue_type: { type: "string", description: "Issue type name, e.g. Bug, Task." }, description: { type: "string", description: "Plain-text description (converted to ADF)." } }; }
+  if (toolName === "jira/update_issue") { return { issue_key: { type: "string", description: "Jira issue key." }, fields: { type: "object", description: "Fields to update, e.g. { summary: 'New' }." } }; }
+  if (toolName === "jira/add_comment") { return { issue_key: { type: "string", description: "Jira issue key." }, body: { type: "string", description: "Plain-text comment (converted to ADF)." } }; }
+  if (toolName === "jira/list_projects") { return { max_results: { type: "number", description: "Max projects." }, query: { type: "string", description: "Name filter." } }; }
+  if (toolName === "jira/transition_issue") { return { issue_key: { type: "string", description: "Jira issue key." }, transition_id: { type: "string", description: "Transition id." } }; }
+  // --- salesforce ---
+  if (toolName === "salesforce/query") { return { soql: { type: "string", description: "SOQL query, e.g. SELECT Id, Name FROM Account LIMIT 10." } }; }
+  if (toolName === "salesforce/search") { return { sosl: { type: "string", description: "SOSL search, e.g. FIND {Acme} IN ALL FIELDS RETURNING Account(Id,Name)." } }; }
+  if (toolName === "salesforce/get_record") { return { sobject: { type: "string", description: "Object type, e.g. Account." }, record_id: { type: "string", description: "Record id." } }; }
+  if (toolName === "salesforce/create_record") { return { sobject: { type: "string", description: "Object type to create." }, fields: { type: "object", description: "Field name/value pairs." } }; }
+  if (toolName === "salesforce/update_record") { return { sobject: { type: "string", description: "Object type." }, record_id: { type: "string", description: "Record id." }, fields: { type: "object", description: "Field name/value pairs to update." } }; }
+  if (toolName === "salesforce/delete_record") { return { sobject: { type: "string", description: "Object type." }, record_id: { type: "string", description: "Record id to delete." } }; }
+  // --- linkedin_ads ---
+  if (toolName === "linkedin_ads/list_ad_accounts") { return { start: { type: "number", description: "Pagination start index." }, count: { type: "number", description: "Results to return." } }; }
+  if (toolName === "linkedin_ads/get_ad_account") { return { account_id: { type: "string", description: "LinkedIn ad account id (numeric)." } }; }
+  if (toolName === "linkedin_ads/list_campaigns") { return { account_id: { type: "string", description: "LinkedIn ad account id." } }; }
+  if (toolName === "linkedin_ads/get_campaign") { return { campaign_id: { type: "string", description: "LinkedIn ad campaign id." } }; }
+  if (toolName === "linkedin_ads/get_analytics") { return { params: { type: "object", description: "Query params for the adAnalytics endpoint (dateRange, pivot, campaigns, etc.)." } }; }
+  // --- tiktok_ads ---
+  if (toolName === "tiktok_ads/get_advertiser_info") { return { advertiser_ids: { type: "array", items: { type: "string" }, description: "Advertiser ids (array or comma-separated string)." } }; }
+  if (toolName === "tiktok_ads/list_campaigns" || toolName === "tiktok_ads/list_adgroups" || toolName === "tiktok_ads/list_ads") { return { advertiser_id: { type: "string", description: "TikTok advertiser account id." }, page: { type: "number", description: "Page number." }, page_size: { type: "number", description: "Results per page." } }; }
+  if (toolName === "tiktok_ads/get_report") { return { advertiser_id: { type: "string", description: "TikTok advertiser account id." }, params: { type: "object", description: "Report params (report_type, dimensions, metrics, start_date, end_date). Arrays/objects are JSON-encoded." } }; }
+  // --- microsoft_ads ---
+  if (toolName === "microsoft_ads/get_accounts_info") { return { customer_id: { type: "string", description: "Customer id (defaults to the value in the credential)." } }; }
+  // --- aws ---
+  if (toolName === "aws/s3_list_objects") { return { bucket: { type: "string", description: "S3 bucket name." } }; }
+  // --- snowflake ---
+  if (toolName === "snowflake/execute_statement") {
+    return {
+      statement: { type: "string", description: "SQL statement to execute." },
+      warehouse: { type: "string", description: "Warehouse override (defaults to credential)." },
+      database: { type: "string", description: "Database override." },
+      schema: { type: "string", description: "Schema override." },
+      role: { type: "string", description: "Role override." },
+      timeout: { type: "number", description: "Statement timeout in seconds." },
+    };
+  }
+  if (toolName === "snowflake/get_statement" || toolName === "snowflake/cancel_statement") { return { statement_handle: { type: "string", description: "Statement handle (UUID) from execute_statement." } }; }
+  // --- google_calendar ---
+  if (toolName === "google_calendar/list_events") {
+    return {
+      calendar_id: { type: "string", description: "Calendar id (e.g. primary)." },
+      time_min: { type: "string", description: "RFC3339 lower bound for event start." },
+      time_max: { type: "string", description: "RFC3339 upper bound." },
+      q: { type: "string", description: "Free-text search." },
+      max_results: { type: "number", description: "Max events." },
+      single_events: { type: "boolean", description: "Expand recurring events." },
+      order_by: { type: "string", description: "startTime or updated." },
+    };
+  }
+  if (toolName === "google_calendar/get_event" || toolName === "google_calendar/delete_event") { return { calendar_id: { type: "string", description: "Calendar id." }, event_id: { type: "string", description: "Event id." } }; }
+  if (toolName === "google_calendar/create_event") {
+    return {
+      calendar_id: { type: "string", description: "Calendar id (e.g. primary)." },
+      start: { type: "object", description: "Event start, e.g. { dateTime: '2026-06-12T10:00:00+09:00' } or { date: '2026-06-12' }." },
+      end: { type: "object", description: "Event end (same shape as start)." },
+      summary: { type: "string", description: "Event title." },
+      description: { type: "string", description: "Event description." },
+      location: { type: "string", description: "Event location." },
+      attendees: { type: "array", items: { type: "object" }, description: "Attendees, e.g. [{ email }]." },
+    };
+  }
+  if (toolName === "google_calendar/update_event") { return { calendar_id: { type: "string", description: "Calendar id." }, event_id: { type: "string", description: "Event id." }, summary: { type: "string", description: "Event title." }, description: { type: "string", description: "Description." }, start: { type: "object", description: "Event start." }, end: { type: "object", description: "Event end." } }; }
+  // --- google_sheets ---
+  if (toolName === "google_sheets/get_spreadsheet") { return { spreadsheet_id: { type: "string", description: "Spreadsheet id." }, ranges: { type: "array", items: { type: "string" }, description: "A1 ranges to include." }, include_grid_data: { type: "boolean", description: "Include cell data." } }; }
+  if (toolName === "google_sheets/get_values") { return { spreadsheet_id: { type: "string", description: "Spreadsheet id." }, range: { type: "string", description: "A1 range, e.g. Sheet1!A1:C10." } }; }
+  if (toolName === "google_sheets/batch_get_values") { return { spreadsheet_id: { type: "string", description: "Spreadsheet id." }, ranges: { type: "array", items: { type: "string" }, description: "A1 ranges." } }; }
+  if (toolName === "google_sheets/update_values") { return { spreadsheet_id: { type: "string", description: "Spreadsheet id." }, range: { type: "string", description: "A1 range to write." }, values: { type: "array", items: { type: "array" }, description: "2D array of row values." }, value_input_option: { type: "string", description: "USER_ENTERED (default) or RAW." } }; }
+  if (toolName === "google_sheets/append_values") { return { spreadsheet_id: { type: "string", description: "Spreadsheet id." }, range: { type: "string", description: "A1 range to append after." }, values: { type: "array", items: { type: "array" }, description: "2D array of row values." }, value_input_option: { type: "string", description: "USER_ENTERED (default) or RAW." } }; }
+  if (toolName === "google_sheets/create_spreadsheet") { return { title: { type: "string", description: "New spreadsheet title." } }; }
+  // --- google_tag_manager ---
+  if (toolName === "google_tag_manager/list_containers") { return { account_id: { type: "string", description: "GTM account id." } }; }
+  if (toolName === "google_tag_manager/get_container") { return { account_id: { type: "string", description: "GTM account id." }, container_id: { type: "string", description: "GTM container id." } }; }
+  if (toolName === "google_tag_manager/list_workspaces") { return { account_id: { type: "string", description: "GTM account id." }, container_id: { type: "string", description: "GTM container id." } }; }
+  if (toolName === "google_tag_manager/list_tags") { return { account_id: { type: "string", description: "GTM account id." }, container_id: { type: "string", description: "GTM container id." }, workspace_id: { type: "string", description: "GTM workspace id." } }; }
+  // --- google_cloud ---
+  if (toolName === "google_cloud/list_projects") { return { filter: { type: "string", description: "Project list filter." }, page_size: { type: "number", description: "Results per page." }, page_token: { type: "string", description: "Pagination token." } }; }
+  if (toolName === "google_cloud/get_project") { return { project_id: { type: "string", description: "GCP project id." } }; }
+  if (toolName === "google_cloud/list_services") { return { project_id: { type: "string", description: "GCP project id." }, page_size: { type: "number", description: "Results per page." }, page_token: { type: "string", description: "Pagination token." } }; }
+  if (toolName === "google_cloud/list_log_entries") { return { project_id: { type: "string", description: "GCP project id." }, filter: { type: "string", description: "Cloud Logging filter expression." }, order_by: { type: "string", description: "timestamp asc or timestamp desc." }, page_size: { type: "number", description: "Max entries (default 50)." } }; }
+  // --- bigquery ---
+  if (toolName === "bigquery/list_datasets") { return { project_id: { type: "string", description: "GCP project id." }, max_results: { type: "number", description: "Max datasets." }, all: { type: "boolean", description: "Include hidden datasets." } }; }
+  if (toolName === "bigquery/list_tables") { return { project_id: { type: "string", description: "GCP project id." }, dataset_id: { type: "string", description: "Dataset id." }, max_results: { type: "number", description: "Max tables." } }; }
+  if (toolName === "bigquery/get_table") { return { project_id: { type: "string", description: "GCP project id." }, dataset_id: { type: "string", description: "Dataset id." }, table_id: { type: "string", description: "Table id." } }; }
+  if (toolName === "bigquery/query") { return { project_id: { type: "string", description: "GCP project id (billing project)." }, query: { type: "string", description: "Standard SQL query." }, max_results: { type: "number", description: "Max rows to return." }, use_legacy_sql: { type: "boolean", description: "Use legacy SQL (default false)." }, dry_run: { type: "boolean", description: "Validate without running." } }; }
+  if (toolName === "bigquery/get_job") { return { project_id: { type: "string", description: "GCP project id." }, job_id: { type: "string", description: "Job id." }, location: { type: "string", description: "Job location." } }; }
   return {};
 }
 
@@ -1659,6 +1950,97 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "line/get_group_summary") return ["group_id"];
   if (toolName === "line/get_group_member_count") return ["group_id"];
   if (toolName === "line/get_group_member_profile") return ["group_id", "user_id"];
+  if (toolName === "airtable/list_tables") return ["base_id"];
+  if (toolName === "airtable/list_records") return ["base_id", "table"];
+  if (toolName === "airtable/get_record") return ["base_id", "table", "record_id"];
+  if (toolName === "airtable/create_record") return ["base_id", "table"];
+  if (toolName === "airtable/update_record") return ["base_id", "table", "record_id", "fields"];
+  if (toolName === "airtable/delete_record") return ["base_id", "table", "record_id"];
+  if (toolName === "linear/get_issue") return ["id"];
+  if (toolName === "linear/search_issues") return ["query"];
+  if (toolName === "linear/create_issue") return ["team_id", "title"];
+  if (toolName === "linear/update_issue") return ["id"];
+  if (toolName === "sendgrid/send_email") return ["from", "to", "subject"];
+  if (toolName === "sendgrid/get_template") return ["template_id"];
+  if (toolName === "sendgrid/get_stats") return ["start_date"];
+  if (toolName === "vercel/get_project") return ["project_id"];
+  if (toolName === "vercel/get_deployment") return ["deployment_id"];
+  if (toolName === "stripe/get_customer") return ["customer_id"];
+  if (toolName === "stripe/create_payment_intent") return ["amount", "currency"];
+  if (toolName === "webflow/get_site") return ["site_id"];
+  if (toolName === "webflow/list_collections") return ["site_id"];
+  if (toolName === "webflow/list_items") return ["collection_id"];
+  if (toolName === "webflow/create_item") return ["collection_id", "field_data"];
+  if (toolName === "webflow/publish_site") return ["site_id"];
+  if (toolName === "intercom/get_contact") return ["contact_id"];
+  if (toolName === "intercom/search_contacts") return ["query"];
+  if (toolName === "intercom/reply_conversation") return ["conversation_id", "admin_id", "body"];
+  if (toolName === "customerio/send_transactional") return ["to"];
+  if (toolName === "customerio/get_campaign") return ["campaign_id"];
+  if (toolName === "customerio/get_campaign_metrics") return ["campaign_id"];
+  if (toolName === "customerio/get_customer") return ["customer_id"];
+  if (toolName === "mailchimp/get_list") return ["list_id"];
+  if (toolName === "mailchimp/list_members") return ["list_id"];
+  if (toolName === "mailchimp/add_member") return ["list_id", "email_address"];
+  if (toolName === "zendesk/get_ticket") return ["ticket_id"];
+  if (toolName === "zendesk/create_ticket") return ["subject", "body"];
+  if (toolName === "zendesk/update_ticket") return ["ticket_id"];
+  if (toolName === "zendesk/add_comment") return ["ticket_id", "body"];
+  if (toolName === "zendesk/search") return ["query"];
+  if (toolName === "wordpress/get_post") return ["post_id"];
+  if (toolName === "wordpress/create_post") return ["title"];
+  if (toolName === "wordpress/update_post") return ["post_id"];
+  if (toolName === "shopify/get_product") return ["product_id"];
+  if (toolName === "shopify/create_product") return ["title"];
+  if (toolName === "shopify/get_order") return ["order_id"];
+  if (toolName === "jira/search") return ["jql"];
+  if (toolName === "jira/get_issue") return ["issue_key"];
+  if (toolName === "jira/create_issue") return ["project_key", "summary", "issue_type"];
+  if (toolName === "jira/update_issue") return ["issue_key", "fields"];
+  if (toolName === "jira/add_comment") return ["issue_key", "body"];
+  if (toolName === "jira/transition_issue") return ["issue_key", "transition_id"];
+  if (toolName === "salesforce/query") return ["soql"];
+  if (toolName === "salesforce/search") return ["sosl"];
+  if (toolName === "salesforce/get_record") return ["sobject", "record_id"];
+  if (toolName === "salesforce/create_record") return ["sobject", "fields"];
+  if (toolName === "salesforce/update_record") return ["sobject", "record_id", "fields"];
+  if (toolName === "salesforce/delete_record") return ["sobject", "record_id"];
+  if (toolName === "linkedin_ads/get_ad_account") return ["account_id"];
+  if (toolName === "linkedin_ads/list_campaigns") return ["account_id"];
+  if (toolName === "linkedin_ads/get_campaign") return ["campaign_id"];
+  if (toolName === "linkedin_ads/get_analytics") return ["params"];
+  if (toolName === "tiktok_ads/get_advertiser_info") return ["advertiser_ids"];
+  if (toolName === "tiktok_ads/list_campaigns") return ["advertiser_id"];
+  if (toolName === "tiktok_ads/list_adgroups") return ["advertiser_id"];
+  if (toolName === "tiktok_ads/list_ads") return ["advertiser_id"];
+  if (toolName === "tiktok_ads/get_report") return ["advertiser_id", "params"];
+  if (toolName === "aws/s3_list_objects") return ["bucket"];
+  if (toolName === "snowflake/execute_statement") return ["statement"];
+  if (toolName === "snowflake/get_statement") return ["statement_handle"];
+  if (toolName === "snowflake/cancel_statement") return ["statement_handle"];
+  if (toolName === "google_calendar/list_events") return ["calendar_id"];
+  if (toolName === "google_calendar/get_event") return ["calendar_id", "event_id"];
+  if (toolName === "google_calendar/create_event") return ["calendar_id", "start", "end"];
+  if (toolName === "google_calendar/update_event") return ["calendar_id", "event_id"];
+  if (toolName === "google_calendar/delete_event") return ["calendar_id", "event_id"];
+  if (toolName === "google_sheets/get_spreadsheet") return ["spreadsheet_id"];
+  if (toolName === "google_sheets/get_values") return ["spreadsheet_id", "range"];
+  if (toolName === "google_sheets/batch_get_values") return ["spreadsheet_id", "ranges"];
+  if (toolName === "google_sheets/update_values") return ["spreadsheet_id", "range", "values"];
+  if (toolName === "google_sheets/append_values") return ["spreadsheet_id", "range", "values"];
+  if (toolName === "google_sheets/create_spreadsheet") return ["title"];
+  if (toolName === "google_tag_manager/list_containers") return ["account_id"];
+  if (toolName === "google_tag_manager/get_container") return ["account_id", "container_id"];
+  if (toolName === "google_tag_manager/list_workspaces") return ["account_id", "container_id"];
+  if (toolName === "google_tag_manager/list_tags") return ["account_id", "container_id", "workspace_id"];
+  if (toolName === "google_cloud/get_project") return ["project_id"];
+  if (toolName === "google_cloud/list_services") return ["project_id"];
+  if (toolName === "google_cloud/list_log_entries") return ["project_id"];
+  if (toolName === "bigquery/list_datasets") return ["project_id"];
+  if (toolName === "bigquery/list_tables") return ["project_id", "dataset_id"];
+  if (toolName === "bigquery/get_table") return ["project_id", "dataset_id", "table_id"];
+  if (toolName === "bigquery/query") return ["project_id", "query"];
+  if (toolName === "bigquery/get_job") return ["project_id", "job_id"];
   return [];
 }
 
@@ -2244,6 +2626,54 @@ mcpApp.post("/", async (c) => {
         result = await callDiscordTool(toolName, args, token);
       } else if (decision.provider === "line") {
         result = await callLineTool(toolName, args, token);
+      } else if (decision.provider === "airtable") {
+        result = await callAirtableTool(toolName, args, token);
+      } else if (decision.provider === "linear") {
+        result = await callLinearTool(toolName, args, token);
+      } else if (decision.provider === "sendgrid") {
+        result = await callSendGridTool(toolName, args, token);
+      } else if (decision.provider === "vercel") {
+        result = await callVercelTool(toolName, args, token);
+      } else if (decision.provider === "stripe") {
+        result = await callStripeTool(toolName, args, token);
+      } else if (decision.provider === "webflow") {
+        result = await callWebflowTool(toolName, args, token);
+      } else if (decision.provider === "intercom") {
+        result = await callIntercomTool(toolName, args, token);
+      } else if (decision.provider === "customerio") {
+        result = await callCustomerioTool(toolName, args, token);
+      } else if (decision.provider === "mailchimp") {
+        result = await callMailchimpTool(toolName, args, token);
+      } else if (decision.provider === "zendesk") {
+        result = await callZendeskTool(toolName, args, token);
+      } else if (decision.provider === "wordpress") {
+        result = await callWordpressTool(toolName, args, token);
+      } else if (decision.provider === "shopify") {
+        result = await callShopifyTool(toolName, args, token);
+      } else if (decision.provider === "jira") {
+        result = await callJiraTool(toolName, args, token);
+      } else if (decision.provider === "salesforce") {
+        result = await callSalesforceTool(toolName, args, token);
+      } else if (decision.provider === "linkedin_ads") {
+        result = await callLinkedinAdsTool(toolName, args, token);
+      } else if (decision.provider === "tiktok_ads") {
+        result = await callTiktokAdsTool(toolName, args, token);
+      } else if (decision.provider === "microsoft_ads") {
+        result = await callMicrosoftAdsTool(toolName, args, token);
+      } else if (decision.provider === "aws") {
+        result = await callAwsTool(toolName, args, token);
+      } else if (decision.provider === "snowflake") {
+        result = await callSnowflakeTool(toolName, args, token);
+      } else if (decision.provider === "google_calendar") {
+        result = await callGoogleCalendarTool(toolName, args, token);
+      } else if (decision.provider === "google_sheets") {
+        result = await callGoogleSheetsTool(toolName, args, token);
+      } else if (decision.provider === "google_tag_manager") {
+        result = await callGoogleTagManagerTool(toolName, args, token);
+      } else if (decision.provider === "google_cloud") {
+        result = await callGoogleCloudTool(toolName, args, token);
+      } else if (decision.provider === "bigquery") {
+        result = await callBigQueryTool(toolName, args, token);
       } else {
         throw new Error(`no dispatcher for provider: ${decision.provider}`);
       }
