@@ -998,6 +998,55 @@ async function callSystemTool(toolName: string, args: Record<string, unknown>) {
   throw new Error(`Unknown system tool: ${toolName}`);
 }
 
+// Keys whose values never belong in the audit log in plaintext: file payloads,
+// message bodies, and anything credential-shaped. Length/shape is kept so the
+// log still shows *what* was sent, just not the content.
+const SENSITIVE_AUDIT_KEYS = new Set([
+  "files", "content", "body", "text", "html", "credential", "token", "password", "secret", "api_key", "apiKey",
+]);
+const TOKEN_LIKE = /^(gh[pousr]_|github_pat_|ntn_|secret_|re_|sk-|ya29\.|Bearer\s)/;
+
+function maskAuditArgs(args: Record<string, unknown>): string {
+  const masked: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(args ?? {})) {
+    if (SENSITIVE_AUDIT_KEYS.has(key)) {
+      masked[key] =
+        typeof value === "string" ? `<redacted ${value.length} chars>`
+        : Array.isArray(value) ? `<redacted ${value.length} items>`
+        : value && typeof value === "object" ? `<redacted ${Object.keys(value).length} keys>`
+        : "<redacted>";
+    } else if (typeof value === "string" && TOKEN_LIKE.test(value)) {
+      masked[key] = "<redacted token-like value>";
+    } else if (typeof value === "string" && value.length > 300) {
+      masked[key] = `${value.slice(0, 300)}…<+${value.length - 300} chars>`;
+    } else {
+      masked[key] = value;
+    }
+  }
+  return JSON.stringify(masked).slice(0, 4000);
+}
+
+// Per-agent sliding-window rate limit for tools/call. In-memory: fine for a
+// single instance; the goal is abuse damping for a leaked token, not quota
+// accounting. Set MCP_RATE_LIMIT_PER_MINUTE=0 to disable.
+const RATE_LIMIT_PER_MINUTE = Number(process.env.MCP_RATE_LIMIT_PER_MINUTE ?? 120);
+const rateWindows = new Map<string, number[]>();
+
+function rateLimitExceeded(agentId: string): boolean {
+  if (!RATE_LIMIT_PER_MINUTE || !Number.isFinite(RATE_LIMIT_PER_MINUTE)) return false;
+  const now = Date.now();
+  const cutoff = now - 60_000;
+  let window = rateWindows.get(agentId);
+  if (!window) {
+    window = [];
+    rateWindows.set(agentId, window);
+  }
+  while (window.length && window[0] < cutoff) window.shift();
+  if (window.length >= RATE_LIMIT_PER_MINUTE) return true;
+  window.push(now);
+  return false;
+}
+
 /**
  * Tools advertised via tools/list, scoped to the calling agent.
  * - `ping` is always available (liveness, no policy).
@@ -1310,6 +1359,13 @@ mcpApp.post("/", async (c) => {
     const authType = args.auth_type !== undefined ? String(args.auth_type) : (args.authType !== undefined ? String(args.authType) : "");
     const connectionId = args.connection_id !== undefined ? String(args.connection_id) : (args.connectionId !== undefined ? String(args.connectionId) : "");
 
+    if (rateLimitExceeded(agent.id)) {
+      return c.json({
+        jsonrpc: "2.0", id,
+        error: { code: -32029, message: `rate limited: max ${RATE_LIMIT_PER_MINUTE} tools/call per minute per agent` },
+      }, 429);
+    }
+
     await prisma.agent.update({
       where: { id: agent.id },
       data: { lastUsedAt: new Date() },
@@ -1338,7 +1394,7 @@ mcpApp.post("/", async (c) => {
           scope: requestedScope,
           status: "denied",
           errorMessage: `MCP server is locked to scope=${configuredScope}`,
-          requestArgs: JSON.stringify(args).slice(0, 4000),
+          requestArgs: maskAuditArgs(args),
           durationMs: Date.now() - started,
           ipAddress: c.req.header("x-forwarded-for") ?? null,
         },
@@ -1360,7 +1416,7 @@ mcpApp.post("/", async (c) => {
           scope,
           status: "denied",
           errorMessage: decision.reason,
-          requestArgs: JSON.stringify(args).slice(0, 4000),
+          requestArgs: maskAuditArgs(args),
           durationMs: Date.now() - started,
           ipAddress: c.req.header("x-forwarded-for") ?? null,
         },
@@ -1427,7 +1483,7 @@ mcpApp.post("/", async (c) => {
           scope,
           status: "ok",
           responseSummary: JSON.stringify({ authType: decision.authType, connectionId: conn.id, result }).slice(0, 500),
-          requestArgs: JSON.stringify(args).slice(0, 4000),
+          requestArgs: maskAuditArgs(args),
           durationMs: Date.now() - started,
           ipAddress: c.req.header("x-forwarded-for") ?? null,
         },
@@ -1451,7 +1507,7 @@ mcpApp.post("/", async (c) => {
           scope,
           status: "error",
           errorMessage: errMsg.slice(0, 2000),
-          requestArgs: JSON.stringify(args).slice(0, 4000),
+          requestArgs: maskAuditArgs(args),
           durationMs: Date.now() - started,
         },
       });

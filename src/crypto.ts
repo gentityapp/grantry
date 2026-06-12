@@ -7,8 +7,11 @@ const IV_LEN = 12;
 const TAG_LEN = 16;
 
 function getKey(): Buffer {
-  const secret = process.env.FERNET_KEY ?? process.env.BETTER_AUTH_SECRET ?? "";
-  if (!secret) throw new Error("FERNET_KEY or BETTER_AUTH_SECRET must be set");
+  // FERNET_KEY is required: falling back to BETTER_AUTH_SECRET would make the
+  // session-signing key double as the credential-encryption key, so rotating
+  // one would silently break the other.
+  const secret = process.env.FERNET_KEY ?? "";
+  if (!secret) throw new Error("FERNET_KEY must be set (credential encryption key, kept separate from BETTER_AUTH_SECRET)");
   // Derive a 32-byte key from the secret using scrypt
   return scryptSync(secret, "agent-oauth-salt", 32);
 }
