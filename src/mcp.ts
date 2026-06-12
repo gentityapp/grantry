@@ -34,6 +34,7 @@ import { callMoneyForwardTool } from "./connectors/moneyforward.js";
 import { callRedditTool } from "./connectors/reddit.js";
 import { callXTool } from "./connectors/x.js";
 import { callDiscordTool } from "./connectors/discord.js";
+import { callLineTool } from "./connectors/line.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 
 export const mcpApp = new Hono();
@@ -1467,6 +1468,57 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       user_id: { type: "string", description: "Discord user ID." },
     };
   }
+  if (toolName === "line/get_bot_info" || toolName === "line/get_quota" || toolName === "line/get_quota_consumption") {
+    return {};
+  }
+  if (toolName === "line/get_profile") {
+    return {
+      user_id: { type: "string", description: "LINE user ID (from a webhook event or follower id)." },
+    };
+  }
+  if (toolName === "line/push_message") {
+    return {
+      to: { type: "string", description: "Target ID: a user ID, group ID, or room ID." },
+      text: { type: "string", description: "Convenience: send a single text message. Ignored when messages is provided." },
+      messages: { type: "array", items: { type: "object" }, description: "Up to 5 LINE message objects (e.g. { type: 'text', text: '…' })." },
+      notification_disabled: { type: "boolean", description: "When true, the user does not receive a push notification." },
+      custom_aggregation_units: { type: "array", items: { type: "string" }, description: "Optional aggregation unit name(s) for statistics." },
+    };
+  }
+  if (toolName === "line/reply_message") {
+    return {
+      reply_token: { type: "string", description: "Reply token from the webhook event being replied to." },
+      text: { type: "string", description: "Convenience: reply with a single text message. Ignored when messages is provided." },
+      messages: { type: "array", items: { type: "object" }, description: "Up to 5 LINE message objects." },
+      notification_disabled: { type: "boolean", description: "When true, the user does not receive a push notification." },
+    };
+  }
+  if (toolName === "line/multicast") {
+    return {
+      to: { type: "array", items: { type: "string" }, description: "User IDs to send to (max 500). A single string is also accepted." },
+      text: { type: "string", description: "Convenience: send a single text message. Ignored when messages is provided." },
+      messages: { type: "array", items: { type: "object" }, description: "Up to 5 LINE message objects." },
+      notification_disabled: { type: "boolean", description: "When true, recipients do not receive a push notification." },
+    };
+  }
+  if (toolName === "line/broadcast") {
+    return {
+      text: { type: "string", description: "Convenience: broadcast a single text message. Ignored when messages is provided." },
+      messages: { type: "array", items: { type: "object" }, description: "Up to 5 LINE message objects sent to all friends." },
+      notification_disabled: { type: "boolean", description: "When true, recipients do not receive a push notification." },
+    };
+  }
+  if (toolName === "line/get_group_summary" || toolName === "line/get_group_member_count") {
+    return {
+      group_id: { type: "string", description: "LINE group ID." },
+    };
+  }
+  if (toolName === "line/get_group_member_profile") {
+    return {
+      group_id: { type: "string", description: "LINE group ID." },
+      user_id: { type: "string", description: "LINE user ID of a group member." },
+    };
+  }
   return {};
 }
 
@@ -1600,6 +1652,13 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "discord/delete_message") return ["channel_id", "message_id"];
   if (toolName === "discord/list_members") return ["guild_id"];
   if (toolName === "discord/get_user") return ["user_id"];
+  if (toolName === "line/get_profile") return ["user_id"];
+  if (toolName === "line/push_message") return ["to"];
+  if (toolName === "line/reply_message") return ["reply_token"];
+  if (toolName === "line/multicast") return ["to"];
+  if (toolName === "line/get_group_summary") return ["group_id"];
+  if (toolName === "line/get_group_member_count") return ["group_id"];
+  if (toolName === "line/get_group_member_profile") return ["group_id", "user_id"];
   return [];
 }
 
@@ -2183,6 +2242,8 @@ mcpApp.post("/", async (c) => {
         result = await callXTool(toolName, args, token);
       } else if (decision.provider === "discord") {
         result = await callDiscordTool(toolName, args, token);
+      } else if (decision.provider === "line") {
+        result = await callLineTool(toolName, args, token);
       } else {
         throw new Error(`no dispatcher for provider: ${decision.provider}`);
       }

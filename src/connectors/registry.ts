@@ -522,6 +522,27 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  line: {
+    key: "line",
+    label: "LINE",
+    authTypes: ["pat"],
+    helpText: "Create a Messaging API channel in the LINE Developers console and paste its long-lived Channel Access Token (Messaging API tab > Channel access token). The token is sent as Authorization: Bearer to the LINE Messaging API.",
+    tokenUrl: "https://developers.line.biz/console/",
+    tools: [
+      "line/get_bot_info",
+      "line/get_quota",
+      "line/get_quota_consumption",
+      "line/get_profile",
+      "line/push_message",
+      "line/reply_message",
+      "line/multicast",
+      "line/broadcast",
+      "line/get_group_summary",
+      "line/get_group_member_count",
+      "line/get_group_member_profile",
+    ],
+    implemented: true,
+  },
 };
 
 export function getProvider(key: string): ProviderDef | undefined {

@@ -3,7 +3,7 @@ name: grantry
 description: |
   Use grantry when the user wants an AI agent to call external SaaS APIs
   (GitHub, Notion, Google Drive/GSC/Ads/Maps, HubSpot, Attio, Clay, HeyReach,
-  Chatwork, Railway, Resend, Slack, Reddit, X, Discord) under OAuth/PAT authentication
+  Chatwork, Railway, Resend, Slack, Reddit, X, Discord, LINE) under OAuth/PAT authentication
   with tenant isolation. grantry (formerly "grantry-auth", deployed as "agent-oauth") is a
   Hono/TypeScript service that holds encrypted credentials and exposes them as
   MCP tools, so the agent never sees raw tokens. Triggers: mentions of
@@ -154,6 +154,9 @@ Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing tenant):
 - **Discord**: paste a **Bot Token** from `discord.com/developers/applications` >
   your app > Bot. Invite the bot to the target server with the needed permissions
   (and enable the Server Members Intent for `list_members`).
+- **LINE**: paste a **Channel Access Token** from the LINE Developers console
+  (`developers.line.biz/console`) > your Messaging API channel > Messaging API tab.
+  Scoped to one official account / channel.
 Set the connection's **scope to the tenant name**; that's the scope callers must pass.
 
 ### 6. Grant an agent access to a scope
@@ -163,7 +166,7 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 3. Bind the role to the agent (`POST /agents/:id/bind`) — or skip role wrangling
    entirely and create the agent via `/agents/new`.
 
-## Providers & tools (189)
+## Providers & tools (200)
 - `ping` — liveness (returns `pong from <agent>`)
 - **grantry** (system metadata, no SaaS credential required): `get_skill`,
   `get_providers`
@@ -207,6 +210,10 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 - **discord** (Bot token; read + write): `get_me`, `list_guilds`, `get_guild`,
   `list_channels`, `get_channel`, `list_messages`, `get_message`, `send_message`,
   `edit_message`, `delete_message`, `list_members`, `get_user`
+- **line** (Channel access token; read + write): `get_bot_info`, `get_quota`,
+  `get_quota_consumption`, `get_profile`, `push_message`, `reply_message`,
+  `multicast`, `broadcast`, `get_group_summary`, `get_group_member_count`,
+  `get_group_member_profile`
 
 ### GitHub tool arguments (besides `scope`)
 - `get_repo`, `list_issues`: `owner`, `repo` (list_issues also `state`, default `open`)
@@ -407,6 +414,22 @@ All tools are read-only and send the API key as the `key` query parameter.
   the Server Members privileged intent.
 - `get_user` (read): `user_id`.
 
+### LINE tool arguments (besides `scope`)
+Messages take a `messages` array of LINE message objects; as a convenience a
+plain `text` string is accepted and wrapped into a single text message.
+- `get_bot_info` (read): no additional arguments. Returns the official account.
+- `get_quota` / `get_quota_consumption` (read): no additional arguments.
+- `get_profile` (read): `user_id`.
+- `push_message` (write): `to` (user/group/room ID); `messages` or `text`;
+  optional `notification_disabled`, `custom_aggregation_units`.
+- `reply_message` (write): `reply_token` (from a webhook event); `messages` or
+  `text`; optional `notification_disabled`.
+- `multicast` (write): `to` (array of user IDs, max 500); `messages` or `text`;
+  optional `notification_disabled`.
+- `broadcast` (write): `messages` or `text`; optional `notification_disabled`.
+- `get_group_summary` / `get_group_member_count` (read): `group_id`.
+- `get_group_member_profile` (read): `group_id`, `user_id`.
+
 ## Output contract
 When asked to act via grantry:
 1. If you don't already know the scope, call `connections/list` first to resolve
@@ -428,7 +451,8 @@ When asked to act via grantry:
    `resend/send_email`, `slack/post_message`, `slack/update_message`,
    `reddit/submit_post`, `reddit/submit_comment`, `reddit/vote`,
    `x/post_tweet`, `x/delete_tweet`, `discord/send_message`,
-   `discord/edit_message`, `discord/delete_message`, …)
+   `discord/edit_message`, `discord/delete_message`, `line/push_message`,
+   `line/reply_message`, `line/multicast`, `line/broadcast`, …)
    get explicit confirmation first —
    these hit the real SaaS via real tokens and are not reversible. **Read-only**
    calls (incl. the connectivity smoke test) need no confirmation — just run them.

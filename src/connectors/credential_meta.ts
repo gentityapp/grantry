@@ -606,6 +606,37 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "line") {
+      const resp = await fetchWithTimeout("https://api.line.me/v2/bot/info", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) {
+        return { provider, authType, status: "error", checkedAt, error: `LINE channel access token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: {
+          userId: body.userId,
+          basicId: body.basicId,
+          premiumId: body.premiumId,
+          displayName: body.displayName,
+          chatMode: body.chatMode,
+          markAsReadMode: body.markAsReadMode,
+        },
+        notes: [
+          "LINE channel access tokens are sent as Authorization: Bearer and are scoped to one Messaging API channel (official account).",
+          "Push/multicast volume is limited by the channel's monthly message quota; check line/get_quota.",
+        ],
+        checkedAt,
+      };
+    }
+
     return {
       provider,
       authType,
