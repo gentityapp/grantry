@@ -39,10 +39,23 @@ app.get("/.well-known/oauth-authorization-server", (c) =>
 app.get("/.well-known/oauth-protected-resource", (c) =>
   oAuthProtectedResourceMetadata(auth)(c.req.raw),
 );
-// RFC 9728 path-insertion form: for the resource https://host/mcp, clients
-// derive https://host/.well-known/oauth-protected-resource/mcp and fetch it
-// FIRST. Serving only the root form makes spec-compliant clients (claude.ai,
-// Claude Desktop) fail before ever opening the authorize popup.
+// RFC 9728 path-insertion form: for the resource https://host/mcp/w/<ws>,
+// clients derive https://host/.well-known/oauth-protected-resource/mcp/w/<ws>
+// and fetch it FIRST — and they validate that the metadata's `resource`
+// exactly matches the MCP URL they were given. Serve every /mcp* variant
+// (workspace-locked /mcp/w/<ws>, scope-locked /mcp/s/<scope>) with a patched
+// resource field. Serving only the root form makes spec-compliant clients
+// (claude.ai, Claude Desktop) fail before ever opening the authorize popup.
+app.get("/.well-known/oauth-protected-resource/mcp/*", async (c) => {
+  const base = await oAuthProtectedResourceMetadata(auth)(c.req.raw);
+  const body = await base.json() as Record<string, unknown>;
+  const resourcePath = c.req.path.replace("/.well-known/oauth-protected-resource", "");
+  const origin = process.env.BETTER_AUTH_URL
+    ? new URL(process.env.BETTER_AUTH_URL).origin
+    : new URL(c.req.url).origin;
+  body.resource = `${origin}${resourcePath}`;
+  return new Response(JSON.stringify(body), { status: 200, headers: base.headers });
+});
 app.get("/.well-known/oauth-protected-resource/mcp", (c) =>
   oAuthProtectedResourceMetadata(auth)(c.req.raw),
 );

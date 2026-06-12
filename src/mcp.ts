@@ -60,6 +60,7 @@ import { callGoogleTagManagerTool } from "./connectors/google_tag_manager.js";
 import { callGoogleCloudTool } from "./connectors/google_cloud.js";
 import { callBigQueryTool } from "./connectors/bigquery.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
+import { userMayUseAgent } from "./workspaces.js";
 
 export const mcpApp = new Hono();
 
@@ -91,6 +92,10 @@ function cleanupExpiredMcpSessions() {
 }
 
 function configuredMcpScope(c: any): string {
+  // URL path lock (/mcp/s/<scope>) wins; falls back to headers for clients
+  // that can set them (CLI configs). claude.ai can only vary the URL.
+  const pathScope = String(c.req.param?.("scope") ?? "").trim();
+  if (pathScope) return pathScope;
   return String(
     c.req.header("x-grantry-scope") ?? c.req.header("x-grantry-tenant") ??
     c.req.header("x-gentity-scope") ?? c.req.header("x-gentity-tenant") ?? ""
@@ -2268,8 +2273,8 @@ async function resolveOAuthAgent(token: string): Promise<{ id: string; name: str
   if (!accessToken || !accessToken.userId) return null;
   if (accessToken.accessTokenExpiresAt && accessToken.accessTokenExpiresAt < new Date()) return null;
 
-  // Explicit binding chosen on the consent screen wins; otherwise fall back
-  // to the user's sole enabled agent so single-agent setups need no extra step.
+  // Explicit binding chosen at connect time wins; otherwise fall back to the
+  // user's sole connectable agent so single-agent setups need no extra step.
   const grant = await prisma.oauthAgentGrant.findUnique({
     where: { userId_clientId: { userId: accessToken.userId, clientId: accessToken.clientId } },
   });
@@ -2278,13 +2283,24 @@ async function resolveOAuthAgent(token: string): Promise<{ id: string; name: str
     : null;
   if (!agent) {
     const candidates = await prisma.agent.findMany({
-      where: { ownerId: accessToken.userId, enabled: true },
+      where: {
+        enabled: true,
+        OR: [
+          { ownerId: accessToken.userId },
+          { assignments: { some: { userId: accessToken.userId } } },
+        ],
+      },
       take: 2,
     });
     if (candidates.length === 1) agent = candidates[0];
   }
   if (!agent || !agent.enabled) return null;
   if (agent.expiresAt && agent.expiresAt < new Date()) return null;
+
+  // Re-verify on every request: unassignment / workspace removal must revoke
+  // access immediately even though the OauthAgentGrant row still exists.
+  if (!(await userMayUseAgent(accessToken.userId, agent))) return null;
+
   return { id: agent.id, name: agent.name, enabled: agent.enabled };
 }
 
@@ -2428,25 +2444,28 @@ async function credentialForConnection(conn: {
   return refreshed.access_token;
 }
 
-mcpApp.post("/", async (c) => {
+const handleMcpPost = async (c: any) => {
   const started = Date.now();
   const auth = c.req.header("authorization") ?? null;
   const agent = await resolveAgent(auth);
   const configuredScope = configuredMcpScope(c);
+  const wsSlug = String(c.req.param("ws") ?? "").trim();
   c.header("Access-Control-Expose-Headers", "Mcp-Session-Id, WWW-Authenticate");
 
   // MCP authorization spec: unauthenticated (or invalid-token) requests get
-  // 401 + WWW-Authenticate pointing at the protected-resource metadata. This
-  // is what triggers the OAuth flow in remote clients like claude.ai and
-  // Claude Desktop. Static gn_agt_ tokens authenticate as before.
+  // 401 + WWW-Authenticate pointing at the protected-resource metadata for
+  // THIS resource URL (RFC 9728 path insertion — /mcp/w/<ws> gets its own).
+  // This is what triggers the OAuth flow in remote clients like claude.ai
+  // and Claude Desktop. Static gn_agt_ tokens authenticate as before.
   if (!agent) {
     const requestOrigin = new URL(c.req.url).origin;
     const origin = process.env.BETTER_AUTH_URL
       ? new URL(process.env.BETTER_AUTH_URL).origin
       : requestOrigin;
+    const resourcePath = c.req.path; // full path: /mcp, /mcp/w/<ws>, /mcp/s/<scope>
     c.header(
       "WWW-Authenticate",
-      `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource/mcp"`,
+      `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource${resourcePath}"`,
     );
     return c.json({
       jsonrpc: "2.0",
@@ -2457,6 +2476,25 @@ mcpApp.post("/", async (c) => {
           "Unauthorized: pass 'Authorization: Bearer gn_agt_...' or complete the OAuth flow advertised in WWW-Authenticate",
       },
     }, 401);
+  }
+
+  // Workspace-locked endpoint (/mcp/w/<slug>): the resolved agent must live
+  // in that workspace. Lets one desktop hold parallel connectors for
+  // different workspaces (client A / client B) without cross-talk.
+  if (wsSlug) {
+    const dbAgent = await prisma.agent.findUnique({
+      where: { id: agent.id },
+      select: { workspace: { select: { slug: true } } },
+    });
+    if (dbAgent?.workspace?.slug !== wsSlug) {
+      return c.json({
+        jsonrpc: "2.0", id: null,
+        error: {
+          code: -32003,
+          message: `This endpoint is locked to workspace '${wsSlug}', but the authenticated agent belongs to '${dbAgent?.workspace?.slug ?? "(none)"}'. Connect with an agent from that workspace, or use the unscoped /mcp endpoint.`,
+        },
+      }, 403);
+    }
   }
 
   const session = prepareMcpSession(c, agent);
@@ -2790,4 +2828,12 @@ mcpApp.post("/", async (c) => {
   }
 
   return c.json({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });
-});
+};
+
+mcpApp.post("/", handleMcpPost);
+// Workspace-locked and scope-locked connector URLs. Distinct URLs let
+// claude.ai / Claude Desktop register parallel connectors (same-URL
+// duplicates are rejected by those clients) — see docs/workspace-design.md.
+mcpApp.post("/w/:ws", handleMcpPost);
+mcpApp.post("/s/:scope", handleMcpPost);
+mcpApp.post("/w/:ws/s/:scope", handleMcpPost);

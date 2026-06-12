@@ -33,6 +33,8 @@ model User {
   oauthAccessTokens OauthAccessToken[]
   oauthConsents     OauthConsent[]
   oauthAgentGrants  OauthAgentGrant[]
+  workspaceMembers  WorkspaceMember[]
+  agentAssignments  AgentAssignment[]
 
   @@map("user")
 }
@@ -94,6 +96,8 @@ model Tenant {
   description String?
   ownerId     String
   owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  workspaceId String?  // null only before workspace backfill
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -101,6 +105,7 @@ model Tenant {
 
   @@unique([ownerId, slug])
   @@index([ownerId])
+  @@index([workspaceId])
   @@map("tenant")
 }
 
@@ -118,10 +123,15 @@ model Agent {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  workspaceId   String?  // null only before workspace backfill
+  workspace     Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
   roles         AgentRole[]
   auditLogs     AuditLog[]
   oauthAgentGrants OauthAgentGrant[]
+  assignments   AgentAssignment[]
 
+  @@index([workspaceId])
   @@map("agent")
 }
 
@@ -133,11 +143,14 @@ model Role {
   allowedScopes String   // ["rootteam", "acme"] — empty array = any scope
   ownerId       String
   owner         User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  workspaceId   String?  // null only before workspace backfill
+  workspace     Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   agents        AgentRole[]
 
+  @@index([workspaceId])
   @@map("role")
 }
 
@@ -172,11 +185,15 @@ model Connection {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
+  workspaceId         String?  // null only before workspace backfill
+  workspace           Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
   @@unique([ownerId, provider, scope, authType])
   @@index([provider, scope])
   @@index([ownerId, provider, scope])
   @@index([ownerId])
   @@index([tenantId])
+  @@index([workspaceId])
   @@map("connection")
 }
 
@@ -300,4 +317,70 @@ model OauthAgentGrant {
   @@unique([userId, clientId])
   @@index([agentId])
   @@map("oauth_agent_grant")
+}
+
+// ---------- Workspaces (docs/workspace-design.md) ----------
+// Workspace = management wall (who administers / collaborates).
+// Tenant stays the data wall (client boundary) inside a workspace.
+
+model Workspace {
+  id          String   @id @default(cuid())
+  slug        String   @unique // immutable; rides in connector URLs (/mcp/w/<slug>)
+  displayName String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members     WorkspaceMember[]
+  invites     WorkspaceInvite[]
+  agents      Agent[]
+  tenants     Tenant[]
+  roles       Role[]
+  connections Connection[]
+
+  @@map("workspace")
+}
+
+model WorkspaceMember {
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        String    // "owner" | "admin" | "member"
+  createdAt   DateTime  @default(now())
+
+  @@id([workspaceId, userId])
+  @@index([userId])
+  @@map("workspace_member")
+}
+
+model WorkspaceInvite {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  email       String
+  role        String   @default("member")
+  token       String   @unique
+  invitedById String?
+  // Agents to auto-assign once the invite is accepted (JSON array of agent ids)
+  agentIds    String   @default("[]")
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([email])
+  @@map("workspace_invite")
+}
+
+// Person -> agent distribution: which users may connect (via OAuth) as this
+// agent. Owners/admins of the agent's workspace are implicitly allowed.
+model AgentAssignment {
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([agentId, userId])
+  @@index([userId])
+  @@map("agent_assignment")
 }

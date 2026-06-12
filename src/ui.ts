@@ -8,6 +8,9 @@ import { providerIcon, providerIconMap } from "./connectors/icons.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 import { connectionsForAgent } from "./policy.js";
 import { ensureTenant } from "./tenants.js";
+import { sendSystemEmail } from "./email.js";
+import { connectableAgentsFor, userMayUseAgent } from "./workspaces.js";
+import nodeCrypto from "node:crypto";
 
 export const dashboardApp = new Hono();
 
@@ -364,6 +367,7 @@ const NAV = (current: string, email?: string) => `
   <a href="/dashboard" class="${current === "dashboard" ? "active" : ""}">Dashboard</a>
   <a href="/tenants" class="${current === "tenants" ? "active" : ""}">Tenants</a>
   <a href="/agents" class="${current === "agents" ? "active" : ""}">Agents</a>
+  <a href="/workspaces" class="${current === "workspaces" ? "active" : ""}">Workspace</a>
   <a href="/audit" class="${current === "audit" ? "active" : ""}">Audit</a>
   <a href="/meta" class="${current === "meta" ? "active" : ""}">Meta</a>
   <a href="/account" class="${current === "account" ? "active" : ""}">Account</a>
@@ -462,19 +466,25 @@ export async function mcpAuthorizeGate(c: any): Promise<Response | null> {
   const clientId = c.req.query("client_id") ?? "";
   if (!clientId) return null;
 
+  // Workspace-locked connector URL: the authorize request's RFC 8707
+  // `resource` parameter carries the MCP URL the client connected to
+  // (e.g. https://host/mcp/w/acme). Use it to pin the choice to that ws.
+  const resourceParam = String(c.req.query("resource") ?? "");
+  const wsLock = resourceParam.match(/\/mcp\/w\/([A-Za-z0-9-]+)/)?.[1] ?? "";
+
   const existing = await prisma.oauthAgentGrant.findUnique({
     where: { userId_clientId: { userId: user.id, clientId } },
+    include: { agent: { select: { workspace: { select: { slug: true } } } } },
   });
-  if (existing) return null;
+  if (existing && (!wsLock || existing.agent?.workspace?.slug === wsLock)) return null;
 
-  const agents = await prisma.agent.findMany({
-    where: { ownerId: user.id, enabled: true },
-    select: { id: true, name: true, description: true },
-    orderBy: { name: "asc" },
-  });
+  let agents = await connectableAgentsFor(user.id);
+  if (wsLock) agents = agents.filter((a) => a.workspace?.slug === wsLock);
   if (agents.length === 1) {
-    await prisma.oauthAgentGrant.create({
-      data: { userId: user.id, clientId, agentId: agents[0].id },
+    await prisma.oauthAgentGrant.upsert({
+      where: { userId_clientId: { userId: user.id, clientId } },
+      create: { userId: user.id, clientId, agentId: agents[0].id },
+      update: { agentId: agents[0].id },
     });
     return null;
   }
@@ -495,7 +505,7 @@ export async function mcpAuthorizeGate(c: any): Promise<Response | null> {
   const options = agents
     .map((a) =>
       `<label class="agent-opt"><input type="radio" name="agent" value="${escapeHtml(a.id)}">
-       <span><b>${escapeHtml(a.name)}</b>${a.description ? `<br><small style="color:#8a8d93;">${escapeHtml(a.description)}</small>` : ""}</span></label>`,
+       <span><b>${escapeHtml(a.name)}</b>${a.workspace ? ` <small style="color:#8a8d93;">(${escapeHtml(a.workspace.displayName)})</small>` : ""}${a.description ? `<br><small style="color:#8a8d93;">${escapeHtml(a.description)}</small>` : ""}</span></label>`,
     )
     .join("");
   return c.html(`
@@ -533,11 +543,7 @@ export async function mcpAuthorizeGate(c: any): Promise<Response | null> {
 dashboardApp.get("/oauth-consent/agents", async (c) => {
   const user = await getSessionUser(c);
   if (!user?.id) return c.json({ error: "unauthorized" }, 401);
-  const agents = await prisma.agent.findMany({
-    where: { ownerId: user.id, enabled: true },
-    select: { id: true, name: true, description: true },
-    orderBy: { name: "asc" },
-  });
+  const agents = await connectableAgentsFor(user.id);
   return c.json({ agents });
 });
 
@@ -554,11 +560,12 @@ dashboardApp.post("/oauth-consent/bind", async (c) => {
   const agentId = String(body?.agentId ?? "");
   if (!clientId || !agentId) return c.json({ error: "clientId and agentId are required" }, 400);
 
-  // The agent must belong to the consenting user — never bind someone else's.
-  const agent = await prisma.agent.findFirst({
-    where: { id: agentId, ownerId: user.id, enabled: true },
-  });
-  if (!agent) return c.json({ error: "agent not found or not yours" }, 404);
+  // The consenting user must be allowed to use the agent (owner, assignee,
+  // or admin of its workspace) — never bind to someone else's agent.
+  const agent = await prisma.agent.findFirst({ where: { id: agentId, enabled: true } });
+  if (!agent || !(await userMayUseAgent(user.id, agent))) {
+    return c.json({ error: "agent not found or not usable by you" }, 404);
+  }
 
   await prisma.oauthAgentGrant.upsert({
     where: { userId_clientId: { userId: user.id, clientId } },
@@ -566,6 +573,283 @@ dashboardApp.post("/oauth-consent/bind", async (c) => {
     update: { agentId },
   });
   return c.json({ ok: true });
+});
+
+// ---------- Workspaces: members, invites, agent distribution ----------
+// docs/workspace-design.md. Tenant = data wall; Workspace = management wall.
+
+const BASE_URL = () => process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
+
+async function requireWsAdmin(c: any, workspaceId: string) {
+  const user = await getSessionUser(c);
+  if (!user?.id) return null;
+  const member = await prisma.workspaceMember.findFirst({
+    where: { workspaceId, userId: user.id, role: { in: ["owner", "admin"] } },
+  });
+  return member ? { user, member } : null;
+}
+
+dashboardApp.get("/workspaces", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+  const flash = c.req.query("ok") ?? "";
+
+  const memberships = await prisma.workspaceMember.findMany({
+    where: { userId: user.id },
+    include: { workspace: true },
+    orderBy: { createdAt: "asc" },
+  });
+
+  const sections: string[] = [];
+  for (const m of memberships) {
+    const ws = m.workspace;
+    const isAdmin = m.role === "owner" || m.role === "admin";
+    if (!isAdmin) {
+      sections.push(`<div class="card"><b>${escapeHtml(ws.displayName)}</b> <span class="badge unscoped">${escapeHtml(m.role)}</span>
+        <div style="color:#8a8d93;font-size:13px;margin-top:6px;">Connector URL: <code>${escapeHtml(BASE_URL())}/mcp/w/${escapeHtml(ws.slug)}</code></div></div>`);
+      continue;
+    }
+
+    const [members, agents, assignments, invites] = await Promise.all([
+      prisma.workspaceMember.findMany({
+        where: { workspaceId: ws.id },
+        include: { user: { select: { id: true, email: true, name: true } } },
+        orderBy: { createdAt: "asc" },
+      }),
+      prisma.agent.findMany({
+        where: { workspaceId: ws.id, enabled: true },
+        select: { id: true, name: true },
+        orderBy: { name: "asc" },
+      }),
+      prisma.agentAssignment.findMany({
+        where: { agent: { workspaceId: ws.id } },
+        include: { agent: { select: { id: true, name: true } }, user: { select: { id: true, email: true } } },
+        orderBy: { createdAt: "asc" },
+      }),
+      prisma.workspaceInvite.findMany({
+        where: { workspaceId: ws.id, acceptedAt: null, expiresAt: { gt: new Date() } },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]);
+
+    sections.push(`
+    <div class="card">
+      <h2 style="margin-top:0;">${escapeHtml(ws.displayName)} <span class="badge ok">${escapeHtml(m.role)}</span></h2>
+      <div style="color:#8a8d93;font-size:13px;">Workspace-locked connector URL (parallel connectors per client):<br>
+        <code>${escapeHtml(BASE_URL())}/mcp/w/${escapeHtml(ws.slug)}</code></div>
+
+      <h3>Members</h3>
+      <table>
+        <thead><tr><th>Member</th><th>Role</th><th>Assigned agents</th><th></th></tr></thead>
+        <tbody>
+        ${members.map((mm) => {
+          const mine = assignments.filter((a) => a.user.id === mm.user.id);
+          return `<tr>
+            <td>${escapeHtml(mm.user.email)}${mm.user.name ? ` <small style="color:#8a8d93;">${escapeHtml(mm.user.name)}</small>` : ""}</td>
+            <td><span class="badge ${mm.role === "member" ? "unscoped" : "ok"}">${escapeHtml(mm.role)}</span></td>
+            <td>${mine.length ? mine.map((a) => `
+              <form method="post" action="/workspaces/${ws.id}/unassign" style="display:inline-block;margin:0 6px 4px 0;">
+                <input type="hidden" name="agentId" value="${escapeHtml(a.agent.id)}"><input type="hidden" name="userId" value="${escapeHtml(mm.user.id)}">
+                <span class="badge scoped">${escapeHtml(a.agent.name)} <button type="submit" title="Unassign" style="all:unset;cursor:pointer;color:#ff6b6b;">&times;</button></span>
+              </form>`).join("") : '<span style="color:#8a8d93;">—</span>'}
+            </td>
+            <td>${mm.role !== "owner" ? `
+              <form method="post" action="/workspaces/${ws.id}/members/${mm.user.id}/remove" style="margin:0;" onsubmit="return confirm('Remove ${escapeHtml(mm.user.email)} from workspace? Their connector access is revoked immediately.')">
+                <button type="submit" class="secondary" style="font-size:12px;padding:4px 8px;">Remove</button>
+              </form>` : ""}
+            </td>
+          </tr>`;
+        }).join("")}
+        </tbody>
+      </table>
+
+      <h3>Assign an agent</h3>
+      <form method="post" action="/workspaces/${ws.id}/assign" class="row" style="gap:8px;align-items:center;">
+        <select name="userId" required>${members.map((mm) => `<option value="${escapeHtml(mm.user.id)}">${escapeHtml(mm.user.email)}</option>`).join("")}</select>
+        <select name="agentId" required>${agents.map((a) => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name)}</option>`).join("")}</select>
+        <button type="submit">Assign</button>
+      </form>
+
+      <h3>Invite</h3>
+      <form method="post" action="/workspaces/${ws.id}/invite">
+        <div class="row" style="gap:8px;align-items:center;">
+          <input type="email" name="email" placeholder="teammate@example.com" required style="flex:1;">
+          <select name="role"><option value="member">member</option><option value="admin">admin</option></select>
+          <button type="submit">Send invite</button>
+        </div>
+        <div style="margin-top:8px;color:#8a8d93;font-size:13px;">Auto-assign agents on accept:</div>
+        <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px;">
+          ${agents.map((a) => `<label style="font-size:13px;"><input type="checkbox" name="agentIds" value="${escapeHtml(a.id)}"> ${escapeHtml(a.name)}</label>`).join("") || '<span style="color:#8a8d93;font-size:13px;">No agents in this workspace yet.</span>'}
+        </div>
+      </form>
+
+      ${invites.length ? `<h3>Pending invites</h3>
+      <table><thead><tr><th>Email</th><th>Role</th><th>Expires</th><th>Link</th><th></th></tr></thead><tbody>
+      ${invites.map((inv) => `<tr>
+        <td>${escapeHtml(inv.email)}</td><td>${escapeHtml(inv.role)}</td>
+        <td><code>${inv.expiresAt.toISOString().slice(0, 10)}</code></td>
+        <td><code style="font-size:11px;">${escapeHtml(BASE_URL())}/invite/${escapeHtml(inv.token)}</code></td>
+        <td><form method="post" action="/workspaces/${ws.id}/invites/${inv.id}/revoke" style="margin:0;"><button type="submit" class="secondary" style="font-size:12px;padding:4px 8px;">Revoke</button></form></td>
+      </tr>`).join("")}
+      </tbody></table>` : ""}
+    </div>`);
+  }
+
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Workspace — grantry</title>
+    <style>${CSS}</style></head><body>
+    ${NAV("workspaces", user?.email)}
+    <main>
+      <h1>Workspace</h1>
+      ${flash ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">${escapeHtml(flash)}</div>` : ""}
+      ${sections.join("\n") || '<div class="card"><div class="empty">No workspace yet — one is created automatically on next deploy/boot.</div></div>'}
+    </main></body></html>
+  `);
+});
+
+dashboardApp.post("/workspaces/:id/invite", async (c) => {
+  const wsId = c.req.param("id");
+  const admin = await requireWsAdmin(c, wsId);
+  if (!admin) return c.redirect("/login");
+  const form = await c.req.formData();
+  const email = String(form.get("email") ?? "").trim().toLowerCase();
+  const role = String(form.get("role") ?? "member") === "admin" ? "admin" : "member";
+  const agentIds = form.getAll("agentIds").map(String).filter(Boolean);
+  if (!email) return c.redirect("/workspaces");
+
+  // Only agents that actually live in this workspace may be pre-assigned.
+  const valid = await prisma.agent.findMany({ where: { id: { in: agentIds }, workspaceId: wsId }, select: { id: true } });
+  const ws = await prisma.workspace.findUnique({ where: { id: wsId } });
+  const token = nodeCrypto.randomBytes(24).toString("hex");
+  await prisma.workspaceInvite.create({
+    data: {
+      workspaceId: wsId,
+      email,
+      role,
+      token,
+      invitedById: admin.user.id,
+      agentIds: JSON.stringify(valid.map((v) => v.id)),
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    },
+  });
+  const link = `${BASE_URL()}/invite/${token}`;
+  try {
+    await sendSystemEmail({
+      to: email,
+      subject: `You're invited to the ${ws?.displayName ?? "grantry"} workspace on grantry`,
+      text: `${admin.user.email} invited you to the "${ws?.displayName}" workspace on grantry.\n\nAccept the invite (valid for 7 days):\n${link}\n\nAfter joining, connect Claude to grantry with the workspace connector URL shown on your Workspace page.`,
+      html: `<p><b>${escapeHtml(admin.user.email)}</b> invited you to the <b>${escapeHtml(ws?.displayName ?? "")}</b> workspace on grantry.</p>
+<p><a href="${link}">Accept the invite</a> (valid for 7 days)</p>
+<p style="color:#888;font-size:13px;">After joining, connect Claude to grantry with the workspace connector URL shown on your Workspace page.</p>`,
+    });
+  } catch (err) {
+    console.error("[workspace] invite email failed:", err);
+  }
+  return c.redirect(`/workspaces?ok=${encodeURIComponent(`Invite sent to ${email}`)}`);
+});
+
+dashboardApp.post("/workspaces/:id/invites/:inviteId/revoke", async (c) => {
+  const wsId = c.req.param("id");
+  if (!(await requireWsAdmin(c, wsId))) return c.redirect("/login");
+  await prisma.workspaceInvite.deleteMany({ where: { id: c.req.param("inviteId"), workspaceId: wsId } });
+  return c.redirect("/workspaces?ok=Invite%20revoked");
+});
+
+dashboardApp.post("/workspaces/:id/assign", async (c) => {
+  const wsId = c.req.param("id");
+  if (!(await requireWsAdmin(c, wsId))) return c.redirect("/login");
+  const form = await c.req.formData();
+  const agentId = String(form.get("agentId") ?? "");
+  const userId = String(form.get("userId") ?? "");
+  const [agent, member] = await Promise.all([
+    prisma.agent.findFirst({ where: { id: agentId, workspaceId: wsId } }),
+    prisma.workspaceMember.findFirst({ where: { workspaceId: wsId, userId } }),
+  ]);
+  if (agent && member) {
+    await prisma.agentAssignment.upsert({
+      where: { agentId_userId: { agentId, userId } },
+      create: { agentId, userId },
+      update: {},
+    });
+  }
+  return c.redirect("/workspaces?ok=Agent%20assigned");
+});
+
+dashboardApp.post("/workspaces/:id/unassign", async (c) => {
+  const wsId = c.req.param("id");
+  if (!(await requireWsAdmin(c, wsId))) return c.redirect("/login");
+  const form = await c.req.formData();
+  const agentId = String(form.get("agentId") ?? "");
+  const userId = String(form.get("userId") ?? "");
+  await prisma.agentAssignment.deleteMany({ where: { agentId, userId, agent: { workspaceId: wsId } } });
+  return c.redirect("/workspaces?ok=Agent%20unassigned");
+});
+
+dashboardApp.post("/workspaces/:id/members/:userId/remove", async (c) => {
+  const wsId = c.req.param("id");
+  const admin = await requireWsAdmin(c, wsId);
+  if (!admin) return c.redirect("/login");
+  const targetId = c.req.param("userId");
+  const target = await prisma.workspaceMember.findFirst({ where: { workspaceId: wsId, userId: targetId } });
+  if (!target || target.role === "owner") return c.redirect("/workspaces"); // never remove the owner
+  await prisma.$transaction([
+    // Revoke immediately: drop assignments to this workspace's agents and the
+    // member row. resolveOAuthAgent re-checks userMayUseAgent per request, so
+    // existing connector tokens stop resolving the moment these rows are gone.
+    prisma.agentAssignment.deleteMany({ where: { userId: targetId, agent: { workspaceId: wsId } } }),
+    prisma.workspaceMember.deleteMany({ where: { workspaceId: wsId, userId: targetId } }),
+  ]);
+  return c.redirect("/workspaces?ok=Member%20removed");
+});
+
+dashboardApp.get("/invite/:token", async (c) => {
+  const token = c.req.param("token");
+  const invite = await prisma.workspaceInvite.findUnique({
+    where: { token },
+    include: { workspace: true },
+  });
+  const page = (inner: string) => c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Workspace invite — grantry</title>
+    <style>${CSS} body { max-width: 440px; margin: 80px auto; padding: 0 24px; }</style></head><body>
+    <h1>Workspace invite</h1><div class="card">${inner}</div></body></html>`);
+
+  if (!invite || invite.acceptedAt) return page("<p>This invite link is invalid or already used.</p>");
+  if (invite.expiresAt < new Date()) return page("<p>This invite has expired. Ask your admin to send a new one.</p>");
+
+  const user = await getSessionUser(c);
+  if (!user) {
+    const next = encodeURIComponent(`/invite/${token}`);
+    return page(`
+      <p>You've been invited to the <b>${escapeHtml(invite.workspace.displayName)}</b> workspace (as ${escapeHtml(invite.role)}).</p>
+      <p>Sign in or create a grantry account with <b>${escapeHtml(invite.email)}</b> to accept.</p>
+      <div class="row" style="gap:10px;">
+        <a href="/login?next=${next}"><button type="button" style="width:100%;">Sign in</button></a>
+        <a href="/register?next=${next}"><button type="button" class="secondary" style="width:100%;">Create account</button></a>
+      </div>`);
+  }
+
+  if (user.email.toLowerCase() !== invite.email.toLowerCase()) {
+    return page(`<p>This invite was issued to <b>${escapeHtml(invite.email)}</b>, but you are signed in as <b>${escapeHtml(user.email)}</b>.</p>
+      <p>Sign out and use the invited address.</p>`);
+  }
+
+  const agentIds = safeJsonArray(invite.agentIds);
+  await prisma.$transaction([
+    prisma.workspaceMember.upsert({
+      where: { workspaceId_userId: { workspaceId: invite.workspaceId, userId: user.id } },
+      create: { workspaceId: invite.workspaceId, userId: user.id, role: invite.role },
+      update: {},
+    }),
+    ...agentIds.map((agentId) =>
+      prisma.agentAssignment.upsert({
+        where: { agentId_userId: { agentId, userId: user.id } },
+        create: { agentId, userId: user.id },
+        update: {},
+      }),
+    ),
+    prisma.workspaceInvite.update({ where: { id: invite.id }, data: { acceptedAt: new Date() } }),
+  ]);
+  return c.redirect(`/workspaces?ok=${encodeURIComponent(`Joined ${invite.workspace.displayName}`)}`);
 });
 
 async function signOutAndRedirect(c: any) {
@@ -1096,6 +1380,12 @@ function postAuthDestination(c: any): { dest: string; oauthQuery: string } {
   const qs = new URL(c.req.url).searchParams;
   if (qs.has("client_id") && qs.has("redirect_uri") && qs.has("response_type")) {
     return { dest: `/api/auth/mcp/authorize?${qs.toString()}`, oauthQuery: qs.toString() };
+  }
+  // Generic post-auth continuation (e.g. workspace invite links). Same-origin
+  // relative paths only — never absolute URLs.
+  const next = qs.get("next") ?? "";
+  if (next.startsWith("/") && !next.startsWith("//")) {
+    return { dest: next, oauthQuery: qs.toString() };
   }
   return { dest: "/dashboard", oauthQuery: "" };
 }
