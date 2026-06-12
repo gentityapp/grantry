@@ -457,6 +457,51 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "freee") {
+      const resp = await fetchWithTimeout("https://api.freee.co.jp/api/1/users/me?companies=true", {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) {
+        return { provider, authType, status: "error", checkedAt, error: `freee token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      }
+      const user = body.user ?? body;
+      return {
+        provider,
+        authType,
+        status: "ok",
+        scopes: ["read", "write"],
+        subject: { id: user.id, email: user.email, display_name: user.display_name },
+        resources: Array.isArray(user.companies)
+          ? user.companies.slice(0, 50).map((co: any) => ({ id: co.id, name: co.name ?? co.display_name, role: co.role }))
+          : undefined,
+        notes: ["freee access tokens expire after a few hours; grantry refreshes them with the stored refresh token."],
+        checkedAt,
+      };
+    }
+
+    if (provider === "moneyforward") {
+      const resp = await fetchWithTimeout("https://invoice.moneyforward.com/api/v3/office", {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) {
+        return { provider, authType, status: "error", checkedAt, error: `Money Forward token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      }
+      const office = body.office ?? body.data ?? body;
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: { id: office.id, name: office.name ?? office.office_name },
+        notes: [
+          "Money Forward Cloud Invoice API v3 tokens are scoped to one office.",
+          "Scopes (mfc/invoice/data.read / .write) are configured in the Money Forward app portal and are not enumerated by this check.",
+        ],
+        checkedAt,
+      };
+    }
+
     if (provider === "reddit") {
       const resp = await fetchWithTimeout("https://oauth.reddit.com/api/v1/me", {
         headers: {

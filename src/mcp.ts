@@ -28,6 +28,8 @@ import { callHeyReachTool } from "./connectors/heyreach.js";
 import { callChatworkTool } from "./connectors/chatwork.js";
 import { callRailwayTool } from "./connectors/railway.js";
 import { callResendTool } from "./connectors/resend.js";
+import { callFreeeTool } from "./connectors/freee.js";
+import { callMoneyForwardTool } from "./connectors/moneyforward.js";
 import { callRedditTool } from "./connectors/reddit.js";
 import { callXTool } from "./connectors/x.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
@@ -1088,6 +1090,122 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "resend/list_api_keys") {
     return {};
   }
+  if (toolName === "freee/get_me") {
+    return {};
+  }
+  if (toolName === "freee/list_companies") {
+    return {};
+  }
+  if (toolName === "freee/list_deals") {
+    return {
+      company_id: { type: "string", description: "freee company (事業所) id. Required." },
+      partner_id: { type: "string", description: "Filter by partner (取引先) id." },
+      account_item_id: { type: "string", description: "Filter by account item (勘定科目) id." },
+      status: { type: "string", enum: ["unsettled", "settled"], description: "Settlement status filter." },
+      type: { type: "string", enum: ["income", "expense"], description: "Deal type filter." },
+      start_issue_date: { type: "string", description: "Issue date lower bound, YYYY-MM-DD." },
+      end_issue_date: { type: "string", description: "Issue date upper bound, YYYY-MM-DD." },
+      offset: { type: "number", description: "Pagination offset." },
+      limit: { type: "number", minimum: 1, maximum: 100, description: "Deals to return, max 100." },
+    };
+  }
+  if (toolName === "freee/get_deal") {
+    return {
+      company_id: { type: "string", description: "freee company (事業所) id. Required." },
+      deal_id: { type: "string", description: "freee deal (取引) id. Required." },
+    };
+  }
+  if (toolName === "freee/create_deal") {
+    return {
+      company_id: { type: "string", description: "freee company (事業所) id. Required." },
+      issue_date: { type: "string", description: "Issue date, YYYY-MM-DD. Required." },
+      type: { type: "string", enum: ["income", "expense"], description: "Deal type. Required." },
+      details: { type: "array", items: { type: "object" }, description: "Deal line items (account_item_id, tax_code, amount, etc.)." },
+      deal: { type: "object", description: "Raw freee deal body; overrides individual fields." },
+    };
+  }
+  if (toolName === "freee/list_account_items") {
+    return {
+      company_id: { type: "string", description: "freee company (事業所) id. Required." },
+    };
+  }
+  if (toolName === "freee/list_partners") {
+    return {
+      company_id: { type: "string", description: "freee company (事業所) id. Required." },
+      keyword: { type: "string", description: "Partner name keyword filter." },
+      offset: { type: "number", description: "Pagination offset." },
+      limit: { type: "number", minimum: 1, maximum: 3000, description: "Partners to return." },
+    };
+  }
+  if (toolName === "freee/create_partner") {
+    return {
+      company_id: { type: "string", description: "freee company (事業所) id. Required." },
+      name: { type: "string", description: "Partner (取引先) name. Required." },
+      partner: { type: "object", description: "Raw freee partner body; overrides individual fields." },
+    };
+  }
+  if (toolName === "freee/trial_pl" || toolName === "freee/trial_bs") {
+    return {
+      company_id: { type: "string", description: "freee company (事業所) id. Required." },
+      fiscal_year: { type: "number", description: "Fiscal year, e.g. 2026." },
+      start_month: { type: "number", minimum: 1, maximum: 12, description: "Start month." },
+      end_month: { type: "number", minimum: 1, maximum: 12, description: "End month." },
+      breakdown_display_type: { type: "string", enum: ["partner", "item", "section", "account_item"], description: "Breakdown axis." },
+    };
+  }
+  if (toolName === "moneyforward/get_office") {
+    return {};
+  }
+  if (toolName === "moneyforward/list_partners") {
+    return {
+      page: { type: "number", description: "Page number." },
+      per_page: { type: "number", minimum: 1, maximum: 100, description: "Results per page, max 100." },
+      q: { type: "string", description: "Search keyword." },
+    };
+  }
+  if (toolName === "moneyforward/get_partner") {
+    return {
+      partner_id: { type: "string", description: "Money Forward partner (取引先) id. Required." },
+    };
+  }
+  if (toolName === "moneyforward/create_partner") {
+    return {
+      name: { type: "string", description: "Partner (取引先) name. Required." },
+      partner: { type: "object", description: "Raw Money Forward partner body; overrides individual fields." },
+    };
+  }
+  if (toolName === "moneyforward/list_billings") {
+    return {
+      page: { type: "number", description: "Page number." },
+      per_page: { type: "number", minimum: 1, maximum: 100, description: "Results per page, max 100." },
+      range_key: { type: "string", description: "Date field to filter on, e.g. billing_date." },
+      from: { type: "string", description: "Range lower bound, YYYY-MM-DD." },
+      to: { type: "string", description: "Range upper bound, YYYY-MM-DD." },
+      q: { type: "string", description: "Search keyword." },
+    };
+  }
+  if (toolName === "moneyforward/get_billing") {
+    return {
+      billing_id: { type: "string", description: "Money Forward billing (請求書) id. Required." },
+    };
+  }
+  if (toolName === "moneyforward/list_quotes") {
+    return {
+      page: { type: "number", description: "Page number." },
+      per_page: { type: "number", minimum: 1, maximum: 100, description: "Results per page, max 100." },
+      range_key: { type: "string", description: "Date field to filter on, e.g. quote_date." },
+      from: { type: "string", description: "Range lower bound, YYYY-MM-DD." },
+      to: { type: "string", description: "Range upper bound, YYYY-MM-DD." },
+      q: { type: "string", description: "Search keyword." },
+    };
+  }
+  if (toolName === "moneyforward/list_items") {
+    return {
+      page: { type: "number", description: "Page number." },
+      per_page: { type: "number", minimum: 1, maximum: 100, description: "Results per page, max 100." },
+      q: { type: "string", description: "Search keyword." },
+    };
+  }
   if (toolName === "reddit/get_me") {
     return {};
   }
@@ -1283,6 +1401,17 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "resend/send_email") return ["from", "to", "subject"];
   if (toolName === "resend/get_email") return ["email_id"];
   if (toolName === "resend/get_domain") return ["domain_id"];
+  if (toolName === "freee/list_deals") return ["company_id"];
+  if (toolName === "freee/get_deal") return ["company_id", "deal_id"];
+  if (toolName === "freee/create_deal") return ["company_id", "issue_date", "type"];
+  if (toolName === "freee/list_account_items") return ["company_id"];
+  if (toolName === "freee/list_partners") return ["company_id"];
+  if (toolName === "freee/create_partner") return ["company_id", "name"];
+  if (toolName === "freee/trial_pl") return ["company_id"];
+  if (toolName === "freee/trial_bs") return ["company_id"];
+  if (toolName === "moneyforward/get_partner") return ["partner_id"];
+  if (toolName === "moneyforward/create_partner") return ["name"];
+  if (toolName === "moneyforward/get_billing") return ["billing_id"];
   if (toolName === "reddit/get_subreddit") return ["subreddit"];
   if (toolName === "reddit/list_posts") return ["subreddit"];
   if (toolName === "reddit/search") return ["query"];
@@ -1867,6 +1996,10 @@ mcpApp.post("/", async (c) => {
         result = await callGoogleMapsTool(toolName, args, token);
       } else if (decision.provider === "resend") {
         result = await callResendTool(toolName, args, token);
+      } else if (decision.provider === "freee") {
+        result = await callFreeeTool(toolName, args, token);
+      } else if (decision.provider === "moneyforward") {
+        result = await callMoneyForwardTool(toolName, args, token);
       } else if (decision.provider === "reddit") {
         result = await callRedditTool(toolName, args, token);
       } else if (decision.provider === "x") {

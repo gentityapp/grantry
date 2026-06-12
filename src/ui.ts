@@ -3612,6 +3612,13 @@ oauthApp.get("/:provider/callback", async (c) => {
     } else if (providerKey === "hubspot") {
       const u: any = await (await fetch("https://api.hubapi.com/oauth/v1/access-tokens/" + accessToken)).json();
       if (u.hub_id) userLogin = `hub-${u.hub_id}`;
+    } else if (providerKey === "freee") {
+      const u: any = await (await fetch("https://api.freee.co.jp/api/1/users/me", { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } })).json();
+      if (u?.user?.email) userLogin = u.user.email;
+    } else if (providerKey === "moneyforward") {
+      const u: any = await (await fetch("https://invoice.moneyforward.com/api/v3/office", { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } })).json();
+      const office = u?.office ?? u?.data ?? u;
+      if (office?.name) userLogin = office.name;
     } else if (providerKey === "meta_ads") {
       const metaVersion = process.env.META_ADS_API_VERSION || "v21.0";
       const u: any = await (await fetch(`https://graph.facebook.com/${metaVersion}/me?fields=id,name`, { headers: { Authorization: `Bearer ${accessToken}` } })).json();
