@@ -38,6 +38,7 @@ function authTypeLabel(providerKey: string, authType: string): string {
   if (providerKey === "chatwork") return "API token";
   if (providerKey === "railway") return "Project token";
   if (providerKey === "resend") return "API key";
+  if (providerKey === "slack") return "Bot token";
   return "paste token";
 }
 
@@ -50,6 +51,7 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
   if (providerKey === "chatwork") return "Paste your Chatwork API token";
   if (providerKey === "railway") return "Paste your Railway Project Token from Project Settings > Tokens";
   if (providerKey === "resend") return "Paste your Resend API key";
+  if (providerKey === "slack") return "Paste your Slack Bot User OAuth Token (starts with xoxb-)";
   return `Paste your ${providerLabel} token here`;
 }
 
@@ -61,6 +63,7 @@ function tokenLinkLabel(providerKey: string, providerLabel: string): string {
   if (providerKey === "chatwork") return "🔗 Open Chatwork API token settings →";
   if (providerKey === "railway") return "🔗 Open Railway →";
   if (providerKey === "resend") return "🔗 Open Resend API keys →";
+  if (providerKey === "slack") return "🔗 Open Slack apps (create app / get Bot token) →";
   if (providerKey === "github") return "🔗 Manage GitHub PAT repository access here →";
   return `🔗 Get a new ${providerLabel} token here →`;
 }

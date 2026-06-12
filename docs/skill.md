@@ -3,7 +3,7 @@ name: grantry
 description: |
   Use grantry when the user wants an AI agent to call external SaaS APIs
   (GitHub, Notion, Google Drive/GSC/Ads, HubSpot, Attio, Clay, HeyReach,
-  Chatwork, Railway, Resend) under OAuth/PAT authentication
+  Chatwork, Railway, Resend, Slack) under OAuth/PAT authentication
   with tenant isolation. grantry (formerly "grantry-auth", deployed as "agent-oauth") is a
   Hono/TypeScript service that holds encrypted credentials and exposes them as
   MCP tools, so the agent never sees raw tokens. Triggers: mentions of
@@ -136,6 +136,8 @@ Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing tenant):
   `{"token":"...","token_type":"account"}`.
 - **Resend**: paste a Resend API key. Sending requires `sending_access` or
   `full_access` and a verified sending domain.
+- **Slack**: create an app at `api.slack.com/apps`, add Bot Token Scopes, install
+  it to the workspace, and paste the Bot User OAuth Token (`xoxb-…`).
 Set the connection's **scope to the tenant name**; that's the scope callers must pass.
 
 ### 6. Grant an agent access to a scope
@@ -145,7 +147,7 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 3. Bind the role to the agent (`POST /agents/:id/bind`) — or skip role wrangling
    entirely and create the agent via `/agents/new`.
 
-## Providers & tools (109)
+## Providers & tools (118)
 - `ping` — liveness (returns `pong from <agent>`)
 - **grantry** (system metadata, no SaaS credential required): `get_skill`,
   `get_providers`
@@ -176,6 +178,9 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
   `introspect_schema`
 - **resend** (API key): `send_email`, `list_emails`, `get_email`,
   `list_domains`, `get_domain`, `list_api_keys`
+- **slack** (Bot token): `auth_test`, `list_channels`, `get_channel`,
+  `list_messages`, `get_thread`, `post_message`, `update_message`,
+  `list_users`, `get_user`
 
 ### GitHub tool arguments (besides `scope`)
 - `get_repo`, `list_issues`: `owner`, `repo` (list_issues also `state`, default `open`)
@@ -296,6 +301,25 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 - `list_domains` / `list_api_keys` (read): no additional arguments.
 - `get_domain` (read): `domain_id`.
 
+### Slack tool arguments (besides `scope`)
+- `auth_test` (read): no additional arguments. Verifies the token and returns the
+  team/user it belongs to.
+- `list_channels` (read): optional `types` (comma-separated
+  `public_channel,private_channel,mpim,im`), `limit`, `cursor`,
+  `exclude_archived`, `team_id`.
+- `get_channel` (read): `channel`; optional `include_num_members`.
+- `list_messages` (read): `channel`; optional `limit`, `cursor`, `oldest`,
+  `latest`, `inclusive`.
+- `get_thread` (read): `channel`, `ts` (parent message timestamp); optional
+  `limit`, `cursor`, `oldest`, `latest`, `inclusive`.
+- `post_message` (write): `channel`; one of `text`, `blocks`, or `attachments`;
+  optional `thread_ts`, `reply_broadcast`, `unfurl_links`, `unfurl_media`,
+  `mrkdwn`.
+- `update_message` (write): `channel`, `ts`; one of `text`, `blocks`, or
+  `attachments`; optional `reply_broadcast`.
+- `list_users` (read): optional `limit`, `cursor`, `team_id`.
+- `get_user` (read): `user`.
+
 ## Output contract
 When asked to act via grantry:
 1. If you don't already know the scope, call `connections/list` first to resolve
@@ -314,7 +338,7 @@ When asked to act via grantry:
    `heyreach/resume_campaign`, `heyreach/add_leads_to_campaign`,
    `heyreach/create_empty_list`, `chatwork/send_message`,
    `chatwork/create_room_task`, `railway/graphql` with mutations,
-   `resend/send_email`, …)
+   `resend/send_email`, `slack/post_message`, `slack/update_message`, …)
    get explicit confirmation first —
    these hit the real SaaS via real tokens and are not reversible. **Read-only**
    calls (incl. the connectivity smoke test) need no confirmation — just run them.

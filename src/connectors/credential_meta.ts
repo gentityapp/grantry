@@ -389,6 +389,37 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "slack") {
+      const resp = await fetchWithTimeout("https://slack.com/api/auth.test", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json",
+        },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok || body.ok === false) {
+        return { provider, authType, status: "error", checkedAt, error: `Slack token check failed: ${resp.status} ${body.error ?? JSON.stringify(body).slice(0, 300)}` };
+      }
+      const scopes = splitScopes(resp.headers.get("x-oauth-scopes"));
+      return {
+        provider,
+        authType,
+        status: "ok",
+        scopes,
+        subject: {
+          team: body.team,
+          team_id: body.team_id,
+          user: body.user,
+          user_id: body.user_id,
+          bot_id: body.bot_id,
+          url: body.url,
+        },
+        notes: ["Slack token scopes are configured in the app's OAuth & Permissions page; the granted scopes are reported in the x-oauth-scopes response header."],
+        checkedAt,
+      };
+    }
+
     return {
       provider,
       authType,

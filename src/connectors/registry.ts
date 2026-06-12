@@ -323,6 +323,25 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  slack: {
+    key: "slack",
+    label: "Slack",
+    authTypes: ["pat"],
+    helpText: "Create a Slack app at api.slack.com/apps, add Bot Token Scopes (e.g. channels:read, channels:history, chat:write, users:read), install it to your workspace, and paste the Bot User OAuth Token (starts with xoxb-). It is sent as Authorization: Bearer to the Slack Web API.",
+    tokenUrl: "https://api.slack.com/apps",
+    tools: [
+      "slack/auth_test",
+      "slack/list_channels",
+      "slack/get_channel",
+      "slack/list_messages",
+      "slack/get_thread",
+      "slack/post_message",
+      "slack/update_message",
+      "slack/list_users",
+      "slack/get_user",
+    ],
+    implemented: true,
+  },
 };
 
 export function getProvider(key: string): ProviderDef | undefined {
