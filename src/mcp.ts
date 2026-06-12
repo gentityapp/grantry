@@ -33,6 +33,7 @@ import { callFreeeTool } from "./connectors/freee.js";
 import { callMoneyForwardTool } from "./connectors/moneyforward.js";
 import { callRedditTool } from "./connectors/reddit.js";
 import { callXTool } from "./connectors/x.js";
+import { callDiscordTool } from "./connectors/discord.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 
 export const mcpApp = new Hono();
@@ -1383,6 +1384,89 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       id: { type: "string", description: "ID of a tweet owned by the authorized account to delete." },
     };
   }
+  if (toolName === "discord/get_me") {
+    return {};
+  }
+  if (toolName === "discord/list_guilds") {
+    return {
+      before: { type: "string", description: "Get guilds before this guild ID (pagination)." },
+      after: { type: "string", description: "Get guilds after this guild ID (pagination)." },
+      limit: { type: "number", minimum: 1, maximum: 200, description: "Max guilds to return (default 200)." },
+      with_counts: { type: "boolean", description: "Include approximate member/presence counts." },
+    };
+  }
+  if (toolName === "discord/get_guild") {
+    return {
+      guild_id: { type: "string", description: "Discord guild (server) ID." },
+      with_counts: { type: "boolean", description: "Include approximate member/presence counts." },
+    };
+  }
+  if (toolName === "discord/list_channels") {
+    return {
+      guild_id: { type: "string", description: "Discord guild (server) ID." },
+    };
+  }
+  if (toolName === "discord/get_channel") {
+    return {
+      channel_id: { type: "string", description: "Discord channel ID." },
+    };
+  }
+  if (toolName === "discord/list_messages") {
+    return {
+      channel_id: { type: "string", description: "Discord channel ID." },
+      around: { type: "string", description: "Get messages around this message ID." },
+      before: { type: "string", description: "Get messages before this message ID." },
+      after: { type: "string", description: "Get messages after this message ID." },
+      limit: { type: "number", minimum: 1, maximum: 100, description: "Max messages to return (1-100, default 50)." },
+    };
+  }
+  if (toolName === "discord/get_message") {
+    return {
+      channel_id: { type: "string", description: "Discord channel ID." },
+      message_id: { type: "string", description: "Discord message ID." },
+    };
+  }
+  if (toolName === "discord/send_message") {
+    return {
+      channel_id: { type: "string", description: "Discord channel ID to post into." },
+      content: { type: "string", description: "Message text (up to 2000 chars). Required unless embeds or components are given." },
+      embeds: { type: "array", items: { type: "object" }, description: "Up to 10 embed objects." },
+      tts: { type: "boolean", description: "Send as a text-to-speech message." },
+      allowed_mentions: { type: "object", description: "Allowed mentions object controlling which mentions ping." },
+      message_reference: { type: "object", description: "Reference object to reply to another message ({ message_id, channel_id?, guild_id? })." },
+      components: { type: "array", items: { type: "object" }, description: "Message component (action row) objects." },
+      flags: { type: "number", description: "Message flags bitfield (e.g. 4 to suppress embeds)." },
+    };
+  }
+  if (toolName === "discord/edit_message") {
+    return {
+      channel_id: { type: "string", description: "Discord channel ID." },
+      message_id: { type: "string", description: "ID of the message to edit (must have been sent by the bot)." },
+      content: { type: "string", description: "Replacement message text." },
+      embeds: { type: "array", items: { type: "object" }, description: "Replacement embed objects." },
+      allowed_mentions: { type: "object", description: "Allowed mentions object." },
+      components: { type: "array", items: { type: "object" }, description: "Replacement component objects." },
+      flags: { type: "number", description: "Message flags bitfield." },
+    };
+  }
+  if (toolName === "discord/delete_message") {
+    return {
+      channel_id: { type: "string", description: "Discord channel ID." },
+      message_id: { type: "string", description: "ID of the message to delete." },
+    };
+  }
+  if (toolName === "discord/list_members") {
+    return {
+      guild_id: { type: "string", description: "Discord guild (server) ID. Requires the Server Members privileged intent." },
+      limit: { type: "number", minimum: 1, maximum: 1000, description: "Max members to return (1-1000, default 1)." },
+      after: { type: "string", description: "Get members after this user ID (pagination)." },
+    };
+  }
+  if (toolName === "discord/get_user") {
+    return {
+      user_id: { type: "string", description: "Discord user ID." },
+    };
+  }
   return {};
 }
 
@@ -1506,6 +1590,16 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "x/get_tweet") return ["id"];
   if (toolName === "x/post_tweet") return ["text"];
   if (toolName === "x/delete_tweet") return ["id"];
+  if (toolName === "discord/get_guild") return ["guild_id"];
+  if (toolName === "discord/list_channels") return ["guild_id"];
+  if (toolName === "discord/get_channel") return ["channel_id"];
+  if (toolName === "discord/list_messages") return ["channel_id"];
+  if (toolName === "discord/get_message") return ["channel_id", "message_id"];
+  if (toolName === "discord/send_message") return ["channel_id"];
+  if (toolName === "discord/edit_message") return ["channel_id", "message_id"];
+  if (toolName === "discord/delete_message") return ["channel_id", "message_id"];
+  if (toolName === "discord/list_members") return ["guild_id"];
+  if (toolName === "discord/get_user") return ["user_id"];
   return [];
 }
 
@@ -2087,6 +2181,8 @@ mcpApp.post("/", async (c) => {
         result = await callRedditTool(toolName, args, token);
       } else if (decision.provider === "x") {
         result = await callXTool(toolName, args, token);
+      } else if (decision.provider === "discord") {
+        result = await callDiscordTool(toolName, args, token);
       } else {
         throw new Error(`no dispatcher for provider: ${decision.provider}`);
       }
