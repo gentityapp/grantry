@@ -576,6 +576,36 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "discord") {
+      const resp = await fetchWithTimeout("https://discord.com/api/v10/users/@me", {
+        headers: {
+          Authorization: `Bot ${token}`,
+          Accept: "application/json",
+          "User-Agent": "grantry (https://grantry.ai, 1.0)",
+        },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) {
+        return { provider, authType, status: "error", checkedAt, error: `Discord bot token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: {
+          id: body.id,
+          username: body.username,
+          global_name: body.global_name,
+          bot: body.bot,
+        },
+        notes: [
+          "Discord bot tokens are sent as Authorization: Bot and can access the guilds the bot has been invited to.",
+          "Per-action permissions are governed by the bot's role/permissions in each guild; list_members also needs the Server Members privileged intent.",
+        ],
+        checkedAt,
+      };
+    }
+
     return {
       provider,
       authType,

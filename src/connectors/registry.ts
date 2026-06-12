@@ -500,6 +500,28 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  discord: {
+    key: "discord",
+    label: "Discord",
+    authTypes: ["pat"],
+    helpText: "Create an application at discord.com/developers/applications, add a Bot, and paste its Bot Token. Invite the bot to your server with the needed permissions (and enable the Server Members Intent for list_members). The token is sent as Authorization: Bot to the Discord REST API.",
+    tokenUrl: "https://discord.com/developers/applications",
+    tools: [
+      "discord/get_me",
+      "discord/list_guilds",
+      "discord/get_guild",
+      "discord/list_channels",
+      "discord/get_channel",
+      "discord/list_messages",
+      "discord/get_message",
+      "discord/send_message",
+      "discord/edit_message",
+      "discord/delete_message",
+      "discord/list_members",
+      "discord/get_user",
+    ],
+    implemented: true,
+  },
 };
 
 export function getProvider(key: string): ProviderDef | undefined {
