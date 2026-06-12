@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-auth/plugins";
 import { auth } from "./auth.js";
 import { mcpApp } from "./mcp.js";
 import { dashboardApp, oauthApp } from "./ui.js";
@@ -20,6 +21,16 @@ app.use(
 
 // Mount auth (better-auth)
 app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
+
+// OAuth discovery for remote MCP clients (RFC 8414 / RFC 9728). These must be
+// served at the origin root; they advertise the authorize/token/register
+// endpoints that better-auth's mcp plugin mounts under /api/auth/mcp/*.
+app.get("/.well-known/oauth-authorization-server", (c) =>
+  oAuthDiscoveryMetadata(auth)(c.req.raw),
+);
+app.get("/.well-known/oauth-protected-resource", (c) =>
+  oAuthProtectedResourceMetadata(auth)(c.req.raw),
+);
 
 // Mount MCP gateway
 app.route("/mcp", mcpApp);

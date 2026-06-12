@@ -29,6 +29,10 @@ model User {
   connections   Connection[]
   roles         Role[]
   auditLogs     AuditLog[]
+  oauthApplications OauthApplication[]
+  oauthAccessTokens OauthAccessToken[]
+  oauthConsents     OauthConsent[]
+  oauthAgentGrants  OauthAgentGrant[]
 
   @@map("user")
 }
@@ -116,6 +120,7 @@ model Agent {
 
   roles         AgentRole[]
   auditLogs     AuditLog[]
+  oauthAgentGrants OauthAgentGrant[]
 
   @@map("agent")
 }
@@ -215,4 +220,84 @@ model AuditLog {
   @@index([agentId, createdAt])
   @@index([provider, createdAt])
   @@map("audit_log")
+}
+
+// ---------- MCP OAuth (better-auth mcp/oidc-provider plugin) ----------
+// These three tables back the OAuth 2.1 authorization server that lets remote
+// MCP clients (claude.ai, Claude Desktop, ChatGPT, ...) connect via dynamic
+// client registration + PKCE instead of static gn_agt_ tokens.
+
+model OauthApplication {
+  id           String   @id @default(cuid())
+  name         String
+  icon         String?
+  metadata     String?
+  clientId     String   @unique
+  clientSecret String?
+  redirectUrls String
+  type         String   // "web" | "native" | "user-agent-based" | "public"
+  disabled     Boolean  @default(false)
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  accessTokens OauthAccessToken[]
+  consents     OauthConsent[]
+
+  @@index([userId])
+  @@map("oauth_application")
+}
+
+model OauthAccessToken {
+  id                    String   @id @default(cuid())
+  accessToken           String   @unique
+  refreshToken          String   @unique
+  accessTokenExpiresAt  DateTime
+  refreshTokenExpiresAt DateTime
+  clientId              String
+  application           OauthApplication @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  userId                String?
+  user                  User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scopes                String
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([userId])
+  @@map("oauth_access_token")
+}
+
+model OauthConsent {
+  id           String   @id @default(cuid())
+  clientId     String
+  application  OauthApplication @relation(fields: [clientId], references: [clientId], onDelete: Cascade)
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  scopes       String
+  consentGiven Boolean
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([userId])
+  @@map("oauth_consent")
+}
+
+// Maps an OAuth grant (user x dynamically-registered client) to the grantry
+// Agent it should act as. Resolved on every /mcp request, so changing the
+// bound agent's roles/scopes in the dashboard takes effect immediately.
+model OauthAgentGrant {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  clientId  String
+  agentId   String
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, clientId])
+  @@index([agentId])
+  @@map("oauth_agent_grant")
 }

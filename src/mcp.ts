@@ -2233,16 +2233,56 @@ function buildToolList(connections: Awaited<ReturnType<typeof connectionsForAgen
   return tools;
 }
 
-/** Resolve agent from Authorization: Bearer gn_agt_* */
+/**
+ * Resolve agent from Authorization: Bearer <token>. Two token styles:
+ *  - gn_agt_*  — static agent token, sha256 looked up in Agent.hashedToken
+ *  - otherwise — OAuth access token issued by the better-auth mcp plugin
+ *    (claude.ai / Claude Desktop via dynamic client registration). The token
+ *    maps to a user; OauthAgentGrant (user x client) picks which Agent the
+ *    connector acts as. Permissions stay role-based and are evaluated per
+ *    request, so dashboard changes apply immediately.
+ */
 async function resolveAgent(authHeader: string | null): Promise<{ id: string; name: string; enabled: boolean } | null> {
   if (!authHeader?.startsWith("Bearer ")) return null;
   const token = authHeader.slice(7);
-  if (!token.startsWith("gn_agt_")) return null;
+  if (!token) return null;
 
-  // Look up by token hash (hashedToken is unique but not the @id, so use findFirst)
-  const crypto = await import("node:crypto");
-  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-  const agent = await prisma.agent.findFirst({ where: { hashedToken: tokenHash } });
+  if (token.startsWith("gn_agt_")) {
+    // Look up by token hash (hashedToken is unique but not the @id, so use findFirst)
+    const crypto = await import("node:crypto");
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const agent = await prisma.agent.findFirst({ where: { hashedToken: tokenHash } });
+    if (!agent || !agent.enabled) return null;
+    if (agent.expiresAt && agent.expiresAt < new Date()) return null;
+    return { id: agent.id, name: agent.name, enabled: agent.enabled };
+  }
+
+  return resolveOAuthAgent(token);
+}
+
+/** Resolve an MCP-plugin OAuth access token to the grantry Agent it acts as. */
+async function resolveOAuthAgent(token: string): Promise<{ id: string; name: string; enabled: boolean } | null> {
+  const accessToken = await prisma.oauthAccessToken
+    .findUnique({ where: { accessToken: token } })
+    .catch(() => null);
+  if (!accessToken || !accessToken.userId) return null;
+  if (accessToken.accessTokenExpiresAt && accessToken.accessTokenExpiresAt < new Date()) return null;
+
+  // Explicit binding chosen on the consent screen wins; otherwise fall back
+  // to the user's sole enabled agent so single-agent setups need no extra step.
+  const grant = await prisma.oauthAgentGrant.findUnique({
+    where: { userId_clientId: { userId: accessToken.userId, clientId: accessToken.clientId } },
+  });
+  let agent = grant
+    ? await prisma.agent.findUnique({ where: { id: grant.agentId } })
+    : null;
+  if (!agent) {
+    const candidates = await prisma.agent.findMany({
+      where: { ownerId: accessToken.userId, enabled: true },
+      take: 2,
+    });
+    if (candidates.length === 1) agent = candidates[0];
+  }
   if (!agent || !agent.enabled) return null;
   if (agent.expiresAt && agent.expiresAt < new Date()) return null;
   return { id: agent.id, name: agent.name, enabled: agent.enabled };
@@ -2393,7 +2433,32 @@ mcpApp.post("/", async (c) => {
   const auth = c.req.header("authorization") ?? null;
   const agent = await resolveAgent(auth);
   const configuredScope = configuredMcpScope(c);
-  c.header("Access-Control-Expose-Headers", "Mcp-Session-Id");
+  c.header("Access-Control-Expose-Headers", "Mcp-Session-Id, WWW-Authenticate");
+
+  // MCP authorization spec: unauthenticated (or invalid-token) requests get
+  // 401 + WWW-Authenticate pointing at the protected-resource metadata. This
+  // is what triggers the OAuth flow in remote clients like claude.ai and
+  // Claude Desktop. Static gn_agt_ tokens authenticate as before.
+  if (!agent) {
+    const requestOrigin = new URL(c.req.url).origin;
+    const origin = process.env.BETTER_AUTH_URL
+      ? new URL(process.env.BETTER_AUTH_URL).origin
+      : requestOrigin;
+    c.header(
+      "WWW-Authenticate",
+      `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource"`,
+    );
+    return c.json({
+      jsonrpc: "2.0",
+      id: null,
+      error: {
+        code: -32001,
+        message:
+          "Unauthorized: pass 'Authorization: Bearer gn_agt_...' or complete the OAuth flow advertised in WWW-Authenticate",
+      },
+    }, 401);
+  }
+
   const session = prepareMcpSession(c, agent);
   if (!session.ok) {
     return c.json({

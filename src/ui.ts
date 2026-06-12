@@ -438,6 +438,49 @@ async function getDbSessionUser(c: any) {
   return prisma.user.findUnique({ where: { id: user.id } });
 }
 
+// ---------- MCP OAuth consent support ----------
+// Backing endpoints for the consent screen rendered by the better-auth mcp
+// plugin (see consentHTML in auth.ts). Session-authenticated: the consent
+// page runs in the user's logged-in browser.
+
+dashboardApp.get("/oauth-consent/agents", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user?.id) return c.json({ error: "unauthorized" }, 401);
+  const agents = await prisma.agent.findMany({
+    where: { ownerId: user.id, enabled: true },
+    select: { id: true, name: true, description: true },
+    orderBy: { name: "asc" },
+  });
+  return c.json({ agents });
+});
+
+dashboardApp.post("/oauth-consent/bind", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user?.id) return c.json({ error: "unauthorized" }, 401);
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid JSON body" }, 400);
+  }
+  const clientId = String(body?.clientId ?? "");
+  const agentId = String(body?.agentId ?? "");
+  if (!clientId || !agentId) return c.json({ error: "clientId and agentId are required" }, 400);
+
+  // The agent must belong to the consenting user — never bind someone else's.
+  const agent = await prisma.agent.findFirst({
+    where: { id: agentId, ownerId: user.id, enabled: true },
+  });
+  if (!agent) return c.json({ error: "agent not found or not yours" }, 404);
+
+  await prisma.oauthAgentGrant.upsert({
+    where: { userId_clientId: { userId: user.id, clientId } },
+    create: { userId: user.id, clientId, agentId },
+    update: { agentId },
+  });
+  return c.json({ ok: true });
+});
+
 async function signOutAndRedirect(c: any) {
   const url = new URL(c.req.url);
   url.pathname = "/api/auth/sign-out";
