@@ -444,6 +444,92 @@ async function getDbSessionUser(c: any) {
 // plugin (see consentHTML in auth.ts). Session-authenticated: the consent
 // page runs in the user's logged-in browser.
 
+/**
+ * Gate in front of GET /api/auth/mcp/authorize (mounted in server.ts before
+ * the better-auth handler). The better-auth mcp plugin only renders a consent
+ * screen when the client sends prompt=consent — claude.ai does not — so the
+ * agent binding would never be created and OAuth tokens could not resolve to
+ * an Agent. This gate guarantees an OauthAgentGrant exists before the
+ * authorize flow proceeds:
+ *  - no session            → null (better-auth redirects to /login; we re-enter after)
+ *  - binding exists        → null (pass through)
+ *  - exactly one agent     → auto-bind, pass through
+ *  - multiple agents       → render a picker; submit binds then resumes authorize
+ */
+export async function mcpAuthorizeGate(c: any): Promise<Response | null> {
+  const user = await getSessionUser(c);
+  if (!user?.id) return null;
+  const clientId = c.req.query("client_id") ?? "";
+  if (!clientId) return null;
+
+  const existing = await prisma.oauthAgentGrant.findUnique({
+    where: { userId_clientId: { userId: user.id, clientId } },
+  });
+  if (existing) return null;
+
+  const agents = await prisma.agent.findMany({
+    where: { ownerId: user.id, enabled: true },
+    select: { id: true, name: true, description: true },
+    orderBy: { name: "asc" },
+  });
+  if (agents.length === 1) {
+    await prisma.oauthAgentGrant.create({
+      data: { userId: user.id, clientId, agentId: agents[0].id },
+    });
+    return null;
+  }
+  if (!agents.length) {
+    return c.html(
+      `<!doctype html><html><head><meta charset="utf-8"><title>No agents — grantry</title>
+      <style>${CSS} body { max-width: 420px; margin: 80px auto; padding: 0 24px; }</style></head><body>
+      <h1>No enabled agents</h1>
+      <div class="card"><p>This connector must act as one of your grantry agents, but your account has none enabled. Create an agent in the <a href="/dashboard">dashboard</a>, then retry the connection.</p></div>
+      </body></html>`,
+      403,
+    );
+  }
+
+  const client = await prisma.oauthApplication.findUnique({ where: { clientId } });
+  const clientName = client?.name || "MCP client";
+  const resumeQS = new URL(c.req.url).searchParams.toString();
+  const options = agents
+    .map((a) =>
+      `<label class="agent-opt"><input type="radio" name="agent" value="${escapeHtml(a.id)}">
+       <span><b>${escapeHtml(a.name)}</b>${a.description ? `<br><small style="color:#8a8d93;">${escapeHtml(a.description)}</small>` : ""}</span></label>`,
+    )
+    .join("");
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Choose agent — grantry</title>
+    <style>${CSS} body { max-width: 440px; margin: 60px auto; padding: 0 24px; }
+    .agent-opt { display:flex; gap:10px; align-items:flex-start; padding:10px 12px; border:1px solid #30343a; border-radius:8px; margin-bottom:8px; cursor:pointer; }
+    .agent-opt:hover { border-color: #58a6ff; }
+    </style></head><body>
+    <h1>Connect ${escapeHtml(clientName)}</h1>
+    <div class="card">
+      <p>${escapeHtml(clientName)} will act as the agent you choose — with that agent's roles and tenant scopes, exactly as configured in the dashboard. You can change or revoke this anytime.</p>
+      <form id="pick">${options}
+        <button type="submit" style="width:100%;margin-top:8px;">Continue</button>
+        <div id="err" style="color:#ff6b6b;margin-top:8px;font-size:13px;"></div>
+      </form>
+    </div>
+    <script>
+      document.getElementById('pick').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const sel = document.querySelector('input[name=agent]:checked');
+        if (!sel) { document.getElementById('err').textContent = 'Pick an agent first'; return; }
+        const r = await fetch('/oauth-consent/bind', {
+          method: 'POST', credentials: 'include',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clientId: ${jsString(clientId)}, agentId: sel.value }),
+        });
+        if (!r.ok) { document.getElementById('err').textContent = 'Failed to save selection'; return; }
+        location.href = '/api/auth/mcp/authorize?' + ${jsString(resumeQS)};
+      });
+    </script>
+    </body></html>
+  `);
+}
+
 dashboardApp.get("/oauth-consent/agents", async (c) => {
   const user = await getSessionUser(c);
   if (!user?.id) return c.json({ error: "unauthorized" }, 401);

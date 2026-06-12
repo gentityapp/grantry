@@ -6,7 +6,7 @@ import { logger } from "hono/logger";
 import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-auth/plugins";
 import { auth } from "./auth.js";
 import { mcpApp } from "./mcp.js";
-import { dashboardApp, oauthApp } from "./ui.js";
+import { dashboardApp, oauthApp, mcpAuthorizeGate } from "./ui.js";
 
 const app = new Hono();
 
@@ -18,6 +18,14 @@ app.use(
     credentials: true,
   }),
 );
+
+// Agent-binding gate for the MCP OAuth authorize flow. Registered before the
+// better-auth mount so it sees the request first; returning null passes the
+// request through to better-auth unchanged.
+app.get("/api/auth/mcp/authorize", async (c) => {
+  const intercepted = await mcpAuthorizeGate(c);
+  return intercepted ?? auth.handler(c.req.raw);
+});
 
 // Mount auth (better-auth)
 app.on(["POST", "GET"], "/api/auth/*", (c) => auth.handler(c.req.raw));
