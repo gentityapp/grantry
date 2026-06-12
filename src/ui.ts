@@ -1000,9 +1000,31 @@ dashboardApp.post("/meta/oauth-states/prune", async (c) => {
 });
 
 // --- /login ---
+// When the better-auth mcp plugin redirects an OAuth authorize request to
+// /login, the original authorize query (client_id, redirect_uri, ...) rides
+// along. After sign-in/sign-up the browser must go BACK to the authorize
+// endpoint to resume that flow — sending it to /dashboard strands the remote
+// MCP client (claude.ai / Claude Desktop) waiting for a callback forever.
+function postAuthDestination(c: any): { dest: string; oauthQuery: string } {
+  const qs = new URL(c.req.url).searchParams;
+  if (qs.has("client_id") && qs.has("redirect_uri") && qs.has("response_type")) {
+    return { dest: `/api/auth/mcp/authorize?${qs.toString()}`, oauthQuery: qs.toString() };
+  }
+  return { dest: "/dashboard", oauthQuery: "" };
+}
+
+// Safe embedding helpers for user-influenced URLs.
+function jsString(s: string): string {
+  return JSON.stringify(s).replace(/</g, "\\u003c");
+}
+function htmlAttr(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+}
+
 dashboardApp.get("/login", async (c) => {
+  const { dest, oauthQuery } = postAuthDestination(c);
   const user = await getSessionUser(c);
-  if (user) return c.redirect("/dashboard");
+  if (user) return c.redirect(dest);
   const resetDone = c.req.query("reset") === "1";
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Sign in — grantry</title>
@@ -1023,7 +1045,7 @@ dashboardApp.get("/login", async (c) => {
         <div id="err" style="color:#ff6b6b;margin-top:8px;font-size:13px;"></div>
       </form>
     </div>
-    <p style="text-align:center;color:#8a8d93;font-size:13px;">No account? <a href="/register">Create one</a> · <a href="/forgot-password">Forgot password?</a></p>
+    <p style="text-align:center;color:#8a8d93;font-size:13px;">No account? <a href="/register${oauthQuery ? htmlAttr(`?${oauthQuery}`) : ""}">Create one</a> · <a href="/forgot-password">Forgot password?</a></p>
     <script>
       document.getElementById('loginForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -1033,7 +1055,7 @@ dashboardApp.get("/login", async (c) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: fd.get('email'), password: fd.get('password') })
         });
-        if (r.ok) { location.href = '/dashboard'; }
+        if (r.ok) { location.href = ${jsString(dest)}; }
         else { document.getElementById('err').textContent = 'Invalid email or password'; }
       });
     </script>
@@ -1046,6 +1068,7 @@ dashboardApp.post("/logout", async (c) => signOutAndRedirect(c));
 
 // --- /register ---
 dashboardApp.get("/register", async (c) => {
+  const { dest, oauthQuery } = postAuthDestination(c);
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Create account — grantry</title>
     <style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
@@ -1068,7 +1091,7 @@ dashboardApp.get("/register", async (c) => {
         <div id="err" style="color:#ff6b6b;margin-top:8px;font-size:13px;"></div>
       </form>
     </div>
-    <p style="text-align:center;color:#8a8d93;font-size:13px;">Already have one? <a href="/login">Sign in</a></p>
+    <p style="text-align:center;color:#8a8d93;font-size:13px;">Already have one? <a href="/login${oauthQuery ? htmlAttr(`?${oauthQuery}`) : ""}">Sign in</a></p>
     <script>
       document.getElementById('regForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -1078,7 +1101,7 @@ dashboardApp.get("/register", async (c) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: fd.get('name'), email: fd.get('email'), password: fd.get('password') })
         });
-        if (r.ok) { location.href = '/dashboard'; }
+        if (r.ok) { location.href = ${jsString(dest)}; }
         else { const j = await r.json().catch(()=>({})); document.getElementById('err').textContent = j.message || 'Sign up failed'; }
       });
     </script>
