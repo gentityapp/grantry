@@ -136,8 +136,10 @@ Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing tenant):
   `{"token":"...","token_type":"account"}`.
 - **Resend**: paste a Resend API key. Sending requires `sending_access` or
   `full_access` and a verified sending domain.
-- **Slack**: create an app at `api.slack.com/apps`, add Bot Token Scopes, install
-  it to the workspace, and paste the Bot User OAuth Token (`xoxb-…`).
+- **Slack**: paste a **Bot User OAuth Token** (`xoxb-…`) from the app's OAuth &
+  Permissions page, *or* click Connect → OAuth (`/oauth/slack/start`). OAuth needs
+  `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` set as env vars and the callback
+  `https://app.grantry.ai/oauth/slack/callback` registered in the Slack app.
 Set the connection's **scope to the tenant name**; that's the scope callers must pass.
 
 ### 6. Grant an agent access to a scope
@@ -178,7 +180,8 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
   `introspect_schema`
 - **resend** (API key): `send_email`, `list_emails`, `get_email`,
   `list_domains`, `get_domain`, `list_api_keys`
-- **slack** (Bot token): `auth_test`, `list_channels`, `get_channel`,
+- **slack** (Bot token or OAuth; scopes `channels:read`, `groups:read`,
+  `channels:history`, `groups:history`, `chat:write`, `users:read`): `auth_test`, `list_channels`, `get_channel`,
   `list_messages`, `get_thread`, `post_message`, `update_message`,
   `list_users`, `get_user`
 

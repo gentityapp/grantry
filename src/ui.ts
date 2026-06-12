@@ -3444,7 +3444,10 @@ oauthApp.get("/:provider/start", async (c) => {
   } else if (providerKey.startsWith("google_") || providerKey === "gmail") {
     extraParams = `&access_type=offline&prompt=consent`; // request refresh_token
   }
-  const scopeStr = (providerDef.oauthScopes || []).join(" ");
+  // Slack's OAuth v2 authorize endpoint expects a comma-separated scope list
+  // (bot scopes in `scope`); most other providers use space-separated scopes.
+  const scopeSeparator = providerKey === "slack" ? "," : " ";
+  const scopeStr = (providerDef.oauthScopes || []).join(scopeSeparator);
   const params = new URLSearchParams({
     response_type: "code",
     client_id: clientId,
@@ -3565,6 +3568,11 @@ oauthApp.get("/:provider/callback", async (c) => {
     } else if (providerKey === "hubspot") {
       const u: any = await (await fetch("https://api.hubapi.com/oauth/v1/access-tokens/" + accessToken)).json();
       if (u.hub_id) userLogin = `hub-${u.hub_id}`;
+    } else if (providerKey === "slack") {
+      // Slack's oauth.v2.access response already carries the workspace info, so
+      // we don't need an extra API call to name the connection.
+      if (tokenJson.team?.name) userLogin = tokenJson.team.name;
+      else if (tokenJson.team?.id) userLogin = tokenJson.team.id;
     }
   } catch { /* non-fatal */ }
 
