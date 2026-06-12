@@ -156,7 +156,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     oauthTokenUrl: "https://oauth2.googleapis.com/token",
-    tools: ["google_ads/list_accessible_customers", "google_ads/search", "google_ads/mutate"],
+    tools: ["google_ads/list_accessible_customers", "google_ads/search", "google_ads/mutate", "google_ads/generate_keyword_ideas"],
     implemented: true,
   },
   yahoo_ads: {
