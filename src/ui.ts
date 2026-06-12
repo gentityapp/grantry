@@ -26,7 +26,8 @@ function escapeHtml(s: string): string {
 }
 
 function jsString(s: string): string {
-  return JSON.stringify(s);
+  // \u003c keeps user-influenced strings from closing a <script> block.
+  return JSON.stringify(s).replace(/</g, "\\u003c");
 }
 
 function authTypeLabel(providerKey: string, authType: string): string {
@@ -1013,14 +1014,6 @@ function postAuthDestination(c: any): { dest: string; oauthQuery: string } {
   return { dest: "/dashboard", oauthQuery: "" };
 }
 
-// Safe embedding helpers for user-influenced URLs.
-function jsString(s: string): string {
-  return JSON.stringify(s).replace(/</g, "\\u003c");
-}
-function htmlAttr(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
-}
-
 dashboardApp.get("/login", async (c) => {
   const { dest, oauthQuery } = postAuthDestination(c);
   const user = await getSessionUser(c);
@@ -1045,7 +1038,7 @@ dashboardApp.get("/login", async (c) => {
         <div id="err" style="color:#ff6b6b;margin-top:8px;font-size:13px;"></div>
       </form>
     </div>
-    <p style="text-align:center;color:#8a8d93;font-size:13px;">No account? <a href="/register${oauthQuery ? htmlAttr(`?${oauthQuery}`) : ""}">Create one</a> · <a href="/forgot-password">Forgot password?</a></p>
+    <p style="text-align:center;color:#8a8d93;font-size:13px;">No account? <a href="/register${oauthQuery ? escapeHtml(`?${oauthQuery}`) : ""}">Create one</a> · <a href="/forgot-password">Forgot password?</a></p>
     <script>
       document.getElementById('loginForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -1091,7 +1084,7 @@ dashboardApp.get("/register", async (c) => {
         <div id="err" style="color:#ff6b6b;margin-top:8px;font-size:13px;"></div>
       </form>
     </div>
-    <p style="text-align:center;color:#8a8d93;font-size:13px;">Already have one? <a href="/login${oauthQuery ? htmlAttr(`?${oauthQuery}`) : ""}">Sign in</a></p>
+    <p style="text-align:center;color:#8a8d93;font-size:13px;">Already have one? <a href="/login${oauthQuery ? escapeHtml(`?${oauthQuery}`) : ""}">Sign in</a></p>
     <script>
       document.getElementById('regForm').addEventListener('submit', async (e) => {
         e.preventDefault();
