@@ -135,8 +135,10 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
    **Allowed scopes** (leave Allowed scopes empty for "any scope").
 3. Bind the role to the agent (`POST /ui/agents/:id/bind`).
 
-## Providers & tools (105)
+## Providers & tools (107)
 - `ping` — liveness (returns `pong from <agent>`)
+- **gentity** (system metadata, no SaaS credential required): `get_skill`,
+  `get_providers`
 - **github** (PAT or OAuth; scopes `repo`, `read:user`):
   `list_repos`, `get_repo`, `get_file_contents`, `list_issues`, `create_issue`, `git_push_repo`, `create_repo`
 - **notion** (PAT): `list_dbs`, `get_page`, `query_db`, `create_page`,
@@ -175,6 +177,12 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
   `files` (object `{ "path": "utf8 content" }`). Uses the Contents API — works on
   empty and non-empty repos.
 - `create_repo`: `name`, `org?` (omit = personal account), `description?`, `private?`
+
+### Gentity system tool arguments
+- `get_skill` (read): optional `format` (`markdown`). Returns the latest
+  `docs/skill.md` content plus metadata (`updated_at`, `commit_sha`, version).
+- `get_providers` (read): optional `include_tools` boolean. Returns implemented
+  provider metadata, auth types, links, and tool names.
 
 ### Notion tool arguments (besides `scope`)
 - `list_dbs`: no additional arguments.

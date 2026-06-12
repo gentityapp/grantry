@@ -3,6 +3,7 @@
 // Phase 3: scope-based policy enforcement
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
+import { readFile, stat } from "node:fs/promises";
 import { prisma } from "./db.js";
 import { decrypt, encrypt } from "./crypto.js";
 import { checkPolicy, connectionsForAgent } from "./policy.js";
@@ -32,6 +33,12 @@ const TOKEN_REFRESH_TIMEOUT_MS = 8_000;
 const TOKEN_REFRESH_SKEW_MS = 60_000;
 const MCP_SESSION_TTL_MS = 60 * 60 * 1000;
 const MCP_PROTOCOL_VERSION = "2024-11-05";
+const SKILL_URL = new URL("../docs/skill.md", import.meta.url);
+
+const SYSTEM_TOOLS = [
+  "gentity/get_skill",
+  "gentity/get_providers",
+] as const;
 
 type McpSession = {
   agentId: string;
@@ -60,6 +67,9 @@ function publicToolName(canonicalName: string): string {
 function canonicalToolName(name: unknown): string {
   const raw = String(name ?? "");
   if (raw === "ping") return raw;
+  for (const tool of SYSTEM_TOOLS) {
+    if (raw === tool || raw === publicToolName(tool)) return tool;
+  }
   for (const provider of Object.values(PROVIDERS)) {
     if (provider.tools.includes(raw)) return raw;
     const matched = provider.tools.find((tool) => publicToolName(tool) === raw);
@@ -69,6 +79,16 @@ function canonicalToolName(name: unknown): string {
 }
 
 function toolSpecificInputProperties(toolName: string): Record<string, any> {
+  if (toolName === "gentity/get_skill") {
+    return {
+      format: { type: "string", enum: ["markdown"], description: "Output format. Defaults to markdown." },
+    };
+  }
+  if (toolName === "gentity/get_providers") {
+    return {
+      include_tools: { type: "boolean", description: "When true, include each provider's tool names. Defaults to true." },
+    };
+  }
   if (toolName === "notion/get_page") {
     return {
       page_id: { type: "string", description: "Notion page ID." },
@@ -835,6 +855,7 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
 }
 
 function requiredToolSpecificArgs(toolName: string): string[] {
+  if (SYSTEM_TOOLS.includes(toolName as any)) return [];
   if (toolName === "notion/get_page") return ["page_id"];
   if (toolName === "notion/query_db") return ["database_id"];
   if (toolName === "notion/create_page") return ["parent", "properties"];
@@ -907,6 +928,76 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   return [];
 }
 
+async function getSkillContent() {
+  const [markdown, info] = await Promise.all([
+    readFile(SKILL_URL, "utf8"),
+    stat(SKILL_URL),
+  ]);
+  return {
+    markdown,
+    metadata: {
+      format: "markdown",
+      source: "docs/skill.md",
+      updated_at: info.mtime.toISOString(),
+      commit_sha: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_SHA || null,
+      server_version: "0.1.0",
+    },
+  };
+}
+
+function getProviderMetadata(includeTools = true) {
+  const providers = Object.values(PROVIDERS)
+    .filter((p) => p.implemented !== false)
+    .map((p) => ({
+      key: p.key,
+      label: p.label,
+      auth_types: p.authTypes,
+      help_text: p.helpText,
+      token_url: p.tokenUrl ?? null,
+      oauth_setup_url: p.oauthSetupUrl ?? null,
+      oauth_scopes: p.oauthScopes ?? [],
+      server_credential: p.serverCredentialEnv
+        ? {
+            label: p.serverCredentialLabel ?? null,
+            env: p.serverCredentialEnv,
+            url: p.serverCredentialUrl ?? null,
+          }
+        : null,
+      ...(includeTools ? { tools: p.tools } : {}),
+    }));
+  return {
+    providers,
+    metadata: {
+      count: providers.length,
+      tool_count_including_system: 1 + SYSTEM_TOOLS.length + Object.values(PROVIDERS).reduce((sum, p) => p.implemented === false ? sum : sum + p.tools.length, 0),
+      updated_at: new Date().toISOString(),
+      commit_sha: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_SHA || null,
+      server_version: "0.1.0",
+    },
+  };
+}
+
+async function callSystemTool(toolName: string, args: Record<string, unknown>) {
+  if (toolName === "gentity/get_skill") {
+    const skill = await getSkillContent();
+    return {
+      content: [{ type: "text", text: skill.markdown }],
+      structuredContent: skill,
+      isError: false,
+    };
+  }
+  if (toolName === "gentity/get_providers") {
+    const includeTools = args.include_tools !== false && args.includeTools !== false;
+    const providers = getProviderMetadata(includeTools);
+    return {
+      content: [{ type: "text", text: JSON.stringify(providers, null, 2) }],
+      structuredContent: providers,
+      isError: false,
+    };
+  }
+  throw new Error(`Unknown system tool: ${toolName}`);
+}
+
 /**
  * Tools advertised via tools/list, scoped to the calling agent.
  * - `ping` is always available (liveness, no policy).
@@ -914,7 +1005,27 @@ function requiredToolSpecificArgs(toolName: string): string[] {
  * - Otherwise only tools that have an enabled, policy-usable connection are listed.
  */
 function buildToolList(connections: Awaited<ReturnType<typeof connectionsForAgent>> | null) {
-  const tools: any[] = [{ name: "ping", description: "Liveness check", inputSchema: { type: "object", properties: {} } }];
+  const tools: any[] = [
+    { name: "ping", description: "Liveness check", inputSchema: { type: "object", properties: {} } },
+    {
+      name: publicToolName("gentity/get_skill"),
+      description: "gentity-auth: latest MCP skill markdown and usage instructions",
+      inputSchema: {
+        type: "object",
+        properties: toolSpecificInputProperties("gentity/get_skill"),
+        required: [],
+      },
+    },
+    {
+      name: publicToolName("gentity/get_providers"),
+      description: "gentity-auth: implemented providers, auth types, and tool names",
+      inputSchema: {
+        type: "object",
+        properties: toolSpecificInputProperties("gentity/get_providers"),
+        required: [],
+      },
+    },
+  ];
   if (!connections) return tools;
 
   const scopesByTool = new Map<string, Set<string>>();
@@ -1170,6 +1281,23 @@ mcpApp.post("/", async (c) => {
 
   // --- tools/call: requires auth ---
   if (method === "tools/call") {
+    const requestedToolName = String(params?.name ?? "");
+    const toolName = canonicalToolName(requestedToolName);
+    const args = params?.arguments ?? {};
+
+    if (SYSTEM_TOOLS.includes(toolName as any)) {
+      try {
+        const result = await callSystemTool(toolName, args);
+        return c.json({ jsonrpc: "2.0", id, result });
+      } catch (e: any) {
+        return c.json({
+          jsonrpc: "2.0",
+          id,
+          result: { content: [{ type: "text", text: `Error: ${String(e?.message ?? e)}` }], isError: true },
+        });
+      }
+    }
+
     if (!agent) {
       return c.json({
         jsonrpc: "2.0", id,
@@ -1177,9 +1305,6 @@ mcpApp.post("/", async (c) => {
       }, 401);
     }
 
-    const requestedToolName = String(params?.name ?? "");
-    const toolName = canonicalToolName(requestedToolName);
-    const args = params?.arguments ?? {};
     const requestedScope = args.scope === undefined || args.scope === null ? "" : String(args.scope);
     const scope = requestedScope || configuredScope;
     const authType = args.auth_type !== undefined ? String(args.auth_type) : (args.authType !== undefined ? String(args.authType) : "");
