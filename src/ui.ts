@@ -3424,6 +3424,14 @@ dashboardApp.get("/agents/new", async (c) => {
     providersByScope.set(cn.scope, list);
   }
 
+  // Union of providers across every tenant — the tool set a full-tenant
+  // manager (allowedScopes = []) can reach.
+  const allProviders: string[] = [];
+  for (const list of providersByScope.values()) {
+    for (const p of list) if (!allProviders.includes(p)) allProviders.push(p);
+  }
+  allProviders.sort();
+
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>New agent — grantry</title>
     <style>${CSS}</style></head><body>
@@ -3438,6 +3446,7 @@ dashboardApp.get("/agents/new", async (c) => {
       <form method="post" action="/agents/new" id="agentForm">
         <input type="hidden" name="scopes_json" id="scopesJson" value="[]">
         <input type="hidden" name="tools_json" id="toolsJson" value="[]">
+        <input type="hidden" name="manager_mode" id="managerModeInput" value="0">
 
         <div class="card">
           <h2>Agent</h2>
@@ -3447,35 +3456,79 @@ dashboardApp.get("/agents/new", async (c) => {
           <input type="text" name="agent_desc" id="agent_desc" placeholder="e.g. 経営横断レポート用">
         </div>
 
-        <h2>Tenant access</h2>
-        <p class="field-hint" style="margin-top:-8px;">
-          Check the tenants this agent may reach, then untick any tools it should not use.
-          Tool permissions apply role-wide: if the same provider is connected in two selected tenants, its tools are allowed in both.
-        </p>
-        ${tenants.map((t) => {
-          const providers = providersByScope.get(t.slug) ?? [];
-          const showName = t.displayName && t.displayName !== t.slug;
-          return `
-        <div class="card">
-          <h2 style="margin-bottom:4px;">
-            <label style="cursor:pointer;">
-              <input type="checkbox" class="tenantCheck" value="${t.slug}" style="margin-right:8px;transform:scale(1.2);">
-              ${showName ? `${escapeHtml(t.displayName)} ` : ""}<span class="badge scoped">${t.slug}</span>
+        <div class="card" style="border:1px solid rgba(240,180,41,0.45);">
+          <label style="cursor:pointer;display:flex;align-items:flex-start;gap:10px;font-weight:600;">
+            <input type="checkbox" id="managerToggle" style="transform:scale(1.3);margin-top:3px;">
+            <span>
+              Full-tenant manager
+              <div class="field-hint" style="margin-top:4px;font-weight:normal;">
+                Reach <b>all</b> your tenants with one token — including tenants you create later.
+                Equivalent to <code>allowed_scopes = []</code> (any scope). Owner-bounded: only ever your own connections.
+              </div>
+            </span>
+          </label>
+        </div>
+
+        <div id="tenantSection">
+          <h2>Tenant access</h2>
+          <p class="field-hint" style="margin-top:-8px;">
+            Check the tenants this agent may reach, then untick any tools it should not use.
+            Tool permissions apply role-wide: if the same provider is connected in two selected tenants, its tools are allowed in both.
+          </p>
+          ${tenants.map((t) => {
+            const providers = providersByScope.get(t.slug) ?? [];
+            const showName = t.displayName && t.displayName !== t.slug;
+            return `
+          <div class="card">
+            <h2 style="margin-bottom:4px;">
+              <label style="cursor:pointer;">
+                <input type="checkbox" class="tenantCheck" value="${t.slug}" style="margin-right:8px;transform:scale(1.2);">
+                ${showName ? `${escapeHtml(t.displayName)} ` : ""}<span class="badge scoped">${t.slug}</span>
+              </label>
+            </h2>
+            ${providers.length === 0 ? `<div class="empty" style="padding:8px 0;">No enabled connections — selecting this tenant grants nothing.</div>` : providers.map((p) => `
+            <div style="margin:10px 0 0 28px;">
+              <code>${p}</code>
+              <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px;">
+                ${toolsForProvider(p).map((tool) => `
+                <label style="cursor:pointer;font-size:13px;white-space:nowrap;">
+                  <input type="checkbox" class="toolCheck" data-scope="${t.slug}" value="${tool}" checked>
+                  <code>${tool.split("/")[1] ?? tool}</code>
+                </label>`).join("")}
+              </div>
+            </div>`).join("")}
+          </div>`;
+          }).join("")}
+        </div>
+
+        <div id="managerSection" style="display:none;">
+          <div class="card" style="background:rgba(229,83,75,0.10);border:1px solid rgba(229,83,75,0.5);">
+            <h2 style="color:#e5534b;margin-top:0;">⚠ Full-tenant access</h2>
+            <p style="margin-top:0;">
+              This token can call the selected tools against <b>every tenant you own — now and in the future</b>.
+              If it leaks, your entire footprint is exposed at once. It also appears under
+              <a href="/meta">Meta → Broad or unused roles</a> as <span class="badge denied">any-scope</span>.
+            </p>
+            <label style="cursor:pointer;display:flex;align-items:center;gap:8px;font-weight:600;">
+              <input type="checkbox" id="managerConfirm" name="manager_confirm" style="transform:scale(1.2);">
+              I understand this agent reaches all my tenants, present and future.
             </label>
-          </h2>
-          ${providers.length === 0 ? `<div class="empty" style="padding:8px 0;">No enabled connections — selecting this tenant grants nothing.</div>` : providers.map((p) => `
-          <div style="margin:10px 0 0 28px;">
-            <code>${p}</code>
-            <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px;">
-              ${toolsForProvider(p).map((tool) => `
-              <label style="cursor:pointer;font-size:13px;white-space:nowrap;">
-                <input type="checkbox" class="toolCheck" data-scope="${t.slug}" value="${tool}" checked>
-                <code>${tool.split("/")[1] ?? tool}</code>
-              </label>`).join("")}
-            </div>
-          </div>`).join("")}
-        </div>`;
-        }).join("")}
+          </div>
+          <div class="card">
+            <h2>Tools</h2>
+            ${allProviders.length === 0 ? '<div class="empty">No enabled connections in any tenant.</div>' : allProviders.map((p) => `
+            <div style="margin:10px 0 0 0;">
+              <code>${p}</code>
+              <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px;">
+                ${toolsForProvider(p).map((tool) => `
+                <label style="cursor:pointer;font-size:13px;white-space:nowrap;">
+                  <input type="checkbox" class="managerToolCheck" value="${tool}" checked>
+                  <code>${tool.split("/")[1] ?? tool}</code>
+                </label>`).join("")}
+              </div>
+            </div>`).join("")}
+          </div>
+        </div>
 
         <div class="card" style="background:rgba(110,168,254,0.08);">
           <h2>👁 What this agent will be able to do</h2>
@@ -3486,11 +3539,41 @@ dashboardApp.get("/agents/new", async (c) => {
         <p class="field-hint">A dedicated role is created for this agent automatically. The token is shown once, right after creation.</p>
       </form>
       <script>
+        const managerToggle = document.getElementById('managerToggle');
+        const managerConfirm = document.getElementById('managerConfirm');
+        const managerToolChecks = Array.from(document.querySelectorAll('.managerToolCheck'));
+        const tenantSection = document.getElementById('tenantSection');
+        const managerSection = document.getElementById('managerSection');
+        const managerModeInput = document.getElementById('managerModeInput');
         const tenantChecks = Array.from(document.querySelectorAll('.tenantCheck'));
         const toolChecks = Array.from(document.querySelectorAll('.toolCheck'));
         const previewText = document.getElementById('previewText');
         const createBtn = document.getElementById('createBtn');
+        const scopesJson = document.getElementById('scopesJson');
+        const toolsJson = document.getElementById('toolsJson');
         function updateAgentPreview() {
+          const manager = managerToggle.checked;
+          managerModeInput.value = manager ? '1' : '0';
+          tenantSection.style.display = manager ? 'none' : '';
+          managerSection.style.display = manager ? '' : 'none';
+          if (manager) {
+            const tools = managerToolChecks.filter(c => c.checked).map(c => c.value);
+            scopesJson.value = '[]';
+            toolsJson.value = JSON.stringify(tools);
+            createBtn.textContent = '🔑 Create full-tenant manager & mint token';
+            if (!managerConfirm.checked) {
+              previewText.textContent = 'Tick the confirmation above to enable creation.';
+              createBtn.disabled = true;
+            } else if (tools.length === 0) {
+              previewText.textContent = 'Select at least one tool.';
+              createBtn.disabled = true;
+            } else {
+              previewText.innerHTML = '<b>Full-tenant manager</b> — ' + tools.length + ' tools across <b>all</b> tenants (any scope, incl. future). The MCP config has no scope lock; pass <code>scope</code> per call.';
+              createBtn.disabled = false;
+            }
+            return;
+          }
+          createBtn.textContent = '🔑 Create agent & mint token';
           const scopes = tenantChecks.filter(c => c.checked).map(c => c.value);
           const tools = [];
           const perScope = {};
@@ -3503,8 +3586,8 @@ dashboardApp.get("/agents/new", async (c) => {
               perScope[t.dataset.scope] = (perScope[t.dataset.scope] || 0) + 1;
             }
           });
-          document.getElementById('scopesJson').value = JSON.stringify(scopes);
-          document.getElementById('toolsJson').value = JSON.stringify(tools);
+          scopesJson.value = JSON.stringify(scopes);
+          toolsJson.value = JSON.stringify(tools);
           if (scopes.length === 0) {
             previewText.textContent = 'Select at least one tenant above.';
             createBtn.disabled = true;
@@ -3514,6 +3597,9 @@ dashboardApp.get("/agents/new", async (c) => {
             createBtn.disabled = tools.length === 0;
           }
         }
+        managerToggle.addEventListener('change', updateAgentPreview);
+        managerConfirm.addEventListener('change', updateAgentPreview);
+        managerToolChecks.forEach(c => c.addEventListener('change', updateAgentPreview));
         tenantChecks.forEach(c => c.addEventListener('change', updateAgentPreview));
         toolChecks.forEach(c => c.addEventListener('change', updateAgentPreview));
         updateAgentPreview();
@@ -3531,6 +3617,7 @@ dashboardApp.post("/agents/new", async (c) => {
   const body = await c.req.parseBody();
   const agent = String(body.agent ?? "").trim();
   const agentDesc = String(body.agent_desc ?? "").trim();
+  const managerMode = String(body.manager_mode ?? "") === "1";
   let scopes: string[] = [];
   let tools: string[] = [];
   try { scopes = (JSON.parse(String(body.scopes_json ?? "[]")) as unknown[]).map(String); } catch { scopes = []; }
@@ -3538,32 +3625,49 @@ dashboardApp.post("/agents/new", async (c) => {
   scopes = Array.from(new Set(scopes.filter((s) => /^[a-z0-9_-]+$/.test(s))));
 
   if (!agent || !/^[a-zA-Z0-9_-]+$/.test(agent)) return c.html("<h1>agent name required (alphanumeric, hyphens, underscores)</h1>", 400);
-  if (scopes.length === 0) return c.html("<h1>select at least one tenant</h1>", 400);
 
-  // Every requested scope must be one of the caller's own tenants.
-  const ownTenants = await prisma.tenant.findMany({
-    where: { ownerId: user.id, slug: { in: scopes } },
-    select: { slug: true },
-  });
-  if (ownTenants.length !== scopes.length) {
-    const owned = new Set(ownTenants.map((t) => t.slug));
-    const missing = scopes.filter((s) => !owned.has(s));
-    return c.html(`<h1>unknown tenant(s): ${escapeHtml(missing.join(", "))}</h1>`, 400);
+  // `availableProviders` is the set of providers whose tools may be granted.
+  // Manager mode: allowedScopes = [] (any scope, incl. future tenants), tools
+  // drawn from every tenant. Normal mode: tools confined to the chosen tenants.
+  let availableProviders: Set<string>;
+  if (managerMode) {
+    if (String(body.manager_confirm ?? "") !== "on") {
+      return c.html("<h1>confirm full-tenant access to create a manager</h1>", 400);
+    }
+    scopes = []; // any scope
+    const conns = await prisma.connection.findMany({
+      where: { ownerId: user.id, enabled: true, scope: { not: "" } },
+      select: { provider: true },
+    });
+    availableProviders = new Set(conns.map((cn) => cn.provider));
+  } else {
+    if (scopes.length === 0) return c.html("<h1>select at least one tenant</h1>", 400);
+
+    // Every requested scope must be one of the caller's own tenants.
+    const ownTenants = await prisma.tenant.findMany({
+      where: { ownerId: user.id, slug: { in: scopes } },
+      select: { slug: true },
+    });
+    if (ownTenants.length !== scopes.length) {
+      const owned = new Set(ownTenants.map((t) => t.slug));
+      const missing = scopes.filter((s) => !owned.has(s));
+      return c.html(`<h1>unknown tenant(s): ${escapeHtml(missing.join(", "))}</h1>`, 400);
+    }
+
+    const conns = await prisma.connection.findMany({
+      where: { ownerId: user.id, enabled: true, scope: { in: scopes } },
+      select: { provider: true },
+    });
+    availableProviders = new Set(conns.map((cn) => cn.provider));
   }
 
-  // Tools must be real tools of providers with an enabled connection in a
-  // selected tenant — the same set the form offered.
-  const conns = await prisma.connection.findMany({
-    where: { ownerId: user.id, enabled: true, scope: { in: scopes } },
-    select: { provider: true },
-  });
-  const availableProviders = new Set(conns.map((cn) => cn.provider));
+  // Tools must be real tools of providers with an enabled connection in scope.
   tools = Array.from(new Set(tools)).filter((t) => {
     const p = t.includes("/") ? t.split("/", 1)[0] : "";
     const def = getProvider(p);
     return !!def && def.implemented !== false && availableProviders.has(p) && toolsForProvider(p).includes(t);
   });
-  if (tools.length === 0) return c.html("<h1>select at least one tool available in the chosen tenants</h1>", 400);
+  if (tools.length === 0) return c.html(`<h1>select at least one tool${managerMode ? "" : " available in the chosen tenants"}</h1>`, 400);
 
   const existingAgent = await prisma.agent.findUnique({ where: { name: agent } });
   if (existingAgent) {
@@ -3614,7 +3718,7 @@ dashboardApp.post("/agents/new", async (c) => {
       <h1>✓ Agent <code>${escapeHtml(agentRow.name)}</code> created</h1>
       <div class="card">
         <h2>Access</h2>
-        <p>Scopes: ${scopes.map((s) => `<span class="badge scoped">${s}</span>`).join(" ")} · ${tools.length} tools via dedicated role <code>${escapeHtml(role.name)}</code></p>
+        <p>${managerMode ? `<span class="badge denied">all tenants (any scope, incl. future)</span>` : `Scopes: ${scopes.map((s) => `<span class="badge scoped">${s}</span>`).join(" ")}`} · ${tools.length} tools via dedicated role <code>${escapeHtml(role.name)}</code></p>
       </div>
       ${agentTokenCard(token)}
       ${mcpConfigCard(publicOrigin(c), agentRow.name, token, true)}
@@ -3624,7 +3728,7 @@ dashboardApp.post("/agents/new", async (c) => {
         <pre>curl -X POST ${publicOrigin(c)}/mcp \\
   -H "Authorization: Bearer ${token}" \\
   -H "Content-Type: application/json" \\
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"${tools[0]}","arguments":{"scope":"${scopes[0]}"}}}'</pre>
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"${tools[0]}","arguments":{"scope":"${scopes[0] ?? "&lt;any-of-your-tenants&gt;"}"}}}'</pre>
       </div>
       <p><a href="/agents">← Back to agents</a></p>
     </main></body></html>
