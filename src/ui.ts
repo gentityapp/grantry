@@ -1661,10 +1661,6 @@ dashboardApp.get("/register", async (c) => {
     <div class="card">
       <form id="regForm">
         <div class="field">
-          <label for="name">Name</label>
-          <input type="text" name="name" id="name" required>
-        </div>
-        <div class="field">
           <label for="email">Email</label>
           <input type="email" name="email" id="email" required>
         </div>
@@ -1681,10 +1677,14 @@ dashboardApp.get("/register", async (c) => {
       document.getElementById('regForm').addEventListener('submit', async (e) => {
         e.preventDefault();
         const fd = new FormData(e.target);
+        const email = fd.get('email');
+        // No name field: better-auth requires a name, so derive a default
+        // from the email local part. Users can rename later.
+        const name = String(email || '').split('@')[0] || String(email || '');
         const r = await fetch('/api/auth/sign-up/email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: fd.get('name'), email: fd.get('email'), password: fd.get('password') })
+          body: JSON.stringify({ name: name, email: email, password: fd.get('password') })
         });
         if (r.ok) { location.href = ${jsString(dest)}; }
         else { const j = await r.json().catch(()=>({})); document.getElementById('err').textContent = j.message || 'Sign up failed'; }
