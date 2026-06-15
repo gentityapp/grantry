@@ -1,5 +1,6 @@
 // grantry UI — login, dashboard, tenant wizard, audit log
 import { Hono } from "hono";
+import { getCookie, setCookie } from "hono/cookie";
 import { auth } from "./auth.js";
 import { prisma } from "./db.js";
 import { decrypt, encrypt } from "./crypto.js";
@@ -132,14 +133,14 @@ function agentTokenCard(
 ): string {
   const safe = escapeHtml(token);
   return `
-      <div class="card" style="background:rgba(110,168,254,0.08);">
+      <div class="card" style="background:rgba(99,91,255,0.08);">
         <h2>🔑 Agent token (save this — shown once!)</h2>
         <div class="row" style="align-items:stretch;gap:8px;">
-          <pre style="background:#0e0f12;border:1px solid #6ea8fe;flex:1;margin:0;">${safe}</pre>
+          <pre style="background:#f6f9fc;border:1px solid #635bff;flex:1;margin:0;">${safe}</pre>
           <button type="button" class="secondary copy-token-btn" data-token="${safe}" style="white-space:nowrap;">📋 Copy</button>
         </div>
-        <p style="font-size:13px;color:#8a8d93;margin-bottom:0;margin-top:12px;">Use as <code>Authorization: Bearer ${safe}</code> when calling <code>/mcp</code>.</p>
-        ${warningHtml ? `<p style="font-size:13px;color:#ff6b6b;margin-top:8px;">${warningHtml}</p>` : ""}
+        <p style="font-size:13px;color:#687385;margin-bottom:0;margin-top:12px;">Use as <code>Authorization: Bearer ${safe}</code> when calling <code>/mcp</code>.</p>
+        ${warningHtml ? `<p style="font-size:13px;color:#df1b41;margin-top:8px;">${warningHtml}</p>` : ""}
       </div>
       <script>
         (function () {
@@ -219,34 +220,34 @@ ${scope ? `X-Grantry-Scope = "${scope}"` : ""}`;
     `<button type="button" class="secondary copy-config-btn" data-copy="${escapeHtml(text)}" style="font-size:12px;padding:4px 10px;">Copy ${label}</button>`;
   return `
         <h2>MCP config</h2>
-        <p style="font-size:13px;color:#8a8d93;margin-top:0;">
+        <p style="font-size:13px;color:#687385;margin-top:0;">
           ${scope
             ? `Use one MCP server entry per tenant. Tool names stay stable; the token and <code>X-Grantry-Scope</code> lock this entry to the selected tenant.`
             : `This entry is <b>not</b> scope-locked: the token decides what it can reach, and each call picks its tenant via the <code>scope</code> argument.`}
         </p>
         <div class="row spread" style="margin:16px 0 8px;">
-          <h3 style="font-size:14px;margin:0;color:#c8ccd2;">Codex <code>~/.codex/config.toml</code></h3>
+          <h3 style="font-size:14px;margin:0;color:#3c4257;">Codex <code>~/.codex/config.toml</code></h3>
           ${copyButton("Codex", codexToml)}
         </div>
         <pre>${escapeHtml(codexToml)}</pre>
         <div class="row spread" style="margin:16px 0 8px;">
-          <h3 style="font-size:14px;margin:0;color:#c8ccd2;">Claude Code JSON <code>~/.claude.json</code></h3>
+          <h3 style="font-size:14px;margin:0;color:#3c4257;">Claude Code JSON <code>~/.claude.json</code></h3>
           ${copyButton("JSON", claudeJson)}
         </div>
         <pre>${escapeHtml(claudeJson)}</pre>
         <div class="row spread" style="margin:16px 0 8px;">
-          <h3 style="font-size:14px;margin:0;color:#c8ccd2;">Claude Code CLI</h3>
+          <h3 style="font-size:14px;margin:0;color:#3c4257;">Claude Code CLI</h3>
           ${copyButton("CLI", claudeCli)}
         </div>
         <pre>${escapeHtml(claudeCli)}</pre>
         <div class="row spread" style="margin:16px 0 8px;">
-          <h3 style="font-size:14px;margin:0;color:#c8ccd2;">Claude Desktop <code>claude_desktop_config.json</code></h3>
+          <h3 style="font-size:14px;margin:0;color:#3c4257;">Claude Desktop <code>claude_desktop_config.json</code></h3>
           ${copyButton("Desktop", claudeDesktopJson)}
         </div>
         <pre>${escapeHtml(claudeDesktopJson)}</pre>
         ${exactToken
-          ? '<p style="font-size:13px;color:#8a8d93;margin-bottom:0;">This config includes the newly minted token. <code>Mcp-Session-Id</code> is managed by the MCP client/server handshake.</p>'
-          : '<p style="font-size:13px;color:#ff6b6b;margin-bottom:0;">The full token is only shown when created or rotated. Rotate this agent if you need a copy-pasteable config with a fresh token.</p>'}
+          ? '<p style="font-size:13px;color:#687385;margin-bottom:0;">This config includes the newly minted token. <code>Mcp-Session-Id</code> is managed by the MCP client/server handshake.</p>'
+          : '<p style="font-size:13px;color:#df1b41;margin-bottom:0;">The full token is only shown when created or rotated. Rotate this agent if you need a copy-pasteable config with a fresh token.</p>'}
         <script>
           (function () {
             document.querySelectorAll('.copy-config-btn').forEach(function (btn) {
@@ -277,64 +278,86 @@ ${scope ? `X-Grantry-Scope = "${scope}"` : ""}`;
 }
 
 const CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+  :root {
+    --bg: #f6f9fc; --surface: #ffffff; --border: #e3e8ee; --border-strong: #cdd5df;
+    --ink: #0a2540; --ink-2: #3c4257; --muted: #687385; --faint: #8792a2;
+    --accent: #635bff; --accent-strong: #5249e0; --accent-soft: rgba(99,91,255,0.09);
+    --ok: #1a7f5a; --ok-soft: rgba(26,127,90,0.1); --danger: #df1b41; --danger-soft: rgba(223,27,65,0.1);
+    --sidebar-w: 232px;
+    --shadow-sm: 0 1px 2px rgba(50,50,93,0.07), 0 1px 3px rgba(0,0,0,0.05);
+    --shadow-md: 0 4px 12px rgba(50,50,93,0.08), 0 2px 6px rgba(0,0,0,0.04);
+  }
   * { box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0e0f12; color: #e1e3e6; margin: 0; line-height: 1.5; }
-  a { color: #6ea8fe; text-decoration: none; }
+  body { font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--ink-2); margin: 0; line-height: 1.55; -webkit-font-smoothing: antialiased; letter-spacing: -0.005em; }
+  a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
-  nav { display: flex; gap: 8px; padding: 12px 24px; border-bottom: 1px solid #2a2d33; background: #14161a; align-items: center; overflow-x: auto; }
-  nav .brand { font-weight: 700; }
-  nav span { white-space: nowrap; }
-  nav a { color: #c8ccd2; padding: 6px 10px; border-radius: 4px; }
-  nav a:hover, nav a.active { background: rgba(110,168,254,0.1); color: #6ea8fe; text-decoration: none; }
-  main { width: min(100% - 48px, 1180px); margin: 32px auto; }
-  h1 { font-size: 28px; margin: 0 0 24px; }
-  h2 { font-size: 18px; margin: 24px 0 12px; color: #c8ccd2; }
-  .card { background: #14161a; border: 1px solid #2a2d33; border-radius: 8px; padding: 20px; margin-bottom: 16px; }
+
+  /* Left sidebar navigation */
+  nav { position: fixed; z-index: 50; top: 0; left: 0; width: var(--sidebar-w); height: 100vh; display: flex; flex-direction: column; gap: 2px; padding: 20px 14px; border-right: 1px solid var(--border); background: var(--surface); overflow-y: auto; }
+  nav .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 18px; color: var(--ink); letter-spacing: -0.03em; padding: 6px 10px 14px; }
+  nav .brand::before { content: "G"; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, #635bff, #00d4ff); color: #fff; font-size: 14px; font-weight: 700; flex-shrink: 0; }
+  .nav-links { display: flex; flex-direction: column; gap: 2px; }
+  .ws-switcher { padding: 4px 10px 12px; }
+  .ws-switcher label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 4px; }
+  .ws-switcher select { width: 100%; padding: 7px 8px; font-size: 13px; font-weight: 600; border-radius: 8px; }
+  nav a { color: var(--muted); padding: 8px 10px; border-radius: 8px; font-size: 14px; font-weight: 500; white-space: nowrap; transition: background .15s ease, color .15s ease; }
+  nav a:hover { background: var(--bg); color: var(--ink); text-decoration: none; }
+  nav a.active { background: var(--accent-soft); color: var(--accent); }
+  .nav-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 14px; }
+  .nav-user { font-size: 12px; color: var(--muted); }
+  .nav-user:hover { color: var(--ink); text-decoration: none; }
+
+  main { box-sizing: border-box; margin-left: var(--sidebar-w); padding: 40px clamp(24px, 4vw, 56px) 96px; max-width: calc(var(--sidebar-w) + 1240px); }
+  h1 { font-size: 28px; margin: 0 0 24px; color: var(--ink); font-weight: 700; letter-spacing: -0.03em; }
+  h2 { font-size: 18px; margin: 24px 0 12px; color: var(--ink); font-weight: 650; letter-spacing: -0.02em; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px; margin-bottom: 16px; box-shadow: var(--shadow-sm); }
   .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
   .row.spread { justify-content: space-between; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
   .provider-icon { flex-shrink: 0; vertical-align: -4px; }
   .provider-cell { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
-  .badge.scoped { background: rgba(110,168,254,0.16); color: #6ea8fe; }
-  .badge.unscoped { background: rgba(160,160,160,0.16); color: #aaa; }
-  .badge.denied { background: rgba(255,107,107,0.16); color: #ff6b6b; }
-  .badge.ok { background: rgba(81,207,102,0.16); color: #51cf66; }
+  .badge.scoped { background: var(--accent-soft); color: var(--accent); }
+  .badge.unscoped { background: rgba(135,146,162,0.16); color: var(--muted); }
+  .badge.denied { background: var(--danger-soft); color: var(--danger); }
+  .badge.ok { background: var(--ok-soft); color: var(--ok); }
   .table-wrap { width: 100%; overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; }
-  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #2a2d33; font-size: 14px; vertical-align: middle; }
-  th { color: #8a8d93; font-weight: 500; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: middle; }
+  th { color: var(--muted); font-weight: 500; }
   td:first-child, th:first-child { padding-left: 0; }
   td:last-child, th:last-child { padding-right: 0; }
-  code, pre { background: #1a1c20; padding: 2px 6px; border-radius: 3px; font-size: 13px; font-family: ui-monospace, monospace; }
+  code, pre { background: var(--bg); padding: 2px 6px; border-radius: 5px; font-size: 13px; font-family: ui-monospace, monospace; color: var(--ink); }
   code { overflow-wrap: anywhere; }
-  pre { padding: 12px 16px; overflow-x: auto; border: 1px solid #2a2d33; }
+  pre { padding: 12px 16px; overflow-x: auto; border: 1px solid var(--border); }
   input[type=text], input[type=password], input[type=email], select, textarea {
-    width: 100%; padding: 8px 10px; background: #1a1c20; color: #e1e3e6;
-    border: 1px solid #2a2d33; border-radius: 4px; font-family: inherit; font-size: 14px;
+    width: 100%; padding: 8px 10px; background: var(--surface); color: var(--ink);
+    border: 1px solid var(--border-strong); border-radius: 8px; font-family: inherit; font-size: 14px;
   }
-  input:focus, select:focus, textarea:focus { outline: none; border-color: #6ea8fe; }
-  label { display: block; font-size: 13px; color: #c8ccd2; margin-bottom: 4px; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  label { display: block; font-size: 13px; color: var(--ink-2); margin-bottom: 4px; }
   .field { margin-bottom: 12px; }
-  .field-hint { font-size: 12px; color: #8a8d93; margin-top: 4px; }
-  .field-primary input { font-size: 18px !important; padding: 12px 14px !important; border: 2px solid #6ea8fe !important; background: rgba(110,168,254,0.06) !important; }
-  .field-primary input:focus { background: rgba(110,168,254,0.12) !important; }
-  .field-secondary { margin-top: 16px; padding-top: 16px; border-top: 1px dashed #2a2d33; }
-  .field-secondary summary { cursor: pointer; color: #8a8d93; font-size: 13px; padding: 4px 0; user-select: none; }
-  .field-secondary summary:hover { color: #c8ccd2; }
-  .field-secondary[open] summary { color: #6ea8fe; margin-bottom: 8px; }
+  .field-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .field-primary input { font-size: 18px !important; padding: 12px 14px !important; border: 2px solid var(--accent) !important; background: var(--accent-soft) !important; }
+  .field-primary input:focus { background: #fff !important; }
+  .field-secondary { margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--border); }
+  .field-secondary summary { cursor: pointer; color: var(--muted); font-size: 13px; padding: 4px 0; user-select: none; }
+  .field-secondary summary:hover { color: var(--ink); }
+  .field-secondary[open] summary { color: var(--accent); margin-bottom: 8px; }
   button, .btn {
-    padding: 8px 16px; background: #6ea8fe; color: #0e0f12; border: 0; border-radius: 4px;
+    padding: 8px 16px; background: var(--accent); color: #fff; border: 0; border-radius: 8px;
     font-weight: 600; cursor: pointer; font-size: 14px; text-decoration: none; display: inline-block;
+    box-shadow: var(--shadow-sm); transition: background .15s ease, transform .15s ease;
   }
-  button:hover, .btn:hover { background: #5a96e8; text-decoration: none; color: #0e0f12; }
-  button.secondary, .btn.secondary { background: #2a2d33; color: #c8ccd2; }
-  button.secondary:hover, .btn.secondary:hover { background: #353941; color: #e1e3e6; }
-  input[type=checkbox] { accent-color: #6ea8fe; }
-  .empty { padding: 40px; text-align: center; color: #8a8d93; }
-  .tool-pill { display: inline-block; padding: 2px 8px; margin: 2px; background: #1a1c20; border: 1px solid #2a2d33; border-radius: 12px; font-size: 11px; font-family: ui-monospace, monospace; }
-  .step-card { background: #14161a; border: 1px solid #2a2d33; border-radius: 8px; padding: 16px 20px; margin-bottom: 16px; }
+  button:hover, .btn:hover { background: var(--accent-strong); text-decoration: none; color: #fff; transform: translateY(-1px); }
+  button.secondary, .btn.secondary { background: var(--surface); color: var(--ink-2); border: 1px solid var(--border-strong); box-shadow: none; }
+  button.secondary:hover, .btn.secondary:hover { background: var(--bg); color: var(--ink); transform: none; }
+  input[type=checkbox] { accent-color: var(--accent); }
+  .empty { padding: 40px; text-align: center; color: var(--muted); }
+  .tool-pill { display: inline-block; padding: 2px 8px; margin: 2px; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; font-size: 11px; font-family: ui-monospace, monospace; }
+  .step-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px 22px; margin-bottom: 16px; box-shadow: var(--shadow-sm); }
   .step-card h2 { margin-top: 0; display: flex; align-items: center; gap: 12px; }
-  .step-card h2 .num { display: inline-block; width: 28px; height: 28px; line-height: 28px; text-align: center; background: #6ea8fe; color: #0e0f12; border-radius: 50%; font-size: 14px; font-weight: 700; }
+  .step-card h2 .num { display: inline-block; width: 28px; height: 28px; line-height: 28px; text-align: center; background: var(--accent); color: #fff; border-radius: 50%; font-size: 14px; font-weight: 700; }
   .connection-table { table-layout: fixed; min-width: 920px; }
   .connection-table th:nth-child(1), .connection-table td:nth-child(1) { width: 130px; }
   .connection-table th:nth-child(2), .connection-table td:nth-child(2) { width: 78px; }
@@ -351,9 +374,13 @@ const CSS = `
   .credential-summary { max-width: 100%; }
   .credential-summary code { display: inline-block; max-width: 100%; white-space: normal; word-break: break-all; }
   .stacked-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  @media (max-width: 760px) {
-    nav { padding: 10px 16px; }
-    main { width: min(100% - 32px, 1180px); margin: 24px auto; }
+  @media (max-width: 900px) {
+    nav { position: static; width: 100%; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--border); overflow-x: auto; }
+    nav .brand { padding: 6px 8px; font-size: 16px; }
+    nav .brand::before { width: 24px; height: 24px; font-size: 12px; }
+    .nav-links { flex-direction: row; flex-wrap: wrap; }
+    .nav-foot { margin-top: 0; flex-direction: row; align-items: center; gap: 8px; border-top: 0; padding-top: 0; margin-left: auto; }
+    main { margin-left: 0; padding: 24px 16px 64px; max-width: none; }
     h1 { font-size: 24px; }
     .card { padding: 16px; }
     th, td { padding: 9px 10px; }
@@ -364,18 +391,46 @@ const CSS = `
 const NAV = (current: string, email?: string) => `
 <nav>
   <span class="brand">grantry</span>
-  <a href="/dashboard" class="${current === "dashboard" ? "active" : ""}">Dashboard</a>
-  <a href="/tenants" class="${current === "tenants" ? "active" : ""}">Tenants</a>
-  <a href="/agents" class="${current === "agents" ? "active" : ""}">Agents</a>
-  <a href="/workspaces" class="${current === "workspaces" ? "active" : ""}">Workspace</a>
-  <a href="/audit" class="${current === "audit" ? "active" : ""}">Audit</a>
-  <a href="/meta" class="${current === "meta" ? "active" : ""}">Meta</a>
-  <a href="/account" class="${current === "account" ? "active" : ""}">Account</a>
-  <span style="flex:1"></span>
-  ${email ? `<a href="/account" title="Signed in as ${escapeHtml(email)}" style="font-size:12px;color:#8a8d93;margin-right:10px;">\u{1F464} <code style="font-size:12px;">${escapeHtml(email)}</code></a>` : ""}
-  <form method="post" action="/logout" style="margin:0;">
-    <button type="submit" class="secondary" style="font-size:13px;padding:6px 10px;">Sign out</button>
-  </form>
+  <div class="ws-switcher">
+    <label for="gnWs">Workspace</label>
+    <select id="gnWs" aria-label="Active workspace"><option>…</option></select>
+  </div>
+  <script>
+  (function(){
+    fetch('/api/workspaces/active',{credentials:'same-origin'})
+      .then(function(r){return r.ok?r.json():null;})
+      .then(function(d){
+        var sel=document.getElementById('gnWs');
+        if(!sel||!d||!d.workspaces||!d.workspaces.length)return;
+        sel.innerHTML='';
+        d.workspaces.forEach(function(w){
+          var o=document.createElement('option');
+          o.value=w.id;
+          o.textContent=w.displayName+(w.role!=='member'?' ('+w.role+')':'');
+          if(w.id===d.activeId)o.selected=true;
+          sel.appendChild(o);
+        });
+        sel.addEventListener('change',function(){
+          window.location.href='/workspaces/switch?ws='+encodeURIComponent(sel.value)+'&next='+encodeURIComponent(window.location.pathname+window.location.search);
+        });
+      }).catch(function(){});
+  })();
+  </script>
+  <div class="nav-links">
+    <a href="/dashboard" class="${current === "dashboard" ? "active" : ""}">Dashboard</a>
+    <a href="/tenants" class="${current === "tenants" ? "active" : ""}">Tenants</a>
+    <a href="/agents" class="${current === "agents" ? "active" : ""}">Agents</a>
+    <a href="/workspaces" class="${current === "workspaces" ? "active" : ""}">Workspace</a>
+    <a href="/audit" class="${current === "audit" ? "active" : ""}">Audit</a>
+    <a href="/meta" class="${current === "meta" ? "active" : ""}">Meta</a>
+    <a href="/account" class="${current === "account" ? "active" : ""}">Account</a>
+  </div>
+  <div class="nav-foot">
+    ${email ? `<a href="/account" class="nav-user" title="Signed in as ${escapeHtml(email)}">\u{1F464} <code style="font-size:12px;">${escapeHtml(email)}</code></a>` : ""}
+    <form method="post" action="/logout" style="margin:0;">
+      <button type="submit" class="secondary" style="font-size:13px;padding:6px 10px;">Sign out</button>
+    </form>
+  </div>
 </nav>
 `;
 
@@ -404,19 +459,19 @@ function renderCredentialSummary(cn: {
   credentialValidatedAt?: Date | null;
 }) {
   const meta = safeJsonObject(cn.credentialMetadata);
-  if (!meta.status) return '<span style="color:#8a8d93;font-size:12px;">not checked</span>';
+  if (!meta.status) return '<span style="color:#687385;font-size:12px;">not checked</span>';
   if (meta.status === "error") {
-    return `<span class="badge denied">check failed</span> <span style="color:#8a8d93;font-size:12px;">${escapeHtml(String(meta.error ?? "")).slice(0, 80)}</span>`;
+    return `<span class="badge denied">check failed</span> <span style="color:#687385;font-size:12px;">${escapeHtml(String(meta.error ?? "")).slice(0, 80)}</span>`;
   }
   const scopes = Array.isArray(meta.scopes) ? meta.scopes.map(String) : [];
   const resources = Array.isArray(meta.resources) ? meta.resources : [];
   const subject = meta.subject && typeof meta.subject === "object" ? meta.subject : {};
   const parts: string[] = [];
   if (scopes.length) parts.push(scopes.slice(0, 4).map((s) => `<code>${escapeHtml(s)}</code>`).join(" "));
-  if (resources.length) parts.push(`<span style="color:#8a8d93;font-size:12px;">${resources.length} resource${resources.length === 1 ? "" : "s"}</span>`);
-  if (subject.login) parts.push(`<span style="color:#8a8d93;font-size:12px;">@${escapeHtml(String(subject.login))}</span>`);
-  if (subject.email) parts.push(`<span style="color:#8a8d93;font-size:12px;">${escapeHtml(String(subject.email))}</span>`);
-  if (!parts.length) parts.push(`<span style="color:#8a8d93;font-size:12px;">${escapeHtml(String(meta.status))}</span>`);
+  if (resources.length) parts.push(`<span style="color:#687385;font-size:12px;">${resources.length} resource${resources.length === 1 ? "" : "s"}</span>`);
+  if (subject.login) parts.push(`<span style="color:#687385;font-size:12px;">@${escapeHtml(String(subject.login))}</span>`);
+  if (subject.email) parts.push(`<span style="color:#687385;font-size:12px;">${escapeHtml(String(subject.email))}</span>`);
+  if (!parts.length) parts.push(`<span style="color:#687385;font-size:12px;">${escapeHtml(String(meta.status))}</span>`);
   const validated = cn.credentialValidatedAt ? ` title="Checked ${cn.credentialValidatedAt.toISOString()}"` : "";
   return `<div class="credential-summary"${validated}>${parts.join("<br>")}</div>`;
 }
@@ -441,6 +496,45 @@ async function getDbSessionUser(c: any) {
   const user = await getSessionUser(c);
   if (!user?.id) return null;
   return prisma.user.findUnique({ where: { id: user.id } });
+}
+
+// ---------- Active workspace context ----------
+// The "active workspace" is the management context the dashboard operates in:
+// new tenants/agents/roles/connections are created in it, and list pages are
+// filtered to it. It's stored in the `gn_ws` cookie (SameSite=Lax so it also
+// rides through the OAuth provider redirect back to /oauth/:p/callback). Falls
+// back to the user's owner (personal) workspace, then their first membership.
+async function resolveActiveWorkspace(c: any, userId: string) {
+  const memberships = await prisma.workspaceMember.findMany({
+    where: { userId },
+    include: { workspace: true },
+    orderBy: { createdAt: "asc" },
+  });
+  if (!memberships.length) return { memberships, active: null as (typeof memberships)[number]["workspace"] | null };
+  const cookieId = getCookie(c, "gn_ws");
+  const active =
+    (cookieId ? memberships.find((m) => m.workspaceId === cookieId)?.workspace : undefined) ??
+    memberships.find((m) => m.role === "owner")?.workspace ??
+    memberships[0].workspace;
+  return { memberships, active };
+}
+
+// Resolve just the active workspace id for the signed-in user — used at every
+// resource-creation site so new rows land in the right workspace.
+async function getActiveWorkspaceId(c: any): Promise<string | null> {
+  const user = await getSessionUser(c);
+  if (!user?.id) return null;
+  const { active } = await resolveActiveWorkspace(c, user.id);
+  return active?.id ?? null;
+}
+
+function setActiveWorkspaceCookie(c: any, workspaceId: string) {
+  setCookie(c, "gn_ws", workspaceId, {
+    path: "/",
+    httpOnly: true,
+    sameSite: "Lax",
+    maxAge: 60 * 60 * 24 * 365,
+  });
 }
 
 // ---------- MCP OAuth consent support ----------
@@ -505,7 +599,7 @@ export async function mcpAuthorizeGate(c: any): Promise<Response | null> {
   const options = agents
     .map((a) =>
       `<label class="agent-opt"><input type="radio" name="agent" value="${escapeHtml(a.id)}">
-       <span><b>${escapeHtml(a.name)}</b>${a.workspace ? ` <small style="color:#8a8d93;">(${escapeHtml(a.workspace.displayName)})</small>` : ""}${a.description ? `<br><small style="color:#8a8d93;">${escapeHtml(a.description)}</small>` : ""}</span></label>`,
+       <span><b>${escapeHtml(a.name)}</b>${a.workspace ? ` <small style="color:#687385;">(${escapeHtml(a.workspace.displayName)})</small>` : ""}${a.description ? `<br><small style="color:#687385;">${escapeHtml(a.description)}</small>` : ""}</span></label>`,
     )
     .join("");
   return c.html(`
@@ -519,7 +613,7 @@ export async function mcpAuthorizeGate(c: any): Promise<Response | null> {
       <p>${escapeHtml(clientName)} will act as the agent you choose — with that agent's roles and tenant scopes, exactly as configured in the dashboard. You can change or revoke this anytime.</p>
       <form id="pick">${options}
         <button type="submit" style="width:100%;margin-top:8px;">Continue</button>
-        <div id="err" style="color:#ff6b6b;margin-top:8px;font-size:13px;"></div>
+        <div id="err" style="color:#df1b41;margin-top:8px;font-size:13px;"></div>
       </form>
     </div>
     <script>
@@ -620,7 +714,7 @@ dashboardApp.get("/workspaces", async (c) => {
     const isAdmin = m.role === "owner" || m.role === "admin";
     if (!isAdmin) {
       sections.push(`<div class="card"><b>${escapeHtml(ws.displayName)}</b> <span class="badge unscoped">${escapeHtml(m.role)}</span>
-        <div style="color:#8a8d93;font-size:13px;margin-top:6px;">Connector URL: <code>${escapeHtml(BASE_URL())}/mcp/w/${escapeHtml(ws.slug)}</code></div></div>`);
+        <div style="color:#687385;font-size:13px;margin-top:6px;">Connector URL: <code>${escapeHtml(BASE_URL())}/mcp/w/${escapeHtml(ws.slug)}</code></div></div>`);
       continue;
     }
 
@@ -649,7 +743,7 @@ dashboardApp.get("/workspaces", async (c) => {
     sections.push(`
     <div class="card">
       <h2 style="margin-top:0;">${escapeHtml(ws.displayName)} <span class="badge ok">${escapeHtml(m.role)}</span></h2>
-      <div style="color:#8a8d93;font-size:13px;">Workspace-locked connector URL (parallel connectors per client):<br>
+      <div style="color:#687385;font-size:13px;">Workspace-locked connector URL (parallel connectors per client):<br>
         <code>${escapeHtml(BASE_URL())}/mcp/w/${escapeHtml(ws.slug)}</code></div>
 
       <h3>Members</h3>
@@ -659,13 +753,13 @@ dashboardApp.get("/workspaces", async (c) => {
         ${members.map((mm) => {
           const mine = assignments.filter((a) => a.user.id === mm.user.id);
           return `<tr>
-            <td>${escapeHtml(mm.user.email)}${mm.user.name ? ` <small style="color:#8a8d93;">${escapeHtml(mm.user.name)}</small>` : ""}</td>
+            <td>${escapeHtml(mm.user.email)}${mm.user.name ? ` <small style="color:#687385;">${escapeHtml(mm.user.name)}</small>` : ""}</td>
             <td><span class="badge ${mm.role === "member" ? "unscoped" : "ok"}">${escapeHtml(mm.role)}</span></td>
             <td>${mine.length ? mine.map((a) => `
               <form method="post" action="/workspaces/${ws.id}/unassign" style="display:inline-block;margin:0 6px 4px 0;">
                 <input type="hidden" name="agentId" value="${escapeHtml(a.agent.id)}"><input type="hidden" name="userId" value="${escapeHtml(mm.user.id)}">
-                <span class="badge scoped">${escapeHtml(a.agent.name)} <button type="submit" title="Unassign" style="all:unset;cursor:pointer;color:#ff6b6b;">&times;</button></span>
-              </form>`).join("") : '<span style="color:#8a8d93;">—</span>'}
+                <span class="badge scoped">${escapeHtml(a.agent.name)} <button type="submit" title="Unassign" style="all:unset;cursor:pointer;color:#df1b41;">&times;</button></span>
+              </form>`).join("") : '<span style="color:#687385;">—</span>'}
             </td>
             <td>${mm.role !== "owner" ? `
               <form method="post" action="/workspaces/${ws.id}/members/${mm.user.id}/remove" style="margin:0;" onsubmit="return confirm('Remove ${escapeHtml(mm.user.email)} from workspace? Their connector access is revoked immediately.')">
@@ -691,9 +785,9 @@ dashboardApp.get("/workspaces", async (c) => {
           <select name="role"><option value="member">member</option><option value="admin">admin</option></select>
           <button type="submit">Send invite</button>
         </div>
-        <div style="margin-top:8px;color:#8a8d93;font-size:13px;">Auto-assign agents on accept:</div>
+        <div style="margin-top:8px;color:#687385;font-size:13px;">Auto-assign agents on accept:</div>
         <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px;">
-          ${agents.map((a) => `<label style="font-size:13px;"><input type="checkbox" name="agentIds" value="${escapeHtml(a.id)}"> ${escapeHtml(a.name)}</label>`).join("") || '<span style="color:#8a8d93;font-size:13px;">No agents in this workspace yet.</span>'}
+          ${agents.map((a) => `<label style="font-size:13px;"><input type="checkbox" name="agentIds" value="${escapeHtml(a.id)}"> ${escapeHtml(a.name)}</label>`).join("") || '<span style="color:#687385;font-size:13px;">No agents in this workspace yet.</span>'}
         </div>
       </form>
 
@@ -720,13 +814,13 @@ dashboardApp.get("/workspaces", async (c) => {
 
       <div class="card">
         <h2 style="margin-top:0;">Create a new workspace</h2>
-        <div style="color:#8a8d93;font-size:13px;margin-bottom:10px;">A workspace is a management wall — you become its owner. After creating it, invite teammates and assign agents from its section above.</div>
+        <div style="color:#687385;font-size:13px;margin-bottom:10px;">A workspace is a management wall — you become its owner. After creating it, invite teammates and assign agents from its section above.</div>
         <form method="post" action="/workspaces" class="row" style="gap:8px;align-items:center;">
           <input type="text" name="displayName" placeholder="Acme Inc. workspace" required style="flex:1;">
           <input type="text" name="slug" placeholder="slug (optional, e.g. acme)" pattern="[A-Za-z0-9-]*" style="flex:0 0 200px;">
           <button type="submit">Create</button>
         </form>
-        <div style="margin-top:8px;color:#8a8d93;font-size:12px;">The slug is immutable and rides in the connector URL (<code>${escapeHtml(BASE_URL())}/mcp/w/&lt;slug&gt;</code>). Leave blank to derive it from the name.</div>
+        <div style="margin-top:8px;color:#687385;font-size:12px;">The slug is immutable and rides in the connector URL (<code>${escapeHtml(BASE_URL())}/mcp/w/&lt;slug&gt;</code>). Leave blank to derive it from the name.</div>
       </div>
     </main></body></html>
   `);
@@ -1023,9 +1117,9 @@ dashboardApp.get("/dashboard", async (c) => {
     <main>
       <h1>Dashboard</h1>
       <div class="row" style="gap:16px; margin-bottom:24px;">
-        <div class="card" style="flex:1;"><div style="color:#8a8d93;font-size:12px;">Connections</div><div style="font-size:24px;font-weight:700;">${connectionCount}</div></div>
-        <div class="card" style="flex:1;"><div style="color:#8a8d93;font-size:12px;">Agents</div><div style="font-size:24px;font-weight:700;">${agentCount}</div></div>
-        <div class="card" style="flex:1;"><div style="color:#8a8d93;font-size:12px;">Roles</div><div style="font-size:24px;font-weight:700;">${roleCount}</div></div>
+        <div class="card" style="flex:1;"><div style="color:#687385;font-size:12px;">Connections</div><div style="font-size:24px;font-weight:700;">${connectionCount}</div></div>
+        <div class="card" style="flex:1;"><div style="color:#687385;font-size:12px;">Agents</div><div style="font-size:24px;font-weight:700;">${agentCount}</div></div>
+        <div class="card" style="flex:1;"><div style="color:#687385;font-size:12px;">Roles</div><div style="font-size:24px;font-weight:700;">${roleCount}</div></div>
       </div>
       <h2>Recent activity</h2>
       <div class="card">
@@ -1167,9 +1261,9 @@ dashboardApp.get("/meta", async (c) => {
 
   const card = (label: string, value: string | number, hint = "") => `
     <div class="card" style="flex:1;min-width:160px;">
-      <div style="color:#8a8d93;font-size:12px;">${escapeHtml(label)}</div>
+      <div style="color:#687385;font-size:12px;">${escapeHtml(label)}</div>
       <div style="font-size:24px;font-weight:700;">${value}</div>
-      ${hint ? `<div style="color:#8a8d93;font-size:12px;margin-top:4px;">${hint}</div>` : ""}
+      ${hint ? `<div style="color:#687385;font-size:12px;margin-top:4px;">${hint}</div>` : ""}
     </div>
   `;
   const okBadge = (ok: boolean, label?: string) => ok
@@ -1182,7 +1276,7 @@ dashboardApp.get("/meta", async (c) => {
     ${NAV("meta", dbUser?.email)}
     <main>
       <h1>Meta</h1>
-      <p style="color:#8a8d93;margin-top:-12px;">System-wide operational view. No raw credentials are shown.</p>
+      <p style="color:#687385;margin-top:-12px;">System-wide operational view. No raw credentials are shown.</p>
 
       ${bootstrapMode ? `
       <div class="card" style="border-color:#f0b429;background:rgba(240,180,41,0.08);">
@@ -1251,11 +1345,11 @@ dashboardApp.get("/meta", async (c) => {
             <tbody>
               ${providerDefs.map((p) => `
                 <tr>
-                  <td><span class="provider-cell">${providerIcon(p.key)}<code>${escapeHtml(p.key)}</code></span><br><span style="color:#8a8d93;font-size:12px;">${escapeHtml(p.label)}</span></td>
+                  <td><span class="provider-cell">${providerIcon(p.key)}<code>${escapeHtml(p.key)}</code></span><br><span style="color:#687385;font-size:12px;">${escapeHtml(p.label)}</span></td>
                   <td>${p.authTypes.map((a) => `<span class="tool-pill">${escapeHtml(authTypeLabel(p.key, a))}</span>`).join(" ")}</td>
                   <td>${p.serverCredentialEnv
                     ? `${okBadge(!!process.env[p.serverCredentialEnv], process.env[p.serverCredentialEnv] ? "set" : "missing")} <code>${escapeHtml(p.serverCredentialEnv)}</code>`
-                    : '<span style="color:#8a8d93;">none</span>'}</td>
+                    : '<span style="color:#687385;">none</span>'}</td>
                   <td>${p.tools.map((t) => `<span class="tool-pill">${escapeHtml(t)}</span>`).join(" ")}</td>
                   <td>${p.implemented === false ? '<span class="badge unscoped">coming soon</span>' : '<span class="badge ok">implemented</span>'}</td>
                 </tr>
@@ -1349,7 +1443,7 @@ dashboardApp.get("/meta", async (c) => {
                   <td>${escapeHtml(r.owner.email)}</td>
                   <td><code>${escapeHtml(r.name)}</code></td>
                   <td>${issues.map((i) => `<span class="badge denied">${escapeHtml(i)}</span>`).join(" ")}</td>
-                  <td>${safeJsonArray(r.allowedTools).slice(0, 8).map((t) => `<span class="tool-pill">${escapeHtml(t)}</span>`).join(" ")}${safeJsonArray(r.allowedTools).length > 8 ? ` <span style="color:#8a8d93;">+${safeJsonArray(r.allowedTools).length - 8}</span>` : ""}</td>
+                  <td>${safeJsonArray(r.allowedTools).slice(0, 8).map((t) => `<span class="tool-pill">${escapeHtml(t)}</span>`).join(" ")}${safeJsonArray(r.allowedTools).length > 8 ? ` <span style="color:#687385;">+${safeJsonArray(r.allowedTools).length - 8}</span>` : ""}</td>
                 </tr>
               `;
             }).join("")}
@@ -1388,7 +1482,7 @@ dashboardApp.get("/meta", async (c) => {
             <tbody>
               ${users.map((u) => `
                 <tr>
-                  <td>${escapeHtml(u.email)}<br><span style="color:#8a8d93;font-size:12px;">${escapeHtml(u.name || "")}</span></td>
+                  <td>${escapeHtml(u.email)}<br><span style="color:#687385;font-size:12px;">${escapeHtml(u.name || "")}</span></td>
                   <td>${u.role === "admin" ? '<span class="badge ok">admin</span>' : '<span class="badge unscoped">user</span>'}</td>
                   <td>${u._count.connections}</td>
                   <td>${u._count.agents}</td>
@@ -1464,10 +1558,10 @@ dashboardApp.get("/login", async (c) => {
           <input type="password" name="password" id="password" required minlength="8">
         </div>
         <button type="submit" style="width:100%;">Sign in</button>
-        <div id="err" style="color:#ff6b6b;margin-top:8px;font-size:13px;"></div>
+        <div id="err" style="color:#df1b41;margin-top:8px;font-size:13px;"></div>
       </form>
     </div>
-    <p style="text-align:center;color:#8a8d93;font-size:13px;">No account? <a href="/register${oauthQuery ? escapeHtml(`?${oauthQuery}`) : ""}">Create one</a> · <a href="/forgot-password">Forgot password?</a></p>
+    <p style="text-align:center;color:#687385;font-size:13px;">No account? <a href="/register${oauthQuery ? escapeHtml(`?${oauthQuery}`) : ""}">Create one</a> · <a href="/forgot-password">Forgot password?</a></p>
     <script>
       document.getElementById('loginForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -1510,10 +1604,10 @@ dashboardApp.get("/register", async (c) => {
           <input type="password" name="password" id="password" required minlength="8">
         </div>
         <button type="submit" style="width:100%;">Create account</button>
-        <div id="err" style="color:#ff6b6b;margin-top:8px;font-size:13px;"></div>
+        <div id="err" style="color:#df1b41;margin-top:8px;font-size:13px;"></div>
       </form>
     </div>
-    <p style="text-align:center;color:#8a8d93;font-size:13px;">Already have one? <a href="/login${oauthQuery ? escapeHtml(`?${oauthQuery}`) : ""}">Sign in</a></p>
+    <p style="text-align:center;color:#687385;font-size:13px;">Already have one? <a href="/login${oauthQuery ? escapeHtml(`?${oauthQuery}`) : ""}">Sign in</a></p>
     <script>
       document.getElementById('regForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -1542,7 +1636,7 @@ dashboardApp.get("/forgot-password", async (c) => {
     <div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">
       ✓ If an account exists for that address, a reset link is on its way. The link is valid for 1 hour.
     </div>
-    <p style="text-align:center;color:#8a8d93;font-size:13px;"><a href="/login">← Back to sign in</a></p>
+    <p style="text-align:center;color:#687385;font-size:13px;"><a href="/login">← Back to sign in</a></p>
     ` : `
     <div class="card">
       <form method="post" action="/forgot-password">
@@ -1553,7 +1647,7 @@ dashboardApp.get("/forgot-password", async (c) => {
         <button type="submit" style="width:100%;">Send reset link</button>
       </form>
     </div>
-    <p style="text-align:center;color:#8a8d93;font-size:13px;"><a href="/login">← Back to sign in</a></p>
+    <p style="text-align:center;color:#687385;font-size:13px;"><a href="/login">← Back to sign in</a></p>
     `}
     </body></html>
   `);
@@ -1587,7 +1681,7 @@ dashboardApp.get("/reset-password", async (c) => {
       <!doctype html><html><head><meta charset="utf-8"><title>Reset password — grantry</title>
       <style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
       <h1>Reset password</h1>
-      <div class="card" style="border-color:#ff6b6b;background:rgba(255,107,107,0.08);">
+      <div class="card" style="border-color:#df1b41;background:rgba(255,107,107,0.08);">
         ⚠️ This reset link is invalid or has expired. <a href="/forgot-password">Request a new one</a>.
       </div>
       </body></html>
@@ -1597,7 +1691,7 @@ dashboardApp.get("/reset-password", async (c) => {
     <!doctype html><html><head><meta charset="utf-8"><title>Reset password — grantry</title>
     <style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
     <h1>Choose a new password</h1>
-    ${err ? `<div class="card" style="border-color:#ff6b6b;background:rgba(255,107,107,0.08);">⚠️ ${escapeHtml(String(err))}</div>` : ""}
+    ${err ? `<div class="card" style="border-color:#df1b41;background:rgba(255,107,107,0.08);">⚠️ ${escapeHtml(String(err))}</div>` : ""}
     <div class="card">
       <form method="post" action="/reset-password">
         <input type="hidden" name="token" value="${escapeHtml(token)}">
@@ -1652,7 +1746,7 @@ dashboardApp.get("/account", async (c) => {
   const banner = ok
     ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);margin-bottom:20px;">✓ Password updated. Other sessions have been signed out.</div>`
     : err
-      ? `<div class="card" style="border-color:#ff6b6b;background:rgba(255,107,107,0.08);margin-bottom:20px;">⚠️ ${escapeHtml(err)}</div>`
+      ? `<div class="card" style="border-color:#df1b41;background:rgba(255,107,107,0.08);margin-bottom:20px;">⚠️ ${escapeHtml(err)}</div>`
       : "";
 
   return c.html(`
@@ -1667,11 +1761,11 @@ dashboardApp.get("/account", async (c) => {
         <p style="font-size:18px;margin:4px 0 12px;"><code>${escapeHtml(user.email)}</code></p>
         <table>
           <tbody>
-            <tr><td style="color:#8a8d93;">Name</td><td>${escapeHtml(user.name || "—")}</td></tr>
-            <tr><td style="color:#8a8d93;">User ID</td><td><code>${escapeHtml(user.id)}</code></td></tr>
-            <tr><td style="color:#8a8d93;">Role</td><td><code>${escapeHtml(user.role)}</code></td></tr>
-            <tr><td style="color:#8a8d93;">Registered</td><td><code>${user.createdAt.toISOString().slice(0, 10)}</code></td></tr>
-            <tr><td style="color:#8a8d93;">Active sessions</td><td>${sessionCount}</td></tr>
+            <tr><td style="color:#687385;">Name</td><td>${escapeHtml(user.name || "—")}</td></tr>
+            <tr><td style="color:#687385;">User ID</td><td><code>${escapeHtml(user.id)}</code></td></tr>
+            <tr><td style="color:#687385;">Role</td><td><code>${escapeHtml(user.role)}</code></td></tr>
+            <tr><td style="color:#687385;">Registered</td><td><code>${user.createdAt.toISOString().slice(0, 10)}</code></td></tr>
+            <tr><td style="color:#687385;">Active sessions</td><td>${sessionCount}</td></tr>
           </tbody>
         </table>
         <p class="field-hint" style="margin-bottom:0;">
@@ -1780,12 +1874,12 @@ dashboardApp.get("/tenants", async (c) => {
         <h1 style="margin:0;">Tenants</h1>
         <a href="/tenants/new" class="btn">+ New tenant</a>
       </div>
-      <p style="color:#8a8d93;margin-top:-8px;">API: <code>GET /api/scopes</code> returns your full wiring as JSON.</p>
+      <p style="color:#687385;margin-top:-8px;">API: <code>GET /api/scopes</code> returns your full wiring as JSON.</p>
       <form method="post" action="/tenants/bulk-delete" id="bulkForm">
         <input type="hidden" name="scopes_csv" id="scopesCsv" value="">
         ${byScope.size === 0 ? '<div class="card"><div class="empty">No tenants yet. <a href="/tenants/new">Create your first one</a>.</div></div>' : `
         <div class="row spread" style="margin-bottom:8px;">
-          <label style="font-size:13px;color:#c8ccd2;cursor:pointer;"><input type="checkbox" id="selectAll"> select all</label>
+          <label style="font-size:13px;color:#3c4257;cursor:pointer;"><input type="checkbox" id="selectAll"> select all</label>
           <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;" id="bulkDelBtn" disabled>🗑 Delete selected (0)</button>
         </div>
         ${Array.from(byScope.entries()).map(([scope, conns]) => `
@@ -1898,14 +1992,14 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
     ${NAV("tenants", user?.email)}
     <main>
       <h1>Edit tenant ${tenantRow && tenantRow.displayName !== tenantRow.slug ? `${escapeHtml(tenantRow.displayName)} ` : ""}<code>${scope}</code></h1>
-      <p style="color:#8a8d93;margin-top:-16px;margin-bottom:24px;">
+      <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
         Edit the tenant's display labels, role tools, and role scopes. To add a new service, scroll down.
       </p>
       ${reauthBanner}
 
       <h2 id="codex-mcp">Codex MCP</h2>
       <div class="card">
-        <p style="font-size:13px;color:#8a8d93;margin-top:0;">
+        <p style="font-size:13px;color:#687385;margin-top:0;">
           Connect this tenant to Codex as one MCP server. The generated config is locked to <code>${scope}</code>, so Codex cannot cross into another tenant through this entry.
         </p>
         ${codexAgents.length === 0 ? `
@@ -1922,7 +2016,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
               <tbody>
                 ${codexAgents.map((a) => `
                   <tr>
-                    <td><code>${escapeHtml(a.name)}</code><br><span style="color:#8a8d93;font-size:12px;"><code>${escapeHtml(a.tokenPrefix)}...</code></span></td>
+                    <td><code>${escapeHtml(a.name)}</code><br><span style="color:#687385;font-size:12px;"><code>${escapeHtml(a.tokenPrefix)}...</code></span></td>
                     <td>${a.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</td>
                     <td>${a.lastUsedAt ? a.lastUsedAt.toISOString().slice(0, 16) : "—"}</td>
                     <td>${a.createdAt.toISOString().slice(0, 10)}</td>
@@ -1975,7 +2069,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                   ${oauthTokenStatus(cn)}
                   ${renderCredentialSummary(cn)}
                   ${cn.provider === "google_ads" ? `
-                    <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #2a2d33;">
+                    <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #e3e8ee;">
                       <div class="field-hint" style="margin-bottom:6px;">
                         Google Ads Developer token:
                         ${cn.encryptedServerCredential || process.env.GOOGLE_ADS_DEVELOPER_TOKEN
@@ -2060,13 +2154,13 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             <div class="field-hint">Globally unique. Suggestions: <code>${escapeHtml(scope)}-read</code>, <code>${escapeHtml(scope)}-write</code>, <code>${escapeHtml(scope)}-ci</code>.</div>
           </div>
           <div class="field">
-            <label for="agent_desc">Description <span style="color:#8a8d93;">(optional)</span></label>
+            <label for="agent_desc">Description <span style="color:#687385;">(optional)</span></label>
             <input type="text" name="agent_desc" id="agent_desc" placeholder="What this agent is for">
           </div>
           <div class="field">
             <label>Additional tools to enable</label>
             <p class="field-hint" style="margin-top:0;">The agent will inherit all tools the role already has. Uncheck to NOT add any extras (rare — leave as-is unless you need a tool the role doesn't have).</p>
-            <div id="agentToolsList" style="font-size:13px;color:#8a8d93;">${roleTools.length} tools already in role: <code>${roleTools.slice(0, 4).join("</code> · <code>")}${roleTools.length > 4 ? `</code> · +${roleTools.length - 4} more` : "</code>"}</div>
+            <div id="agentToolsList" style="font-size:13px;color:#687385;">${roleTools.length} tools already in role: <code>${roleTools.slice(0, 4).join("</code> · <code>")}${roleTools.length > 4 ? `</code> · +${roleTools.length - 4} more` : "</code>"}</div>
             <input type="hidden" name="tools_json" id="agentToolsJson" value="">
           </div>
           <div style="display:flex;gap:8px;">
@@ -2075,11 +2169,11 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         </form>
       </div>
 
-      <h2 style="color:#ff6b6b;">Danger zone</h2>
-      <div class="card" style="border-color:#ff6b6b;">
+      <h2 style="color:#df1b41;">Danger zone</h2>
+      <div class="card" style="border-color:#df1b41;">
         <p>Delete this tenant entirely. This removes <b>all your connections</b> for scope <code>${scope}</code> and the role <code>${scope}-dev-${userIdShort}</code>. Agents bound to that role will be left <b>unbound</b> (use <a href="/agents">/agents</a> to clean them up).</p>
         <form method="post" action="/tenants/${scope}/delete" onsubmit="return confirm('Delete tenant ${scope}?\\n\\nThis removes all YOUR connections and the role for this scope. This action cannot be undone.');">
-          <button type="submit" style="background:#ff6b6b;color:#0e0f12;">🗑 Delete tenant ${scope}</button>
+          <button type="submit" style="background:#df1b41;color:#ffffff;">🗑 Delete tenant ${scope}</button>
         </form>
       </div>
 
@@ -2775,7 +2869,7 @@ dashboardApp.get("/tenants/new", async (c) => {
     ${NAV("tenants", user?.email)}
     <main>
       <h1>+ New tenant</h1>
-      <p style="color:#8a8d93;margin-top:-16px;margin-bottom:24px;">
+      <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
         Create an isolated tenant in one step. This sets up: a <b>connection</b> with scope=&lt;tenant&gt;,
         a <b>role</b> with allowed_scopes bound to that tenant, an <b>agent</b>, and a fresh <b>token</b>.
       </p>
@@ -2804,7 +2898,7 @@ dashboardApp.get("/tenants/new", async (c) => {
           ` : ''}
           ${existingScopes.length > 0 ? `
           <div class="field" style="margin-top:16px;">
-            <label for="additional_scopes">Additional allowed scopes <span style="color:#8a8d93;">(optional, multi-tenant)</span></label>
+            <label for="additional_scopes">Additional allowed scopes <span style="color:#687385;">(optional, multi-tenant)</span></label>
             <input type="text" name="additional_scopes" id="additional_scopes" placeholder="e.g. ${existingScopes.slice(0, 2).join(', ')}${existingScopes.length > 2 ? ', ...' : ''}">
             <div class="field-hint">Comma-separated. The role will be allowed to access <i>these scopes too</i> in addition to the new tenant. Leave empty to allow <b>only the new tenant</b>. Your other tenants: ${existingScopes.map((s) => `<code>${s}</code>`).join(", ")}.</div>
           </div>
@@ -2815,7 +2909,7 @@ dashboardApp.get("/tenants/new", async (c) => {
             <div class="field-hint">Globally unique. Auto-suggested from tenant name. Override if you want.</div>
           </div>
           <div class="field">
-            <label for="agent_desc">Agent description <span style="color:#8a8d93;">(optional)</span></label>
+            <label for="agent_desc">Agent description <span style="color:#687385;">(optional)</span></label>
             <input type="text" name="agent_desc" id="agent_desc" placeholder="What this agent does">
           </div>
         </div>
@@ -2830,10 +2924,10 @@ dashboardApp.get("/tenants/new", async (c) => {
             const isImplemented = p.implemented !== false;
             const optionKey = `${p.key}:${authType}`;
             return `
-          <div class="provider-block" data-provider="${p.key}" data-auth-type="${authType}" data-haspat="${hasPat}" data-hasoauth="${hasOauth}" data-implemented="${isImplemented}" style="border:1px solid #2a2d33;border-radius:8px;padding:12px 16px;margin-bottom:12px;${isImplemented ? "" : "opacity:.62;"}">
+          <div class="provider-block" data-provider="${p.key}" data-auth-type="${authType}" data-haspat="${hasPat}" data-hasoauth="${hasOauth}" data-implemented="${isImplemented}" style="border:1px solid #e3e8ee;border-radius:8px;padding:12px 16px;margin-bottom:12px;${isImplemented ? "" : "opacity:.62;"}">
             <label style="font-weight:600;display:flex;align-items:center;gap:8px;cursor:${isImplemented ? "pointer" : "not-allowed"};margin:0;">
               <input type="checkbox" class="provider-check" value="${optionKey}" ${isImplemented ? "" : "disabled"}> ${providerIcon(p.key)} ${p.label}
-              <span style="color:#8a8d93;font-weight:normal;font-size:13px;">(${authLabel})</span>
+              <span style="color:#687385;font-weight:normal;font-size:13px;">(${authLabel})</span>
               ${isImplemented ? "" : '<span class="badge unscoped" style="margin-left:auto;">Coming soon</span>'}
             </label>
             ${isImplemented ? `
@@ -2844,7 +2938,7 @@ dashboardApp.get("/tenants/new", async (c) => {
                 <textarea name="credential_${p.key}_${authType}" class="cred-input" rows="2" placeholder="${escapeHtml(credentialPlaceholder(p.key, p.label, authType))}"></textarea>
                 <div class="field-hint">${escapeHtml(p.helpText)}</div>
                 ${p.tokenUrl ? `<div style="margin-top:4px;"><a href="${p.tokenUrl}" target="_blank" rel="noopener" style="font-size:13px;">${escapeHtml(tokenLinkLabel(p.key, p.label))}</a></div>` : ""}
-                <div class="reusing-notice" style="display:none;margin-top:6px;padding:8px;background:rgba(110,168,254,0.08);border-radius:6px;font-size:13px;">
+                <div class="reusing-notice" style="display:none;margin-top:6px;padding:8px;background:rgba(99,91,255,0.08);border-radius:6px;font-size:13px;">
                   ♻️ Reusing the existing <code class="reusing-label"></code> connection. <a href="#" class="rotate-link" style="margin-left:4px;">rotate credential</a> to paste a new one.
                 </div>
               </div>` : ""}
@@ -3135,7 +3229,7 @@ dashboardApp.post("/tenants/new", async (c) => {
       ${NAV("tenants", user?.email)}
       <main>
         <h1>⚠️  Agent name <code>${escapeHtml(agent)}</code> already exists</h1>
-        <div class="card" style="border-color:#ff6b6b;">
+        <div class="card" style="border-color:#df1b41;">
           <p>Agent names are globally unique. Someone already created an agent with this name (created ${existingAgent.createdAt.toISOString().slice(0,10)}).</p>
           <p><b>Options:</b></p>
           <ul>
@@ -3144,7 +3238,7 @@ dashboardApp.post("/tenants/new", async (c) => {
             <li><a href="/tenants/new">← Back to wizard</a></li>
           </ul>
         </div>
-        <p style="color:#8a8d93;font-size:13px;">Why globally unique? Agent names double as the agent's display ID in audit logs and MCP routing. <a href="https://github.com/gentityapp/grantry/issues/new">file an issue</a> if you want per-user uniqueness.</p>
+        <p style="color:#687385;font-size:13px;">Why globally unique? Agent names double as the agent's display ID in audit logs and MCP routing. <a href="https://github.com/gentityapp/grantry/issues/new">file an issue</a> if you want per-user uniqueness.</p>
       </main></body></html>
     `, 409);
   }
@@ -3369,7 +3463,7 @@ dashboardApp.get("/agents", async (c) => {
       <form method="post" action="/agents/bulk-delete" id="bulkAgentForm">
         <input type="hidden" name="agent_ids_csv" id="agentIdsCsv" value="">
         <div class="row spread" style="margin-bottom:8px;">
-          <label style="font-size:13px;color:#c8ccd2;cursor:pointer;"><input type="checkbox" id="selAllAgents"> select all</label>
+          <label style="font-size:13px;color:#3c4257;cursor:pointer;"><input type="checkbox" id="selAllAgents"> select all</label>
           <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;" id="bulkAgentBtn" disabled>🗑 Delete selected (0)</button>
         </div>
       </form>
@@ -3389,7 +3483,7 @@ dashboardApp.get("/agents", async (c) => {
               ? '<span class="badge denied" title="Legacy broad access: this role can use any of your enabled connection scopes">any</span>'
               : Array.from(allScopes).map((s) => `<span class="badge scoped">${s}</span>`).join(" ");
             const rolesDisplay = roleNames.length === 0
-              ? '<em style="color:#ff6b6b;">no role bound</em>'
+              ? '<em style="color:#df1b41;">no role bound</em>'
               : roleNames.map((n) => `<span class="tool-pill">${n}</span>`).join(" ");
             return `
             <tr>
@@ -3403,10 +3497,10 @@ dashboardApp.get("/agents", async (c) => {
               <td>${a.createdAt.toISOString().slice(0, 10)}</td>
               <td style="position:relative;white-space:nowrap;">
                 <details style="display:inline-block; margin-right: 6px;">
-                  <summary style="display:inline-block; cursor:pointer; background:#2a2d33; color:#c8ccd2; padding:4px 10px; border-radius:4px; font-size:12px; list-style:none;">Bind</summary>
-                  <div style="position:absolute; right:0; background:#1a1c20; border:1px solid #2a2d33; border-radius:4px; padding:8px; z-index:10; min-width:280px; margin-top:4px;">
+                  <summary style="display:inline-block; cursor:pointer; background:#e3e8ee; color:#3c4257; padding:4px 10px; border-radius:4px; font-size:12px; list-style:none;">Bind</summary>
+                  <div style="position:absolute; right:0; background:#f6f9fc; border:1px solid #e3e8ee; border-radius:4px; padding:8px; z-index:10; min-width:280px; margin-top:4px;">
                     <form method="post" action="/agents/${a.id}/bind">
-                      <div style="margin-bottom:6px; font-size:12px; color:#8a8d93;">Replace bindings with:</div>
+                      <div style="margin-bottom:6px; font-size:12px; color:#687385;">Replace bindings with:</div>
                       <select name="role_id" style="margin-bottom:6px; font-size:12px; padding:4px; width:100%;">
                         ${roles.map((r) => `<option value="${r.id}">${r.name} (scopes: ${safeJsonArray(r.allowedScopes).join(", ") || "any"})</option>`).join("")}
                       </select>
@@ -3419,7 +3513,7 @@ dashboardApp.get("/agents", async (c) => {
                 </form>
                 <a href="/agents/${a.id}" class="btn secondary" style="font-size:12px;padding:4px 10px;">Details</a>
                 <form method="post" action="/agents/${a.id}/delete" style="display:inline;" onsubmit="return confirm('Delete agent ${a.name}?\\n\\nThis permanently destroys its token. The role(s) it was bound to are not deleted.')">
-                  <button type="submit" style="font-size:12px;padding:4px 10px;background:#ff6b6b;color:#0e0f12;">🗑</button>
+                  <button type="submit" style="font-size:12px;padding:4px 10px;background:#df1b41;color:#ffffff;">🗑</button>
                 </form>
               </td>
             </tr>
@@ -3491,7 +3585,7 @@ dashboardApp.get("/agents/new", async (c) => {
     ${NAV("agents")}
     <main>
       <h1>+ New agent</h1>
-      <p style="color:#8a8d93;margin-top:-16px;margin-bottom:24px;">
+      <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
         Create an agent that spans <b>existing</b> tenants — e.g. a manager that reads several business areas with one token.
         To create a new tenant, use the <a href="/tenants/new">tenant wizard</a> instead.
       </p>
@@ -3583,9 +3677,9 @@ dashboardApp.get("/agents/new", async (c) => {
           </div>
         </div>
 
-        <div class="card" style="background:rgba(110,168,254,0.08);">
+        <div class="card" style="background:rgba(99,91,255,0.08);">
           <h2>👁 What this agent will be able to do</h2>
-          <p id="previewText" style="margin-bottom:0;color:#8a8d93;">Select at least one tenant above.</p>
+          <p id="previewText" style="margin-bottom:0;color:#687385;">Select at least one tenant above.</p>
         </div>
 
         <button type="submit" id="createBtn" disabled>🔑 Create agent &amp; mint token</button>
@@ -3821,7 +3915,7 @@ dashboardApp.get("/agents/:id", async (c) => {
         <p>Token prefix: <code>${escapeHtml(agent.tokenPrefix)}...</code></p>
         <p>Roles: ${agent.roles.length
           ? agent.roles.map((ar) => `<span class="tool-pill">${escapeHtml(ar.role.name)}</span>`).join(" ")
-          : '<em style="color:#ff6b6b;">no role bound</em>'}</p>
+          : '<em style="color:#df1b41;">no role bound</em>'}</p>
         <p>Accessible tenants: ${scopeSet.size
           ? Array.from(scopeSet).sort().map((s) => `<span class="badge scoped">${escapeHtml(s)}</span>`).join(" ")
           : '<span class="badge denied">none</span>'}</p>
@@ -3921,15 +4015,15 @@ dashboardApp.post("/agents/:id/rotate", async (c) => {
     ${NAV("agents", user?.email)}
     <main>
       <h1>✓ Token rotated for <code>${agent.name}</code></h1>
-      <div class="card" style="background:rgba(255,107,107,0.08); border-color:#ff6b6b;">
+      <div class="card" style="background:rgba(255,107,107,0.08); border-color:#df1b41;">
         <h2>⚠️  Old token invalidated</h2>
         <p>The old token (prefix <code>${oldPrefix}...</code>) is no longer valid. Any system still using it will get <code>401 authentication required</code>.</p>
       </div>
-      <div class="card" style="background:rgba(110,168,254,0.08); border-color:#6ea8fe;">
+      <div class="card" style="background:rgba(99,91,255,0.08); border-color:#635bff;">
         <h2>🔑 New token (save this — shown once!)</h2>
-        <pre style="background:#0e0f12;border:1px solid #6ea8fe;">${newToken}</pre>
-        <p style="font-size:13px;color:#8a8d93;margin-bottom:0;">Use as <code>Authorization: Bearer ${newToken}</code> when calling <code>/mcp</code>.</p>
-        <p style="font-size:13px;color:#ff6b6b;margin-top:8px;">⚠️  Save this token now. If you lose it, you'll need to rotate again.</p>
+        <pre style="background:#f6f9fc;border:1px solid #635bff;">${newToken}</pre>
+        <p style="font-size:13px;color:#687385;margin-bottom:0;">Use as <code>Authorization: Bearer ${newToken}</code> when calling <code>/mcp</code>.</p>
+        <p style="font-size:13px;color:#df1b41;margin-top:8px;">⚠️  Save this token now. If you lose it, you'll need to rotate again.</p>
       </div>
       ${rotatedScopes.length
         ? rotatedScopes.map((scope) => mcpConfigCard(publicOrigin(c), agent.name, newToken, true, scope)).join("")
@@ -3969,7 +4063,7 @@ dashboardApp.get("/audit", async (c) => {
     ${NAV("audit", user?.email)}
     <main>
       <h1>Audit log</h1>
-      <p style="color:#8a8d93;">Latest 100 events.</p>
+      <p style="color:#687385;">Latest 100 events.</p>
       <div class="card">
         ${logs.length === 0 ? '<div class="empty">No events yet.</div>' : `
         <table>
@@ -4448,7 +4542,7 @@ oauthApp.get("/:provider/callback", async (c) => {
       ${NAV("tenants", user?.email)}
       <main>
         <h1>⚠️  Agent name <code>${escapeHtml(agent)}</code> already exists</h1>
-        <div class="card" style="border-color:#ff6b6b;">
+        <div class="card" style="border-color:#df1b41;">
           <p>${escapeHtml(providerDef.label)} connection was created, but the agent name is taken. <a href="/agents/${existingAgent.id}">Reuse the existing agent</a> or pick a different name.</p>
         </div>
         <p><a href="/tenants">← Back to tenants</a></p>
@@ -4518,9 +4612,9 @@ oauthApp.get("/:provider/callback", async (c) => {
       ${NAV("tenants")}
       <main>
         <h1>⚠️  OAuth connection failed</h1>
-        <div class="card" style="border-color:#ff6b6b;">
+        <div class="card" style="border-color:#df1b41;">
           <p>Something went wrong while completing the <code>${escapeHtml(providerKeyForError)}</code> connection.</p>
-          <pre style="background:#0e0f12;border:1px solid #ff6b6b;white-space:pre-wrap;">${escapeHtml(detail)}</pre>
+          <pre style="background:#f6f9fc;border:1px solid #df1b41;white-space:pre-wrap;">${escapeHtml(detail)}</pre>
         </div>
         <p><a href="/tenants/new">← Try again</a></p>
       </main></body></html>
@@ -4622,7 +4716,7 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
       ${NAV("tenants", user?.email)}
       <main>
         <h1>⚠️ Agent name <code>${escapeHtml(agent)}</code> already exists</h1>
-        <div class="card" style="border-color:#ff6b6b;">
+        <div class="card" style="border-color:#df1b41;">
           <p>Pick a different agent name (e.g. <code>${escapeHtml(agent)}-v2</code>).</p>
           <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a></p>
         </div>
