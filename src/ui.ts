@@ -580,6 +580,20 @@ dashboardApp.post("/oauth-consent/bind", async (c) => {
 
 const BASE_URL = () => process.env.BETTER_AUTH_URL ?? "http://localhost:3000";
 
+// Mirror of scripts/backfill-workspaces.mjs slugify so manually-created and
+// auto-created workspaces produce identical wire keys. The slug is immutable
+// and rides in connector URLs (/mcp/w/<slug>).
+function slugifyWorkspace(base: string) {
+  return (
+    base
+      .toLowerCase()
+      .replace(/@.*$/, "")
+      .replace(/[^a-z0-9-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 40) || "workspace"
+  );
+}
+
 async function requireWsAdmin(c: any, workspaceId: string) {
   const user = await getSessionUser(c);
   if (!user?.id) return null;
@@ -703,8 +717,47 @@ dashboardApp.get("/workspaces", async (c) => {
       <h1>Workspace</h1>
       ${flash ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">${escapeHtml(flash)}</div>` : ""}
       ${sections.join("\n") || '<div class="card"><div class="empty">No workspace yet — one is created automatically on next deploy/boot.</div></div>'}
+
+      <div class="card">
+        <h2 style="margin-top:0;">Create a new workspace</h2>
+        <div style="color:#8a8d93;font-size:13px;margin-bottom:10px;">A workspace is a management wall — you become its owner. After creating it, invite teammates and assign agents from its section above.</div>
+        <form method="post" action="/workspaces" class="row" style="gap:8px;align-items:center;">
+          <input type="text" name="displayName" placeholder="Acme Inc. workspace" required style="flex:1;">
+          <input type="text" name="slug" placeholder="slug (optional, e.g. acme)" pattern="[A-Za-z0-9-]*" style="flex:0 0 200px;">
+          <button type="submit">Create</button>
+        </form>
+        <div style="margin-top:8px;color:#8a8d93;font-size:12px;">The slug is immutable and rides in the connector URL (<code>${escapeHtml(BASE_URL())}/mcp/w/&lt;slug&gt;</code>). Leave blank to derive it from the name.</div>
+      </div>
     </main></body></html>
   `);
+});
+
+dashboardApp.post("/workspaces", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user?.id) return c.redirect("/login");
+  const form = await c.req.formData();
+  const displayName = String(form.get("displayName") ?? "").trim();
+  const slugInput = String(form.get("slug") ?? "").trim();
+  if (!displayName) {
+    return c.redirect(`/workspaces?ok=${encodeURIComponent("Workspace name is required")}`);
+  }
+
+  // Derive slug from the explicit input, else from the display name. Ensure
+  // uniqueness by suffixing -2, -3, … just like the boot-time backfill.
+  const base = slugifyWorkspace(slugInput || displayName);
+  let slug = base;
+  for (let i = 2; await prisma.workspace.findUnique({ where: { slug } }); i++) {
+    slug = `${base}-${i}`;
+  }
+
+  await prisma.workspace.create({
+    data: {
+      slug,
+      displayName,
+      members: { create: { userId: user.id, role: "owner" } },
+    },
+  });
+  return c.redirect(`/workspaces?ok=${encodeURIComponent(`Workspace "${displayName}" created (slug: ${slug})`)}`);
 });
 
 dashboardApp.post("/workspaces/:id/invite", async (c) => {
