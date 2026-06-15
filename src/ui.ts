@@ -296,11 +296,19 @@ const CSS = `
   /* Left sidebar navigation */
   nav { position: fixed; z-index: 50; top: 0; left: 0; width: var(--sidebar-w); height: 100vh; display: flex; flex-direction: column; gap: 2px; padding: 20px 14px; border-right: 1px solid var(--border); background: var(--surface); overflow-y: auto; }
   nav .brand { display: flex; align-items: center; gap: 9px; font-weight: 700; font-size: 18px; color: var(--ink); letter-spacing: -0.03em; padding: 6px 10px 14px; }
-  nav .brand::before { content: "G"; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: linear-gradient(135deg, #635bff, #00d4ff); color: #fff; font-size: 14px; font-weight: 700; flex-shrink: 0; }
+  nav .brand .brand-mark { width: 28px; height: 28px; flex-shrink: 0; color: var(--ink); }
   .nav-links { display: flex; flex-direction: column; gap: 2px; }
   .ws-switcher { padding: 4px 10px 12px; }
   .ws-switcher label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 4px; }
   .ws-switcher select { width: 100%; padding: 7px 8px; font-size: 13px; font-weight: 600; border-radius: 8px; }
+  .ws-new-btn { width: 100%; margin-top: 6px; padding: 6px 8px; font-size: 12px; font-weight: 600; background: var(--surface); color: var(--accent); border: 1px dashed var(--border-strong); box-shadow: none; }
+  .ws-new-btn:hover { background: var(--accent-soft); color: var(--accent); transform: none; }
+  .ws-dialog { border: 1px solid var(--border); border-radius: 14px; padding: 24px; max-width: 440px; width: 90vw; box-shadow: var(--shadow-md); background: var(--surface); color: var(--ink-2); }
+  .ws-dialog::backdrop { background: rgba(15,23,42,0.4); }
+  .ws-dialog h2 { margin: 0 0 8px; }
+  .ws-dialog label { display: block; font-size: 13px; color: var(--ink-2); margin: 14px 0 4px; font-weight: 600; }
+  .ws-dialog-hint { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
+  .ws-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
   nav a { color: var(--muted); padding: 8px 10px; border-radius: 8px; font-size: 14px; font-weight: 500; white-space: nowrap; transition: background .15s ease, color .15s ease; }
   nav a:hover { background: var(--bg); color: var(--ink); text-decoration: none; }
   nav a.active { background: var(--accent-soft); color: var(--accent); }
@@ -377,7 +385,7 @@ const CSS = `
   @media (max-width: 900px) {
     nav { position: static; width: 100%; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--border); overflow-x: auto; }
     nav .brand { padding: 6px 8px; font-size: 16px; }
-    nav .brand::before { width: 24px; height: 24px; font-size: 12px; }
+    nav .brand .brand-mark { width: 24px; height: 24px; }
     .nav-links { flex-direction: row; flex-wrap: wrap; }
     .nav-foot { margin-top: 0; flex-direction: row; align-items: center; gap: 8px; border-top: 0; padding-top: 0; margin-left: auto; }
     main { margin-left: 0; padding: 24px 16px 64px; max-width: none; }
@@ -390,11 +398,27 @@ const CSS = `
 
 const NAV = (current: string, email?: string) => `
 <nav>
-  <span class="brand">grantry</span>
+  <span class="brand"><svg class="brand-mark" viewBox="0 0 176 176" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><circle cx="88" cy="88" r="76" stroke="currentColor" stroke-width="24"/><line x1="100" y1="88" x2="100" y2="169" stroke="currentColor" stroke-width="24"/><line x1="76" y1="7" x2="76" y2="88" stroke="currentColor" stroke-width="24"/><rect x="64" y="75" width="48" height="24" fill="currentColor"/></svg>grantry</span>
   <div class="ws-switcher">
     <label for="gnWs">Workspace</label>
     <select id="gnWs" aria-label="Active workspace"><option>…</option></select>
+    <button type="button" class="ws-new-btn" id="gnWsNew">+ New workspace</button>
   </div>
+  <dialog id="gnWsDialog" class="ws-dialog">
+    <form method="post" action="/workspaces">
+      <h2>Create a new workspace</h2>
+      <p class="ws-dialog-hint">A management wall — you become its owner. Invite teammates and assign agents afterward.</p>
+      <label for="gnWsName">Name</label>
+      <input type="text" id="gnWsName" name="displayName" placeholder="Acme Inc. workspace" required autocomplete="off">
+      <label for="gnWsSlug">Slug <span style="color:var(--muted);font-weight:400;">(optional)</span></label>
+      <input type="text" id="gnWsSlug" name="slug" placeholder="acme" pattern="[A-Za-z0-9-]*" autocomplete="off">
+      <p class="ws-dialog-hint">Immutable; rides in the connector URL <code>/mcp/w/&lt;slug&gt;</code>. Leave blank to derive it from the name.</p>
+      <div class="ws-dialog-actions">
+        <button type="button" class="secondary" id="gnWsCancel">Cancel</button>
+        <button type="submit">Create</button>
+      </div>
+    </form>
+  </dialog>
   <script>
   (function(){
     fetch('/api/workspaces/active',{credentials:'same-origin'})
@@ -414,6 +438,16 @@ const NAV = (current: string, email?: string) => `
           window.location.href='/workspaces/switch?ws='+encodeURIComponent(sel.value)+'&next='+encodeURIComponent(window.location.pathname+window.location.search);
         });
       }).catch(function(){});
+    var dlg=document.getElementById('gnWsDialog');
+    var openBtn=document.getElementById('gnWsNew');
+    var cancelBtn=document.getElementById('gnWsCancel');
+    if(dlg&&openBtn&&typeof dlg.showModal==='function'){
+      openBtn.addEventListener('click',function(){dlg.showModal();var n=document.getElementById('gnWsName');if(n)n.focus();});
+      if(cancelBtn)cancelBtn.addEventListener('click',function(){dlg.close();});
+      dlg.addEventListener('click',function(e){if(e.target===dlg)dlg.close();});
+    }else if(openBtn){
+      openBtn.addEventListener('click',function(){window.location.href='/workspaces';});
+    }
   })();
   </script>
   <div class="nav-links">
@@ -837,18 +871,7 @@ dashboardApp.get("/workspaces", async (c) => {
     <main>
       <h1>Workspace</h1>
       ${flash ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">${escapeHtml(flash)}</div>` : ""}
-      ${sections.join("\n") || '<div class="card"><div class="empty">No workspace yet — one is created automatically on next deploy/boot.</div></div>'}
-
-      <div class="card">
-        <h2 style="margin-top:0;">Create a new workspace</h2>
-        <div style="color:#687385;font-size:13px;margin-bottom:10px;">A workspace is a management wall — you become its owner. After creating it, invite teammates and assign agents from its section above.</div>
-        <form method="post" action="/workspaces" class="row" style="gap:8px;align-items:center;">
-          <input type="text" name="displayName" placeholder="Acme Inc. workspace" required style="flex:1;">
-          <input type="text" name="slug" placeholder="slug (optional, e.g. acme)" pattern="[A-Za-z0-9-]*" style="flex:0 0 200px;">
-          <button type="submit">Create</button>
-        </form>
-        <div style="margin-top:8px;color:#687385;font-size:12px;">The slug is immutable and rides in the connector URL (<code>${escapeHtml(BASE_URL())}/mcp/w/&lt;slug&gt;</code>). Leave blank to derive it from the name.</div>
-      </div>
+      ${sections.join("\n") || '<div class="card"><div class="empty">No workspace yet — use <b>+ New workspace</b> in the sidebar to create one.</div></div>'}
     </main></body></html>
   `);
 });
