@@ -225,26 +225,33 @@ ${scope ? `X-Grantry-Scope = "${scope}"` : ""}`;
             ? `Use one MCP server entry per tenant. Tool names stay stable; the token and <code>X-Grantry-Scope</code> lock this entry to the selected tenant.`
             : `This entry is <b>not</b> scope-locked: the token decides what it can reach, and each call picks its tenant via the <code>scope</code> argument.`}
         </p>
-        <div class="row spread" style="margin:16px 0 8px;">
-          <h3 style="font-size:14px;margin:0;color:#3c4257;">Codex <code>~/.codex/config.toml</code></h3>
-          ${copyButton("Codex", codexToml)}
-        </div>
-        <pre>${escapeHtml(codexToml)}</pre>
-        <div class="row spread" style="margin:16px 0 8px;">
-          <h3 style="font-size:14px;margin:0;color:#3c4257;">Claude Code JSON <code>~/.claude.json</code></h3>
-          ${copyButton("JSON", claudeJson)}
-        </div>
-        <pre>${escapeHtml(claudeJson)}</pre>
-        <div class="row spread" style="margin:16px 0 8px;">
-          <h3 style="font-size:14px;margin:0;color:#3c4257;">Claude Code CLI</h3>
+        <p style="font-size:13px;color:#3c4257;margin:0 0 4px;">MCP endpoint: <code>${escapeHtml(origin)}/mcp</code> — authenticate with <code>Authorization: Bearer &lt;token&gt;</code>.</p>
+
+        <div class="row spread" style="margin:20px 0 6px;">
+          <h3 style="font-size:14px;margin:0;color:#3c4257;">Claude Code <span class="badge ok">Recommended — fastest</span></h3>
           ${copyButton("CLI", claudeCli)}
         </div>
+        <p style="font-size:13px;color:#687385;margin:0 0 8px;">Run this one line in your terminal. It registers the server in <code>~/.claude.json</code> and Claude Code can use it right away — no manual file editing.</p>
         <pre>${escapeHtml(claudeCli)}</pre>
-        <div class="row spread" style="margin:16px 0 8px;">
+
+        <div class="row spread" style="margin:16px 0 6px;">
+          <h3 style="font-size:14px;margin:0;color:#3c4257;">Claude Code — manual JSON <code>~/.claude.json</code></h3>
+          ${copyButton("JSON", claudeJson)}
+        </div>
+        <p style="font-size:13px;color:#687385;margin:0 0 8px;">Prefer editing the config file directly? Merge this entry under <code>mcpServers</code>.</p>
+        <pre>${escapeHtml(claudeJson)}</pre>
+
+        <div class="row spread" style="margin:16px 0 6px;">
           <h3 style="font-size:14px;margin:0;color:#3c4257;">Claude Desktop <code>claude_desktop_config.json</code></h3>
           ${copyButton("Desktop", claudeDesktopJson)}
         </div>
         <pre>${escapeHtml(claudeDesktopJson)}</pre>
+
+        <div class="row spread" style="margin:16px 0 6px;">
+          <h3 style="font-size:14px;margin:0;color:#3c4257;">Codex <code>~/.codex/config.toml</code></h3>
+          ${copyButton("Codex", codexToml)}
+        </div>
+        <pre>${escapeHtml(codexToml)}</pre>
         ${exactToken
           ? '<p style="font-size:13px;color:#687385;margin-bottom:0;">This config includes the newly minted token. <code>Mcp-Session-Id</code> is managed by the MCP client/server handshake.</p>'
           : '<p style="font-size:13px;color:#df1b41;margin-bottom:0;">The full token is only shown when created or rotated. Rotate this agent if you need a copy-pasteable config with a fresh token.</p>'}
@@ -787,21 +794,21 @@ dashboardApp.get("/workspaces", async (c) => {
   if (!user) return c.redirect("/login");
   const flash = c.req.query("ok") ?? "";
 
-  const memberships = await prisma.workspaceMember.findMany({
-    where: { userId: user.id },
-    include: { workspace: true },
-    orderBy: { createdAt: "asc" },
-  });
+  // Slack-style isolation: this page shows ONLY the active workspace, never the
+  // full directory of memberships. Switching workspaces in the nav switcher
+  // changes the whole world — you never see another workspace's members,
+  // agents, or invites while a different one is active.
+  const { active, memberships } = await resolveActiveWorkspace(c, user.id);
 
   const sections: string[] = [];
-  for (const m of memberships) {
+  const m = active ? memberships.find((mm) => mm.workspaceId === active.id) : undefined;
+  if (m) {
     const ws = m.workspace;
     const isAdmin = m.role === "owner" || m.role === "admin";
     if (!isAdmin) {
       sections.push(`<div class="card"><b>${escapeHtml(ws.displayName)}</b> <span class="badge unscoped">${escapeHtml(m.role)}</span>
         <div style="color:#687385;font-size:13px;margin-top:6px;">Connector URL: <code>${escapeHtml(BASE_URL())}/mcp/w/${escapeHtml(ws.slug)}</code></div></div>`);
-      continue;
-    }
+    } else {
 
     const [members, agents, assignments, invites] = await Promise.all([
       prisma.workspaceMember.findMany({
@@ -886,6 +893,7 @@ dashboardApp.get("/workspaces", async (c) => {
       </tr>`).join("")}
       </tbody></table>` : ""}
     </div>`);
+    }
   }
 
   return c.html(`
@@ -4211,8 +4219,14 @@ dashboardApp.get("/audit", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
 
+  // Scope the audit log to the active workspace too, so switching workspaces
+  // changes the whole world consistently — you only see calls made by agents
+  // that live in the workspace you're currently in.
+  const wsId = await getActiveWorkspaceId(c);
   const logs = await prisma.auditLog.findMany({
-    where: { OR: [{ userId: user.id }, { agent: { ownerId: user.id } }] },
+    where: wsId
+      ? { agent: { ownerId: user.id, workspaceId: wsId } }
+      : { OR: [{ userId: user.id }, { agent: { ownerId: user.id } }] },
     take: 100,
     orderBy: { createdAt: "desc" },
     include: { agent: true },
