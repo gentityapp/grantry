@@ -325,6 +325,13 @@ const CSS = `
   .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
   .provider-icon { flex-shrink: 0; vertical-align: -4px; }
   .provider-cell { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
+  .conn-list { list-style: none; margin: 0; padding: 0; }
+  .conn-item { display: flex; align-items: center; gap: 14px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .conn-item:last-child { border-bottom: 0; }
+  .conn-item .provider-cell { width: 132px; flex-shrink: 0; }
+  .conn-auth { flex-shrink: 0; }
+  .conn-label { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conn-meta { display: flex; align-items: center; gap: 10px; margin-left: auto; white-space: nowrap; }
   .badge.scoped { background: var(--accent-soft); color: var(--accent); }
   .badge.unscoped { background: rgba(135,146,162,0.16); color: var(--muted); }
   .badge.denied { background: var(--danger-soft); color: var(--danger); }
@@ -395,6 +402,12 @@ const CSS = `
     .connection-table { min-width: 860px; }
   }
 `;
+
+// Favicon: same brand mark as the sidebar, inlined as an SVG data URI so it
+// ships on every page (including error pages) with no extra route. currentColor
+// flips with the OS theme so the mark stays visible on light and dark tab bars.
+const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 176 176"><style>svg{color:#0a2540}@media(prefers-color-scheme:dark){svg{color:#fff}}</style><circle cx="88" cy="88" r="76" stroke="currentColor" stroke-width="24" fill="none"/><line x1="100" y1="88" x2="100" y2="169" stroke="currentColor" stroke-width="24"/><line x1="76" y1="7" x2="76" y2="88" stroke="currentColor" stroke-width="24"/><rect x="64" y="75" width="48" height="24" fill="currentColor"/></svg>`;
+const FAVICON = `<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,${encodeURIComponent(FAVICON_SVG)}">`;
 
 const NAV = (current: string, email?: string) => `
 <nav>
@@ -619,7 +632,7 @@ export async function mcpAuthorizeGate(c: any): Promise<Response | null> {
   if (!agents.length) {
     return c.html(
       `<!doctype html><html><head><meta charset="utf-8"><title>No agents — grantry</title>
-      <style>${CSS} body { max-width: 420px; margin: 80px auto; padding: 0 24px; }</style></head><body>
+      ${FAVICON}<style>${CSS} body { max-width: 420px; margin: 80px auto; padding: 0 24px; }</style></head><body>
       <h1>No enabled agents</h1>
       <div class="card"><p>This connector must act as one of your grantry agents, but your account has none enabled. Create an agent in the <a href="/dashboard">dashboard</a>, then retry the connection.</p></div>
       </body></html>`,
@@ -638,7 +651,7 @@ export async function mcpAuthorizeGate(c: any): Promise<Response | null> {
     .join("");
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Choose agent — grantry</title>
-    <style>${CSS} body { max-width: 440px; margin: 60px auto; padding: 0 24px; }
+    ${FAVICON}<style>${CSS} body { max-width: 440px; margin: 60px auto; padding: 0 24px; }
     .agent-opt { display:flex; gap:10px; align-items:flex-start; padding:10px 12px; border:1px solid #30343a; border-radius:8px; margin-bottom:8px; cursor:pointer; }
     .agent-opt:hover { border-color: #58a6ff; }
     </style></head><body>
@@ -866,7 +879,7 @@ dashboardApp.get("/workspaces", async (c) => {
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Workspace — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("workspaces", user?.email)}
     <main>
       <h1>Workspace</h1>
@@ -1010,7 +1023,7 @@ dashboardApp.get("/invite/:token", async (c) => {
   });
   const page = (inner: string) => c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Workspace invite — grantry</title>
-    <style>${CSS} body { max-width: 440px; margin: 80px auto; padding: 0 24px; }</style></head><body>
+    ${FAVICON}<style>${CSS} body { max-width: 440px; margin: 80px auto; padding: 0 24px; }</style></head><body>
     <h1>Workspace invite</h1><div class="card">${inner}</div></body></html>`);
 
   if (!invite || invite.acceptedAt) return page("<p>This invite link is invalid or already used.</p>");
@@ -1168,7 +1181,7 @@ dashboardApp.get("/dashboard", async (c) => {
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("dashboard", user?.email)}
     <main>
       <h1>Dashboard</h1>
@@ -1210,7 +1223,7 @@ dashboardApp.get("/meta", async (c) => {
   if (dbUser.role !== "admin" && !bootstrapMode) {
     return c.html(`
       <!doctype html><html><head><meta charset="utf-8"><title>Meta — grantry</title>
-      <style>${CSS}</style></head><body>
+      ${FAVICON}<style>${CSS}</style></head><body>
       ${NAV("meta", dbUser?.email)}
       <main>
         <h1>Meta</h1>
@@ -1328,7 +1341,7 @@ dashboardApp.get("/meta", async (c) => {
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Meta — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("meta", dbUser?.email)}
     <main>
       <h1>Meta</h1>
@@ -1600,7 +1613,7 @@ dashboardApp.get("/login", async (c) => {
   const resetDone = c.req.query("reset") === "1";
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Sign in — grantry</title>
-    <style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
+    ${FAVICON}<style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
     <h1>Sign in to grantry</h1>
     ${resetDone ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">✓ Password updated. Sign in with your new password.</div>` : ""}
     <div class="card">
@@ -1643,7 +1656,7 @@ dashboardApp.get("/register", async (c) => {
   const { dest, oauthQuery } = postAuthDestination(c);
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Create account — grantry</title>
-    <style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
+    ${FAVICON}<style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
     <h1>Create account</h1>
     <div class="card">
       <form id="regForm">
@@ -1686,7 +1699,7 @@ dashboardApp.get("/forgot-password", async (c) => {
   const sent = c.req.query("sent") === "1";
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Forgot password — grantry</title>
-    <style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
+    ${FAVICON}<style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
     <h1>Forgot password</h1>
     ${sent ? `
     <div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">
@@ -1735,7 +1748,7 @@ dashboardApp.get("/reset-password", async (c) => {
   if (!token || error) {
     return c.html(`
       <!doctype html><html><head><meta charset="utf-8"><title>Reset password — grantry</title>
-      <style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
+      ${FAVICON}<style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
       <h1>Reset password</h1>
       <div class="card" style="border-color:#df1b41;background:rgba(255,107,107,0.08);">
         ⚠️ This reset link is invalid or has expired. <a href="/forgot-password">Request a new one</a>.
@@ -1745,7 +1758,7 @@ dashboardApp.get("/reset-password", async (c) => {
   }
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Reset password — grantry</title>
-    <style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
+    ${FAVICON}<style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
     <h1>Choose a new password</h1>
     ${err ? `<div class="card" style="border-color:#df1b41;background:rgba(255,107,107,0.08);">⚠️ ${escapeHtml(String(err))}</div>` : ""}
     <div class="card">
@@ -1807,7 +1820,7 @@ dashboardApp.get("/account", async (c) => {
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Account — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("account", user?.email)}
     <main>
       <h1>Account</h1>
@@ -1925,7 +1938,7 @@ dashboardApp.get("/tenants", async (c) => {
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Tenants — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
       <div class="row spread" style="margin-bottom:16px;">
@@ -1946,22 +1959,21 @@ dashboardApp.get("/tenants", async (c) => {
             const t = tenantBySlug.get(scope);
             const showName = t && t.displayName && t.displayName !== t.slug;
             return `<input type="checkbox" name="scopes" value="${scope}" class="rowCheck" style="margin-right:8px;transform:scale(1.2);">${showName ? `${escapeHtml(t!.displayName)} ` : ""}<span class="badge scoped">${scope}</span>`;
-          })()} ${scope !== "(unscoped)" ? `<a href="/tenants/${scope}/edit#codex-mcp" class="btn secondary" style="margin-left:8px;font-size:12px;padding:4px 10px;">Connect to Codex</a> <a href="/tenants/${scope}/edit" class="btn secondary" style="margin-left:4px;font-size:12px;padding:4px 10px;">+ Add service</a> <a href="/tenants/${scope}/edit" class="btn secondary" style="margin-left:4px;font-size:12px;padding:4px 10px;">✎ Edit</a>` : ""}</h2>
+          })()} ${scope !== "(unscoped)" ? `<a href="/tenants/${scope}/edit" class="btn secondary" style="margin-left:8px;font-size:12px;padding:4px 10px;">+ Add service</a> <a href="/tenants/${scope}/edit" class="btn secondary" style="margin-left:4px;font-size:12px;padding:4px 10px;">✎ Edit</a>` : ""}</h2>
           ${conns.length === 0 ? `<div class="empty">No connections yet. <a href="/tenants/${scope}/edit">+ Add service</a></div>` : `
-          <table>
-            <thead><tr><th>Provider</th><th>Auth</th><th>Label</th><th>Status</th><th>Created</th></tr></thead>
-            <tbody>
+          <ul class="conn-list">
             ${conns.map((c) => `
-              <tr>
-                <td><span class="provider-cell">${providerIcon(c.provider)}<code>${c.provider}</code></span></td>
-                <td><code>${c.authType}</code></td>
-                <td>${c.label}</td>
-                <td>${c.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</td>
-                <td><code>${c.createdAt.toISOString().slice(0, 10)}</code></td>
-              </tr>
+              <li class="conn-item">
+                <span class="provider-cell">${providerIcon(c.provider)}<code>${c.provider}</code></span>
+                <code class="conn-auth">${c.authType}</code>
+                <span class="conn-label">${c.label}</span>
+                <span class="conn-meta">
+                  ${c.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}
+                  <code>${c.createdAt.toISOString().slice(0, 10)}</code>
+                </span>
+              </li>
             `).join("")}
-            </tbody>
-          </table>`}
+          </ul>`}
         </div>
       `).join("")}
         `}
@@ -2046,7 +2058,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Edit ${scope} — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
       <h1>Edit tenant ${tenantRow && tenantRow.displayName !== tenantRow.slug ? `${escapeHtml(tenantRow.displayName)} ` : ""}<code>${scope}</code></h1>
@@ -2461,7 +2473,7 @@ dashboardApp.post("/tenants/:scope/sync-role-tools", async (c) => {
   const { role, addedTools, connectedTools } = await syncTenantRoleTools(user.id, scope, wsId);
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Role tools synced — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
       <h1>✓ Granted connected tools for <code>${escapeHtml(scope)}</code></h1>
@@ -2511,7 +2523,7 @@ dashboardApp.post("/tenants/:scope/codex-mcp/create", async (c) => {
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Codex MCP created — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
       <h1>Codex MCP ready for <code>${escapeHtml(scope)}</code></h1>
@@ -2558,7 +2570,7 @@ dashboardApp.post("/tenants/:scope/codex-mcp/:agentId/rotate", async (c) => {
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Codex MCP rotated — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
       <h1>Codex MCP token rotated for <code>${escapeHtml(scope)}</code></h1>
@@ -2688,7 +2700,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
 
     return c.html(`
       <!doctype html><html><head><meta charset="utf-8"><title>Saved — grantry</title>
-      <style>${CSS}</style></head><body>
+      ${FAVICON}<style>${CSS}</style></head><body>
       ${NAV("tenants", user?.email)}
       <main>
         <h1>✓ Settings saved for <code>${scope}</code></h1>
@@ -2816,7 +2828,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
 
     return c.html(`
       <!doctype html><html><head><meta charset="utf-8"><title>Service added — grantry</title>
-      <style>${CSS}</style></head><body>
+      ${FAVICON}<style>${CSS}</style></head><body>
       ${NAV("tenants", user?.email)}
       <main>
         <h1>✓ Service added to <code>${scope}</code></h1>
@@ -2864,7 +2876,7 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/recheck", async (c)
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Connection rechecked — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
       <h1>✓ Rechecked <code>${escapeHtml(conn.label)}</code></h1>
@@ -2897,7 +2909,7 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/delete", async (c) 
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Connection deleted — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
       <h1>✓ Deleted connection <code>${escapeHtml(conn.label)}</code></h1>
@@ -2939,7 +2951,7 @@ dashboardApp.get("/tenants/new", async (c) => {
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>New tenant — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
       <h1>+ New tenant</h1>
@@ -3299,7 +3311,7 @@ dashboardApp.post("/tenants/new", async (c) => {
   if (existingAgent) {
     return c.html(`
       <!doctype html><html><head><meta charset="utf-8"><title>Agent name taken — grantry</title>
-      <style>${CSS}</style></head><body>
+      ${FAVICON}<style>${CSS}</style></head><body>
       ${NAV("tenants", user?.email)}
       <main>
         <h1>⚠️  Agent name <code>${escapeHtml(agent)}</code> already exists</h1>
@@ -3482,7 +3494,7 @@ dashboardApp.post("/tenants/new", async (c) => {
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Tenant created — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
       <h1>✓ Tenant <code>${tenant}</code> created</h1>
@@ -3534,7 +3546,7 @@ dashboardApp.get("/agents", async (c) => {
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Agents — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("agents", user?.email)}
     <main>
       <div class="row spread" style="margin-bottom:16px;">
@@ -3662,7 +3674,7 @@ dashboardApp.get("/agents/new", async (c) => {
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>New agent — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("agents")}
     <main>
       <h1>+ New agent</h1>
@@ -3943,7 +3955,7 @@ dashboardApp.post("/agents/new", async (c) => {
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Agent created — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("agents")}
     <main>
       <h1>✓ Agent <code>${escapeHtml(agentRow.name)}</code> created</h1>
@@ -3989,7 +4001,7 @@ dashboardApp.get("/agents/:id", async (c) => {
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(agent.name)} — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("agents", user?.email)}
     <main>
       <h1>Agent <code>${escapeHtml(agent.name)}</code></h1>
@@ -4095,7 +4107,7 @@ dashboardApp.post("/agents/:id/rotate", async (c) => {
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Token rotated — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("agents", user?.email)}
     <main>
       <h1>✓ Token rotated for <code>${agent.name}</code></h1>
@@ -4143,7 +4155,7 @@ dashboardApp.get("/audit", async (c) => {
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Audit — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("audit", user?.email)}
     <main>
       <h1>Audit log</h1>
@@ -4630,7 +4642,7 @@ oauthApp.get("/:provider/callback", async (c) => {
   if (existingAgent) {
     return c.html(`
       <!doctype html><html><head><meta charset="utf-8"><title>Agent name taken — grantry</title>
-      <style>${CSS}</style></head><body>
+      ${FAVICON}<style>${CSS}</style></head><body>
       ${NAV("tenants", user?.email)}
       <main>
         <h1>⚠️  Agent name <code>${escapeHtml(agent)}</code> already exists</h1>
@@ -4667,7 +4679,7 @@ oauthApp.get("/:provider/callback", async (c) => {
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(providerDef.label)} connected — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
       <h1>✓ ${escapeHtml(providerDef.label)} connected · tenant <code>${effectiveTenant}</code> created</h1>
@@ -4701,7 +4713,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     const detail = err instanceof Error ? err.message : String(err);
     return c.html(`
       <!doctype html><html><head><meta charset="utf-8"><title>OAuth failed — grantry</title>
-      <style>${CSS}</style></head><body>
+      ${FAVICON}<style>${CSS}</style></head><body>
       ${NAV("tenants")}
       <main>
         <h1>⚠️  OAuth connection failed</h1>
@@ -4805,7 +4817,7 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
   if (existingAgent) {
     return c.html(`
       <!doctype html><html><head><meta charset="utf-8"><title>Agent name taken — grantry</title>
-      <style>${CSS}</style></head><body>
+      ${FAVICON}<style>${CSS}</style></head><body>
       ${NAV("tenants", user?.email)}
       <main>
         <h1>⚠️ Agent name <code>${escapeHtml(agent)}</code> already exists</h1>
@@ -4853,7 +4865,7 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Agent created — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
       <h1>✓ New agent <code>${agentRow.name}</code> added to <code>${scope}</code></h1>
@@ -4931,7 +4943,7 @@ dashboardApp.post("/tenants/:scope/delete", async (c) => {
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Deleted — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
       <h1>✓ Deleted tenant <code>${scope}</code></h1>
@@ -4976,7 +4988,7 @@ dashboardApp.post("/tenants/bulk-delete", async (c) => {
   }
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Bulk deleted — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
       <h1>✓ Bulk deleted ${scopes.length} tenant(s)</h1>
@@ -5024,7 +5036,7 @@ dashboardApp.post("/agents/bulk-delete", async (c) => {
   });
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Bulk deleted — grantry</title>
-    <style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("agents", user?.email)}
     <main>
       <h1>✓ Bulk deleted ${result.count} agent(s)</h1>
