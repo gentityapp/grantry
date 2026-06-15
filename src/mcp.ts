@@ -136,6 +136,57 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       include_tools: { type: "boolean", description: "When true, include each provider's tool names. Defaults to true." },
     };
   }
+  // --- github ---
+  if (toolName === "github/get_file_contents") {
+    return {
+      owner: { type: "string", description: "Repository owner (user or org)." },
+      repo: { type: "string", description: "Repository name." },
+      path: { type: "string", description: "File or directory path. Empty string ('') reads the repo root as a directory listing." },
+      ref: { type: "string", description: "Optional branch, tag, or commit SHA to read from." },
+    };
+  }
+  if (toolName === "github/get_repo") {
+    return {
+      owner: { type: "string", description: "Repository owner (user or org)." },
+      repo: { type: "string", description: "Repository name." },
+    };
+  }
+  if (toolName === "github/list_issues") {
+    return {
+      owner: { type: "string", description: "Repository owner (user or org)." },
+      repo: { type: "string", description: "Repository name." },
+      state: { type: "string", enum: ["open", "closed", "all"], description: "Issue state filter. Defaults to open." },
+    };
+  }
+  if (toolName === "github/create_issue") {
+    return {
+      owner: { type: "string", description: "Repository owner (user or org)." },
+      repo: { type: "string", description: "Repository name." },
+      title: { type: "string", description: "Issue title." },
+      body: { type: "string", description: "Optional issue body (Markdown)." },
+    };
+  }
+  if (toolName === "github/git_push_repo") {
+    return {
+      owner: { type: "string", description: "Repository owner (user or org)." },
+      repo: { type: "string", description: "Repository name." },
+      branch: { type: "string", description: "Target branch. Defaults to main. Created if it does not exist." },
+      commit_message: { type: "string", description: "Commit message. Defaults to 'chore: update via grantry'." },
+      files: {
+        type: "object",
+        additionalProperties: { type: "string" },
+        description: "Map of repository file path to UTF-8 text content, e.g. { \"README.md\": \"# Title\", \"src/app.ts\": \"...\" }. All files land in a single commit.",
+      },
+    };
+  }
+  if (toolName === "github/create_repo") {
+    return {
+      name: { type: "string", description: "New repository name." },
+      org: { type: "string", description: "Optional org to create the repo under. Omit to create under the authenticated user." },
+      description: { type: "string", description: "Optional repository description." },
+      private: { type: "boolean", description: "Whether the repo is private. Defaults to false." },
+    };
+  }
   if (toolName === "notion/get_page") {
     return {
       page_id: { type: "string", description: "Notion page ID." },
@@ -1820,6 +1871,12 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
 
 function requiredToolSpecificArgs(toolName: string): string[] {
   if (SYSTEM_TOOLS.includes(toolName as any)) return [];
+  if (toolName === "github/get_file_contents") return ["owner", "repo"];
+  if (toolName === "github/get_repo") return ["owner", "repo"];
+  if (toolName === "github/list_issues") return ["owner", "repo"];
+  if (toolName === "github/create_issue") return ["owner", "repo", "title"];
+  if (toolName === "github/git_push_repo") return ["owner", "repo", "files"];
+  if (toolName === "github/create_repo") return ["name"];
   if (toolName === "notion/get_page") return ["page_id"];
   if (toolName === "notion/query_db") return ["database_id"];
   if (toolName === "notion/create_page") return ["parent", "properties"];
