@@ -367,6 +367,17 @@ const CSS = `
   button:hover, .btn:hover { background: var(--accent-strong); text-decoration: none; color: #fff; transform: translateY(-1px); }
   button.secondary, .btn.secondary { background: var(--surface); color: var(--ink-2); border: 1px solid var(--border-strong); box-shadow: none; }
   button.secondary:hover, .btn.secondary:hover { background: var(--bg); color: var(--ink); transform: none; }
+  .combo { position: relative; flex: 1; }
+  .combo-btn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; background: var(--surface); color: var(--ink-2); border: 1px solid var(--border-strong); border-radius: 8px; font-weight: 400; font-size: 14px; text-align: left; box-shadow: none; }
+  .combo-btn:hover { background: var(--surface); color: var(--ink-2); transform: none; }
+  .combo-btn:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .combo-btn .combo-label { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .combo-caret { color: var(--muted); font-size: 11px; flex-shrink: 0; }
+  .combo-list { position: absolute; z-index: 60; top: calc(100% + 4px); left: 0; right: 0; max-height: 320px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-md); }
+  .combo-opt { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 14px; color: var(--ink-2); }
+  .combo-opt .combo-icon { display: inline-flex; flex-shrink: 0; }
+  .combo-opt:hover, .combo-opt.active { background: var(--accent-soft); }
+  .combo-opt[aria-selected="true"] { font-weight: 600; }
   input[type=checkbox] { accent-color: var(--accent); }
   .empty { padding: 40px; text-align: center; color: var(--muted); }
   .tool-pill { display: inline-block; padding: 2px 8px; margin: 2px; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; font-size: 11px; font-family: ui-monospace, monospace; }
@@ -2262,12 +2273,18 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         <div class="step-card">
           <h2><span class="num">+</span> New service</h2>
           <div class="field">
-            <label for="provider">Provider</label>
-            <div style="display:flex;align-items:center;gap:10px;">
-              <span id="providerIconBox" style="display:inline-flex;flex-shrink:0;">${providerIcon(availableToAdd[0].provider.key, 24)}</span>
-              <select name="provider" id="provider" required style="flex:1;">
-                ${availableToAdd.map(({ provider: p, authType }) => `<option value="${p.key}" data-auth-type="${authType}">${p.label} (${authTypeLabel(p.key, authType)})</option>`).join("")}
-              </select>
+            <label for="providerBtn">Provider</label>
+            <div class="combo" id="providerCombo">
+              <input type="hidden" name="provider" id="provider" value="${availableToAdd[0].provider.key}" required>
+              <input type="hidden" id="providerAuth" value="${availableToAdd[0].authType}">
+              <button type="button" class="combo-btn" id="providerBtn" role="combobox" aria-haspopup="listbox" aria-expanded="false" aria-controls="providerList">
+                <span class="combo-icon" id="providerIconBox" style="display:inline-flex;flex-shrink:0;">${providerIcon(availableToAdd[0].provider.key, 24)}</span>
+                <span class="combo-label" id="providerBtnLabel">${availableToAdd[0].provider.label} (${authTypeLabel(availableToAdd[0].provider.key, availableToAdd[0].authType)})</span>
+                <span class="combo-caret" aria-hidden="true">▾</span>
+              </button>
+              <ul class="combo-list" id="providerList" role="listbox" hidden>
+                ${availableToAdd.map(({ provider: p, authType }, i) => `<li class="combo-opt" role="option" data-value="${p.key}" data-auth-type="${authType}" aria-selected="${i === 0 ? "true" : "false"}"><span class="combo-icon">${providerIcon(p.key, 24)}</span><span class="combo-opt-text">${p.label} (${authTypeLabel(p.key, authType)})</span></li>`).join("")}
+              </ul>
             </div>
           </div>
           <input type="hidden" name="auth_method" id="authMethodHidden" value="">
@@ -2299,6 +2316,12 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         const PROVIDER_ICONS = ${JSON.stringify(providerIconMap(24))};
         const providerIconBox = document.getElementById('providerIconBox');
         const sel = document.getElementById('provider');
+        const providerAuth = document.getElementById('providerAuth');
+        const providerCombo = document.getElementById('providerCombo');
+        const providerBtn = document.getElementById('providerBtn');
+        const providerList = document.getElementById('providerList');
+        const providerBtnLabel = document.getElementById('providerBtnLabel');
+        const providerOpts = Array.from(providerList.querySelectorAll('.combo-opt'));
         const toolsList = document.getElementById('toolsList');
         const credHint = document.getElementById('credHint');
         const credField = document.getElementById('credential');
@@ -2315,7 +2338,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           const p = PROVIDERS[sel.value];
           if (!p) return;
           if (providerIconBox) providerIconBox.innerHTML = PROVIDER_ICONS[sel.value] || '';
-          const authType = sel.options[sel.selectedIndex].dataset.authType;
+          const authType = providerAuth.value;
           authMethodHidden.value = authType;
           const usePat = authType === "pat";
           const useOauth = authType === "oauth";
@@ -2379,7 +2402,49 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           }
           toolsList.innerHTML = p.tools.map(t => '<label style="font-weight:normal;display:block;padding:4px 0;"><input type="checkbox" name="tools" value="' + t + '" checked> <code>' + t + '</code></label>').join("");
         }
-        sel.addEventListener('change', updateUI);
+        function closeProviderList() {
+          providerList.hidden = true;
+          providerBtn.setAttribute('aria-expanded', 'false');
+        }
+        function openProviderList() {
+          providerList.hidden = false;
+          providerBtn.setAttribute('aria-expanded', 'true');
+          const active = providerList.querySelector('.combo-opt[aria-selected="true"]') || providerOpts[0];
+          if (active) active.scrollIntoView({ block: 'nearest' });
+        }
+        function selectProviderOpt(opt) {
+          providerOpts.forEach((o) => o.setAttribute('aria-selected', String(o === opt)));
+          sel.value = opt.dataset.value;
+          providerAuth.value = opt.dataset.authType;
+          providerBtnLabel.textContent = opt.querySelector('.combo-opt-text').textContent;
+          updateUI();
+        }
+        providerBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (providerList.hidden) openProviderList(); else closeProviderList();
+        });
+        providerOpts.forEach((opt) => {
+          opt.addEventListener('click', () => { selectProviderOpt(opt); closeProviderList(); providerBtn.focus(); });
+        });
+        document.addEventListener('click', (e) => {
+          if (!providerCombo.contains(e.target)) closeProviderList();
+        });
+        providerBtn.addEventListener('keydown', (e) => {
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            if (providerList.hidden) { openProviderList(); return; }
+            const cur = providerList.querySelector('.combo-opt[aria-selected="true"]') || providerOpts[0];
+            let idx = providerOpts.indexOf(cur);
+            idx = e.key === 'ArrowDown' ? Math.min(providerOpts.length - 1, idx + 1) : Math.max(0, idx - 1);
+            selectProviderOpt(providerOpts[idx]);
+            providerOpts[idx].scrollIntoView({ block: 'nearest' });
+          } else if (e.key === 'Escape') {
+            closeProviderList();
+          } else if ((e.key === 'Enter' || e.key === ' ') && !providerList.hidden) {
+            e.preventDefault();
+            closeProviderList();
+          }
+        });
         updateUI();
         document.getElementById('addConnForm').addEventListener('submit', () => {
           const selected = Array.from(document.querySelectorAll('input[name="tools"]:checked')).map(i => i.value);
