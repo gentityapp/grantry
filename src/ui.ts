@@ -697,6 +697,33 @@ async function requireWsAdmin(c: any, workspaceId: string) {
   return member ? { user, member } : null;
 }
 
+// JSON feed for the nav workspace switcher (populated client-side).
+dashboardApp.get("/api/workspaces/active", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user?.id) return c.json({ workspaces: [], activeId: null });
+  const { memberships, active } = await resolveActiveWorkspace(c, user.id);
+  return c.json({
+    activeId: active?.id ?? null,
+    workspaces: memberships.map((m) => ({
+      id: m.workspace.id,
+      slug: m.workspace.slug,
+      displayName: m.workspace.displayName,
+      role: m.role,
+    })),
+  });
+});
+
+// Set the active workspace (validated against membership) and return where we were.
+dashboardApp.get("/workspaces/switch", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user?.id) return c.redirect("/login");
+  const wsId = c.req.query("ws") ?? "";
+  const member = await prisma.workspaceMember.findFirst({ where: { workspaceId: wsId, userId: user.id } });
+  if (member) setActiveWorkspaceCookie(c, wsId);
+  const next = c.req.query("next");
+  return c.redirect(next && next.startsWith("/") ? next : "/dashboard");
+});
+
 dashboardApp.get("/workspaces", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
@@ -844,14 +871,17 @@ dashboardApp.post("/workspaces", async (c) => {
     slug = `${base}-${i}`;
   }
 
-  await prisma.workspace.create({
+  const ws = await prisma.workspace.create({
     data: {
       slug,
       displayName,
       members: { create: { userId: user.id, role: "owner" } },
     },
+    select: { id: true },
   });
-  return c.redirect(`/workspaces?ok=${encodeURIComponent(`Workspace "${displayName}" created (slug: ${slug})`)}`);
+  // Drop the creator straight into the new workspace as the active context.
+  setActiveWorkspaceCookie(c, ws.id);
+  return c.redirect(`/workspaces?ok=${encodeURIComponent(`Workspace "${displayName}" created (slug: ${slug}) — now active`)}`);
 });
 
 dashboardApp.post("/workspaces/:id/invite", async (c) => {
@@ -1098,11 +1128,14 @@ dashboardApp.get("/dashboard", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
 
+  const wsId = await getActiveWorkspaceId(c);
+  const wsWhere = wsId ? { workspaceId: wsId } : {};
   const [connectionCount, agentCount, roleCount, recentAudits] = await Promise.all([
-    prisma.connection.count({ where: { ownerId: user.id } }),
-    prisma.agent.count({ where: { ownerId: user.id } }),
-    prisma.role.count({ where: { ownerId: user.id } }),
+    prisma.connection.count({ where: { ownerId: user.id, ...wsWhere } }),
+    prisma.agent.count({ where: { ownerId: user.id, ...wsWhere } }),
+    prisma.role.count({ where: { ownerId: user.id, ...wsWhere } }),
     prisma.auditLog.findMany({
+      // Activity feed stays owner-wide so system events (no agent) still show.
       where: { OR: [{ userId: user.id }, { agent: { ownerId: user.id } }] },
       take: 10,
       orderBy: { createdAt: "desc" },
@@ -1841,13 +1874,15 @@ dashboardApp.get("/tenants", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
 
+  const wsId = await getActiveWorkspaceId(c);
+  const wsWhere = wsId ? { workspaceId: wsId } : {};
   const [tenants, connections] = await Promise.all([
     prisma.tenant.findMany({
-      where: { ownerId: user.id },
+      where: { ownerId: user.id, ...wsWhere },
       orderBy: { slug: "asc" },
     }),
     prisma.connection.findMany({
-      where: { ownerId: user.id },
+      where: { ownerId: user.id, ...wsWhere },
       orderBy: [{ scope: "asc" }, { provider: "asc" }],
     }),
   ]);
@@ -2332,7 +2367,7 @@ async function uniqueAgentName(base: string): Promise<string> {
   return `${safeBase}-${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
 }
 
-async function roleForTenantOrCreate(userId: string, scope: string) {
+async function roleForTenantOrCreate(userId: string, scope: string, workspaceId?: string | null) {
   const userIdShort = userId.slice(0, 8);
   let role = await prisma.role.findFirst({ where: { name: `${scope}-dev-${userIdShort}`, ownerId: userId } });
   if (role) return role;
@@ -2349,11 +2384,12 @@ async function roleForTenantOrCreate(userId: string, scope: string) {
       allowedTools: JSON.stringify(tools),
       allowedScopes: JSON.stringify([scope]),
       ownerId: userId,
+      workspaceId: workspaceId ?? null,
     },
   });
 }
 
-async function syncTenantRoleTools(userId: string, scope: string) {
+async function syncTenantRoleTools(userId: string, scope: string, workspaceId?: string | null) {
   const userIdShort = userId.slice(0, 8);
   const conns = await prisma.connection.findMany({
     where: { ownerId: userId, scope, enabled: true },
@@ -2369,6 +2405,7 @@ async function syncTenantRoleTools(userId: string, scope: string) {
         allowedTools: JSON.stringify(connectedTools),
         allowedScopes: JSON.stringify([scope]),
         ownerId: userId,
+        workspaceId: workspaceId ?? null,
       },
     });
     return { role, addedTools: connectedTools, connectedTools };
@@ -2396,7 +2433,9 @@ dashboardApp.post("/tenants/:scope/sync-role-tools", async (c) => {
   const scope = c.req.param("scope");
   if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
 
-  const { role, addedTools, connectedTools } = await syncTenantRoleTools(user.id, scope);
+  const tw = await prisma.tenant.findFirst({ where: { ownerId: user.id, slug: scope }, select: { workspaceId: true } });
+  const wsId = tw?.workspaceId ?? (await getActiveWorkspaceId(c));
+  const { role, addedTools, connectedTools } = await syncTenantRoleTools(user.id, scope, wsId);
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Role tools synced — grantry</title>
     <style>${CSS}</style></head><body>
@@ -2420,7 +2459,9 @@ dashboardApp.post("/tenants/:scope/codex-mcp/create", async (c) => {
   const scope = c.req.param("scope");
   if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
 
-  const role = await roleForTenantOrCreate(user.id, scope);
+  const tw = await prisma.tenant.findFirst({ where: { ownerId: user.id, slug: scope }, select: { workspaceId: true } });
+  const wsId = tw?.workspaceId ?? (await getActiveWorkspaceId(c));
+  const role = await roleForTenantOrCreate(user.id, scope, wsId);
   const existing = await prisma.agent.findFirst({
     where: {
       ownerId: user.id,
@@ -2440,6 +2481,7 @@ dashboardApp.post("/tenants/:scope/codex-mcp/create", async (c) => {
       hashedToken: tokenHash,
       tokenPrefix: token.slice(0, 16),
       ownerId: user.id,
+      workspaceId: wsId,
       roles: { create: [{ roleId: role.id }] },
     },
   });
@@ -2513,11 +2555,16 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
   const body = await c.req.parseBody();
   const action = String(body._action ?? "").trim();
 
+  // Roles/connections created here belong to the tenant's own workspace, not
+  // whatever workspace happens to be active in the cookie.
+  const tw = await prisma.tenant.findFirst({ where: { ownerId: user.id, slug: scope }, select: { workspaceId: true } });
+  const wsId = tw?.workspaceId ?? (await getActiveWorkspaceId(c));
+
   // --- save_settings: update connection labels/enabled + role desc/tools/scopes ---
   if (action === "save_settings") {
     // Tenant display name/description. The slug itself is immutable (wire key).
     if (body.tenant_display_name !== undefined || body.tenant_description !== undefined) {
-      const tenantRow = await ensureTenant(user.id, scope);
+      const tenantRow = await ensureTenant(user.id, scope, undefined, wsId);
       const displayName = String(body.tenant_display_name ?? "").trim() || scope;
       const description = String(body.tenant_description ?? "").trim() || null;
       if (displayName !== tenantRow.displayName || description !== tenantRow.description) {
@@ -2598,6 +2645,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
           allowedTools: JSON.stringify(roleTools),
           allowedScopes: JSON.stringify(roleScopes),
           ownerId: user.id,
+          workspaceId: wsId,
         },
       });
     }
@@ -2676,6 +2724,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
             allowedTools: JSON.stringify(mergedTools),
             allowedScopes: JSON.stringify([scope]),
             ownerId: user.id,
+            workspaceId: wsId,
           },
         });
       }
@@ -2685,7 +2734,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     if (!credential) return c.html("<h1>credential required</h1>", 400);
 
     // 1) Create or rotate the PAT connection for this provider/auth type.
-    const tenantRow = await ensureTenant(user.id, scope);
+    const tenantRow = await ensureTenant(user.id, scope, undefined, wsId);
     const existingConn = await prisma.connection.findFirst({
       where: { provider, authType: "pat", scope, ownerId: user.id },
     });
@@ -2708,6 +2757,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
             scope,
             tenantId: tenantRow.id,
             ownerId: user.id,
+            workspaceId: tenantRow.workspaceId ?? wsId,
             encryptedCredential: encrypt(credential),
             ...credentialMeta,
           },
@@ -2736,6 +2786,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
           allowedTools: JSON.stringify(mergedTools.length > 0 ? mergedTools : toolsForProvider(provider)),
           allowedScopes: JSON.stringify([scope]),
           ownerId: user.id,
+          workspaceId: tenantRow.workspaceId ?? wsId,
         },
       });
     }
@@ -3260,7 +3311,9 @@ dashboardApp.post("/tenants/new", async (c) => {
   // 0) Materialize the tenant entity up front, before any connections. The
   //    OAuth callback later upserts the same (ownerId, slug) and would lose
   //    the display name, so it must be recorded here.
-  const tenantRow = await ensureTenant(user.id, tenant, tenantDisplayName);
+  // A brand-new tenant is born in whatever workspace is currently active.
+  const wsId = await getActiveWorkspaceId(c);
+  const tenantRow = await ensureTenant(user.id, tenant, tenantDisplayName, wsId);
 
   // 1) Resolve each selected provider into either an immediate connection
   //    (PAT pasted, or an existing connection we reuse) or an OAuth step that
@@ -3299,6 +3352,7 @@ dashboardApp.post("/tenants/new", async (c) => {
               scope: tenant,
               tenantId: tenantRow.id,
               ownerId: user.id,
+              workspaceId: tenantRow.workspaceId ?? wsId,
               encryptedCredential: encrypt(credential),
               ...credentialMeta,
             },
@@ -3365,6 +3419,7 @@ dashboardApp.post("/tenants/new", async (c) => {
         allowedTools: JSON.stringify(desiredTools),
         allowedScopes: JSON.stringify(initialAllowedScopes),
         ownerId: user.id,
+        workspaceId: tenantRow.workspaceId ?? wsId,
       },
     });
   }
@@ -3397,6 +3452,7 @@ dashboardApp.post("/tenants/new", async (c) => {
       hashedToken: tokenHash,
       tokenPrefix: token.slice(0, 16),
       ownerId: user.id,
+      workspaceId: tenantRow.workspaceId ?? wsId,
       roles: { create: [{ roleId: role.id }] },
     },
   });
@@ -3444,12 +3500,14 @@ dashboardApp.get("/agents", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
 
+  const wsId = await getActiveWorkspaceId(c);
+  const wsWhere = wsId ? { workspaceId: wsId } : {};
   const agents = await prisma.agent.findMany({
-    where: { ownerId: user.id },
+    where: { ownerId: user.id, ...wsWhere },
     orderBy: { createdAt: "desc" },
     include: { roles: { include: { role: true } } },
   });
-  const roles = await prisma.role.findMany({ where: { ownerId: user.id }, orderBy: { name: "asc" } });
+  const roles = await prisma.role.findMany({ where: { ownerId: user.id, ...wsWhere }, orderBy: { name: "asc" } });
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Agents — grantry</title>
@@ -3824,6 +3882,7 @@ dashboardApp.post("/agents/new", async (c) => {
   // Dedicated 1:1 role, named after the agent. Role names are globally
   // unique, so suffix with the user id (same convention as the wizard).
   const userIdShort = user.id.slice(0, 8);
+  const wsId = await getActiveWorkspaceId(c);
   let roleName = `${agent}-${userIdShort}`;
   const roleClash = await prisma.role.findUnique({ where: { name: roleName } });
   if (roleClash && roleClash.ownerId !== user.id) {
@@ -3841,6 +3900,7 @@ dashboardApp.post("/agents/new", async (c) => {
           allowedTools: JSON.stringify(tools),
           allowedScopes: JSON.stringify(scopes),
           ownerId: user.id,
+          workspaceId: wsId,
         },
       });
 
@@ -3853,6 +3913,7 @@ dashboardApp.post("/agents/new", async (c) => {
       hashedToken: tokenHash,
       tokenPrefix: token.slice(0, 16),
       ownerId: user.id,
+      workspaceId: wsId,
       roles: { create: [{ roleId: role.id }] },
     },
   });
@@ -4396,7 +4457,12 @@ oauthApp.get("/:provider/callback", async (c) => {
   }
   // The wizard already created the Tenant row (with its display name); this
   // upsert only covers direct /oauth/:provider/start?tenant=… entry points.
-  const tenantRow = await ensureTenant(user.id, effectiveTenant);
+  // The active-workspace cookie survives the provider round-trip (SameSite=Lax),
+  // so a freshly-created tenant lands in the right workspace; an existing tenant
+  // keeps its own, and downstream rows inherit that via tenantRow.workspaceId.
+  const activeWsId = await getActiveWorkspaceId(c);
+  const tenantRow = await ensureTenant(user.id, effectiveTenant, undefined, activeWsId);
+  const wsId = tenantRow.workspaceId ?? activeWsId;
 
   // --- Reconnect mode: refresh an existing connection's tokens in place. ---
   // No wizard, no agent: find the tenant's connection for this provider, update
@@ -4436,11 +4502,12 @@ oauthApp.get("/:provider/callback", async (c) => {
           scope: effectiveTenant,
           tenantId: tenantRow.id,
           ownerId: user.id,
+          workspaceId: wsId,
           ...data,
         },
       });
     }
-    await syncTenantRoleTools(user.id, effectiveTenant);
+    await syncTenantRoleTools(user.id, effectiveTenant, wsId);
     return c.redirect(`/tenants/${effectiveTenant}/edit?reauthed=${encodeURIComponent(providerKey)}`);
   }
 
@@ -4461,6 +4528,7 @@ oauthApp.get("/:provider/callback", async (c) => {
       scope: effectiveTenant,
       tenantId: tenantRow.id,
       ownerId: user.id,
+      workspaceId: wsId,
       encryptedCredential: encrypt(accessToken),
       accessTokenExpiresAt: tokenJson.expires_in ? new Date(Date.now() + tokenJson.expires_in * 1000) : null,
       refreshToken: refreshToken ? encrypt(refreshToken) : undefined,
@@ -4479,7 +4547,7 @@ oauthApp.get("/:provider/callback", async (c) => {
       },
     });
   }
-  await syncTenantRoleTools(user.id, effectiveTenant);
+  await syncTenantRoleTools(user.id, effectiveTenant, wsId);
 
   // 2) Find or create role. Use the per-user role name (matching the wizard
   //    and edit flows) so a chained multi-provider creation reuses the same
@@ -4509,6 +4577,7 @@ oauthApp.get("/:provider/callback", async (c) => {
         allowedTools: JSON.stringify(desiredTools),
         allowedScopes: JSON.stringify([effectiveTenant]),
         ownerId: user.id,
+        workspaceId: wsId,
       },
     });
   }
@@ -4558,6 +4627,7 @@ oauthApp.get("/:provider/callback", async (c) => {
       hashedToken: tokenHash,
       tokenPrefix: token.slice(0, 16),
       ownerId: user.id,
+      workspaceId: wsId,
       roles: { create: [{ roleId: role.id }] },
     },
   });
@@ -4742,7 +4812,8 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
     }
   }
 
-  // Mint token + create agent
+  // Mint token + create agent — same workspace as the tenant's role.
+  const wsId = role.workspaceId ?? (await getActiveWorkspaceId(c));
   const token = `gn_agt_${crypto.randomUUID().replace(/-/g, "")}`;
   const tokenHash = await import("node:crypto").then(c => c.createHash("sha256").update(token).digest("hex"));
   const agentRow = await prisma.agent.create({
@@ -4752,6 +4823,7 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
       hashedToken: tokenHash,
       tokenPrefix: token.slice(0, 16),
       ownerId: user.id,
+      workspaceId: wsId,
       roles: { create: [{ roleId: role.id }] },
     },
   });

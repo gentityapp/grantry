@@ -12,11 +12,16 @@ import { prisma } from "./db.js";
  * from every code path that materializes a tenant (wizard, add-service, OAuth
  * callback). An existing tenant's displayName is never overwritten here —
  * renames go through the tenant settings form only.
+ *
+ * `workspaceId` places a brand-new tenant in the caller's active workspace. An
+ * existing tenant is left untouched (update is a no-op) so switching workspaces
+ * never silently re-homes another workspace's data; null workspaceIds on legacy
+ * rows are filled by the boot-time backfill, not here.
  */
-export async function ensureTenant(ownerId: string, slug: string, displayName?: string) {
+export async function ensureTenant(ownerId: string, slug: string, displayName?: string, workspaceId?: string | null) {
   return prisma.tenant.upsert({
     where: { ownerId_slug: { ownerId, slug } },
     update: {},
-    create: { ownerId, slug, displayName: displayName?.trim() || slug },
+    create: { ownerId, slug, displayName: displayName?.trim() || slug, workspaceId: workspaceId ?? null },
   });
 }
