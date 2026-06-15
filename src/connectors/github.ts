@@ -123,9 +123,35 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
     const repo = String(args.repo ?? "");
     const branch = String(args.branch ?? "main");
     const commit_message = String(args.commit_message ?? "chore: update via grantry");
-    const files = (args.files ?? {}) as Record<string, string>;
     if (!owner || !repo) throw new Error("owner and repo are required");
-    if (Object.keys(files).length === 0) throw new Error("files (object) is required");
+
+    // `files` must be a { path: content } object. Some clients send it as a JSON
+    // STRING (e.g. when the tool schema didn't advertise it as an object); accept
+    // and parse that. Critically, we must NOT fall through to Object.entries() on
+    // a raw string — that iterates the string by character index and would push
+    // one file per character (named "0", "1", "2", … with single-char contents).
+    let files: Record<string, string>;
+    {
+      let raw: unknown = args.files;
+      if (typeof raw === "string") {
+        try {
+          raw = JSON.parse(raw);
+        } catch {
+          throw new Error("files must be an object mapping path -> content (received an unparseable string)");
+        }
+      }
+      if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+        throw new Error("files must be an object mapping path -> content");
+      }
+      files = raw as Record<string, string>;
+    }
+    const fileEntries = Object.entries(files);
+    if (fileEntries.length === 0) throw new Error("files (object) is required");
+    for (const [path, content] of fileEntries) {
+      if (typeof content !== "string") {
+        throw new Error(`files["${path}"] must be a string (file content); got ${typeof content}`);
+      }
+    }
 
     const base = `https://api.github.com/repos/${owner}/${repo}/git`;
     // GitHub's secondary (abuse) rate limit answers with 429 — or 403 carrying a
@@ -169,7 +195,7 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
     // GitHub's secondary rate limit on multi-file pushes; inlining makes the
     // request count constant (~4) regardless of how many files are pushed.
     // `files` arrives as a JSON string map, so contents are already UTF-8 text.
-    const tree = Object.entries(files).map(([path, content]) => ({
+    const tree = fileEntries.map(([path, content]) => ({
       path,
       mode: "100644",
       type: "blob",
