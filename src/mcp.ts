@@ -2328,34 +2328,65 @@ async function callSystemTool(toolName: string, args: Record<string, unknown>, c
     if (!task.trim()) throw new Error("find_agent requires a 'task' description");
     const scope = args.scope === undefined || args.scope === null || args.scope === "" ? undefined : String(args.scope);
     const guessedTools = guessToolsFromTask(task);
-    // Aggregate the best match per (agent, tool) across the guessed tools.
-    const byKey = new Map<string, Awaited<ReturnType<typeof findCapableAgents>>[number]>();
+    // Gather every capable (agent, connection) match across the guessed tools.
+    const all: Awaited<ReturnType<typeof findCapableAgents>> = [];
     for (const tool of guessedTools) {
-      const matches = await findCapableAgents({ tool, scope, workspaceId: ctx.workspaceId, ownerId: ctx.ownerId });
-      for (const m of matches) {
-        const key = `${m.agentId}:${m.tool}`;
-        if (!byKey.has(key)) byKey.set(key, m);
-      }
+      all.push(...await findCapableAgents({ tool, scope, workspaceId: ctx.workspaceId, ownerId: ctx.ownerId }));
     }
-    // Charter-aware rerank: when several agents hold the same tool, nudge the
-    // one whose charter (Agent.description) overlaps the task wording. Cheap and
-    // deterministic — the real semantic pick is left to the calling model, which
-    // now sees each candidate's `charter`. Boost is capped so a strong structural
-    // signal (fresh, unambiguous credential) still outranks a weak word match.
+    // Tokens the task actually carries — used to score charter and, crucially,
+    // the *target*: which connection's scope / label / project the task names.
     const taskWords = new Set(
       task.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2),
     );
-    const charterScore = (charter: string | null): number => {
-      if (!charter || !taskWords.size) return 0;
-      const cw = charter.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2);
-      if (!cw.length) return 0;
-      const hits = cw.filter((w) => taskWords.has(w)).length;
-      return Math.min(0.15, hits * 0.05);
+    const overlap = (text: string | null, cap: number): number => {
+      if (!text || !taskWords.size) return 0;
+      const tw = text.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2);
+      if (!tw.length) return 0;
+      const hits = new Set(tw.filter((w) => taskWords.has(w))).size;
+      return Math.min(cap, hits * 0.1);
     };
-    const candidates = Array.from(byKey.values())
-      .map((m) => ({ m, score: Math.min(1, m.confidence + charterScore(m.charter)) }))
-      .sort((a, b) => b.score - a.score)
-      .map(({ m, score }) => ({ ...m, confidence: score }))
+    // Dedupe by *connection*, not agent (issue #47): ~10 agents sharing one
+    // role must not fill the result cap and hide the single agent holding the
+    // connection that actually reaches the target. Key on (tool, scope, label);
+    // keep the strongest representative agent per distinct connection.
+    // The structural signal (credential freshness, explicit scope, single
+    // connection) saturates at 0.95, so it crowns every duplicate equally. Give
+    // it only half the range and let target/charter overlap fill the rest — that
+    // headroom is what lets a real target match reorder candidates and produces
+    // a confidence that varies instead of a constant.
+    type Match = (typeof all)[number] & { targetScore: number; charterScore: number };
+    const byConn = new Map<string, Match>();
+    const rank = (x: Match) => 0.5 * x.confidence + x.targetScore + x.charterScore;
+    for (const m of all) {
+      const key = `${m.tool} ${m.connection.scope} ${m.connection.label}`;
+      const enriched: Match = {
+        ...m,
+        // Scope/label/project overlap is the issue's core fix: a task naming
+        // "production" / "agent-oauth" must rank the connection that reaches it.
+        // Provider is deliberately excluded — every same-provider candidate
+        // would match it equally, which discriminates nothing and would mask
+        // the no-match penalty below.
+        targetScore: overlap(`${m.connection.scope} ${m.connection.label}`, 0.3),
+        charterScore: overlap(m.charter, 0.15),
+      };
+      const prev = byConn.get(key);
+      if (!prev || rank(enriched) > rank(prev)) byConn.set(key, enriched);
+    }
+    // Target-aware confidence: a flat 0.95 overstates certainty on wrong
+    // answers. When the task names a concrete target and some connection's
+    // scope/label/project matches it, candidates that match *nothing* are the
+    // likely-wrong ones — penalize them so the right connection rises.
+    const matches = Array.from(byConn.values());
+    const maxTarget = matches.reduce((mx, c) => Math.max(mx, c.targetScore), 0);
+    const candidates = matches
+      .map((m) => {
+        let confidence = 0.5 * m.confidence + m.targetScore + m.charterScore;
+        if (maxTarget > 0 && m.targetScore === 0) confidence -= 0.25;
+        confidence = Math.max(0, Math.min(1, Math.round(confidence * 100) / 100));
+        const { targetScore: _t, charterScore: _c, ...rest } = m;
+        return { ...rest, confidence };
+      })
+      .sort((a, b) => b.confidence - a.confidence)
       .slice(0, 10);
     // Scope-name lane: find_agent matches tasks to *peer agents*, so a task that
     // is really just a tenant-scope name (e.g. "dev-manager") used to come back
@@ -2467,7 +2498,7 @@ function buildToolList(connections: Awaited<ReturnType<typeof connectionsForAgen
   tools.push(
     {
       name: publicToolName("grantry/find_agent"),
-      description: "grantry: find which agent in your workspace can do a described task. Each candidate carries a `charter` (what that agent is for) — when several agents hold the same tool, pick by charter, not just confidence.",
+      description: "grantry: find which agent in your workspace can do a described task. Candidates are distinct *connections* (not duplicate agents), ranked by how well the task names the connection's scope/label/project plus each agent's `charter`. Confidence reflects target match — a low score means the connection probably doesn't reach what the task describes.",
       inputSchema: {
         type: "object",
         properties: toolSpecificInputProperties("grantry/find_agent"),

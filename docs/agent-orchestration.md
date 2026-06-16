@@ -71,6 +71,14 @@ Ranking signals: exact-scope vs `[]`-any match, connection `enabled` +
 `credentialValidatedAt` freshness, `credentialMetadata` action (read/write)
 match, recent success in `AuditLog`.
 
+`grantry_find_agent` dedupes by **connection**, not agent: many agents sharing
+one role collapse to a single candidate so they can't fill the result cap and
+hide the unique connection that actually reaches the target (issue #47). On top
+of the structural signal it ranks by overlap between the task text and each
+connection's **scope / label / project name** (not the tool name alone), and
+penalizes candidates that match a contested target not at all — so the reported
+confidence varies with target fit instead of saturating at a constant.
+
 ### Two surfaces over it
 
 Same lookup, two places it shows up — differing only in how it's triggered:

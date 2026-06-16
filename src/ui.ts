@@ -1966,7 +1966,7 @@ dashboardApp.get("/tenants", async (c) => {
 
   const wsId = await getActiveWorkspaceId(c);
   const wsWhere = wsId ? { workspaceId: wsId } : {};
-  const [tenants, connections] = await Promise.all([
+  const [tenants, connections, ownerRoles] = await Promise.all([
     prisma.tenant.findMany({
       where: { ownerId: user.id, ...wsWhere },
       orderBy: { slug: "asc" },
@@ -1975,7 +1975,35 @@ dashboardApp.get("/tenants", async (c) => {
       where: { ownerId: user.id, ...wsWhere },
       orderBy: [{ scope: "asc" }, { provider: "asc" }],
     }),
+    prisma.role.findMany({
+      where: { ownerId: user.id },
+      select: {
+        allowedTools: true,
+        allowedScopes: true,
+        agents: { select: { agent: { select: { enabled: true, workspaceId: true } } } },
+      },
+    }),
   ]);
+
+  // Orphan detection (issue #47): a connection can be enabled + validated yet
+  // unreachable — green in the UI but unusable — because no bound, enabled
+  // agent holds a role that lists a tool for its provider on a scope covering
+  // it. Build the set of (provider, scope) pairs that some enabled agent can
+  // actually reach, then flag any enabled connection outside it.
+  const anyScopeProviders = new Set<string>();
+  const scopedReach = new Set<string>(); // `${provider} ${scope}`
+  for (const r of ownerRoles) {
+    const hasEnabledAgent = r.agents.some((ar) => ar.agent.enabled && (!wsId || ar.agent.workspaceId === wsId));
+    if (!hasEnabledAgent) continue;
+    const providers = new Set(safeJsonArray(r.allowedTools).map((t) => String(t).split("/")[0]).filter(Boolean));
+    const scopes = safeJsonArray(r.allowedScopes);
+    for (const p of providers) {
+      if (scopes.length === 0) anyScopeProviders.add(p);
+      else for (const s of scopes) scopedReach.add(`${p} ${s}`);
+    }
+  }
+  const isOrphan = (conn: { enabled: boolean; provider: string; scope: string | null }): boolean =>
+    conn.enabled && !(anyScopeProviders.has(conn.provider) || scopedReach.has(`${conn.provider} ${conn.scope ?? ""}`));
 
   // The tenant table drives the list (so tenants with zero connections still
   // show); connections group under their scope. Scoped connections whose
@@ -2023,6 +2051,7 @@ dashboardApp.get("/tenants", async (c) => {
                 <span class="conn-label">${c.label}</span>
                 <span class="conn-meta">
                   ${c.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}
+                  ${isOrphan(c) ? `<span class="badge denied" title="Enabled, but no bound agent holds a role granting ${escapeHtml(c.provider)}/* on scope ${escapeHtml(c.scope || "(unscoped)")}. find_agent / route can't reach it — add the provider's tools to a role bound to an agent.">no agent can use this</span>` : ""}
                   <code>${c.createdAt.toISOString().slice(0, 10)}</code>
                 </span>
               </li>
