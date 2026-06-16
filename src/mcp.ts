@@ -2337,7 +2337,26 @@ async function callSystemTool(toolName: string, args: Record<string, unknown>, c
         if (!byKey.has(key)) byKey.set(key, m);
       }
     }
-    const candidates = Array.from(byKey.values()).sort((a, b) => b.confidence - a.confidence).slice(0, 10);
+    // Charter-aware rerank: when several agents hold the same tool, nudge the
+    // one whose charter (Agent.description) overlaps the task wording. Cheap and
+    // deterministic — the real semantic pick is left to the calling model, which
+    // now sees each candidate's `charter`. Boost is capped so a strong structural
+    // signal (fresh, unambiguous credential) still outranks a weak word match.
+    const taskWords = new Set(
+      task.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2),
+    );
+    const charterScore = (charter: string | null): number => {
+      if (!charter || !taskWords.size) return 0;
+      const cw = charter.toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 2);
+      if (!cw.length) return 0;
+      const hits = cw.filter((w) => taskWords.has(w)).length;
+      return Math.min(0.15, hits * 0.05);
+    };
+    const candidates = Array.from(byKey.values())
+      .map((m) => ({ m, score: Math.min(1, m.confidence + charterScore(m.charter)) }))
+      .sort((a, b) => b.score - a.score)
+      .map(({ m, score }) => ({ ...m, confidence: score }))
+      .slice(0, 10);
     // Scope-name lane: find_agent matches tasks to *peer agents*, so a task that
     // is really just a tenant-scope name (e.g. "dev-manager") used to come back
     // empty — a false negative that reads as "no such scope". Surface any scopes
@@ -2448,7 +2467,7 @@ function buildToolList(connections: Awaited<ReturnType<typeof connectionsForAgen
   tools.push(
     {
       name: publicToolName("grantry/find_agent"),
-      description: "grantry: find which agent in your workspace can do a described task",
+      description: "grantry: find which agent in your workspace can do a described task. Each candidate carries a `charter` (what that agent is for) — when several agents hold the same tool, pick by charter, not just confidence.",
       inputSchema: {
         type: "object",
         properties: toolSpecificInputProperties("grantry/find_agent"),

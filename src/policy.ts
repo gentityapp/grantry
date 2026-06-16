@@ -235,6 +235,13 @@ export function normalizeToolName(name: unknown): string {
 export type CapableAgentMatch = {
   agentId: string;
   name: string;
+  /**
+   * The agent's charter (stored in Agent.description): a plain-language
+   * statement of what this agent is *for*. Surfaced so a calling model can
+   * pick the right agent by purpose when several share the same tool, not just
+   * by who holds the credential. Null if the agent has no charter set.
+   */
+  charter: string | null;
   /** Names of the agent's roles that grant this (tool, scope). */
   roles: string[];
   /** Scopes those roles permit for this tool; ["<any>"] if unrestricted. */
@@ -280,13 +287,13 @@ export async function findCapableAgents(args: {
   const agents = await prisma.agent.findMany({
     where: agentWhere,
     select: {
-      id: true, name: true, ownerId: true,
+      id: true, name: true, description: true, ownerId: true,
       roles: { select: { role: { select: { name: true, allowedTools: true, allowedScopes: true } } } },
     },
   });
 
   // Per agent, find the roles that grant (tool, scope) and the scopes they allow.
-  type Pre = { agentId: string; name: string; ownerId: string; roles: string[]; scopes: Set<string>; anyScope: boolean };
+  type Pre = { agentId: string; name: string; charter: string | null; ownerId: string; roles: string[]; scopes: Set<string>; anyScope: boolean };
   const pre: Pre[] = [];
   for (const a of agents) {
     if (a.id === args.excludeAgentId) continue;
@@ -309,7 +316,7 @@ export async function findCapableAgents(args: {
       }
     }
     if (matchedRoles.size) {
-      pre.push({ agentId: a.id, name: a.name, ownerId: a.ownerId, roles: Array.from(matchedRoles), scopes, anyScope });
+      pre.push({ agentId: a.id, name: a.name, charter: a.description ?? null, ownerId: a.ownerId, roles: Array.from(matchedRoles), scopes, anyScope });
     }
   }
   if (!pre.length) return [];
@@ -345,6 +352,7 @@ export async function findCapableAgents(args: {
     out.push({
       agentId: p.agentId,
       name: p.name,
+      charter: p.charter,
       roles: p.roles,
       scopes: p.anyScope ? ["<any>"] : Array.from(p.scopes),
       provider,
