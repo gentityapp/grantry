@@ -4234,6 +4234,14 @@ dashboardApp.get("/agents/:id", async (c) => {
           : '<span class="badge denied">none</span>'}</p>
       </div>
       <div class="card">
+        <h2>Charter</h2>
+        <p style="color:#687385;">What this agent is <em>for</em>, in plain language. Surfaced to <code>grantry_find_agent</code> so other agents route work here by purpose — not just by which tools you hold. Stored as the agent's description.</p>
+        <form method="post" action="/agents/${escapeHtml(agent.id)}/charter">
+          <textarea name="charter" rows="3" style="width:100%;box-sizing:border-box;" placeholder="e.g. 曖昧なGitHub issueを取得し、不足情報を補って具体化する係">${escapeHtml(agent.description ?? "")}</textarea>
+          <button type="submit" style="margin-top:8px;">Save charter</button>
+        </form>
+      </div>
+      <div class="card">
         <h2>Callable connections</h2>
         ${connections.length === 0 ? '<div class="empty">No enabled connection is callable by this agent. Check role scopes, role tools, and tenant connections.</div>' : `
         <div class="table-wrap">
@@ -4270,6 +4278,22 @@ dashboardApp.get("/agents/:id", async (c) => {
       <p><a href="/agents">← Back to agents</a></p>
     </main></body></html>
   `);
+});
+
+// --- /agents/:id/charter POST (edit the agent's charter / description) ---
+dashboardApp.post("/agents/:id/charter", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+  const id = c.req.param("id");
+  const agent = await prisma.agent.findUnique({ where: { id } });
+  if (!agent) return c.html("<h1>agent not found</h1>", 404);
+  if (agent.ownerId !== user.id) return c.html("<h1>not your agent</h1>", 403);
+
+  const body = await c.req.parseBody();
+  const charter = String(body.charter ?? "").trim();
+  await prisma.agent.update({ where: { id: agent.id }, data: { description: charter || null } });
+
+  return c.redirect(`/agents/${agent.id}`);
 });
 
 // --- /agents/:id/bind POST (rebind to a different role) ---
