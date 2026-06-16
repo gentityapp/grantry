@@ -4601,9 +4601,9 @@ oauthApp.get("/:provider/callback", async (c) => {
   }
   const redirectUri = `${publicUrl.replace(/\/+$/, "")}/oauth/${providerKey}/callback`;
 
-  // Reddit and X authenticate the confidential client with HTTP Basic auth at
-  // the token endpoint rather than client credentials in the body.
-  const usesBasicAuth = providerKey === "reddit" || providerKey === "x";
+  // Reddit, X, and Zoom authenticate the confidential client with HTTP Basic
+  // auth at the token endpoint rather than client credentials in the body.
+  const usesBasicAuth = providerKey === "reddit" || providerKey === "x" || providerKey === "zoom";
   const tokenBody = new URLSearchParams({
     client_id: clientId,
     code,
@@ -4699,6 +4699,9 @@ oauthApp.get("/:provider/callback", async (c) => {
     } else if (providerKey === "x") {
       const u: any = await (await fetch("https://api.x.com/2/users/me", { headers: { Authorization: `Bearer ${accessToken}` } })).json();
       if (u?.data?.username) userLogin = u.data.username;
+    } else if (providerKey === "zoom") {
+      const u: any = await (await fetch("https://api.zoom.us/v2/users/me", { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } })).json();
+      if (u?.email) userLogin = u.email;
     }
   } catch { /* non-fatal */ }
 

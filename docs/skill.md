@@ -225,6 +225,12 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
   `search`, `get_comments`, `submit_post`, `submit_comment`, `vote`
 - **x** (OAuth; read + write): `get_me`, `get_user`, `get_user_tweets`,
   `search_recent`, `get_tweet`, `post_tweet`, `delete_tweet`
+- **zoom** (OAuth; needs `ZOOM_CLIENT_ID` / `ZOOM_CLIENT_SECRET`, callback
+  `/oauth/zoom/callback`): `get_me`, `list_users`, `list_recordings`,
+  `get_meeting_recordings`, `list_meetings`, `get_meeting`, `create_meeting`,
+  `get_meeting_participants`. Recording tools return cloud-recording metadata +
+  per-file `download_url`s (fetch the file out-of-band; grantry returns the URL,
+  not the media bytes).
 - **discord** (Bot token; read + write): `get_me`, `list_guilds`, `get_guild`,
   `list_channels`, `get_channel`, `list_messages`, `get_message`, `send_message`,
   `edit_message`, `delete_message`, `list_members`, `get_user`

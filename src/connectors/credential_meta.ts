@@ -802,6 +802,24 @@ export async function inspectCredential(provider: string, authType: string, toke
       return { provider, authType, status: "ok", subject: { account: p.account }, notes: ["Snowflake tokens are validated on the first execute_statement call.", "Uses the SQL API v2 with Authorization: Bearer and X-Snowflake-Authorization-Token-Type."], checkedAt };
     }
 
+    if (provider === "zoom") {
+      const resp = await fetchWithTimeout("https://api.zoom.us/v2/users/me", {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) {
+        return { provider, authType, status: "error", checkedAt, error: `Zoom token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: { email: body.email, account_id: body.account_id, type: body.type },
+        notes: ["Zoom OAuth access token. Granted scopes follow the connected Zoom OAuth app's configuration."],
+        checkedAt,
+      };
+    }
+
     return {
       provider,
       authType,

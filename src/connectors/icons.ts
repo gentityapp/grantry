@@ -90,6 +90,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   moneyforward: "#3686C3", // Money Forward blue
   google_maps: "#34A853", // Google Maps green
   reddit: "#FF4500", // Reddit orange-red
+  zoom: "#2D8CFF", // Zoom blue
   x: "#000000", // X black
   airtable: "#18BFFF",
   linear: "#5E6AD2",

@@ -32,6 +32,7 @@ import { callSlackTool } from "./connectors/slack.js";
 import { callFreeeTool } from "./connectors/freee.js";
 import { callMoneyForwardTool } from "./connectors/moneyforward.js";
 import { callRedditTool } from "./connectors/reddit.js";
+import { callZoomTool } from "./connectors/zoom.js";
 import { callXTool } from "./connectors/x.js";
 import { callDiscordTool } from "./connectors/discord.js";
 import { callLineTool } from "./connectors/line.js";
@@ -1896,6 +1897,15 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "bigquery/get_table") { return { project_id: { type: "string", description: "GCP project id." }, dataset_id: { type: "string", description: "Dataset id." }, table_id: { type: "string", description: "Table id." } }; }
   if (toolName === "bigquery/query") { return { project_id: { type: "string", description: "GCP project id (billing project)." }, query: { type: "string", description: "Standard SQL query." }, max_results: { type: "number", description: "Max rows to return." }, use_legacy_sql: { type: "boolean", description: "Use legacy SQL (default false)." }, dry_run: { type: "boolean", description: "Validate without running." } }; }
   if (toolName === "bigquery/get_job") { return { project_id: { type: "string", description: "GCP project id." }, job_id: { type: "string", description: "Job id." }, location: { type: "string", description: "Job location." } }; }
+  // --- zoom ---
+  if (toolName === "zoom/get_me") { return {}; }
+  if (toolName === "zoom/list_users") { return { status: { type: "string", enum: ["active", "inactive", "pending"], description: "User status filter (default active)." }, role_id: { type: "string", description: "Filter by role id." }, page_size: { type: "number", description: "Results per page (max 300)." }, next_page_token: { type: "string", description: "Pagination token." } }; }
+  if (toolName === "zoom/list_recordings") { return { user_id: { type: "string", description: "Zoom user id or email; defaults to 'me'." }, from: { type: "string", description: "Start date YYYY-MM-DD (recordings within the last month by default)." }, to: { type: "string", description: "End date YYYY-MM-DD." }, page_size: { type: "number", description: "Results per page (max 300)." }, next_page_token: { type: "string", description: "Pagination token." }, trash: { type: "boolean", description: "List recordings in the trash." } }; }
+  if (toolName === "zoom/get_meeting_recordings") { return { meeting_id: { type: "string", description: "Meeting ID (numeric) or meeting UUID. UUIDs are handled (double-encoded) automatically." }, include_fields: { type: "string", description: "Optional extra fields, e.g. 'download_access_token'." } }; }
+  if (toolName === "zoom/list_meetings") { return { user_id: { type: "string", description: "Zoom user id or email; defaults to 'me'." }, type: { type: "string", enum: ["scheduled", "live", "upcoming", "upcoming_meetings", "previous_meetings"], description: "Meeting type filter (default scheduled)." }, page_size: { type: "number", description: "Results per page (max 300)." }, next_page_token: { type: "string", description: "Pagination token." } }; }
+  if (toolName === "zoom/get_meeting") { return { meeting_id: { type: "string", description: "Meeting ID." }, occurrence_id: { type: "string", description: "Occurrence id for recurring meetings." } }; }
+  if (toolName === "zoom/create_meeting") { return { user_id: { type: "string", description: "Host user id or email; defaults to 'me'." }, topic: { type: "string", description: "Meeting topic." }, type: { type: "number", description: "1 instant, 2 scheduled (default), 3 recurring no fixed time, 8 recurring fixed time." }, start_time: { type: "string", description: "ISO 8601 start time, e.g. 2026-06-20T09:00:00Z." }, duration: { type: "number", description: "Duration in minutes." }, timezone: { type: "string", description: "IANA timezone, e.g. Asia/Tokyo." }, agenda: { type: "string", description: "Meeting agenda." }, settings: { type: "object", description: "Zoom meeting settings object." } }; }
+  if (toolName === "zoom/get_meeting_participants") { return { meeting_id: { type: "string", description: "Meeting ID (numeric) or meeting UUID of a past meeting." }, page_size: { type: "number", description: "Results per page (max 300)." }, next_page_token: { type: "string", description: "Pagination token." } }; }
   return {};
 }
 
@@ -2133,6 +2143,10 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "bigquery/get_table") return ["project_id", "dataset_id", "table_id"];
   if (toolName === "bigquery/query") return ["project_id", "query"];
   if (toolName === "bigquery/get_job") return ["project_id", "job_id"];
+  if (toolName === "zoom/get_meeting_recordings") return ["meeting_id"];
+  if (toolName === "zoom/get_meeting") return ["meeting_id"];
+  if (toolName === "zoom/create_meeting") return ["topic"];
+  if (toolName === "zoom/get_meeting_participants") return ["meeting_id"];
   return [];
 }
 
@@ -2222,6 +2236,7 @@ async function dispatchProviderTool(
   if (provider === "freee") return callFreeeTool(toolName, args, token);
   if (provider === "moneyforward") return callMoneyForwardTool(toolName, args, token);
   if (provider === "reddit") return callRedditTool(toolName, args, token);
+  if (provider === "zoom") return callZoomTool(toolName, args, token);
   if (provider === "x") return callXTool(toolName, args, token);
   if (provider === "discord") return callDiscordTool(toolName, args, token);
   if (provider === "line") return callLineTool(toolName, args, token);
@@ -2585,9 +2600,9 @@ async function refreshOAuthToken(provider: string, refreshToken: string) {
     throw new Error(`${provider} OAuth refresh credentials missing: set ${envPrefix}_CLIENT_ID and ${envPrefix}_CLIENT_SECRET`);
   }
 
-  // Reddit and X authenticate the confidential client with HTTP Basic auth at
-  // the token endpoint rather than client credentials in the body.
-  const usesBasicAuth = provider === "reddit" || provider === "x";
+  // Reddit, X, and Zoom authenticate the confidential client with HTTP Basic
+  // auth at the token endpoint rather than client credentials in the body.
+  const usesBasicAuth = provider === "reddit" || provider === "x" || provider === "zoom";
   const refreshBody = new URLSearchParams({
     client_id: clientId,
     refresh_token: refreshToken,
