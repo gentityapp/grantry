@@ -385,6 +385,9 @@ const CSS = `
   .combo-opt .combo-icon { display: inline-flex; flex-shrink: 0; }
   .combo-opt:hover, .combo-opt.active { background: var(--accent-soft); }
   .combo-opt[aria-selected="true"] { font-weight: 600; }
+  .combo-search-row { position: sticky; top: 0; padding: 4px 4px 6px; margin: -4px -4px 4px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .combo-search-row input { width: 100%; padding: 7px 10px; font-size: 14px; }
+  .combo-empty { padding: 10px; color: var(--muted); font-size: 13px; text-align: center; }
   input[type=checkbox] { accent-color: var(--accent); }
   .empty { padding: 40px; text-align: center; color: var(--muted); }
   .tool-pill { display: inline-block; padding: 2px 8px; margin: 2px; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; font-size: 11px; font-family: ui-monospace, monospace; }
@@ -2312,7 +2315,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                 <span class="combo-caret" aria-hidden="true">▾</span>
               </button>
               <ul class="combo-list" id="providerList" role="listbox" hidden>
-                ${availableToAdd.map(({ provider: p, authType }, i) => `<li class="combo-opt" role="option" data-value="${p.key}" data-auth-type="${authType}" aria-selected="${i === 0 ? "true" : "false"}"><span class="combo-icon">${providerIcon(p.key, 24)}</span><span class="combo-opt-text">${p.label} (${authTypeLabel(p.key, authType)})</span></li>`).join("")}
+                <li class="combo-search-row" role="presentation"><input type="text" id="providerSearch" placeholder="Search providers…" autocomplete="off" aria-label="Search providers"></li>
+                ${availableToAdd.map(({ provider: p, authType }, i) => `<li class="combo-opt" role="option" data-value="${p.key}" data-auth-type="${authType}" data-search="${escapeHtml((p.label + " " + p.key + " " + authType).toLowerCase())}" aria-selected="${i === 0 ? "true" : "false"}"><span class="combo-icon">${providerIcon(p.key, 24)}</span><span class="combo-opt-text">${p.label} (${authTypeLabel(p.key, authType)})</span></li>`).join("")}
+                <li class="combo-empty" role="presentation" id="providerSearchEmpty" hidden>No providers match.</li>
               </ul>
             </div>
           </div>
@@ -2351,6 +2356,8 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         const providerList = document.getElementById('providerList');
         const providerBtnLabel = document.getElementById('providerBtnLabel');
         const providerOpts = Array.from(providerList.querySelectorAll('.combo-opt'));
+        const providerSearch = document.getElementById('providerSearch');
+        const providerSearchEmpty = document.getElementById('providerSearchEmpty');
         const toolsList = document.getElementById('toolsList');
         const credHint = document.getElementById('credHint');
         const credField = document.getElementById('credential');
@@ -2438,8 +2445,40 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         function openProviderList() {
           providerList.hidden = false;
           providerBtn.setAttribute('aria-expanded', 'true');
+          if (providerSearch) { providerSearch.value = ''; filterProviderOpts(); providerSearch.focus(); }
           const active = providerList.querySelector('.combo-opt[aria-selected="true"]') || providerOpts[0];
           if (active) active.scrollIntoView({ block: 'nearest' });
+        }
+        // Filter dropdown options against the search box (matches label, key,
+        // and auth type). Returns the visible options.
+        function filterProviderOpts() {
+          const q = (providerSearch ? providerSearch.value : '').toLowerCase().trim();
+          const terms = q.split(/\\s+/).filter(Boolean);
+          let visible = 0;
+          providerOpts.forEach((opt) => {
+            const hay = opt.dataset.search || '';
+            const match = terms.every(t => hay.indexOf(t) !== -1);
+            opt.hidden = !match;
+            if (match) visible++;
+          });
+          if (providerSearchEmpty) providerSearchEmpty.hidden = visible !== 0;
+          return providerOpts.filter(o => !o.hidden);
+        }
+        if (providerSearch) {
+          providerSearch.addEventListener('input', filterProviderOpts);
+          providerSearch.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              const vis = providerOpts.filter(o => !o.hidden);
+              if (vis.length) { selectProviderOpt(vis[0]); closeProviderList(); providerBtn.focus(); }
+            } else if (e.key === 'Escape') {
+              closeProviderList(); providerBtn.focus();
+            } else if (e.key === 'ArrowDown') {
+              e.preventDefault();
+              const vis = providerOpts.filter(o => !o.hidden);
+              if (vis.length) { selectProviderOpt(vis[0]); vis[0].scrollIntoView({ block: 'nearest' }); }
+            }
+          });
         }
         function selectProviderOpt(opt) {
           providerOpts.forEach((o) => o.setAttribute('aria-selected', String(o === opt)));
