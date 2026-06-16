@@ -1133,6 +1133,16 @@ function publicOrigin(c: any): string {
   return new URL(c.req.url).origin;
 }
 
+// The agent-facing MCP host is split from the dashboard/OAuth host on purpose so
+// the MCP URL never moves (see docs/skill.md). Connector configs and curl
+// snippets that target /mcp must advertise this host — not whatever host the
+// dashboard happens to be served on (e.g. app.grantry.ai). Falls back to the
+// dashboard origin for local dev / single-host deployments.
+function mcpOrigin(c: any): string {
+  if (process.env.MCP_PUBLIC_BASE_URL) return process.env.MCP_PUBLIC_BASE_URL.replace(/\/+$/, "");
+  return publicOrigin(c);
+}
+
 const OAUTH_LEGACY_CLIENT_ID_ALIASES: Record<string, string[]> = {
   github: ["GH_CLIENT_ID", "GRANTRY_GITHUB_CLIENT_ID"],
   google_gsc: ["GOOGLE_CLIENT_ID"],
@@ -1393,6 +1403,7 @@ dashboardApp.get("/meta", async (c) => {
           <tbody>
             <tr><td>Credential encryption secret</td><td>${okBadge(cryptoSecretPresent)}</td><td><code>FERNET_KEY</code> or <code>BETTER_AUTH_SECRET</code></td></tr>
             <tr><td>Public base URL</td><td>${okBadge(publicUrlPresent)}</td><td><code>PUBLIC_BASE_URL</code> or <code>BETTER_AUTH_URL</code></td></tr>
+            <tr><td>MCP host</td><td>${process.env.MCP_PUBLIC_BASE_URL ? okBadge(true, escapeHtml(process.env.MCP_PUBLIC_BASE_URL)) : okBadge(true, "dashboard host")}</td><td><code>MCP_PUBLIC_BASE_URL</code> — agent-facing <code>/mcp</code> URL shown in connector configs.</td></tr>
             <tr><td>Google Ads developer token</td><td>${okBadge(googleAdsDeveloperTokenPresent, googleAdsDeveloperTokenPresent ? "set" : "missing")}</td><td>Required for <code>google_ads/*</code> calls.</td></tr>
             <tr><td>Expired OAuth states</td><td>${expiredOAuthStateCount ? okBadge(false, `${expiredOAuthStateCount} expired`) : okBadge(true)}</td><td>
               <form method="post" action="/meta/oauth-states/prune" style="display:inline;">
@@ -2098,7 +2109,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           </form>
         ` : `
           <p>${codexAgents.length} token${codexAgents.length === 1 ? "" : "s"} can access this tenant. Use the first one for the default Codex config.</p>
-          ${mcpConfigBlock(publicOrigin(c), codexAgents[0].name, `${codexAgents[0].tokenPrefix}...ROTATE_TO_VIEW_FULL_TOKEN`, false, scope)}
+          ${mcpConfigBlock(mcpOrigin(c), codexAgents[0].name, `${codexAgents[0].tokenPrefix}...ROTATE_TO_VIEW_FULL_TOKEN`, false, scope)}
           <div class="table-wrap">
             <table>
               <thead><tr><th>Internal token</th><th>Status</th><th>Last used</th><th>Created</th><th>Action</th></tr></thead>
@@ -2605,7 +2616,7 @@ dashboardApp.post("/tenants/:scope/codex-mcp/create", async (c) => {
         <p><code>${escapeHtml(agent.name)}</code> is bound to <code>${escapeHtml(role.name)}</code>.</p>
       </div>
       ${agentTokenCard(token)}
-      ${mcpConfigCard(publicOrigin(c), agent.name, token, true, scope)}
+      ${mcpConfigCard(mcpOrigin(c), agent.name, token, true, scope)}
       <p><a href="/tenants/${scope}/edit#codex-mcp">← Back to ${scope}</a></p>
     </main></body></html>
   `);
@@ -2648,7 +2659,7 @@ dashboardApp.post("/tenants/:scope/codex-mcp/:agentId/rotate", async (c) => {
     <main>
       <h1>Codex MCP token rotated for <code>${escapeHtml(scope)}</code></h1>
       ${agentTokenCard(token)}
-      ${mcpConfigCard(publicOrigin(c), agent.name, token, true, scope)}
+      ${mcpConfigCard(mcpOrigin(c), agent.name, token, true, scope)}
       <p><a href="/tenants/${scope}/edit#codex-mcp">← Back to ${scope}</a></p>
     </main></body></html>
   `);
@@ -3584,15 +3595,15 @@ dashboardApp.post("/tenants/new", async (c) => {
         <p><code>${agentRow.name}</code> · bound to <code>${role.name}</code></p>
       </div>
       ${agentTokenCard(token, "⚠️  Save this token now. You won't see it again. Revoke and re-mint in <a href=\"/agents\">/agents</a> if lost.")}
-      ${mcpConfigCard(publicOrigin(c), agentRow.name, token, true, tenant)}
+      ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true, tenant)}
       <div class="card">
         <h2>Test it</h2>
-        <pre>curl -X POST ${publicOrigin(c)}/mcp \\
+        <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
   -H "Authorization: Bearer ${token}" \\
   -H "Content-Type: application/json" \\
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping"}}'</pre>
         ${providers.includes("notion") ? `
-        <pre>curl -X POST ${publicOrigin(c)}/mcp \\
+        <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
   -H "Authorization: Bearer ${token}" \\
   -H "Content-Type: application/json" \\
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"notion/list_dbs","arguments":{"scope":"${tenant}"}}}'</pre>
@@ -4037,11 +4048,11 @@ dashboardApp.post("/agents/new", async (c) => {
         <p>${managerMode ? `<span class="badge denied">all tenants (any scope, incl. future)</span>` : `Scopes: ${scopes.map((s) => `<span class="badge scoped">${s}</span>`).join(" ")}`} · ${tools.length} tools via dedicated role <code>${escapeHtml(role.name)}</code></p>
       </div>
       ${agentTokenCard(token)}
-      ${mcpConfigCard(publicOrigin(c), agentRow.name, token, true)}
+      ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true)}
       <div class="card">
         <h2>Cross-tenant calls</h2>
         <p class="field-hint" style="margin-top:0;">This config has <b>no</b> <code>X-Grantry-Scope</code> lock. Pass the target tenant per call:</p>
-        <pre>curl -X POST ${publicOrigin(c)}/mcp \\
+        <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
   -H "Authorization: Bearer ${token}" \\
   -H "Content-Type: application/json" \\
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"${tools[0]}","arguments":{"scope":"${scopes[0] ?? "&lt;any-of-your-tenants&gt;"}"}}}'</pre>
@@ -4110,15 +4121,15 @@ dashboardApp.get("/agents/:id", async (c) => {
         </div>`}
       </div>
       ${scopes.length
-        ? scopes.map((scope) => mcpConfigCard(publicOrigin(c), agent.name, tokenPlaceholder, false, scope)).join("")
-        : mcpConfigCard(publicOrigin(c), agent.name, tokenPlaceholder, false)}
+        ? scopes.map((scope) => mcpConfigCard(mcpOrigin(c), agent.name, tokenPlaceholder, false, scope)).join("")
+        : mcpConfigCard(mcpOrigin(c), agent.name, tokenPlaceholder, false)}
       <div class="card">
         <h2>Quick checks</h2>
-        <pre>curl -X POST ${publicOrigin(c)}/mcp \\
+        <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
   -H "Authorization: Bearer YOUR_FULL_AGENT_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'</pre>
-        <pre>curl -X POST ${publicOrigin(c)}/mcp \\
+        <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
   -H "Authorization: Bearer YOUR_FULL_AGENT_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{"jsonrpc":"2.0","id":2,"method":"connections/list"}'</pre>
@@ -4195,11 +4206,11 @@ dashboardApp.post("/agents/:id/rotate", async (c) => {
         <p style="font-size:13px;color:#df1b41;margin-top:8px;">⚠️  Save this token now. If you lose it, you'll need to rotate again.</p>
       </div>
       ${rotatedScopes.length
-        ? rotatedScopes.map((scope) => mcpConfigCard(publicOrigin(c), agent.name, newToken, true, scope)).join("")
-        : mcpConfigCard(publicOrigin(c), agent.name, newToken, true)}
+        ? rotatedScopes.map((scope) => mcpConfigCard(mcpOrigin(c), agent.name, newToken, true, scope)).join("")
+        : mcpConfigCard(mcpOrigin(c), agent.name, newToken, true)}
       <div class="card">
         <h2>Test the new token</h2>
-        <pre>curl -X POST ${publicOrigin(c)}/mcp \\
+        <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
   -H "Authorization: Bearer ${newToken}" \\
   -H "Content-Type: application/json" \\
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping"}}'</pre>
@@ -4782,7 +4793,7 @@ oauthApp.get("/:provider/callback", async (c) => {
         <p><code>${agentRow.name}</code> · bound to <code>${role.name}</code></p>
       </div>
       ${agentTokenCard(token, "")}
-      ${mcpConfigCard(publicOrigin(c), agentRow.name, token, true, effectiveTenant)}
+      ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true, effectiveTenant)}
       <p><a href="/tenants">← Back to tenants</a> · <a href="/agents">Manage agents</a></p>
     </main></body></html>
   `);
@@ -4958,10 +4969,10 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
         <p>Tools: ${safeJsonArray(role.allowedTools).map((t: string) => `<span class="tool-pill">${t}</span>`).join(" ")}</p>
       </div>
       ${agentTokenCard(token)}
-      ${mcpConfigCard(publicOrigin(c), agentRow.name, token, true, scope)}
+      ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true, scope)}
       <div class="card">
         <h2>Test it</h2>
-        <pre>curl -X POST ${publicOrigin(c)}/mcp \\
+        <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
   -H "Authorization: Bearer ${token}" \\
   -H "Content-Type: application/json" \\
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping"}}'</pre>
