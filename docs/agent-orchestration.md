@@ -122,6 +122,14 @@ must not act as a peer on its own initiative. So delegation is split in two:
    target agent's connection and consumes the grant. The agent drove the call;
    grantry only honored a scoped permission slip.
 
+   For this to be callable from a standard MCP client, `tools/list` advertises
+   not just the agent's *directly* usable tools but also tools reachable **only
+   by delegation** — those a capable peer under the same owner holds. Such
+   entries are flagged `(delegated — …)` and require a `grant_token`; calling one
+   without a grant is denied (with a capable-peer signpost). Otherwise the agent
+   would have no discoverable tool to attach the grant to — `delegatableToolsForAgent`
+   in `src/policy.ts` computes this set, owner-bounded to match minting.
+
 This keeps the boundary clean: orchestration ("I'm stuck → get a grant → run
 it") lives in the agent layer; grantry only ever answers "who can" and "is this
 specific call permitted." (grantry still makes the outbound provider request —

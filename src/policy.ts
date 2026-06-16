@@ -216,6 +216,74 @@ export async function connectionsForAgent(agentId: string): Promise<AgentConnect
   return out;
 }
 
+/**
+ * Tools the calling agent cannot run directly, but *could* run via a one-time
+ * delegation grant (grantry_delegate) because a capable peer under the same
+ * owner holds them. Returns tool -> set of scopes reachable by delegation.
+ *
+ * This is what lets tools/list advertise the delegated-redeem entrypoint: the
+ * docs say "mint a grant, then call the tool normally with grant_token", but a
+ * standard MCP client only ever calls tools it can see in tools/list. Without
+ * surfacing these, an agent without the capability has no tool to attach the
+ * grant to. Owner-bounded to match delegation (mint rejects cross-owner); the
+ * actual (tool, scope) is re-checked against the target at redemption, so this
+ * is advertisement only — never an authorization.
+ */
+export async function delegatableToolsForAgent(agentId: string): Promise<Map<string, Set<string>>> {
+  const result = new Map<string, Set<string>>();
+  const self = await prisma.agent.findUnique({ where: { id: agentId }, select: { ownerId: true } });
+  if (!self) return result;
+
+  // (tool, scope) pairs the caller can already invoke directly — exclude these.
+  const own = await connectionsForAgent(agentId);
+  const ownPairs = new Set<string>();
+  for (const c of own) for (const t of c.tools) ownPairs.add(`${t} ${c.scope}`);
+
+  // Delegation never crosses owners, so only peers under the same owner count.
+  const peers = await prisma.agent.findMany({
+    where: { ownerId: self.ownerId, enabled: true, id: { not: agentId } },
+    select: { roles: { select: { role: { select: { allowedTools: true, allowedScopes: true } } } } },
+  });
+  if (!peers.length) return result;
+
+  // Live connections under this owner, indexed provider -> scopes. A peer is
+  // only truly capable where an enabled connection backs the (provider, scope).
+  const conns = await prisma.connection.findMany({
+    where: { ownerId: self.ownerId, enabled: true },
+    select: { provider: true, scope: true },
+  });
+  const liveScopesByProvider = new Map<string, Set<string>>();
+  for (const cn of conns) {
+    if (!liveScopesByProvider.has(cn.provider)) liveScopesByProvider.set(cn.provider, new Set());
+    liveScopesByProvider.get(cn.provider)!.add(cn.scope);
+  }
+
+  for (const peer of peers) {
+    for (const ar of peer.roles) {
+      let allowedTools: string[] = [];
+      let allowedScopes: string[] = [];
+      try { allowedTools = JSON.parse(ar.role.allowedTools); } catch { allowedTools = []; }
+      try { allowedScopes = JSON.parse(ar.role.allowedScopes); } catch { allowedScopes = []; }
+      for (const tool of allowedTools) {
+        const provider = tool.includes("/") ? tool.split("/", 1)[0] : "";
+        const providerDef = getProvider(provider);
+        if (!provider || !providerDef || providerDef.implemented === false) continue;
+        const liveScopes = liveScopesByProvider.get(provider);
+        if (!liveScopes) continue;
+        // allowedScopes empty = any scope, so a peer reaches every live scope.
+        const scopes = allowedScopes.length ? allowedScopes : Array.from(liveScopes);
+        for (const s of scopes) {
+          if (!liveScopes.has(s)) continue;
+          if (ownPairs.has(`${tool} ${s}`)) continue;
+          if (!result.has(tool)) result.set(tool, new Set());
+          result.get(tool)!.add(s);
+        }
+      }
+    }
+  }
+  return result;
+}
+
 // ---------- Capability discovery & routing (docs/agent-orchestration.md) ----------
 
 /**

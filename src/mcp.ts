@@ -6,7 +6,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { prisma } from "./db.js";
 import { decrypt, encrypt } from "./crypto.js";
-import { checkPolicy, connectionsForAgent, findCapableAgents, guessToolsFromTask, normalizeToolName } from "./policy.js";
+import { checkPolicy, connectionsForAgent, delegatableToolsForAgent, findCapableAgents, guessToolsFromTask, normalizeToolName } from "./policy.js";
 import { PROVIDERS } from "./connectors/registry.js";
 import { callNotionTool } from "./connectors/notion.js";
 import { callGitHubTool } from "./connectors/github.js";
@@ -2467,9 +2467,17 @@ function rateLimitExceeded(agentId: string): boolean {
  * Tools advertised via tools/list, scoped to the calling agent.
  * - `ping` is always available (liveness, no policy).
  * - When `connections` is null (unauthenticated request), only `ping` is returned.
- * - Otherwise only tools that have an enabled, policy-usable connection are listed.
+ * - Tools with an enabled, policy-usable connection are listed for direct calls.
+ * - Tools reachable only via delegation (`delegatable`: a capable peer under the
+ *   same owner holds them) are also listed, so the documented redeem flow — mint
+ *   a grant_token with grantry_delegate, then call the tool normally with it — has
+ *   a discoverable entrypoint. Calling such a tool without a grant_token is denied
+ *   (with a capable-peer signpost); execution is re-authorized at redemption.
  */
-function buildToolList(connections: Awaited<ReturnType<typeof connectionsForAgent>> | null) {
+function buildToolList(
+  connections: Awaited<ReturnType<typeof connectionsForAgent>> | null,
+  delegatable: Map<string, Set<string>> = new Map(),
+) {
   const tools: any[] = [
     { name: "ping", description: "Liveness check", inputSchema: { type: "object", properties: {} } },
     {
@@ -2551,20 +2559,33 @@ function buildToolList(connections: Awaited<ReturnType<typeof connectionsForAgen
   for (const p of Object.values(PROVIDERS)) {
     if (p.implemented === false) continue;
     for (const toolName of p.tools) {
-      const scopes = Array.from(scopesByTool.get(toolName) ?? []).sort();
+      const directScopes = scopesByTool.get(toolName) ?? new Set<string>();
+      // Scopes only reachable by delegation (drop any the agent can call directly).
+      const delegScopes = new Set<string>();
+      for (const s of delegatable.get(toolName) ?? []) {
+        if (!directScopes.has(s)) delegScopes.add(s);
+      }
+      const scopes = Array.from(new Set([...directScopes, ...delegScopes])).sort();
       if (!scopes.length) continue;
       const authTypes = Array.from(authTypesByTool.get(toolName) ?? []).sort();
       const connectionIds = Array.from(connectionIdsByTool.get(toolName) ?? []).sort();
+      const action = toolName.split("/")[1]?.replace(/_/g, " ");
+      // Flag tools that are *only* reachable by delegation, so the model knows a
+      // grant_token is required rather than a direct call.
+      const delegationOnly = directScopes.size === 0;
+      const description = delegationOnly
+        ? `${p.label}: ${action} (delegated — mint a grant_token via grantry_delegate, then call with that grant_token + scope)`
+        : `${p.label}: ${action}`;
       tools.push({
         name: publicToolName(toolName),
-        description: `${p.label}: ${toolName.split("/")[1]?.replace(/_/g, " ")}`,
+        description,
         inputSchema: {
           type: "object",
           properties: {
             scope: { type: "string", enum: scopes, description: "Tenant scope. Use one of the scopes exposed for this agent token." },
             auth_type: { type: "string", enum: authTypes, description: "Optional auth type disambiguator." },
             connection_id: { type: "string", enum: connectionIds, description: "Optional connection id disambiguator." },
-            grant_token: { type: "string", description: "Optional one-time delegation grant from grantry_delegate, authorizing this exact tool+scope via a capable peer agent." },
+            grant_token: { type: "string", description: "One-time delegation grant from grantry_delegate, authorizing this exact tool+scope via a capable peer agent. Required for delegated scopes (those without a direct connection on this agent token)." },
             ...toolSpecificInputProperties(toolName),
           },
           required: ["scope", ...requiredToolSpecificArgs(toolName)],
@@ -2887,7 +2908,20 @@ const handleMcpPost = async (c: any) => {
     const connections = agent
       ? (await connectionsForAgent(agent.id)).filter((conn) => !configuredScope || conn.scope === configuredScope)
       : null;
-    return c.json({ jsonrpc: "2.0", id, result: { tools: buildToolList(connections) } });
+    // Tools the agent can reach only by delegation (a capable peer holds them).
+    // Surfaced so the mint-then-redeem flow has a callable entrypoint.
+    let delegatable = new Map<string, Set<string>>();
+    if (agent) {
+      delegatable = await delegatableToolsForAgent(agent.id);
+      if (configuredScope) {
+        for (const [tool, scopes] of delegatable) {
+          const filtered = new Set(Array.from(scopes).filter((s) => s === configuredScope));
+          if (filtered.size) delegatable.set(tool, filtered);
+          else delegatable.delete(tool);
+        }
+      }
+    }
+    return c.json({ jsonrpc: "2.0", id, result: { tools: buildToolList(connections, delegatable) } });
   }
 
   // --- connections/list: requires auth; returns the exact (provider, scope)
