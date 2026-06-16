@@ -186,8 +186,8 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 ## Providers & tools (335)
 - `ping` — liveness (returns `pong from <agent>`)
 - **grantry** (system metadata, no SaaS credential required): `get_skill`,
-  `get_providers`; plus capability discovery (token required): `find_agent`,
-  `route`, `delegate`
+  `get_providers`; plus capability discovery (token required): `list_scopes`,
+  `find_agent`, `route`, `delegate`
 - **github** (PAT or OAuth; scopes `repo`, `read:user`):
   `list_repos`, `get_repo`, `get_file_contents`, `list_issues`, `create_issue`, `git_push_repo`, `create_repo`
 - **notion** (PAT): `list_dbs`, `get_page`, `query_db`, `create_page`,
@@ -278,12 +278,24 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 - `get_skill` (read): optional `format` (`markdown`). Returns the latest
   `docs/skill.md` content plus metadata (`updated_at`, `commit_sha`, version).
 - `get_providers` (read): optional `include_tools` boolean. Returns implemented
-  provider metadata, auth types, links, and tool names.
+  provider metadata, auth types, links, and tool names. When called **with an
+  agent token**, `metadata.scopes` also lists the tenant scopes that token can
+  reach (the full per-scope detail is in `list_scopes`).
+- `list_scopes` (read, token required): no arguments. Returns the tenant
+  **scopes** this agent token can access, each with its connected `providers`
+  and the exact `connections` (`provider`, `auth_type`, `connection_id`, `label`,
+  callable `tools`). This is the authoritative answer to *"which scopes do I
+  have?"* — call it instead of guessing scope names or inferring them from a
+  server/tool name. `connections/list` returns the same data flattened by
+  connection; `list_scopes` groups it by scope.
 - `find_agent` (read, token required): `task` (plain-language description),
   optional `scope`. Answers the inverse question *"which agent can do this?"* —
   keyword-matches the task to candidate tools, then returns ranked agents in
   your workspace that can call them (with the role, scopes, and connection each
-  would use). Never returns tokens. See `docs/agent-orchestration.md`.
+  would use). Also returns `scopeMatches` (accessible scopes whose name appears
+  in the task) and, when no agent matched, a `hint` pointing at `list_scopes` —
+  so an empty `candidates` is never mistaken for "that scope doesn't exist".
+  Never returns tokens. See `docs/agent-orchestration.md`.
 - `route` (read, token required): `tool` (e.g. `railway/graphql`), optional
   `scope`, optional `action` (`read`/`write`, advisory). The structured form of
   `find_agent` when you already know the tool. Returns the same ranked

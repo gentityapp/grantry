@@ -74,6 +74,7 @@ const SKILL_URL = new URL("../docs/skill.md", import.meta.url);
 const SYSTEM_TOOLS = [
   "grantry/get_skill",
   "grantry/get_providers",
+  "grantry/list_scopes",
   "grantry/find_agent",
   "grantry/route",
   "grantry/delegate",
@@ -81,7 +82,7 @@ const SYSTEM_TOOLS = [
 
 // System tools that need the calling agent's identity (workspace boundary) and
 // therefore require authentication, unlike the public metadata tools.
-const AUTHED_SYSTEM_TOOLS = new Set<string>(["grantry/find_agent", "grantry/route", "grantry/delegate"]);
+const AUTHED_SYSTEM_TOOLS = new Set<string>(["grantry/list_scopes", "grantry/find_agent", "grantry/route", "grantry/delegate"]);
 
 // Capability-scoped delegation TTL: short by design (single-use anyway).
 const DELEGATION_TTL_MS = 5 * 60 * 1000;
@@ -146,6 +147,9 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
     return {
       include_tools: { type: "boolean", description: "When true, include each provider's tool names. Defaults to true." },
     };
+  }
+  if (toolName === "grantry/list_scopes") {
+    return {};
   }
   if (toolName === "grantry/find_agent") {
     return {
@@ -2281,11 +2285,42 @@ async function callSystemTool(toolName: string, args: Record<string, unknown>, c
   if (toolName === "grantry/get_providers") {
     const includeTools = args.include_tools !== false && args.includeTools !== false;
     const providers = getProviderMetadata(includeTools);
+    // When called with an agent token, surface the scopes this token can
+    // actually reach so the caller can discover them in the same round-trip
+    // (full detail is in grantry/list_scopes). Anonymous callers get no scopes.
+    if (ctx) {
+      const conns = await connectionsForAgent(ctx.agentId);
+      (providers.metadata as Record<string, unknown>).scopes = Array.from(new Set(conns.map((c) => c.scope))).sort();
+    }
     return {
       content: [{ type: "text", text: JSON.stringify(providers, null, 2) }],
       structuredContent: providers,
       isError: false,
     };
+  }
+  if (toolName === "grantry/list_scopes") {
+    if (!ctx) throw new Error("list_scopes requires authentication");
+    const conns = await connectionsForAgent(ctx.agentId);
+    const byScope = new Map<string, { provider: string; auth_type: string; connection_id: string; label: string; tools: string[] }[]>();
+    for (const conn of conns) {
+      if (!byScope.has(conn.scope)) byScope.set(conn.scope, []);
+      byScope.get(conn.scope)!.push({
+        provider: conn.provider,
+        auth_type: conn.authType,
+        connection_id: conn.id,
+        label: conn.label,
+        tools: conn.tools,
+      });
+    }
+    const scopes = Array.from(byScope.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([scope, connections]) => ({
+        scope,
+        providers: Array.from(new Set(connections.map((c) => c.provider))).sort(),
+        connections,
+      }));
+    const payload = { scopes, count: scopes.length };
+    return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], structuredContent: payload, isError: false };
   }
   if (toolName === "grantry/find_agent") {
     if (!ctx) throw new Error("find_agent requires authentication");
@@ -2303,7 +2338,18 @@ async function callSystemTool(toolName: string, args: Record<string, unknown>, c
       }
     }
     const candidates = Array.from(byKey.values()).sort((a, b) => b.confidence - a.confidence).slice(0, 10);
-    const payload = { task, guessedTools, candidates };
+    // Scope-name lane: find_agent matches tasks to *peer agents*, so a task that
+    // is really just a tenant-scope name (e.g. "dev-manager") used to come back
+    // empty — a false negative that reads as "no such scope". Surface any scopes
+    // this token can reach whose name appears in the task, and always point at
+    // list_scopes when nothing matched, so absence is never mistaken for proof.
+    const accessibleScopes = Array.from(new Set((await connectionsForAgent(ctx.agentId)).map((c) => c.scope)));
+    const taskLc = task.toLowerCase();
+    const scopeMatches = accessibleScopes.filter((s) => taskLc.includes(s.toLowerCase())).sort();
+    const hint = candidates.length
+      ? undefined
+      : `No peer agent matched this task. If you were after a tenant scope, call grantry_list_scopes — accessible scopes: ${accessibleScopes.sort().join(", ") || "(none)"}.`;
+    const payload = { task, guessedTools, candidates, scopeMatches, hint };
     return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], structuredContent: payload, isError: false };
   }
   if (toolName === "grantry/route") {
@@ -2416,6 +2462,15 @@ function buildToolList(connections: Awaited<ReturnType<typeof connectionsForAgen
         type: "object",
         properties: toolSpecificInputProperties("grantry/route"),
         required: ["tool"],
+      },
+    },
+    {
+      name: publicToolName("grantry/list_scopes"),
+      description: "grantry: list the tenant scopes this agent token can access, each with its connected providers and the exact `scope` strings + tools to pass to tools/call. Call this first to discover what you can reach instead of guessing scope names.",
+      inputSchema: {
+        type: "object",
+        properties: toolSpecificInputProperties("grantry/list_scopes"),
+        required: [],
       },
     },
     {
@@ -2813,8 +2868,11 @@ const handleMcpPost = async (c: any) => {
           error: { code: -32001, message: "authentication required: pass 'Authorization: Bearer gn_agt_...'" },
         }, 401);
       }
+      // Resolve identity for any authenticated caller (not just AUTHED tools):
+      // the public metadata tools (e.g. get_providers) optionally enrich their
+      // output with the caller's scopes when a token is present.
       let systemCtx: SystemToolContext | undefined;
-      if (AUTHED_SYSTEM_TOOLS.has(toolName) && agent) {
+      if (agent) {
         const self = await prisma.agent.findUnique({ where: { id: agent.id }, select: { ownerId: true, workspaceId: true } });
         if (self) systemCtx = { agentId: agent.id, ownerId: self.ownerId, workspaceId: self.workspaceId };
       }
