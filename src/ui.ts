@@ -522,6 +522,8 @@ function safeJsonObject(s: string | null | undefined): Record<string, any> {
 }
 
 function renderCredentialSummary(cn: {
+  provider?: string;
+  authType?: string;
   credentialMetadata?: string | null;
   credentialValidatedAt?: Date | null;
 }) {
@@ -539,6 +541,15 @@ function renderCredentialSummary(cn: {
   if (subject.login) parts.push(`<span style="color:#687385;font-size:12px;">@${escapeHtml(String(subject.login))}</span>`);
   if (subject.email) parts.push(`<span style="color:#687385;font-size:12px;">${escapeHtml(String(subject.email))}</span>`);
   if (!parts.length) parts.push(`<span style="color:#687385;font-size:12px;">${escapeHtml(String(meta.status))}</span>`);
+  // For PAT connections the provider's API rarely exposes the token's exact
+  // permission set, so link out to the provider's token-management page where
+  // the operator can verify the real scope of the credential.
+  if (cn.authType === "pat" && cn.provider) {
+    const def = getProvider(cn.provider);
+    if (def?.tokenUrl) {
+      parts.push(`<a href="${escapeHtml(def.tokenUrl)}" target="_blank" rel="noopener" style="font-size:12px;">Verify token permissions →</a>`);
+    }
+  }
   const validated = cn.credentialValidatedAt ? ` title="Checked ${cn.credentialValidatedAt.toISOString()}"` : "";
   return `<div class="credential-summary"${validated}>${parts.join("<br>")}</div>`;
 }
