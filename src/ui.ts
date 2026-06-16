@@ -1966,7 +1966,7 @@ dashboardApp.get("/tenants", async (c) => {
 
   const wsId = await getActiveWorkspaceId(c);
   const wsWhere = wsId ? { workspaceId: wsId } : {};
-  const [tenants, connections, ownerRoles] = await Promise.all([
+  const [tenants, connections, ownerRoles, auditErrors] = await Promise.all([
     prisma.tenant.findMany({
       where: { ownerId: user.id, ...wsWhere },
       orderBy: { slug: "asc" },
@@ -1983,7 +1983,33 @@ dashboardApp.get("/tenants", async (c) => {
         agents: { select: { agent: { select: { enabled: true, workspaceId: true } } } },
       },
     }),
+    // Recent failed calls — ground truth for "the credential authenticates but
+    // lacks a permission" (issue #47 4b). A fine-grained GitHub PAT missing
+    // issues:write returns ok on inspection yet 403s at call time; the only
+    // honest signal is the real response, captured here in AuditLog.
+    prisma.auditLog.findMany({
+      where: {
+        status: "error",
+        agent: { ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) },
+        createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+      },
+      select: { provider: true, scope: true, tool: true, errorMessage: true, createdAt: true },
+      orderBy: { createdAt: "desc" },
+      take: 500,
+    }),
   ]);
+
+  // Keep only failures that read as permission/authorization gaps (not network
+  // blips or bad args), and remember the most recent one per (provider, scope).
+  const PERMISSION_ERROR = /\b(401|403)\b|forbidden|unauthor|not accessible|insufficient|permission|missing (the )?scope|access denied/i;
+  const permGap = new Map<string, { tool: string; message: string; at: Date }>();
+  for (const log of auditErrors) {
+    if (!log.errorMessage || !PERMISSION_ERROR.test(log.errorMessage)) continue;
+    const key = `${log.provider} ${log.scope ?? ""}`;
+    if (!permGap.has(key)) permGap.set(key, { tool: log.tool, message: log.errorMessage, at: log.createdAt });
+  }
+  const permGapFor = (conn: { provider: string; scope: string | null }) =>
+    permGap.get(`${conn.provider} ${conn.scope ?? ""}`);
 
   // Orphan detection (issue #47): a connection can be enabled + validated yet
   // unreachable — green in the UI but unusable — because no bound, enabled
@@ -2052,6 +2078,7 @@ dashboardApp.get("/tenants", async (c) => {
                 <span class="conn-meta">
                   ${c.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}
                   ${isOrphan(c) ? `<span class="badge denied" title="Enabled, but no bound agent holds a role granting ${escapeHtml(c.provider)}/* on scope ${escapeHtml(c.scope || "(unscoped)")}. find_agent / route can't reach it — add the provider's tools to a role bound to an agent.">no agent can use this</span>` : ""}
+                  ${(() => { const g = permGapFor(c); return g ? `<span class="badge denied" title="Last call to ${escapeHtml(g.tool)} on ${g.at.toISOString().slice(0, 10)} failed with a permission error: ${escapeHtml(g.message.slice(0, 200))}. The credential authenticates but lacks a permission this tool needs — re-issue it with the missing scope.">permission gap</span>` : ""; })()}
                   <code>${c.createdAt.toISOString().slice(0, 10)}</code>
                 </span>
               </li>
