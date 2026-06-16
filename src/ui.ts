@@ -487,7 +487,6 @@ const NAV = (current: string, email?: string) => `
     <a href="/agents" class="${current === "agents" ? "active" : ""}">Agents</a>
     <a href="/workspaces" class="${current === "workspaces" ? "active" : ""}">Workspace</a>
     <a href="/audit" class="${current === "audit" ? "active" : ""}">Audit</a>
-    <a href="/meta" class="${current === "meta" ? "active" : ""}">Meta</a>
     <a href="/account" class="${current === "account" ? "active" : ""}">Account</a>
   </div>
   <div class="nav-foot">
@@ -1242,21 +1241,30 @@ dashboardApp.get("/dashboard", async (c) => {
   `);
 });
 
-// --- /meta — system-wide admin overview ---
-dashboardApp.get("/meta", async (c) => {
+// --- /_ops — system-wide admin overview (unlisted; not in nav, admin-only) ---
+// Access is gated to admins on this email domain. Override via OPS_DOMAIN env.
+const OPS_DOMAIN = (process.env.OPS_DOMAIN || "rootteam.co.jp").toLowerCase();
+function isOpsDomain(email: string | null | undefined): boolean {
+  return (email ?? "").toLowerCase().endsWith(`@${OPS_DOMAIN}`);
+}
+
+dashboardApp.get("/_ops", async (c) => {
   const dbUser = await getDbSessionUser(c);
   if (!dbUser) return c.redirect("/login");
 
   const adminCount = await prisma.user.count({ where: { role: "admin" } });
   const bootstrapMode = adminCount === 0;
-  if (dbUser.role !== "admin" && !bootstrapMode) {
+  // The ops view is restricted to admins whose email is on the rootteam.co.jp
+  // domain. In bootstrap mode (no admins yet) the same domain gate still applies,
+  // so only a rootteam account can promote itself to the first admin.
+  if (!isOpsDomain(dbUser.email) || (dbUser.role !== "admin" && !bootstrapMode)) {
     return c.html(`
       <!doctype html><html><head><meta charset="utf-8"><title>Meta — grantry</title>
       ${FAVICON}<style>${CSS}</style></head><body>
-      ${NAV("meta", dbUser?.email)}
+      ${NAV("_ops", dbUser?.email)}
       <main>
         <h1>Meta</h1>
-        <div class="card"><h2>Forbidden</h2><p>This screen is restricted to <code>admin</code> users.</p></div>
+        <div class="card"><h2>Forbidden</h2><p>This screen is restricted to <code>admin</code> users on the <code>${escapeHtml(OPS_DOMAIN)}</code> domain.</p></div>
       </main></body></html>
     `, 403);
   }
@@ -1371,7 +1379,7 @@ dashboardApp.get("/meta", async (c) => {
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Meta — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
-    ${NAV("meta", dbUser?.email)}
+    ${NAV("_ops", dbUser?.email)}
     <main>
       <h1>Meta</h1>
       <p style="color:#687385;margin-top:-12px;">System-wide operational view. No raw credentials are shown.</p>
@@ -1380,7 +1388,7 @@ dashboardApp.get("/meta", async (c) => {
       <div class="card" style="border-color:#f0b429;background:rgba(240,180,41,0.08);">
         <h2>Admin bootstrap required</h2>
         <p>No admin user exists yet. You are viewing this screen because the system has zero admins.</p>
-        <form method="post" action="/meta/promote-self" onsubmit="return confirm('Promote your account to admin?')">
+        <form method="post" action="/_ops/promote-self" onsubmit="return confirm('Promote your account to admin?')">
           <button type="submit">Promote me to admin</button>
         </form>
       </div>` : ""}
@@ -1406,7 +1414,7 @@ dashboardApp.get("/meta", async (c) => {
             <tr><td>MCP host</td><td>${process.env.MCP_PUBLIC_BASE_URL ? okBadge(true, escapeHtml(process.env.MCP_PUBLIC_BASE_URL)) : okBadge(true, "dashboard host")}</td><td><code>MCP_PUBLIC_BASE_URL</code> — agent-facing <code>/mcp</code> URL shown in connector configs.</td></tr>
             <tr><td>Google Ads developer token</td><td>${okBadge(googleAdsDeveloperTokenPresent, googleAdsDeveloperTokenPresent ? "set" : "missing")}</td><td>Required for <code>google_ads/*</code> calls.</td></tr>
             <tr><td>Expired OAuth states</td><td>${expiredOAuthStateCount ? okBadge(false, `${expiredOAuthStateCount} expired`) : okBadge(true)}</td><td>
-              <form method="post" action="/meta/oauth-states/prune" style="display:inline;">
+              <form method="post" action="/_ops/oauth-states/prune" style="display:inline;">
                 <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;" ${expiredOAuthStateCount ? "" : "disabled"}>Prune expired</button>
               </form>
             </td></tr>
@@ -1598,22 +1606,24 @@ dashboardApp.get("/meta", async (c) => {
   `);
 });
 
-dashboardApp.post("/meta/promote-self", async (c) => {
+dashboardApp.post("/_ops/promote-self", async (c) => {
   const dbUser = await getDbSessionUser(c);
   if (!dbUser) return c.redirect("/login");
+  if (!isOpsDomain(dbUser.email)) return c.html(`<h1>restricted to ${escapeHtml(OPS_DOMAIN)}</h1>`, 403);
   const adminCount = await prisma.user.count({ where: { role: "admin" } });
   if (adminCount > 0 && dbUser.role !== "admin") return c.html("<h1>admin already exists</h1>", 403);
   await prisma.user.update({ where: { id: dbUser.id }, data: { role: "admin" } });
-  return c.redirect("/meta");
+  return c.redirect("/_ops");
 });
 
-dashboardApp.post("/meta/oauth-states/prune", async (c) => {
+dashboardApp.post("/_ops/oauth-states/prune", async (c) => {
   const dbUser = await getDbSessionUser(c);
   if (!dbUser) return c.redirect("/login");
+  if (!isOpsDomain(dbUser.email)) return c.html(`<h1>restricted to ${escapeHtml(OPS_DOMAIN)}</h1>`, 403);
   const adminCount = await prisma.user.count({ where: { role: "admin" } });
   if (dbUser.role !== "admin" && adminCount > 0) return c.html("<h1>admin required</h1>", 403);
   const result = await prisma.oAuthState.deleteMany({ where: { expiresAt: { lt: new Date() } } });
-  return c.redirect(`/meta?pruned=${result.count}`);
+  return c.redirect(`/_ops?pruned=${result.count}`);
 });
 
 // --- /login ---
@@ -3087,6 +3097,8 @@ dashboardApp.get("/tenants/new", async (c) => {
         <div class="step-card">
           <h2><span class="num">2</span> Providers</h2>
           <p class="field-hint" style="margin-top:0;">Pick one or more services to wire into this tenant. Each one gets its own connection; you can tune which tools each enables.</p>
+          <input type="text" id="providerSearch" placeholder="Search providers… (e.g. notion, github, oauth)" autocomplete="off" style="margin-bottom:12px;">
+          <p class="field-hint" id="providerSearchEmpty" style="display:none;margin-top:0;">No providers match your search.</p>
           ${providerAuthOptions.map(({ provider: p, authType }) => {
             const authLabel = authTypeLabel(p.key, authType);
             const hasPat = p.authTypes.includes("pat");
@@ -3205,6 +3217,27 @@ dashboardApp.get("/tenants/new", async (c) => {
         }
 
         function updateAllBlocks() { blocks.forEach(updateBlock); }
+
+        // Filter provider blocks by a free-text query matched against the
+        // provider label, key and auth type. Multiple space-separated terms
+        // must all match (AND).
+        const providerSearch = document.getElementById('providerSearch');
+        const providerSearchEmpty = document.getElementById('providerSearchEmpty');
+        function filterProviders() {
+          const terms = providerSearch.value.toLowerCase().split(/\\s+/).filter(Boolean);
+          let visible = 0;
+          blocks.forEach((block) => {
+            const key = (block.dataset.provider || '');
+            const authType = (block.dataset.authType || '');
+            const label = (PROVIDERS[key] ? PROVIDERS[key].label : key).toLowerCase();
+            const haystack = key + ' ' + label + ' ' + authType;
+            const match = terms.every(t => haystack.indexOf(t) !== -1);
+            block.style.display = match ? '' : 'none';
+            if (match) visible++;
+          });
+          providerSearchEmpty.style.display = visible === 0 ? '' : 'none';
+        }
+        providerSearch.addEventListener('input', filterProviders);
 
         blocks.forEach((block) => {
           block.querySelector('.provider-check').addEventListener('change', () => updateBlock(block));
@@ -3830,8 +3863,8 @@ dashboardApp.get("/agents/new", async (c) => {
             <h2 style="color:#e5534b;margin-top:0;">⚠ Full-tenant access</h2>
             <p style="margin-top:0;">
               This token can call the selected tools against <b>every tenant you own — now and in the future</b>.
-              If it leaks, your entire footprint is exposed at once. It also appears under
-              <a href="/meta">Meta → Broad or unused roles</a> as <span class="badge denied">any-scope</span>.
+              If it leaks, your entire footprint is exposed at once. It is also flagged
+              as a broad or unused role with <span class="badge denied">any-scope</span>.
             </p>
             <label style="cursor:pointer;display:flex;align-items:center;gap:8px;font-weight:600;">
               <input type="checkbox" id="managerConfirm" name="manager_confirm" style="transform:scale(1.2);">
