@@ -1,7 +1,7 @@
 // Policy enforcement: check if an agent can call a (tool, scope) pair
 // given the role bindings the agent has.
 import { prisma } from "./db.js";
-import { getProvider } from "./connectors/registry.js";
+import { getProvider, PROVIDERS } from "./connectors/registry.js";
 
 export type PolicyDecision = {
   allowed: boolean;
@@ -214,4 +214,178 @@ export async function connectionsForAgent(agentId: string): Promise<AgentConnect
     out.push({ id: cn.id, provider: cn.provider, authType: cn.authType, scope: cn.scope, label: cn.label, tools: Array.from(tools).sort() });
   }
   return out;
+}
+
+// ---------- Capability discovery & routing (docs/agent-orchestration.md) ----------
+
+/**
+ * Accept either the canonical "provider/tool" form or the public "provider_tool"
+ * form (as advertised in tools/list) and return the canonical name.
+ */
+export function normalizeToolName(name: unknown): string {
+  const raw = String(name ?? "");
+  if (!raw || raw.includes("/")) return raw;
+  for (const p of Object.values(PROVIDERS)) {
+    const matched = p.tools.find((t) => t.replace("/", "_") === raw);
+    if (matched) return matched;
+  }
+  return raw;
+}
+
+export type CapableAgentMatch = {
+  agentId: string;
+  name: string;
+  /** Names of the agent's roles that grant this (tool, scope). */
+  roles: string[];
+  /** Scopes those roles permit for this tool; ["<any>"] if unrestricted. */
+  scopes: string[];
+  provider: string;
+  tool: string;
+  /** The enabled connection the agent would use. */
+  connection: { authType: string; scope: string; enabled: boolean; label: string; validatedAt: string | null };
+  /** 0..1 ranking score; see findCapableAgents for the signals. */
+  confidence: number;
+};
+
+/**
+ * Inverse lookup: which agents *can* call `tool` (optionally on `scope`)?
+ * Mirrors checkPolicy's three conditions, but fans out across every agent in
+ * the visibility boundary instead of checking one:
+ *   - a bound role lists the tool, with the scope permitted (or unrestricted),
+ *   - an enabled Connection exists for (provider, scope) under that agent's owner.
+ *
+ * Boundary: `workspaceId` (the management wall) when set, else `ownerId` for
+ * legacy workspace-less agents. Returns only fully-capable agents (a live
+ * connection exists), ranked by confidence. Never returns tokens.
+ */
+export async function findCapableAgents(args: {
+  tool: string;
+  scope?: string;
+  workspaceId?: string | null;
+  ownerId?: string;
+  /** Omit the agent that just got denied, so the signpost points elsewhere. */
+  excludeAgentId?: string;
+}): Promise<CapableAgentMatch[]> {
+  const tool = normalizeToolName(args.tool);
+  const scope = args.scope === undefined || args.scope === null || args.scope === "" ? undefined : String(args.scope);
+  const [provider] = tool.includes("/") ? tool.split("/", 2) : ["", tool];
+  const providerDef = getProvider(provider);
+  if (!provider || !providerDef || providerDef.implemented === false) return [];
+
+  const agentWhere: any = { enabled: true };
+  if (args.workspaceId) agentWhere.workspaceId = args.workspaceId;
+  else if (args.ownerId) agentWhere.ownerId = args.ownerId;
+  else return [];
+
+  const agents = await prisma.agent.findMany({
+    where: agentWhere,
+    select: {
+      id: true, name: true, ownerId: true,
+      roles: { select: { role: { select: { name: true, allowedTools: true, allowedScopes: true } } } },
+    },
+  });
+
+  // Per agent, find the roles that grant (tool, scope) and the scopes they allow.
+  type Pre = { agentId: string; name: string; ownerId: string; roles: string[]; scopes: Set<string>; anyScope: boolean };
+  const pre: Pre[] = [];
+  for (const a of agents) {
+    if (a.id === args.excludeAgentId) continue;
+    const matchedRoles = new Set<string>();
+    const scopes = new Set<string>();
+    let anyScope = false;
+    for (const ar of a.roles) {
+      let allowedTools: string[] = [];
+      let allowedScopes: string[] = [];
+      try { allowedTools = JSON.parse(ar.role.allowedTools); } catch { allowedTools = []; }
+      try { allowedScopes = JSON.parse(ar.role.allowedScopes); } catch { allowedScopes = []; }
+      if (!allowedTools.includes(tool)) continue;
+      if (allowedScopes.length === 0) {
+        anyScope = true;
+        matchedRoles.add(ar.role.name);
+      } else {
+        if (scope !== undefined && !allowedScopes.includes(scope)) continue;
+        for (const s of allowedScopes) scopes.add(s);
+        matchedRoles.add(ar.role.name);
+      }
+    }
+    if (matchedRoles.size) {
+      pre.push({ agentId: a.id, name: a.name, ownerId: a.ownerId, roles: Array.from(matchedRoles), scopes, anyScope });
+    }
+  }
+  if (!pre.length) return [];
+
+  // Enabled connections for the provider within the boundary.
+  const connWhere: any = { provider, enabled: true };
+  if (args.workspaceId) connWhere.workspaceId = args.workspaceId;
+  else connWhere.ownerId = args.ownerId;
+  if (scope !== undefined) connWhere.scope = scope;
+  const conns = await prisma.connection.findMany({
+    where: connWhere,
+    select: { ownerId: true, scope: true, authType: true, label: true, enabled: true, credentialValidatedAt: true },
+  });
+
+  const FRESH_MS = 30 * 24 * 60 * 60 * 1000;
+  const out: CapableAgentMatch[] = [];
+  for (const p of pre) {
+    const usable = conns.filter((cn) =>
+      cn.ownerId === p.ownerId && (p.anyScope || p.scopes.has(cn.scope))
+    );
+    if (!usable.length) continue;
+    usable.sort((x, y) => (y.credentialValidatedAt?.getTime() ?? 0) - (x.credentialValidatedAt?.getTime() ?? 0));
+    const best = usable[0];
+
+    let confidence = 0.5;
+    // Explicit scope grant (vs allowedScopes=[] "any") is a stronger signal.
+    if (!p.anyScope) confidence += 0.2;
+    if (best.credentialValidatedAt && Date.now() - best.credentialValidatedAt.getTime() < FRESH_MS) confidence += 0.15;
+    // Unambiguous: exactly one connection the agent could use.
+    if (usable.length === 1) confidence += 0.1;
+    confidence = Math.min(1, Math.round(confidence * 100) / 100);
+
+    out.push({
+      agentId: p.agentId,
+      name: p.name,
+      roles: p.roles,
+      scopes: p.anyScope ? ["<any>"] : Array.from(p.scopes),
+      provider,
+      tool,
+      connection: {
+        authType: best.authType,
+        scope: best.scope,
+        enabled: best.enabled,
+        label: best.label,
+        validatedAt: best.credentialValidatedAt?.toISOString() ?? null,
+      },
+      confidence,
+    });
+  }
+  out.sort((a, b) => b.confidence - a.confidence);
+  return out;
+}
+
+/**
+ * Best-effort translation of a natural-language task to candidate canonical
+ * tool names, by keyword-matching against the provider catalog. Deterministic
+ * (no LLM): the calling model can refine via grantry/route. See the design
+ * doc's "NL translation home" open question.
+ */
+export function guessToolsFromTask(task: string): string[] {
+  const t = String(task ?? "").toLowerCase();
+  if (!t.trim()) return [];
+  const scored: { tool: string; score: number }[] = [];
+  for (const p of Object.values(PROVIDERS)) {
+    if (p.implemented === false) continue;
+    const providerHit = t.includes(p.key.replace(/_/g, " ")) || t.includes(p.key) ||
+      (p.label ? t.includes(p.label.toLowerCase()) : false);
+    for (const tool of p.tools) {
+      const action = tool.split("/")[1] ?? "";
+      let score = providerHit ? 2 : 0;
+      for (const w of action.split("_")) {
+        if (w.length > 2 && t.includes(w)) score += 1;
+      }
+      if (score > 0) scored.push({ tool, score });
+    }
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, 8).map((s) => s.tool);
 }

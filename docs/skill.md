@@ -186,7 +186,8 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 ## Providers & tools (335)
 - `ping` — liveness (returns `pong from <agent>`)
 - **grantry** (system metadata, no SaaS credential required): `get_skill`,
-  `get_providers`
+  `get_providers`; plus capability discovery (token required): `find_agent`,
+  `route`, `delegate`
 - **github** (PAT or OAuth; scopes `repo`, `read:user`):
   `list_repos`, `get_repo`, `get_file_contents`, `list_issues`, `create_issue`, `git_push_repo`, `create_repo`
 - **notion** (PAT): `list_dbs`, `get_page`, `query_db`, `create_page`,
@@ -272,6 +273,35 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
   `docs/skill.md` content plus metadata (`updated_at`, `commit_sha`, version).
 - `get_providers` (read): optional `include_tools` boolean. Returns implemented
   provider metadata, auth types, links, and tool names.
+- `find_agent` (read, token required): `task` (plain-language description),
+  optional `scope`. Answers the inverse question *"which agent can do this?"* —
+  keyword-matches the task to candidate tools, then returns ranked agents in
+  your workspace that can call them (with the role, scopes, and connection each
+  would use). Never returns tokens. See `docs/agent-orchestration.md`.
+- `route` (read, token required): `tool` (e.g. `railway/graphql`), optional
+  `scope`, optional `action` (`read`/`write`, advisory). The structured form of
+  `find_agent` when you already know the tool. Returns the same ranked
+  `candidates`.
+
+- `delegate` (token required): `agent_id`, `tool`, `scope`. Mints a
+  **single-use, time-boxed grant token** so you can run one `(tool, scope)` via
+  a capable peer — grantry does **not** execute it for you. The target must
+  share your owner and actually be capable (checked server-side). Returns
+  `{ delegationId, grant_token, target, expiresAt, usage }`. Then **you** make a
+  normal `tools/call` for that tool, passing `grant_token` in its arguments;
+  grantry gates it and routes the call through the target's connection (you
+  never see the target's credential). The redeemed call is audited under the
+  target agent with `delegatedById` + `delegationId`. Get `agent_id` from
+  `find_agent`/`route`.
+
+  Example: `delegate(agent_id, "railway/graphql", "grantry-prod")` → take the
+  returned `grant_token` → `railway_graphql({ scope: "grantry-prod",
+  grant_token: "gn_grant_…", query: "…" })`.
+
+When a `tools/call` is denied (`-32010`) but another agent in your workspace
+*could* run it, the error's `data.capableAgents` lists who — so a dead-end
+becomes a signpost. Ask an admin to route the work, call `find_agent`, or (for
+a same-owner peer) `delegate` to get a one-time grant and run it yourself.
 
 ### Notion tool arguments (besides `scope`)
 - `list_dbs`: no additional arguments.

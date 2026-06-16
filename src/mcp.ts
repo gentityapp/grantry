@@ -2,11 +2,11 @@
 // Phase 2: implements real tool dispatch for notion/* and github/*
 // Phase 3: scope-based policy enforcement
 import { Hono } from "hono";
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { prisma } from "./db.js";
 import { decrypt, encrypt } from "./crypto.js";
-import { checkPolicy, connectionsForAgent } from "./policy.js";
+import { checkPolicy, connectionsForAgent, findCapableAgents, guessToolsFromTask, normalizeToolName } from "./policy.js";
 import { PROVIDERS } from "./connectors/registry.js";
 import { callNotionTool } from "./connectors/notion.js";
 import { callGitHubTool } from "./connectors/github.js";
@@ -73,7 +73,17 @@ const SKILL_URL = new URL("../docs/skill.md", import.meta.url);
 const SYSTEM_TOOLS = [
   "grantry/get_skill",
   "grantry/get_providers",
+  "grantry/find_agent",
+  "grantry/route",
+  "grantry/delegate",
 ] as const;
+
+// System tools that need the calling agent's identity (workspace boundary) and
+// therefore require authentication, unlike the public metadata tools.
+const AUTHED_SYSTEM_TOOLS = new Set<string>(["grantry/find_agent", "grantry/route", "grantry/delegate"]);
+
+// Capability-scoped delegation TTL: short by design (single-use anyway).
+const DELEGATION_TTL_MS = 5 * 60 * 1000;
 
 type McpSession = {
   agentId: string;
@@ -134,6 +144,26 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "grantry/get_providers") {
     return {
       include_tools: { type: "boolean", description: "When true, include each provider's tool names. Defaults to true." },
+    };
+  }
+  if (toolName === "grantry/find_agent") {
+    return {
+      task: { type: "string", description: "Plain-language description of what you want to do, e.g. 'set an env var on the prod Railway project'." },
+      scope: { type: "string", description: "Optional tenant scope to restrict the search to." },
+    };
+  }
+  if (toolName === "grantry/route") {
+    return {
+      tool: { type: "string", description: "Canonical tool name to route, e.g. 'railway/graphql' (the public 'railway_graphql' form is also accepted)." },
+      scope: { type: "string", description: "Optional tenant scope the tool must target." },
+      action: { type: "string", enum: ["read", "write"], description: "Optional intent hint. Advisory only — not yet used to filter results." },
+    };
+  }
+  if (toolName === "grantry/delegate") {
+    return {
+      agent_id: { type: "string", description: "Id of the capable agent to delegate to (from grantry_find_agent / grantry_route). Must share your owner." },
+      tool: { type: "string", description: "Canonical tool to authorize, e.g. 'railway/graphql' (public 'railway_graphql' also accepted)." },
+      scope: { type: "string", description: "Tenant scope the grant is for." },
     };
   }
   // --- github ---
@@ -2155,7 +2185,76 @@ function getProviderMetadata(includeTools = true) {
   };
 }
 
-async function callSystemTool(toolName: string, args: Record<string, unknown>) {
+/**
+ * Route a (provider, tool) call to its connector. Extracted so both the normal
+ * tools/call path and grantry/delegate execute through exactly the same code.
+ * `conn` carries the optional provider-level server credential (e.g. Google Ads
+ * developer token).
+ */
+async function dispatchProviderTool(
+  provider: string,
+  toolName: string,
+  args: Record<string, unknown>,
+  token: string,
+  conn: { encryptedServerCredential: string | null },
+): Promise<any> {
+  if (provider === "notion") return callNotionTool(toolName, args, token);
+  if (provider === "github") return callGitHubTool(toolName, args, token);
+  if (provider === "cloudflare") return callCloudflareTool(toolName, args, token);
+  if (provider === "clarity") return callClarityTool(toolName, args, token);
+  if (provider === "google_drive") return callGoogleDriveTool(toolName, args, token);
+  if (provider === "google_gsc") return callGoogleGscTool(toolName, args, token);
+  if (provider === "google_analytics") return callGoogleAnalyticsTool(toolName, args, token);
+  if (provider === "google_ads") return callGoogleAdsTool(toolName, args, token, conn.encryptedServerCredential ? decrypt(conn.encryptedServerCredential) : null);
+  if (provider === "yahoo_ads") return callYahooAdsTool(toolName, args, token);
+  if (provider === "meta_ads") return callMetaAdsTool(toolName, args, token);
+  if (provider === "hubspot") return callHubSpotTool(toolName, args, token);
+  if (provider === "gmail") return callGmailTool(toolName, args, token);
+  if (provider === "youtube") return callYouTubeTool(toolName, args, token);
+  if (provider === "attio") return callAttioTool(toolName, args, token);
+  if (provider === "clay") return callClayTool(toolName, args, token);
+  if (provider === "heyreach") return callHeyReachTool(toolName, args, token);
+  if (provider === "chatwork") return callChatworkTool(toolName, args, token);
+  if (provider === "railway") return callRailwayTool(toolName, args, token);
+  if (provider === "google_maps") return callGoogleMapsTool(toolName, args, token);
+  if (provider === "resend") return callResendTool(toolName, args, token);
+  if (provider === "slack") return callSlackTool(toolName, args, token);
+  if (provider === "freee") return callFreeeTool(toolName, args, token);
+  if (provider === "moneyforward") return callMoneyForwardTool(toolName, args, token);
+  if (provider === "reddit") return callRedditTool(toolName, args, token);
+  if (provider === "x") return callXTool(toolName, args, token);
+  if (provider === "discord") return callDiscordTool(toolName, args, token);
+  if (provider === "line") return callLineTool(toolName, args, token);
+  if (provider === "airtable") return callAirtableTool(toolName, args, token);
+  if (provider === "linear") return callLinearTool(toolName, args, token);
+  if (provider === "sendgrid") return callSendGridTool(toolName, args, token);
+  if (provider === "vercel") return callVercelTool(toolName, args, token);
+  if (provider === "stripe") return callStripeTool(toolName, args, token);
+  if (provider === "webflow") return callWebflowTool(toolName, args, token);
+  if (provider === "intercom") return callIntercomTool(toolName, args, token);
+  if (provider === "customerio") return callCustomerioTool(toolName, args, token);
+  if (provider === "mailchimp") return callMailchimpTool(toolName, args, token);
+  if (provider === "zendesk") return callZendeskTool(toolName, args, token);
+  if (provider === "wordpress") return callWordpressTool(toolName, args, token);
+  if (provider === "shopify") return callShopifyTool(toolName, args, token);
+  if (provider === "jira") return callJiraTool(toolName, args, token);
+  if (provider === "salesforce") return callSalesforceTool(toolName, args, token);
+  if (provider === "linkedin_ads") return callLinkedinAdsTool(toolName, args, token);
+  if (provider === "tiktok_ads") return callTiktokAdsTool(toolName, args, token);
+  if (provider === "microsoft_ads") return callMicrosoftAdsTool(toolName, args, token);
+  if (provider === "aws") return callAwsTool(toolName, args, token);
+  if (provider === "snowflake") return callSnowflakeTool(toolName, args, token);
+  if (provider === "google_calendar") return callGoogleCalendarTool(toolName, args, token);
+  if (provider === "google_sheets") return callGoogleSheetsTool(toolName, args, token);
+  if (provider === "google_tag_manager") return callGoogleTagManagerTool(toolName, args, token);
+  if (provider === "google_cloud") return callGoogleCloudTool(toolName, args, token);
+  if (provider === "bigquery") return callBigQueryTool(toolName, args, token);
+  throw new Error(`no dispatcher for provider: ${provider}`);
+}
+
+type SystemToolContext = { agentId: string; ownerId: string; workspaceId: string | null };
+
+async function callSystemTool(toolName: string, args: Record<string, unknown>, ctx?: SystemToolContext) {
   if (toolName === "grantry/get_skill") {
     const skill = await getSkillContent();
     return {
@@ -2172,6 +2271,34 @@ async function callSystemTool(toolName: string, args: Record<string, unknown>) {
       structuredContent: providers,
       isError: false,
     };
+  }
+  if (toolName === "grantry/find_agent") {
+    if (!ctx) throw new Error("find_agent requires authentication");
+    const task = String(args.task ?? "");
+    if (!task.trim()) throw new Error("find_agent requires a 'task' description");
+    const scope = args.scope === undefined || args.scope === null || args.scope === "" ? undefined : String(args.scope);
+    const guessedTools = guessToolsFromTask(task);
+    // Aggregate the best match per (agent, tool) across the guessed tools.
+    const byKey = new Map<string, Awaited<ReturnType<typeof findCapableAgents>>[number]>();
+    for (const tool of guessedTools) {
+      const matches = await findCapableAgents({ tool, scope, workspaceId: ctx.workspaceId, ownerId: ctx.ownerId });
+      for (const m of matches) {
+        const key = `${m.agentId}:${m.tool}`;
+        if (!byKey.has(key)) byKey.set(key, m);
+      }
+    }
+    const candidates = Array.from(byKey.values()).sort((a, b) => b.confidence - a.confidence).slice(0, 10);
+    const payload = { task, guessedTools, candidates };
+    return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], structuredContent: payload, isError: false };
+  }
+  if (toolName === "grantry/route") {
+    if (!ctx) throw new Error("route requires authentication");
+    const tool = normalizeToolName(args.tool);
+    if (!tool || !tool.includes("/")) throw new Error("route requires a 'tool' like 'railway/graphql'");
+    const scope = args.scope === undefined || args.scope === null || args.scope === "" ? undefined : String(args.scope);
+    const candidates = await findCapableAgents({ tool, scope, workspaceId: ctx.workspaceId, ownerId: ctx.ownerId });
+    const payload = { tool, scope: scope ?? null, candidates };
+    return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], structuredContent: payload, isError: false };
   }
   throw new Error(`Unknown system tool: ${toolName}`);
 }
@@ -2255,6 +2382,38 @@ function buildToolList(connections: Awaited<ReturnType<typeof connectionsForAgen
   ];
   if (!connections) return tools;
 
+  // Capability discovery tools — only for authenticated agents, since they
+  // search the caller's workspace (docs/agent-orchestration.md).
+  tools.push(
+    {
+      name: publicToolName("grantry/find_agent"),
+      description: "grantry: find which agent in your workspace can do a described task",
+      inputSchema: {
+        type: "object",
+        properties: toolSpecificInputProperties("grantry/find_agent"),
+        required: ["task"],
+      },
+    },
+    {
+      name: publicToolName("grantry/route"),
+      description: "grantry: list agents in your workspace that can call a specific tool/scope",
+      inputSchema: {
+        type: "object",
+        properties: toolSpecificInputProperties("grantry/route"),
+        required: ["tool"],
+      },
+    },
+    {
+      name: publicToolName("grantry/delegate"),
+      description: "grantry: mint a single-use grant token to run one tool/scope via a capable peer agent (same owner). grantry does not execute — present the returned grant_token on a normal tools/call",
+      inputSchema: {
+        type: "object",
+        properties: toolSpecificInputProperties("grantry/delegate"),
+        required: ["agent_id", "tool", "scope"],
+      },
+    },
+  );
+
   const scopesByTool = new Map<string, Set<string>>();
   const authTypesByTool = new Map<string, Set<string>>();
   const connectionIdsByTool = new Map<string, Set<string>>();
@@ -2285,6 +2444,7 @@ function buildToolList(connections: Awaited<ReturnType<typeof connectionsForAgen
             scope: { type: "string", enum: scopes, description: "Tenant scope. Use one of the scopes exposed for this agent token." },
             auth_type: { type: "string", enum: authTypes, description: "Optional auth type disambiguator." },
             connection_id: { type: "string", enum: connectionIds, description: "Optional connection id disambiguator." },
+            grant_token: { type: "string", description: "Optional one-time delegation grant from grantry_delegate, authorizing this exact tool+scope via a capable peer agent." },
             ...toolSpecificInputProperties(toolName),
           },
           required: ["scope", ...requiredToolSpecificArgs(toolName)],
@@ -2629,9 +2789,22 @@ const handleMcpPost = async (c: any) => {
     const toolName = canonicalToolName(requestedToolName);
     const args = params?.arguments ?? {};
 
-    if (SYSTEM_TOOLS.includes(toolName as any)) {
+    // grantry/delegate executes a real provider call, so it runs through the
+    // authenticated path below (rate limit + audit), not the metadata helper.
+    if (SYSTEM_TOOLS.includes(toolName as any) && toolName !== "grantry/delegate") {
+      if (AUTHED_SYSTEM_TOOLS.has(toolName) && !agent) {
+        return c.json({
+          jsonrpc: "2.0", id,
+          error: { code: -32001, message: "authentication required: pass 'Authorization: Bearer gn_agt_...'" },
+        }, 401);
+      }
+      let systemCtx: SystemToolContext | undefined;
+      if (AUTHED_SYSTEM_TOOLS.has(toolName) && agent) {
+        const self = await prisma.agent.findUnique({ where: { id: agent.id }, select: { ownerId: true, workspaceId: true } });
+        if (self) systemCtx = { agentId: agent.id, ownerId: self.ownerId, workspaceId: self.workspaceId };
+      }
       try {
-        const result = await callSystemTool(toolName, args);
+        const result = await callSystemTool(toolName, args, systemCtx);
         return c.json({ jsonrpc: "2.0", id, result });
       } catch (e: any) {
         return c.json({
@@ -2653,6 +2826,7 @@ const handleMcpPost = async (c: any) => {
     const scope = requestedScope || configuredScope;
     const authType = args.auth_type !== undefined ? String(args.auth_type) : (args.authType !== undefined ? String(args.authType) : "");
     const connectionId = args.connection_id !== undefined ? String(args.connection_id) : (args.connectionId !== undefined ? String(args.connectionId) : "");
+    const grantToken = args.grant_token !== undefined ? String(args.grant_token) : (args.grantToken !== undefined ? String(args.grantToken) : "");
 
     if (rateLimitExceeded(agent.id)) {
       return c.json({
@@ -2665,6 +2839,95 @@ const handleMcpPost = async (c: any) => {
       where: { id: agent.id },
       data: { lastUsedAt: new Date() },
     });
+
+    // grantry/delegate: mint a single-use, time-boxed permission slip so a
+    // capable peer's (tool, scope) becomes runnable by the caller — WITHOUT
+    // grantry executing anything. grantry stays the gate: it returns a one-time
+    // grant_token, and the caller (or a sub-agent using its token) then makes a
+    // normal tools/call presenting that token. Execution is driven by the
+    // agent; grantry only manages permission (docs/agent-orchestration.md).
+    if (toolName === "grantry/delegate") {
+      const targetAgentId = String((args as any).agent_id ?? (args as any).agentId ?? "");
+      const delegTool = normalizeToolName((args as any).tool);
+      const delegScope = (args as any).scope == null ? "" : String((args as any).scope);
+
+      const fail = async (code: number, message: string, status = 400) => {
+        await prisma.auditLog.create({ data: {
+          agentId: agent.id,
+          provider: delegTool.includes("/") ? delegTool.split("/", 1)[0] : "system",
+          tool: delegTool || "grantry/delegate",
+          scope: delegScope,
+          status: "denied",
+          errorMessage: message,
+          requestArgs: maskAuditArgs(args),
+          durationMs: Date.now() - started,
+          ipAddress: c.req.header("x-forwarded-for") ?? null,
+        } }).catch(() => {});
+        return c.json({ jsonrpc: "2.0", id, error: { code, message } }, status as any);
+      };
+
+      if (!targetAgentId) return fail(-32602, "delegate requires 'agent_id'");
+      if (!delegTool.includes("/")) return fail(-32602, "delegate requires a 'tool' like 'railway/graphql'");
+      if (!delegScope) return fail(-32602, "delegate requires 'scope'");
+
+      const [self, target] = await Promise.all([
+        prisma.agent.findUnique({ where: { id: agent.id }, select: { ownerId: true } }),
+        prisma.agent.findUnique({ where: { id: targetAgentId }, select: { id: true, name: true, enabled: true, ownerId: true, expiresAt: true } }),
+      ]);
+      if (!self) return fail(-32011, "calling agent vanished", 500);
+      if (target?.id === agent.id) return fail(-32602, "cannot delegate to yourself");
+      if (!target || !target.enabled) return fail(-32010, "target agent not found or disabled", 403);
+      if (target.expiresAt && target.expiresAt < new Date()) return fail(-32010, "target agent token expired", 403);
+      // Owner boundary: delegation never crosses owners (cross-owner routing is
+      // a larger policy decision — see the design doc).
+      if (target.ownerId !== self.ownerId) return fail(-32010, "delegation is limited to agents that share your owner", 403);
+
+      // The target must genuinely be capable — same predicate as a direct call.
+      const decision = await checkPolicy({ agentId: target.id, tool: delegTool, scope: delegScope });
+      if (!decision.allowed) return fail(-32010, `target agent cannot run this: ${decision.reason}`, 403);
+
+      // Mint the one-time grant. Only the token hash is stored; the plaintext is
+      // returned once and never persisted.
+      const grantToken = `gn_grant_${randomBytes(24).toString("base64url")}`;
+      const tokenHash = createHash("sha256").update(grantToken).digest("hex");
+      const expiresAt = new Date(Date.now() + DELEGATION_TTL_MS);
+      const grant = await prisma.delegationGrant.create({ data: {
+        requesterAgentId: agent.id,
+        targetAgentId: target.id,
+        tool: delegTool,
+        scope: delegScope,
+        tokenHash,
+        expiresAt,
+      } });
+      await prisma.auditLog.create({ data: {
+        agentId: agent.id,
+        delegatedById: agent.id,
+        delegationId: grant.id,
+        provider: decision.provider,
+        tool: delegTool,
+        scope: delegScope,
+        status: "ok",
+        responseSummary: `granted: run ${delegTool} on ${delegScope || "<empty>"} via ${target.name} (single-use)`,
+        requestArgs: maskAuditArgs(args),
+        durationMs: Date.now() - started,
+        ipAddress: c.req.header("x-forwarded-for") ?? null,
+      } });
+
+      const payload = {
+        delegationId: grant.id,
+        grant_token: grantToken,
+        target: target.name,
+        tool: delegTool,
+        scope: delegScope,
+        expiresAt: expiresAt.toISOString(),
+        usage: `call ${publicToolName(delegTool)} normally with arguments { scope: "${delegScope}", grant_token: "<this token>", ... }. Single-use; expires at ${expiresAt.toISOString()}.`,
+      };
+      return c.json({ jsonrpc: "2.0", id, result: {
+        content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+        structuredContent: payload,
+        isError: false,
+      } });
+    }
 
     // 1) Special case: ping
     if (toolName === "ping") {
@@ -2700,6 +2963,88 @@ const handleMcpPost = async (c: any) => {
       }, 403);
     }
 
+    // 1.5) Redeem a delegation grant, if presented. The caller holds a one-time
+    // slip authorizing exactly this (tool, scope) via a capable peer. grantry
+    // gates + proxies as always, but routes through the TARGET's connection.
+    // The agent drove this call; grantry only honored the permission slip.
+    if (grantToken) {
+      const tokenHash = createHash("sha256").update(grantToken).digest("hex");
+      const grant = await prisma.delegationGrant.findUnique({ where: { tokenHash } });
+      const now = new Date();
+      const invalid =
+        !grant ? "unknown grant token"
+        : grant.status !== "issued" ? "grant already used"
+        : grant.expiresAt < now ? "grant expired"
+        : grant.requesterAgentId !== agent.id ? "grant was issued to a different agent"
+        : grant.tool !== toolName ? `grant authorizes ${grant.tool}, not ${toolName}`
+        : grant.scope !== scope ? `grant authorizes scope ${grant.scope || "<empty>"}, not ${scope || "<empty>"}`
+        : "";
+      if (invalid) {
+        await prisma.auditLog.create({ data: {
+          agentId: agent.id,
+          provider: toolName.includes("/") ? toolName.split("/", 1)[0] : "system",
+          tool: toolName, scope, status: "denied",
+          errorMessage: `delegation grant rejected: ${invalid}`,
+          requestArgs: maskAuditArgs(args),
+          durationMs: Date.now() - started,
+          ipAddress: c.req.header("x-forwarded-for") ?? null,
+        } });
+        return c.json({ jsonrpc: "2.0", id, error: { code: -32010, message: `delegation grant rejected: ${invalid}` } }, 403);
+      }
+
+      // Re-verify the target is still capable (roles/connection may have moved
+      // since the grant was minted).
+      const decision = await checkPolicy({ agentId: grant!.targetAgentId, tool: toolName, scope });
+      if (!decision.allowed) {
+        await prisma.delegationGrant.update({ where: { id: grant!.id }, data: { status: "consumed", consumedAt: now } }).catch(() => {});
+        await prisma.auditLog.create({ data: {
+          agentId: agent.id, delegatedById: agent.id, delegationId: grant!.id,
+          provider: decision.provider, tool: toolName, scope, status: "denied",
+          errorMessage: `target no longer capable: ${decision.reason}`,
+          requestArgs: maskAuditArgs(args),
+          durationMs: Date.now() - started,
+          ipAddress: c.req.header("x-forwarded-for") ?? null,
+        } });
+        return c.json({ jsonrpc: "2.0", id, error: { code: -32010, message: `target no longer capable: ${decision.reason}` } }, 403);
+      }
+      const conn = await prisma.connection.findUnique({ where: { id: decision.connectionId! } });
+      if (!conn) return c.json({ jsonrpc: "2.0", id, error: { code: -32011, message: "connection vanished" } }, 500);
+
+      // Burn the single use up front: a failed call still consumes the grant.
+      await prisma.delegationGrant.update({ where: { id: grant!.id }, data: { status: "consumed", consumedAt: now } });
+
+      const innerArgs: Record<string, unknown> = { ...args };
+      delete innerArgs.grant_token;
+      delete innerArgs.grantToken;
+      try {
+        const credential = await credentialForConnection(conn);
+        const result = await dispatchProviderTool(decision.provider, toolName, innerArgs, credential, conn);
+        await prisma.auditLog.create({ data: {
+          agentId: grant!.targetAgentId, delegatedById: agent.id, delegationId: grant!.id,
+          provider: decision.provider, tool: toolName, scope, status: "ok",
+          responseSummary: JSON.stringify({ delegatedBy: agent.name, connectionId: conn.id, result }).slice(0, 500),
+          requestArgs: maskAuditArgs(innerArgs),
+          durationMs: Date.now() - started,
+          ipAddress: c.req.header("x-forwarded-for") ?? null,
+        } });
+        return c.json({ jsonrpc: "2.0", id, result: {
+          content: [{ type: "text", text: JSON.stringify(result.structuredContent ?? result).slice(0, 8000) }],
+          structuredContent: result.structuredContent,
+          isError: false,
+        } });
+      } catch (e: any) {
+        const errMsg = String(e?.message ?? e);
+        await prisma.auditLog.create({ data: {
+          agentId: grant!.targetAgentId, delegatedById: agent.id, delegationId: grant!.id,
+          provider: decision.provider, tool: toolName, scope, status: "error",
+          errorMessage: errMsg.slice(0, 2000),
+          requestArgs: maskAuditArgs(innerArgs),
+          durationMs: Date.now() - started,
+        } });
+        return c.json({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: `Error: ${errMsg}` }], isError: true } });
+      }
+    }
+
     // 2) Policy check
     const decision = await checkPolicy({ agentId: agent.id, tool: toolName, scope, authType, connectionId });
     if (!decision.allowed) {
@@ -2716,10 +3061,31 @@ const handleMcpPost = async (c: any) => {
           ipAddress: c.req.header("x-forwarded-for") ?? null,
         },
       });
-      return c.json({
-        jsonrpc: "2.0", id,
-        error: { code: -32010, message: `policy denied: ${toolName} (${decision.reason})` },
-      }, 403);
+      // Signpost: don't dead-end. If another agent in the caller's workspace can
+      // run this (tool, scope), point at it (docs/agent-orchestration.md). Only
+      // included when a capable peer actually exists, so we never leak "nobody
+      // can do this". Identities/capability facts only — never tokens.
+      const errorObj: any = { code: -32010, message: `policy denied: ${toolName} (${decision.reason})` };
+      try {
+        const self = await prisma.agent.findUnique({ where: { id: agent.id }, select: { ownerId: true, workspaceId: true } });
+        if (self) {
+          const capable = await findCapableAgents({
+            tool: toolName, scope,
+            workspaceId: self.workspaceId, ownerId: self.ownerId,
+            excludeAgentId: agent.id,
+          });
+          if (capable.length) {
+            errorObj.data = {
+              capableAgents: capable.slice(0, 5).map((m) => ({
+                name: m.name, roles: m.roles, scopes: m.scopes,
+                connection: m.connection.enabled ? "live" : "disabled",
+              })),
+              hint: `another agent in this workspace can run ${toolName}; ask an admin to route this, or call grantry_find_agent`,
+            };
+          }
+        }
+      } catch { /* signpost is best-effort; never block the denial on it */ }
+      return c.json({ jsonrpc: "2.0", id, error: errorObj }, 403);
     }
 
     // 3) Look up connection, decrypt credential
@@ -2731,112 +3097,7 @@ const handleMcpPost = async (c: any) => {
 
     // 4) Dispatch to provider-specific tool
     try {
-      let result: any;
-      if (decision.provider === "notion") {
-        result = await callNotionTool(toolName, args, token);
-      } else if (decision.provider === "github") {
-        result = await callGitHubTool(toolName, args, token);
-      } else if (decision.provider === "cloudflare") {
-        result = await callCloudflareTool(toolName, args, token);
-      } else if (decision.provider === "clarity") {
-        result = await callClarityTool(toolName, args, token);
-      } else if (decision.provider === "google_drive") {
-        result = await callGoogleDriveTool(toolName, args, token);
-      } else if (decision.provider === "google_gsc") {
-        result = await callGoogleGscTool(toolName, args, token);
-      } else if (decision.provider === "google_analytics") {
-        result = await callGoogleAnalyticsTool(toolName, args, token);
-      } else if (decision.provider === "google_ads") {
-        result = await callGoogleAdsTool(toolName, args, token, conn.encryptedServerCredential ? decrypt(conn.encryptedServerCredential) : null);
-      } else if (decision.provider === "yahoo_ads") {
-        result = await callYahooAdsTool(toolName, args, token);
-      } else if (decision.provider === "meta_ads") {
-        result = await callMetaAdsTool(toolName, args, token);
-      } else if (decision.provider === "hubspot") {
-        result = await callHubSpotTool(toolName, args, token);
-      } else if (decision.provider === "gmail") {
-        result = await callGmailTool(toolName, args, token);
-      } else if (decision.provider === "youtube") {
-        result = await callYouTubeTool(toolName, args, token);
-      } else if (decision.provider === "attio") {
-        result = await callAttioTool(toolName, args, token);
-      } else if (decision.provider === "clay") {
-        result = await callClayTool(toolName, args, token);
-      } else if (decision.provider === "heyreach") {
-        result = await callHeyReachTool(toolName, args, token);
-      } else if (decision.provider === "chatwork") {
-        result = await callChatworkTool(toolName, args, token);
-      } else if (decision.provider === "railway") {
-        result = await callRailwayTool(toolName, args, token);
-      } else if (decision.provider === "google_maps") {
-        result = await callGoogleMapsTool(toolName, args, token);
-      } else if (decision.provider === "resend") {
-        result = await callResendTool(toolName, args, token);
-      } else if (decision.provider === "slack") {
-        result = await callSlackTool(toolName, args, token);
-      } else if (decision.provider === "freee") {
-        result = await callFreeeTool(toolName, args, token);
-      } else if (decision.provider === "moneyforward") {
-        result = await callMoneyForwardTool(toolName, args, token);
-      } else if (decision.provider === "reddit") {
-        result = await callRedditTool(toolName, args, token);
-      } else if (decision.provider === "x") {
-        result = await callXTool(toolName, args, token);
-      } else if (decision.provider === "discord") {
-        result = await callDiscordTool(toolName, args, token);
-      } else if (decision.provider === "line") {
-        result = await callLineTool(toolName, args, token);
-      } else if (decision.provider === "airtable") {
-        result = await callAirtableTool(toolName, args, token);
-      } else if (decision.provider === "linear") {
-        result = await callLinearTool(toolName, args, token);
-      } else if (decision.provider === "sendgrid") {
-        result = await callSendGridTool(toolName, args, token);
-      } else if (decision.provider === "vercel") {
-        result = await callVercelTool(toolName, args, token);
-      } else if (decision.provider === "stripe") {
-        result = await callStripeTool(toolName, args, token);
-      } else if (decision.provider === "webflow") {
-        result = await callWebflowTool(toolName, args, token);
-      } else if (decision.provider === "intercom") {
-        result = await callIntercomTool(toolName, args, token);
-      } else if (decision.provider === "customerio") {
-        result = await callCustomerioTool(toolName, args, token);
-      } else if (decision.provider === "mailchimp") {
-        result = await callMailchimpTool(toolName, args, token);
-      } else if (decision.provider === "zendesk") {
-        result = await callZendeskTool(toolName, args, token);
-      } else if (decision.provider === "wordpress") {
-        result = await callWordpressTool(toolName, args, token);
-      } else if (decision.provider === "shopify") {
-        result = await callShopifyTool(toolName, args, token);
-      } else if (decision.provider === "jira") {
-        result = await callJiraTool(toolName, args, token);
-      } else if (decision.provider === "salesforce") {
-        result = await callSalesforceTool(toolName, args, token);
-      } else if (decision.provider === "linkedin_ads") {
-        result = await callLinkedinAdsTool(toolName, args, token);
-      } else if (decision.provider === "tiktok_ads") {
-        result = await callTiktokAdsTool(toolName, args, token);
-      } else if (decision.provider === "microsoft_ads") {
-        result = await callMicrosoftAdsTool(toolName, args, token);
-      } else if (decision.provider === "aws") {
-        result = await callAwsTool(toolName, args, token);
-      } else if (decision.provider === "snowflake") {
-        result = await callSnowflakeTool(toolName, args, token);
-      } else if (decision.provider === "google_calendar") {
-        result = await callGoogleCalendarTool(toolName, args, token);
-      } else if (decision.provider === "google_sheets") {
-        result = await callGoogleSheetsTool(toolName, args, token);
-      } else if (decision.provider === "google_tag_manager") {
-        result = await callGoogleTagManagerTool(toolName, args, token);
-      } else if (decision.provider === "google_cloud") {
-        result = await callGoogleCloudTool(toolName, args, token);
-      } else if (decision.provider === "bigquery") {
-        result = await callBigQueryTool(toolName, args, token);
-      } else {
-        throw new Error(`no dispatcher for provider: ${decision.provider}`);
-      }
+      const result = await dispatchProviderTool(decision.provider, toolName, args, token, conn);
 
       await prisma.auditLog.create({
         data: {

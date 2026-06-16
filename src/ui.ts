@@ -7,7 +7,7 @@ import { decrypt, encrypt } from "./crypto.js";
 import { PROVIDERS, getProvider, listProviders, toolsForProvider } from "./connectors/registry.js";
 import { providerIcon, providerIconMap } from "./connectors/icons.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
-import { connectionsForAgent } from "./policy.js";
+import { connectionsForAgent, findCapableAgents, normalizeToolName } from "./policy.js";
 import { ensureTenant } from "./tenants.js";
 import { sendSystemEmail } from "./email.js";
 import { connectableAgentsFor, userMayUseAgent } from "./workspaces.js";
@@ -4948,6 +4948,43 @@ dashboardApp.get("/api/scopes", async (c) => {
       )),
     })),
   });
+});
+
+// --- /api/capabilities (inverse lookup: which agents can do X?) ---
+// docs/agent-orchestration.md. Given a tool (+ optional scope), returns ranked
+// agents that can call it, across every workspace the caller belongs to plus
+// their own legacy workspace-less agents. Capability facts only — never tokens.
+dashboardApp.get("/api/capabilities", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ error: "not authenticated" }, 401);
+
+  const tool = normalizeToolName(c.req.query("tool"));
+  if (!tool || !tool.includes("/")) {
+    return c.json({ error: "pass ?tool=provider/tool, e.g. railway/graphql" }, 400);
+  }
+  const scope = c.req.query("scope") || undefined;
+
+  const memberships = await prisma.workspaceMember.findMany({
+    where: { userId: user.id },
+    select: { workspaceId: true },
+  });
+  const workspaceIds = memberships.map((m) => m.workspaceId);
+
+  // One pass per workspace, plus an owner-scoped pass for legacy agents whose
+  // workspaceId is still null; dedup by agentId, keeping the highest confidence.
+  const byAgent = new Map<string, Awaited<ReturnType<typeof findCapableAgents>>[number]>();
+  const passes = [
+    ...workspaceIds.map((workspaceId) => ({ tool, scope, workspaceId })),
+    { tool, scope, ownerId: user.id },
+  ];
+  for (const pass of passes) {
+    for (const m of await findCapableAgents(pass)) {
+      const existing = byAgent.get(m.agentId);
+      if (!existing || m.confidence > existing.confidence) byAgent.set(m.agentId, m);
+    }
+  }
+  const candidates = Array.from(byAgent.values()).sort((a, b) => b.confidence - a.confidence);
+  return c.json({ tool, scope: scope ?? null, candidates });
 });
 
 // --- /tenants/:scope/agents/new (POST) — add another agent to existing tenant ---

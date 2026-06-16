@@ -231,12 +231,44 @@ model AuditLog {
   durationMs      Int?
   ipAddress       String?
   userAgent       String?
+  // Delegation (docs/agent-orchestration.md): when this call ran via
+  // grantry/delegate, `agentId` is the executing agent and these record the
+  // router that delegated it + the grant that authorized this single call.
+  delegatedById   String?
+  delegationId    String?
   createdAt       DateTime @default(now())
 
   @@index([userId, createdAt])
   @@index([agentId, createdAt])
   @@index([provider, createdAt])
   @@map("audit_log")
+}
+
+// ---------- Capability-scoped delegation (docs/agent-orchestration.md) ----------
+// A single-use, time-boxed *permission slip* for one (tool, scope). grantry
+// does not execute on its own: it mints this grant and returns a one-time
+// grant token; the requesting agent (or a sub-agent using its token) then
+// presents the token on a normal tools/call, which grantry gates as usual but
+// routes through the target agent's connection. The execution subject stays
+// the agent — grantry only manages permission. Owner-bounded: the requesting
+// and target agents must share an owner.
+model DelegationGrant {
+  id              String   @id @default(cuid())
+  // The agent allowed to redeem this grant (the requester / bearer).
+  requesterAgentId String
+  // The capable agent whose connection the redeemed call runs through.
+  targetAgentId   String
+  tool            String   // canonical, e.g. "railway/graphql"
+  scope           String   @default("")
+  tokenHash       String   @unique // sha256 of the one-time gn_grant_ token
+  status          String   @default("issued") // "issued" | "consumed" | "expired"
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  createdAt       DateTime @default(now())
+
+  @@index([targetAgentId])
+  @@index([requesterAgentId])
+  @@map("delegation_grant")
 }
 
 // ---------- MCP OAuth (better-auth mcp/oidc-provider plugin) ----------
