@@ -3097,8 +3097,9 @@ dashboardApp.get("/tenants/new", async (c) => {
           <h2><span class="num">1</span> Tenant</h2>
           <div class="field field-primary">
             <label for="tenant">New tenant name</label>
-            <input type="text" name="tenant" id="tenant" pattern="[a-z0-9_-]+" placeholder="my-new-tenant" autofocus required>
+            <input type="text" name="tenant" id="tenant" pattern="[a-z0-9_-]+" placeholder="my-new-tenant" title="Lowercase letters, numbers, hyphens and underscores only (a-z 0-9 - _). Use the Display name field below for Japanese or other names." autofocus required>
             <div class="field-hint">lowercase, alphanumeric, hyphens, underscores. This is the <b>scope</b> for all your API calls — it cannot be changed later, so pick carefully.</div>
+            <div class="field-hint" id="tenantWarn" style="display:none;color:#df1b41;"></div>
           </div>
           <div class="field">
             <label for="display_name">Display name (optional)</label>
@@ -3319,9 +3320,36 @@ dashboardApp.get("/tenants/new", async (c) => {
             agentInput.dataset.autoSuggested = '1';
           }
         }
+        const tenantWarn = document.getElementById('tenantWarn');
+        const displayNameInput = document.getElementById('display_name');
+        // Live-flag non-ASCII tenant names (commonly Japanese) the moment they
+        // are typed, instead of waiting for the browser's generic pattern error
+        // on submit. Offer to move the value into the Display name field, where
+        // any language is fine.
+        function checkTenantChars() {
+          const v = tenantInput.value;
+          if (v && /[^a-z0-9_-]/.test(v)) {
+            const slug = v.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
+            tenantWarn.innerHTML = 'Tenant names allow only <code>a-z 0-9 - _</code>. Japanese and other characters aren\\'t allowed here — put them in <b>Display name</b> below.'
+              + (slug ? ' Suggested tenant name: <code>' + slug + '</code>' : '')
+              + ' <a href="#" id="moveToDisplay">move this to Display name →</a>';
+            tenantWarn.style.display = '';
+            const mv = document.getElementById('moveToDisplay');
+            if (mv) mv.addEventListener('click', (ev) => {
+              ev.preventDefault();
+              if (displayNameInput && !displayNameInput.value) displayNameInput.value = v;
+              tenantInput.value = slug;
+              tenantWarn.style.display = 'none';
+              if (tenantInput.value) suggestAgentName(tenantInput.value);
+            });
+          } else {
+            tenantWarn.style.display = 'none';
+          }
+        }
         tenantInput.addEventListener('input', () => {
           if (tenantSelect) tenantSelect.value = '';
           if (tenantInput.value) suggestAgentName(tenantInput.value);
+          checkTenantChars();
         });
         if (tenantSelect) {
           tenantSelect.addEventListener('change', () => {
@@ -3445,7 +3473,29 @@ dashboardApp.post("/tenants/new", async (c) => {
   };
   console.log("[tenants/new POST] tenant=", tenant, "providerAuths=", providerAuths);
 
-  if (!/^[a-z0-9_-]+$/.test(tenant)) return c.html("<h1>invalid tenant id</h1>", 400);
+  if (!/^[a-z0-9_-]+$/.test(tenant)) {
+    // The slug is the immutable wire key (agents send it as `scope`), so it
+    // must be ASCII [a-z0-9_-]. Non-ASCII input — most commonly a Japanese
+    // tenant name — is a frequent mistake, so explain the rule, point at the
+    // Display name field, and offer a slugified suggestion when we can derive
+    // one from the input (pure-Japanese input slugifies to empty).
+    const suggestion = slugifyWorkspace(tenant);
+    const hasSuggestion = !!tenant && suggestion !== "workspace";
+    return c.html(`
+      <!doctype html><html><head><meta charset="utf-8"><title>Invalid tenant name — grantry</title>
+      ${FAVICON}<style>${CSS}</style></head><body>
+      ${NAV("tenants", user?.email)}
+      <main>
+        <h1>⚠️  Tenant name ${tenant ? `<code>${escapeHtml(tenant)}</code> ` : ""}can't be used</h1>
+        <div class="card" style="border-color:#df1b41;">
+          <p>The <b>tenant name</b> is the immutable <b>scope</b> key your agents send with every API call, so it's restricted to <b>lowercase letters, numbers, hyphens, and underscores</b> (<code>a-z 0-9 - _</code>). Japanese and other non-ASCII characters aren't allowed here.</p>
+          <p>👉 Put the Japanese (or any human-friendly) name in the <b>Display name</b> field instead — that's shown in dashboards and can be renamed anytime.</p>
+          ${hasSuggestion ? `<p>Suggested tenant name based on what you typed: <code>${escapeHtml(suggestion)}</code></p>` : `<p>Example: tenant name <code>kaihatsu</code> · display name <code>${escapeHtml(tenant || "開発環境")}</code></p>`}
+          <p><a href="/tenants/new">← Back to the wizard</a></p>
+        </div>
+      </main></body></html>
+    `, 400);
+  }
   if (!agent) return c.html("<h1>agent name required</h1>", 400);
   if (additionalScopesRaw && additionalScopes.length === 0) {
     return c.html("<h1>additional_scopes must be lowercase a-z, 0-9, hyphens, underscores (comma-separated)</h1>", 400);
