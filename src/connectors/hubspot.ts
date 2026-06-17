@@ -1,6 +1,25 @@
 // HubSpot CRM connector — OAuth access token.
+import { PROVIDERS } from "./registry.js";
+
 const HUBSPOT_API = "https://api.hubapi.com";
 const HUBSPOT_TIMEOUT_MS = 10_000;
+
+// Marketing-email read tools. Registered onto the existing hubspot provider at
+// module load so policy.ts (which gates on provider.tools.includes(tool)) and
+// tools/list pick them up without editing registry.ts. Idempotent.
+// NOTE: these endpoints require the Private App token to hold the `content`
+// (marketing email read) scope; otherwise HubSpot returns 403.
+const HUBSPOT_MARKETING_EMAIL_TOOLS = [
+  "hubspot/list_marketing_emails",
+  "hubspot/get_marketing_email",
+  "hubspot/get_marketing_email_statistics",
+];
+const hubspotProvider = PROVIDERS.hubspot;
+if (hubspotProvider) {
+  for (const t of HUBSPOT_MARKETING_EMAIL_TOOLS) {
+    if (!hubspotProvider.tools.includes(t)) hubspotProvider.tools.push(t);
+  }
+}
 
 type HubSpotArgs = Record<string, unknown>;
 
@@ -87,6 +106,71 @@ export async function callHubSpotTool(tool: string, args: HubSpotArgs, token: st
     }, { tool });
     const j: any = await readJsonResponse(r);
     if (!r.ok) throw new Error(`HubSpot create_deal failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+    return { structuredContent: j };
+  }
+
+  // --- Marketing emails (broadcast / automated nurture sends) ---
+  // GET /marketing/v3/emails — list marketing emails. Supports includeStats=true
+  // to inline open/click metrics per email.
+  if (tool === "hubspot/list_marketing_emails") {
+    const params = new URLSearchParams();
+    const limit = Number(args.limit ?? 20);
+    params.set("limit", String(Number.isFinite(limit) ? Math.min(Math.max(Math.floor(limit), 1), 100) : 20));
+    const after = String(args.after ?? "").trim();
+    if (after) params.set("after", after);
+    const sort = String(args.sort ?? "").trim();
+    if (sort) params.set("sort", sort);
+    const type = String(args.type ?? "").trim();
+    if (type) params.set("type", type);
+    const createdAfter = String(args.created_after ?? args.createdAfter ?? "").trim();
+    if (createdAfter) params.set("createdAfter", createdAfter);
+    const createdBefore = String(args.created_before ?? args.createdBefore ?? "").trim();
+    if (createdBefore) params.set("createdBefore", createdBefore);
+    if (args.includeStats === true || String(args.includeStats ?? args.include_stats ?? "").trim() === "true") {
+      params.set("includeStats", "true");
+    }
+    if (args.isPublished !== undefined && String(args.isPublished).trim() !== "") {
+      params.set("isPublished", String(args.isPublished));
+    }
+    if (args.archived !== undefined && String(args.archived).trim() !== "") {
+      params.set("archived", String(args.archived));
+    }
+    const r = await fetchHubSpot(`/marketing/v3/emails?${params.toString()}`, { headers: headers(token) }, { tool });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`HubSpot list_marketing_emails failed: ${r.status} ${JSON.stringify(j).slice(0, 1200)}`);
+    return { structuredContent: { results: j.results ?? [], paging: j.paging ?? null, total: j.total ?? null } };
+  }
+
+  // GET /marketing/v3/emails/{emailId}
+  if (tool === "hubspot/get_marketing_email") {
+    const emailId = String(args.email_id ?? args.emailId ?? "").trim();
+    if (!emailId) throw new Error("email_id is required");
+    const params = new URLSearchParams();
+    if (args.includeStats === true || String(args.includeStats ?? args.include_stats ?? "").trim() === "true") {
+      params.set("includeStats", "true");
+    }
+    const qs = params.toString();
+    const r = await fetchHubSpot(`/marketing/v3/emails/${encodeURIComponent(emailId)}${qs ? `?${qs}` : ""}`, { headers: headers(token) }, { tool, emailId });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`HubSpot get_marketing_email failed: ${r.status} ${JSON.stringify(j).slice(0, 1200)}`);
+    return { structuredContent: j };
+  }
+
+  // GET /marketing/v3/emails/statistics/list — aggregated stats over a window.
+  if (tool === "hubspot/get_marketing_email_statistics") {
+    const startTimestamp = String(args.start_timestamp ?? args.startTimestamp ?? "").trim();
+    const endTimestamp = String(args.end_timestamp ?? args.endTimestamp ?? "").trim();
+    if (!startTimestamp) throw new Error("start_timestamp is required (ISO 8601)");
+    if (!endTimestamp) throw new Error("end_timestamp is required (ISO 8601)");
+    const params = new URLSearchParams();
+    params.set("startTimestamp", startTimestamp);
+    params.set("endTimestamp", endTimestamp);
+    for (const id of csv(args.email_ids ?? args.emailIds, [])) params.append("emailIds", id);
+    const property = String(args.property ?? "").trim();
+    if (property) params.set("property", property);
+    const r = await fetchHubSpot(`/marketing/v3/emails/statistics/list?${params.toString()}`, { headers: headers(token) }, { tool });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`HubSpot get_marketing_email_statistics failed: ${r.status} ${JSON.stringify(j).slice(0, 1200)}`);
     return { structuredContent: j };
   }
 
