@@ -1974,7 +1974,7 @@ dashboardApp.get("/tenants", async (c) => {
 
   const wsId = await getActiveWorkspaceId(c);
   const wsWhere = wsId ? { workspaceId: wsId } : {};
-  const [tenants, connections, ownerRoles, auditErrors] = await Promise.all([
+  const [tenants, connections, grants] = await Promise.all([
     prisma.tenant.findMany({
       where: { ownerId: user.id, ...wsWhere },
       orderBy: { slug: "asc" },
@@ -1983,61 +1983,18 @@ dashboardApp.get("/tenants", async (c) => {
       where: { ownerId: user.id, ...wsWhere },
       orderBy: [{ scope: "asc" }, { provider: "asc" }],
     }),
-    prisma.role.findMany({
-      where: { ownerId: user.id },
-      select: {
-        allowedTools: true,
-        allowedScopes: true,
-        agents: { select: { agent: { select: { enabled: true, workspaceId: true } } } },
-      },
-    }),
-    // Recent failed calls — ground truth for "the credential authenticates but
-    // lacks a permission" (issue #47 4b). A fine-grained GitHub PAT missing
-    // issues:write returns ok on inspection yet 403s at call time; the only
-    // honest signal is the real response, captured here in AuditLog.
-    prisma.auditLog.findMany({
+    prisma.agentConnectionGrant.findMany({
       where: {
-        status: "error",
-        agent: { ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) },
-        createdAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+        agent: { ownerId: user.id, enabled: true, ...(wsId ? { workspaceId: wsId } : {}) },
+        connection: { ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) },
       },
-      select: { provider: true, scope: true, tool: true, errorMessage: true, createdAt: true },
-      orderBy: { createdAt: "desc" },
-      take: 500,
+      select: { connectionId: true },
     }),
   ]);
 
-  // Keep only failures that read as permission/authorization gaps (not network
-  // blips or bad args), and remember the most recent one per (provider, scope).
-  const PERMISSION_ERROR = /\b(401|403)\b|forbidden|unauthor|not accessible|insufficient|permission|missing (the )?scope|access denied/i;
-  const permGap = new Map<string, { tool: string; message: string; at: Date }>();
-  for (const log of auditErrors) {
-    if (!log.errorMessage || !PERMISSION_ERROR.test(log.errorMessage)) continue;
-    const key = `${log.provider} ${log.scope ?? ""}`;
-    if (!permGap.has(key)) permGap.set(key, { tool: log.tool, message: log.errorMessage, at: log.createdAt });
-  }
-  const permGapFor = (conn: { provider: string; scope: string | null }) =>
-    permGap.get(`${conn.provider} ${conn.scope ?? ""}`);
-
-  // Orphan detection (issue #47): a connection can be enabled + validated yet
-  // unreachable — green in the UI but unusable — because no bound, enabled
-  // agent holds a role that lists a tool for its provider on a scope covering
-  // it. Build the set of (provider, scope) pairs that some enabled agent can
-  // actually reach, then flag any enabled connection outside it.
-  const anyScopeProviders = new Set<string>();
-  const scopedReach = new Set<string>(); // `${provider}::${scope}`
-  for (const r of ownerRoles) {
-    const hasEnabledAgent = r.agents.some((ar) => ar.agent.enabled && (!wsId || ar.agent.workspaceId === wsId));
-    if (!hasEnabledAgent) continue;
-    const providers = new Set(safeJsonArray(r.allowedTools).map((t) => String(t).split("/")[0]).filter(Boolean));
-    const scopes = safeJsonArray(r.allowedScopes);
-    for (const p of providers) {
-      if (scopes.length === 0) anyScopeProviders.add(p);
-      else for (const s of scopes) scopedReach.add(`${p}::${s}`);
-    }
-  }
-  const isOrphan = (conn: { enabled: boolean; provider: string; scope: string | null }): boolean =>
-    conn.enabled && !(anyScopeProviders.has(conn.provider) || scopedReach.has(`${conn.provider}::${conn.scope ?? ""}`));
+  const grantedConnectionIds = new Set(grants.map((g) => g.connectionId));
+  const isOrphan = (conn: { id: string; enabled: boolean }): boolean =>
+    conn.enabled && !grantedConnectionIds.has(conn.id);
 
   // The tenant table drives the list (so tenants with zero connections still
   // show); connections group under their scope. Scoped connections whose
@@ -2085,8 +2042,7 @@ dashboardApp.get("/tenants", async (c) => {
                 <span class="conn-label">${c.label}</span>
                 <span class="conn-meta">
                   ${c.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}
-                  ${isOrphan(c) ? `<span class="badge denied" title="Enabled, but no bound agent holds a role granting ${escapeHtml(c.provider)}/* on scope ${escapeHtml(c.scope || "(unscoped)")}. find_agent / route can't reach it — add the provider's tools to a role bound to an agent.">no agent can use this</span>` : ""}
-                  ${(() => { const g = permGapFor(c); return g ? `<span class="badge denied" title="Last call to ${escapeHtml(g.tool)} on ${g.at.toISOString().slice(0, 10)} failed with a permission error: ${escapeHtml(g.message.slice(0, 200))}. The credential authenticates but lacks a permission this tool needs — re-issue it with the missing scope.">permission gap</span>` : ""; })()}
+                  ${isOrphan(c) ? `<span class="badge denied" title="Enabled, but no enabled agent has a grant to this connection. Grant it to an agent before MCP tools can use it.">no agent can use this</span>` : ""}
                   <code>${c.createdAt.toISOString().slice(0, 10)}</code>
                 </span>
               </li>
