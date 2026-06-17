@@ -383,6 +383,7 @@ const CSS = `
   .combo-caret { color: var(--muted); font-size: 11px; flex-shrink: 0; }
   .combo-list { position: absolute; z-index: 60; top: calc(100% + 4px); left: 0; right: 0; max-height: 320px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow-md); }
   .combo-opt { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 6px; cursor: pointer; font-size: 14px; color: var(--ink-2); }
+  .combo-opt[hidden] { display: none; }
   .combo-opt .combo-icon { display: inline-flex; flex-shrink: 0; }
   .combo-opt:hover, .combo-opt.active { background: var(--accent-soft); }
   .combo-opt[aria-selected="true"] { font-weight: 600; }
