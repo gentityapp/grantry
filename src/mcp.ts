@@ -1272,6 +1272,32 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       reply_broadcast: { type: "boolean", description: "Broadcast the threaded reply update to the channel." },
     };
   }
+  if (toolName === "slack/create_channel") {
+    return {
+      name: { type: "string", description: "Channel name (lowercase, no spaces; hyphens/underscores allowed), e.g. root-andromeda." },
+      is_private: { type: "boolean", description: "When true, create a private channel. Defaults to public." },
+      team_id: { type: "string", description: "Encoded team id, required for org-level tokens." },
+    };
+  }
+  if (toolName === "slack/invite_members") {
+    return {
+      channel: { type: "string", description: "Channel ID to invite members into, e.g. C0123456789." },
+      users: { type: "array", items: { type: "string" }, description: "User IDs to invite (array or comma-separated string), e.g. [\"U012\",\"U345\"]." },
+    };
+  }
+  if (toolName === "slack/open_group_dm") {
+    return {
+      users: { type: "array", items: { type: "string" }, description: "User IDs to include in the group DM (array or comma-separated string). Internal users only — external Slack Connect users cannot join an mpim." },
+    };
+  }
+  if (toolName === "slack/invite_shared") {
+    return {
+      channel: { type: "string", description: "Channel ID to share externally via Slack Connect, e.g. C0123456789." },
+      emails: { type: "array", items: { type: "string" }, description: "Email addresses of external people to invite (array or comma-separated). Use this or user_ids." },
+      user_ids: { type: "array", items: { type: "string" }, description: "Slack user IDs of external people to invite. Use this or emails." },
+      external_limited: { type: "boolean", description: "When true (default on Slack's side), invite as a limited external member." },
+    };
+  }
   if (toolName === "slack/list_users") {
     return {
       limit: { type: "number", minimum: 1, maximum: 1000, description: "Max users to return per page." },
@@ -2134,6 +2160,10 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "slack/get_thread") return ["channel", "ts"];
   if (toolName === "slack/post_message") return ["channel"];
   if (toolName === "slack/update_message") return ["channel", "ts"];
+  if (toolName === "slack/create_channel") return ["name"];
+  if (toolName === "slack/invite_members") return ["channel", "users"];
+  if (toolName === "slack/open_group_dm") return ["users"];
+  if (toolName === "slack/invite_shared") return ["channel"];
   if (toolName === "slack/get_user") return ["user"];
   if (toolName === "freee/list_deals") return ["company_id"];
   if (toolName === "freee/get_deal") return ["company_id", "deal_id"];
@@ -2918,29 +2948,41 @@ async function credentialForConnection(conn: {
   id: string;
   provider: string;
   encryptedCredential: string;
+  credentialId: string | null;
   authType: string;
   refreshToken: string | null;
   accessTokenExpiresAt: Date | null;
 }) {
-  const currentToken = decrypt(conn.encryptedCredential);
-  if (!conn.refreshToken || !conn.accessTokenExpiresAt) return currentToken;
-  if (conn.accessTokenExpiresAt.getTime() > Date.now() + TOKEN_REFRESH_SKEW_MS) return currentToken;
+  const shared = conn.credentialId
+    ? await prisma.providerCredential.findUnique({ where: { id: conn.credentialId } })
+    : null;
+  const encryptedCredential = shared?.encryptedCredential ?? conn.encryptedCredential;
+  const refreshToken = shared?.refreshToken ?? conn.refreshToken;
+  const accessTokenExpiresAt = shared?.accessTokenExpiresAt ?? conn.accessTokenExpiresAt;
+  const currentToken = decrypt(encryptedCredential);
+  if (!refreshToken || !accessTokenExpiresAt) return currentToken;
+  if (accessTokenExpiresAt.getTime() > Date.now() + TOKEN_REFRESH_SKEW_MS) return currentToken;
 
   console.log("[oauth] refreshing access token", {
     provider: conn.provider,
     connectionId: conn.id,
-    expiresAt: conn.accessTokenExpiresAt.toISOString(),
+    expiresAt: accessTokenExpiresAt.toISOString(),
   });
-  const refreshed = await refreshOAuthToken(conn.provider, decrypt(conn.refreshToken));
-  await prisma.connection.update({
-    where: { id: conn.id },
-    data: {
-      encryptedCredential: encrypt(refreshed.access_token),
-      accessTokenExpiresAt: refreshed.expires_in ? new Date(Date.now() + refreshed.expires_in * 1000) : null,
-      ...(await credentialMetadataForStorage(conn.provider, conn.authType, refreshed.access_token)),
-      ...(refreshed.refresh_token ? { refreshToken: encrypt(refreshed.refresh_token) } : {}),
-    },
-  });
+  const refreshed = await refreshOAuthToken(conn.provider, decrypt(refreshToken));
+  const data = {
+    encryptedCredential: encrypt(refreshed.access_token),
+    accessTokenExpiresAt: refreshed.expires_in ? new Date(Date.now() + refreshed.expires_in * 1000) : null,
+    ...(await credentialMetadataForStorage(conn.provider, conn.authType, refreshed.access_token)),
+    ...(refreshed.refresh_token ? { refreshToken: encrypt(refreshed.refresh_token) } : {}),
+  };
+  if (conn.credentialId) {
+    await prisma.$transaction([
+      prisma.providerCredential.update({ where: { id: conn.credentialId }, data }),
+      prisma.connection.updateMany({ where: { credentialId: conn.credentialId }, data }),
+    ]);
+  } else {
+    await prisma.connection.update({ where: { id: conn.id }, data });
+  }
   return refreshed.access_token;
 }
 

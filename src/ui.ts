@@ -9,6 +9,7 @@ import { providerIcon, providerIconMap } from "./connectors/icons.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 import { connectionsForAgent, findCapableAgents, normalizeToolName } from "./policy.js";
 import { ensureTenant } from "./tenants.js";
+import { createTenantConnectionFromCredential, ensureProviderCredentialForConnection, rotateSharedCredential, syncProviderCredentialFromConnection } from "./provider_credentials.js";
 import { sendSystemEmail } from "./email.js";
 import { connectableAgentsFor, userMayUseAgent } from "./workspaces.js";
 import nodeCrypto from "node:crypto";
@@ -2075,6 +2076,22 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
     p.authTypes.map((authType) => ({ provider: p, authType }))
   ).filter((option) => !usedProviderAuthTypes.has(`${option.provider.key}:${option.authType}`));
   const comingSoonProviders = knownProviders.filter((p) => p.implemented === false && !usedProviders.has(p.key));
+  const reusableConns = await prisma.connection.findMany({
+    where: {
+      ownerId: user.id,
+      ...(tenantRow?.workspaceId ? { workspaceId: tenantRow.workspaceId } : {}),
+      enabled: true,
+      scope: { not: scope },
+    },
+    select: { id: true, provider: true, authType: true, label: true, scope: true },
+    orderBy: [{ provider: "asc" }, { authType: "asc" }, { createdAt: "asc" }],
+  });
+  const reusableByProviderAuth: Record<string, Array<{ id: string; label: string; scope: string }>> = {};
+  for (const cn of reusableConns) {
+    const key = `${cn.provider}:${cn.authType}`;
+    if (!reusableByProviderAuth[key]) reusableByProviderAuth[key] = [];
+    reusableByProviderAuth[key].push({ id: cn.id, label: cn.label, scope: cn.scope });
+  }
 
   // Flash banner after a successful reconnect (OAuth re-authorization).
   const reauthed = c.req.query("reauthed");
@@ -2276,8 +2293,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           <input type="hidden" name="auth_method" id="authMethodHidden" value="">
           <div class="field" id="credFieldRow">
             <label for="credential">Credential</label>
-            <textarea name="credential" id="credential" rows="3" required></textarea>
+            <textarea name="credential" id="credential" rows="3"></textarea>
             <div class="field-hint" id="credHint"></div>
+            <div class="field-hint" id="reuseHint"></div>
             <div class="field-hint" id="serverCredentialHint"></div>
             <div id="patLinkRow" style="margin-top:6px;display:none;">
               <a id="patLink" href="#" target="_blank" rel="noopener" style="font-size:13px;">🔗 Get a new token here →</a>
@@ -2295,6 +2313,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
       <script>
         const PROVIDERS = ${JSON.stringify(Object.fromEntries(providers.map(p => [p.key, p])))};
         const PROVIDER_ICONS = ${JSON.stringify(providerIconMap(24))};
+        const REUSABLE_BY_PROVIDER_AUTH = ${JSON.stringify(reusableByProviderAuth)};
         const providerIconBox = document.getElementById('providerIconBox');
         const sel = document.getElementById('provider');
         const providerAuth = document.getElementById('providerAuth');
@@ -2306,6 +2325,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         const providerSearch = document.getElementById('providerSearch');
         const providerSearchEmpty = document.getElementById('providerSearchEmpty');
         const credHint = document.getElementById('credHint');
+        const reuseHint = document.getElementById('reuseHint');
         const credField = document.getElementById('credential');
         const credFieldRow = document.getElementById('credFieldRow');
         const serverCredentialHint = document.getElementById('serverCredentialHint');
@@ -2315,6 +2335,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         const oauthSetupLinkRow = document.getElementById('oauthSetupLinkRow');
         const oauthSetupLink = document.getElementById('oauthSetupLink');
         const addServiceButton = document.getElementById('addServiceButton');
+        function escapeText(s) {
+          return String(s || '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+        }
 
         function updateUI() {
           const p = PROVIDERS[sel.value];
@@ -2324,7 +2347,13 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           authMethodHidden.value = authType;
           const usePat = authType === "pat";
           const useOauth = authType === "oauth";
+          const reusable = REUSABLE_BY_PROVIDER_AUTH[sel.value + ':' + authType] || [];
           credHint.textContent = p.helpText;
+          if (reuseHint) {
+            reuseHint.innerHTML = usePat && reusable.length
+              ? 'Leave blank to use an existing workspace connection: ' + reusable.slice(0, 3).map(c => '<code>' + escapeText(c.label) + '</code> <span style="color:#8792a2;">(' + escapeText(c.scope) + ')</span>').join(', ') + (reusable.length > 3 ? ' ...' : '')
+              : '';
+          }
           if (serverCredentialHint) {
             if (sel.value === "google_ads") {
               const envSet = ${JSON.stringify(!!process.env.GOOGLE_ADS_DEVELOPER_TOKEN)};
@@ -2348,7 +2377,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                       : (sel.value === "google_maps" ? "Google Maps Platform API key" : p.label + " token"))))));
           credField.placeholder = usePat ? "Paste your " + tokenLabel + (sel.value === "hubspot" ? " here (starts with pat-)" : " here") : "OAuth flow will start after submit";
           credField.disabled = !usePat;
-          credField.required = usePat;
+          credField.required = usePat && reusable.length === 0;
           credFieldRow.style.opacity = usePat ? "1" : "0.55";
           addServiceButton.textContent = useOauth ? "Connect with OAuth" : "Add service";
           if (!usePat) credField.value = "";
@@ -2658,10 +2687,11 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
         }
         if (cn.provider === "google_ads" && clearServerCredential) updateData.encryptedServerCredential = null;
         if (Object.keys(updateData).length > 0) {
-          await prisma.connection.update({
+          const updated = await prisma.connection.update({
             where: { id: cn.id },
             data: updateData,
           });
+          if (serverCredential || clearServerCredential) await syncProviderCredentialFromConnection(updated);
           connUpdates.push({ id: cn.id, label: newLabel, enabled: newEnabled });
         }
       }
@@ -2703,37 +2733,66 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
       return c.redirect(`/oauth/${provider}/start?tenant=${encodeURIComponent(scope)}&reauth=1`);
     }
     if (!wantsPat || !providerDef.authTypes.includes("pat")) return c.html("<h1>paste token is not supported for this provider</h1>", 400);
-    if (!credential) return c.html("<h1>credential required</h1>", 400);
 
     // 1) Create or rotate the PAT connection for this provider/auth type.
     const tenantRow = await ensureTenant(user.id, scope, undefined, wsId);
     const existingConn = await prisma.connection.findFirst({
       where: { provider, authType: "pat", scope, ownerId: user.id },
     });
-    const credentialMeta = await credentialMetadataForStorage(provider, "pat", credential);
-    const conn = existingConn
-      ? await prisma.connection.update({
-          where: { id: existingConn.id },
-          data: {
-            encryptedCredential: encrypt(credential),
-            refreshToken: null,
-            accessTokenExpiresAt: null,
-            ...credentialMeta,
-          },
-        })
-      : await prisma.connection.create({
-          data: {
-            provider,
-            authType: "pat",
-            label: `${provider}-${scope}-pat`,
-            scope,
-            tenantId: tenantRow.id,
-            ownerId: user.id,
-            workspaceId: tenantRow.workspaceId ?? wsId,
-            encryptedCredential: encrypt(credential),
-            ...credentialMeta,
-          },
-        });
+    let conn;
+    if (credential) {
+      const credentialMeta = await credentialMetadataForStorage(provider, "pat", credential);
+      conn = existingConn
+        ? await prisma.connection.update({
+            where: { id: existingConn.id },
+            data: {
+              encryptedCredential: encrypt(credential),
+              refreshToken: null,
+              accessTokenExpiresAt: null,
+              ...credentialMeta,
+            },
+          })
+        : await prisma.connection.create({
+            data: {
+              provider,
+              authType: "pat",
+              label: `${provider}-${scope}-pat`,
+              scope,
+              tenantId: tenantRow.id,
+              ownerId: user.id,
+              workspaceId: tenantRow.workspaceId ?? wsId,
+              encryptedCredential: encrypt(credential),
+              ...credentialMeta,
+            },
+          });
+      await ensureProviderCredentialForConnection(conn, user.id);
+      await syncProviderCredentialFromConnection(conn);
+    } else if (existingConn) {
+      conn = existingConn;
+      await ensureProviderCredentialForConnection(existingConn, user.id);
+    } else {
+      const reusableConnsForProvider = await prisma.connection.findMany({
+        where: {
+          provider,
+          authType: "pat",
+          ownerId: user.id,
+          workspaceId: tenantRow.workspaceId ?? wsId,
+          enabled: true,
+          scope: { not: scope },
+        },
+        orderBy: { createdAt: "asc" },
+      });
+      if (reusableConnsForProvider.length > 1) {
+        return c.html(`<h1>multiple existing ${escapeHtml(providerDef.label)} connections</h1><p>Paste a new credential for now, or delete/disable the extra existing connection so Grantry can safely infer which one to reuse.</p><p><a href="/tenants/${scope}/edit">Back</a></p>`, 400);
+      }
+      const reusableConn = reusableConnsForProvider[0];
+      if (!reusableConn) return c.html(`<h1>credential required for ${escapeHtml(providerDef.label)}</h1>`, 400);
+      conn = await createTenantConnectionFromCredential({
+        tenant: tenantRow,
+        sourceConnection: reusableConn,
+        createdById: user.id,
+      });
+    }
     await grantConnectionToTenantAgents(user.id, scope, conn.id);
 
     return c.html(`
@@ -2774,8 +2833,9 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/recheck", async (c)
 
   const token = decrypt(conn.encryptedCredential);
   const credentialMeta = await credentialMetadataForStorage(conn.provider, conn.authType, token);
-  await prisma.connection.update({
-    where: { id: conn.id },
+  await rotateSharedCredential({
+    credentialId: conn.credentialId,
+    connectionId: conn.id,
     data: credentialMeta,
   });
 
@@ -2837,12 +2897,13 @@ dashboardApp.get("/tenants/new", async (c) => {
   const providerAuthOptions = knownProviders.flatMap((p) =>
     p.authTypes.map((authType) => ({ provider: p, authType }))
   );
+  const wsId = await getActiveWorkspaceId(c);
   // Get existing tenants (distinct scope values) and which providers each has.
   // We need provider-by-provider info so the wizard can hide the credential
   // field when reusing an existing connection.
   const existingConns = await prisma.connection.findMany({
-    where: { ownerId: user.id },
-    select: { scope: true, provider: true, authType: true, label: true },
+    where: { ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) },
+    select: { id: true, scope: true, provider: true, authType: true, label: true },
     orderBy: { scope: "asc" },
   });
   const existingScopes = Array.from(new Set(existingConns.map((c: { scope: string }) => c.scope).filter((s: string) => s.length > 0)));
@@ -2852,6 +2913,13 @@ dashboardApp.get("/tenants/new", async (c) => {
     if (!c.scope) continue;
     if (!scopeProviders[c.scope]) scopeProviders[c.scope] = {};
     scopeProviders[c.scope][`${c.provider}:${c.authType}`] = c.label;
+  }
+  const reusableByProviderAuth: Record<string, Array<{ id: string; label: string; scope: string }>> = {};
+  for (const c of existingConns) {
+    if (!c.scope) continue;
+    const key = `${c.provider}:${c.authType}`;
+    if (!reusableByProviderAuth[key]) reusableByProviderAuth[key] = [];
+    reusableByProviderAuth[key].push({ id: c.id, label: c.label, scope: c.scope });
   }
 
   return c.html(`
@@ -2901,7 +2969,7 @@ dashboardApp.get("/tenants/new", async (c) => {
 
         <div class="step-card">
           <h2><span class="num">2</span> Providers</h2>
-          <p class="field-hint" style="margin-top:0;">Pick one or more services to wire into this tenant. Each one gets its own connection, and access follows the credential's own permissions.</p>
+          <p class="field-hint" style="margin-top:0;">Pick one or more services to wire into this tenant. If this workspace already has a matching connection, leaving the credential blank reuses that existing provider credential for the new tenant.</p>
           <input type="text" id="providerSearch" placeholder="Search providers… (e.g. notion, github, oauth)" autocomplete="off" style="margin-bottom:12px;">
           <p class="field-hint" id="providerSearchEmpty" style="display:none;margin-top:0;">No providers match your search.</p>
           ${providerAuthOptions.map(({ provider: p, authType }) => {
@@ -2910,17 +2978,27 @@ dashboardApp.get("/tenants/new", async (c) => {
             const hasOauth = p.authTypes.includes("oauth");
             const isImplemented = p.implemented !== false;
             const optionKey = `${p.key}:${authType}`;
+            const reusableOptions = reusableByProviderAuth[optionKey] || [];
             return `
           <div class="provider-block" data-provider="${p.key}" data-auth-type="${authType}" data-haspat="${hasPat}" data-hasoauth="${hasOauth}" data-implemented="${isImplemented}" style="border:1px solid #e3e8ee;border-radius:8px;padding:12px 16px;margin-bottom:12px;${isImplemented ? "" : "opacity:.62;"}">
             <label style="font-weight:600;display:flex;align-items:center;gap:8px;cursor:${isImplemented ? "pointer" : "not-allowed"};margin:0;">
               <input type="checkbox" class="provider-check" value="${optionKey}" ${isImplemented ? "" : "disabled"}> ${providerIcon(p.key)} ${p.label}
               <span style="color:#687385;font-weight:normal;font-size:13px;">(${authLabel})</span>
+              ${reusableOptions.length ? `<span class="badge ok" style="margin-left:auto;">existing connection</span>` : ""}
               ${isImplemented ? "" : '<span class="badge unscoped" style="margin-left:auto;">Coming soon</span>'}
             </label>
             ${isImplemented ? `
             <div class="provider-detail" style="display:none;margin-top:12px;padding-left:24px;">
               ${authType === "pat" ? `
               <div class="field cred-row">
+                ${reusableOptions.length ? `
+                <label for="reuse_${p.key}_${authType}">Connection</label>
+                <select name="reuse_connection_${p.key}_${authType}" id="reuse_${p.key}_${authType}" class="reuse-select">
+                  ${reusableOptions.map((cn) => `<option value="${escapeHtml(cn.id)}">Use existing: ${escapeHtml(cn.label)} (${escapeHtml(cn.scope)})</option>`).join("")}
+                  <option value="">Paste a new credential instead</option>
+                </select>
+                <div class="field-hint">Creates a new tenant-scoped connection that uses the selected workspace credential.</div>
+                ` : ""}
                 <label>Credential</label>
                 <textarea name="credential_${p.key}_${authType}" class="cred-input" rows="2" placeholder="${escapeHtml(credentialPlaceholder(p.key, p.label, authType))}"></textarea>
                 <div class="field-hint">${escapeHtml(p.helpText)}</div>
@@ -2954,6 +3032,7 @@ dashboardApp.get("/tenants/new", async (c) => {
       <script>
         const PROVIDERS = ${JSON.stringify(Object.fromEntries(knownProviders.map(p => [p.key, p])))};
         const SCOPE_PROVIDERS = ${JSON.stringify(scopeProviders)};
+        const REUSABLE_BY_PROVIDER_AUTH = ${JSON.stringify(reusableByProviderAuth)};
         const tenantField = document.getElementById('tenant');
         const blocks = Array.from(document.querySelectorAll('.provider-block'));
 
@@ -2980,9 +3059,28 @@ dashboardApp.get("/tenants/new", async (c) => {
           const reusing = !!existingConnLabel;
           const credRow = block.querySelector('.cred-row');
           const notice = block.querySelector('.reusing-notice');
+          const reuseSelect = block.querySelector('.reuse-select');
           if (credRow && notice) {
             const credInput = credRow.querySelector('.cred-input');
-            if (reusing) {
+            const selectedReuseLabel = reuseSelect && reuseSelect.value
+              ? reuseSelect.options[reuseSelect.selectedIndex].text.replace(/^Use existing:\\s*/, '')
+              : "";
+            if (selectedReuseLabel) {
+              credRow.querySelectorAll('a, .field-hint').forEach(el => {
+                if (!el.closest || !el.closest('select')) el.style.display = "none";
+              });
+              credInput.style.display = "none";
+              notice.style.display = "";
+              notice.querySelector('.reusing-label').textContent = selectedReuseLabel;
+              const rotate = notice.querySelector('.rotate-link');
+              if (rotate) rotate.onclick = (e) => {
+                e.preventDefault();
+                if (reuseSelect) reuseSelect.value = "";
+                credInput.style.display = "";
+                credInput.focus();
+                notice.style.display = "none";
+              };
+            } else if (reusing) {
               credRow.querySelectorAll('a, .field-hint').forEach(el => el.style.display = "none");
               credInput.style.display = "none";
               notice.style.display = "";
@@ -3040,6 +3138,8 @@ dashboardApp.get("/tenants/new", async (c) => {
 
         blocks.forEach((block) => {
           block.querySelector('.provider-check').addEventListener('change', () => updateBlock(block));
+          const reuseSelect = block.querySelector('.reuse-select');
+          if (reuseSelect) reuseSelect.addEventListener('change', () => updateBlock(block));
         });
 
         document.getElementById('wizForm').addEventListener('submit', (e) => {
@@ -3205,6 +3305,8 @@ dashboardApp.post("/tenants/new", async (c) => {
     if (providerAuths.length === 1) return String(body.credential ?? "").trim();
     return "";
   };
+  const reuseConnectionIdFor = (p: string, authType = "pat") =>
+    String((body as any)[`reuse_connection_${p}_${authType}`] ?? "").trim();
   console.log("[tenants/new POST] tenant=", tenant, "providerAuths=", providerAuths);
 
   if (!/^[a-z0-9_-]+$/.test(tenant)) {
@@ -3285,10 +3387,36 @@ dashboardApp.post("/tenants/new", async (c) => {
   for (const { provider, authType } of providerAuths) {
     const providerDef = getProvider(provider)!; // validated above
     const credential = authType === "pat" ? credentialFor(provider, authType) : "";
+    const requestedReuseConnectionId = authType === "pat" && !credential ? reuseConnectionIdFor(provider, authType) : "";
 
     const existingConn = await prisma.connection.findFirst({
       where: { provider, authType, scope: tenant, ownerId: user.id },
     });
+    const selectedReusableConn = requestedReuseConnectionId
+      ? await prisma.connection.findFirst({
+          where: {
+            id: requestedReuseConnectionId,
+            provider,
+            authType,
+            ownerId: user.id,
+            workspaceId: tenantRow.workspaceId ?? wsId,
+            enabled: true,
+          },
+        })
+      : null;
+    const reusableConnsForProvider = !existingConn
+      ? await prisma.connection.findMany({
+          where: {
+            provider,
+            authType,
+            ownerId: user.id,
+            workspaceId: tenantRow.workspaceId ?? wsId,
+            enabled: true,
+            scope: { not: tenant },
+          },
+          orderBy: { createdAt: "asc" },
+        })
+      : [];
 
     // Decide how to authenticate this provider:
     //   - credential pasted           -> create/rotate a PAT connection now
@@ -3315,9 +3443,30 @@ dashboardApp.post("/tenants/new", async (c) => {
               ...credentialMeta,
             },
           });
+      await ensureProviderCredentialForConnection(conn, user.id);
+      await syncProviderCredentialFromConnection(conn);
       connections.push(conn);
     } else if (existingConn) {
+      await ensureProviderCredentialForConnection(existingConn, user.id);
       connections.push(existingConn);
+    } else if (requestedReuseConnectionId && !selectedReusableConn) {
+      return c.html(`<h1>selected connection cannot be reused</h1><p>The selected ${escapeHtml(providerDef.label)} connection does not belong to this workspace, provider, or auth type.</p><p><a href="/tenants/new">Back</a></p>`, 400);
+    } else if (selectedReusableConn) {
+      const conn = await createTenantConnectionFromCredential({
+        tenant: tenantRow,
+        sourceConnection: selectedReusableConn,
+        createdById: user.id,
+      });
+      connections.push(conn);
+    } else if (reusableConnsForProvider.length === 1) {
+      const conn = await createTenantConnectionFromCredential({
+        tenant: tenantRow,
+        sourceConnection: reusableConnsForProvider[0],
+        createdById: user.id,
+      });
+      connections.push(conn);
+    } else if (reusableConnsForProvider.length > 1) {
+      return c.html(`<h1>multiple existing ${escapeHtml(providerDef.label)} connections</h1><p>Paste a new credential for now, or delete/disable the extra existing connection so Grantry can safely infer which one to reuse.</p><p><a href="/tenants/new">Back</a></p>`, 400);
     } else if (authType === "oauth" && providerDef.authTypes.includes("oauth")) {
       oauthQueue.push(provider);
     } else {
@@ -4309,7 +4458,11 @@ oauthApp.get("/:provider/callback", async (c) => {
       ...(refreshToken ? { refreshToken: encrypt(refreshToken) } : {}),
     };
     if (conn) {
-      await prisma.connection.update({ where: { id: conn.id }, data });
+      await rotateSharedCredential({
+        credentialId: conn.credentialId,
+        connectionId: conn.id,
+        data,
+      });
     } else {
       // No existing connection for this tenant/provider — create one so the
       // reconnect still leaves a usable credential behind.
@@ -4325,6 +4478,7 @@ oauthApp.get("/:provider/callback", async (c) => {
           ...data,
         },
       });
+      await ensureProviderCredentialForConnection(created, user.id);
       await grantConnectionToTenantAgents(user.id, effectiveTenant, created.id);
     }
     return c.redirect(`/tenants/${effectiveTenant}/edit?reauthed=${encodeURIComponent(providerKey)}`);
@@ -4356,8 +4510,9 @@ oauthApp.get("/:provider/callback", async (c) => {
   });
   // If the connection already existed, update the credential (token may have rotated)
   if (existingConn) {
-    await prisma.connection.update({
-      where: { id: existingConn.id },
+    await rotateSharedCredential({
+      credentialId: existingConn.credentialId,
+      connectionId: existingConn.id,
       data: {
         encryptedCredential: encrypt(accessToken),
         accessTokenExpiresAt: tokenJson.expires_in ? new Date(Date.now() + tokenJson.expires_in * 1000) : null,
@@ -4365,6 +4520,8 @@ oauthApp.get("/:provider/callback", async (c) => {
         ...(refreshToken ? { refreshToken: encrypt(refreshToken) } : {}),
       },
     });
+  } else {
+    await ensureProviderCredentialForConnection(conn, user.id);
   }
   await grantConnectionToTenantAgents(user.id, effectiveTenant, conn.id);
 

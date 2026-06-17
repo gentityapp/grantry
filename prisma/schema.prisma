@@ -27,6 +27,7 @@ model User {
   agents        Agent[]
   tenants       Tenant[]
   connections   Connection[]
+  providerCredentials ProviderCredential[]
   connectionGrants AgentConnectionGrant[]
   roles         Role[]
   auditLogs     AuditLog[]
@@ -86,10 +87,10 @@ model Verification {
 
 // ---------- Agent / tenant / connection grants (the "grantry" part) ----------
 
-// A tenant is a business/domain boundary owned by one user. `slug` is the
-// immutable wire key — it is what agents send as `scope` in tools/call and
+// A tenant is a role/workflow permission bundle inside a workspace. `slug` is
+// the immutable wire key — it is what agents send as `scope` in tools/call and
 // in the X-Grantry-Scope header, so it must never change after creation.
-// `displayName` is the human-facing label and can be renamed freely.
+// Workspace is the customer/data boundary; tenant is the execution context.
 model Tenant {
   id          String   @id @default(cuid())
   slug        String   // immutable wire key, e.g. "grantry-dev"
@@ -103,7 +104,6 @@ model Tenant {
   updatedAt   DateTime @updatedAt
 
   connections Connection[]
-
   @@unique([ownerId, slug])
   @@index([ownerId])
   @@index([workspaceId])
@@ -194,6 +194,8 @@ model Connection {
   ownerId             String
   owner               User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   encryptedCredential String   // Fernet-encrypted PAT/OAuth token
+  credentialId        String?
+  credential          ProviderCredential? @relation(fields: [credentialId], references: [id], onDelete: SetNull)
   encryptedServerCredential String? // encrypted provider-level secret, e.g. Google Ads developer token
   credentialMetadata  String   @default("{}") // JSON: observed provider scopes/capabilities, never raw token
   credentialValidatedAt DateTime?
@@ -215,7 +217,38 @@ model Connection {
   @@index([ownerId])
   @@index([tenantId])
   @@index([workspaceId])
+  @@index([credentialId])
   @@map("connection")
+}
+
+// Workspace-owned provider credential. Tenant-scoped Connection rows may
+// reference the same credential while keeping AgentConnectionGrant scoped to a
+// specific tenant connection.
+model ProviderCredential {
+  id                  String   @id @default(cuid())
+  workspaceId         String
+  workspace           Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  ownerId             String
+  owner               User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  provider            String
+  authType            String
+  label               String
+  encryptedCredential String
+  encryptedServerCredential String?
+  credentialMetadata  String   @default("{}")
+  credentialValidatedAt DateTime?
+  refreshToken        String?
+  accessTokenExpiresAt DateTime?
+  enabled             Boolean  @default(true)
+  createdById         String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  connections         Connection[]
+
+  @@index([workspaceId, provider, authType])
+  @@index([ownerId, provider, authType])
+  @@map("provider_credential")
 }
 
 // ---------- OAuth state (CSRF protection during OAuth callback) ----------
@@ -392,6 +425,7 @@ model Workspace {
   tenants     Tenant[]
   roles       Role[]
   connections Connection[]
+  providerCredentials ProviderCredential[]
 
   @@map("workspace")
 }

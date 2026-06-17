@@ -13,6 +13,7 @@
     "db:generate": "prisma generate",
     "db:dedupe-connections": "node scripts/dedupe-connections.mjs",
     "db:backfill-tenants": "node scripts/backfill-tenants.mjs",
+    "db:backfill-provider-credentials": "node scripts/backfill-provider-credentials.mjs",
     "db:backfill-agent-connection-grants": "node scripts/backfill-agent-connection-grants.mjs",
     "user:reset-password": "node scripts/reset-password.mjs",
     "db:studio": "prisma studio"
