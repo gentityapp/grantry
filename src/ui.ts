@@ -1168,6 +1168,7 @@ const OAUTH_LEGACY_CLIENT_ID_ALIASES: Record<string, string[]> = {
   google_tag_manager: ["GOOGLE_CLIENT_ID"],
   google_cloud: ["GOOGLE_CLIENT_ID"],
   bigquery: ["GOOGLE_CLIENT_ID"],
+  google_admin: ["GOOGLE_CLIENT_ID"],
   yahoo_ads: ["YAHOO_CLIENT_ID"],
 };
 
@@ -1183,6 +1184,7 @@ const OAUTH_LEGACY_CLIENT_SECRET_ALIASES: Record<string, string[]> = {
   google_tag_manager: ["GOOGLE_CLIENT_SECRET"],
   google_cloud: ["GOOGLE_CLIENT_SECRET"],
   bigquery: ["GOOGLE_CLIENT_SECRET"],
+  google_admin: ["GOOGLE_CLIENT_SECRET"],
   yahoo_ads: ["YAHOO_CLIENT_SECRET"],
 };
 
@@ -4530,6 +4532,7 @@ oauthApp.get("/:provider/start", async (c) => {
     google_tag_manager: ["GOOGLE_CLIENT_ID"],
     google_cloud: ["GOOGLE_CLIENT_ID"],
     bigquery: ["GOOGLE_CLIENT_ID"],
+    google_admin: ["GOOGLE_CLIENT_ID"],
     yahoo_ads: ["YAHOO_CLIENT_ID"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
@@ -4660,6 +4663,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     google_tag_manager: ["GOOGLE_CLIENT_ID"],
     google_cloud: ["GOOGLE_CLIENT_ID"],
     bigquery: ["GOOGLE_CLIENT_ID"],
+    google_admin: ["GOOGLE_CLIENT_ID"],
     yahoo_ads: ["YAHOO_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
@@ -4675,6 +4679,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     google_tag_manager: ["GOOGLE_CLIENT_SECRET"],
     google_cloud: ["GOOGLE_CLIENT_SECRET"],
     bigquery: ["GOOGLE_CLIENT_SECRET"],
+    google_admin: ["GOOGLE_CLIENT_SECRET"],
     yahoo_ads: ["YAHOO_CLIENT_SECRET"],
   };
   const clientId = process.env[`${envPrefix}_CLIENT_ID`]
