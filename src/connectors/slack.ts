@@ -154,6 +154,40 @@ export async function callSlackTool(tool: string, args: SlackArgs, token: string
     return { structuredContent: await post(token, "chat.update", body, tool, { channel: body.channel, ts: body.ts }) };
   }
 
+  if (tool === "slack/create_channel") {
+    const body = jsonBody(args, ["name"], ["is_private", "team_id"]);
+    return { structuredContent: await post(token, "conversations.create", body, tool, { name: body.name }) };
+  }
+
+  if (tool === "slack/invite_members") {
+    const channel = idArg(args, "channel", ["channel_id"]);
+    const usersRaw = args.users ?? args.user_ids;
+    const users = Array.isArray(usersRaw) ? usersRaw.join(",") : String(usersRaw ?? "").trim();
+    if (!users) throw new Error("users is required (comma-separated user IDs or an array)");
+    return { structuredContent: await post(token, "conversations.invite", { channel, users }, tool, { channel }) };
+  }
+
+  if (tool === "slack/open_group_dm") {
+    const usersRaw = args.users ?? args.user_ids;
+    const users = Array.isArray(usersRaw) ? usersRaw.join(",") : String(usersRaw ?? "").trim();
+    if (!users) throw new Error("users is required (comma-separated user IDs or an array)");
+    return { structuredContent: await post(token, "conversations.open", { users, return_im: false }, tool) };
+  }
+
+  if (tool === "slack/invite_shared") {
+    const channel = idArg(args, "channel", ["channel_id"]);
+    const emailsRaw = args.emails;
+    const userIdsRaw = args.user_ids ?? args.users;
+    const emails = Array.isArray(emailsRaw) ? emailsRaw.join(",") : String(emailsRaw ?? "").trim();
+    const userIds = Array.isArray(userIdsRaw) ? userIdsRaw.join(",") : String(userIdsRaw ?? "").trim();
+    if (!emails && !userIds) throw new Error("one of emails or user_ids is required");
+    const body: Record<string, unknown> = { channel };
+    if (emails) body.emails = emails;
+    if (userIds) body.user_ids = userIds;
+    if (args.external_limited !== undefined) body.external_limited = args.external_limited;
+    return { structuredContent: await post(token, "conversations.inviteShared", body, tool, { channel }) };
+  }
+
   if (tool === "slack/list_users") {
     const qs = queryString(args, ["limit", "cursor", "team_id"]);
     return { structuredContent: await get(token, "users.list", qs, tool) };

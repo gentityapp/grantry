@@ -468,12 +468,12 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     // Both PAT (paste a Bot User OAuth Token) and OAuth (authorize an installed
     // Slack app) are supported — users pick at the wizard.
     authTypes: ["pat", "oauth"],
-    helpText: "Paste a Bot User OAuth Token (starts with xoxb-) from your Slack app's OAuth & Permissions page, or click Connect with OAuth to install the app and authorize it. Required Bot Token Scopes: channels:read, groups:read, channels:history, groups:history, chat:write, users:read. The token is sent as Authorization: Bearer to the Slack Web API.",
+    helpText: "Paste a Bot User OAuth Token (starts with xoxb-) from your Slack app's OAuth & Permissions page, or click Connect with OAuth to install the app and authorize it. Required Bot Token Scopes: channels:read, groups:read, channels:history, groups:history, chat:write, users:read. For channel creation and inviting members add channels:manage, channels:write.invites, mpim:write, and (for Slack Connect external invites) conversations.connect:manage. The token is sent as Authorization: Bearer to the Slack Web API.",
     tokenUrl: "https://api.slack.com/apps",
     // OAuth uses Slack's v2 flow. The redirect/callback URL to register in the
     // app's OAuth & Permissions page is https://app.grantry.ai/oauth/slack/callback.
     oauthSetupUrl: "https://api.slack.com/apps",
-    oauthScopes: ["channels:read", "groups:read", "channels:history", "groups:history", "chat:write", "users:read"],
+    oauthScopes: ["channels:read", "groups:read", "channels:history", "groups:history", "chat:write", "users:read", "channels:manage", "channels:write.invites", "mpim:write", "conversations.connect:manage"],
     authorizeUrl: "https://slack.com/oauth/v2/authorize",
     oauthTokenUrl: "https://slack.com/api/oauth.v2.access",
     tools: [
@@ -484,6 +484,10 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "slack/get_thread",
       "slack/post_message",
       "slack/update_message",
+      "slack/create_channel",
+      "slack/invite_members",
+      "slack/open_group_dm",
+      "slack/invite_shared",
       "slack/list_users",
       "slack/get_user",
     ],
