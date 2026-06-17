@@ -117,7 +117,7 @@ Authorization: Bearer gn_agt_<token>
 1. Log in at `/login` (register at `/register`; forgot password → `/forgot-password`).
 2. Tokens are minted by the **tenant wizard** (`/tenants/new`) when you create a
    tenant + agent, by **`/agents/new`** for a cross-tenant agent (check multiple
-   tenants, untick tools — a dedicated 1:1 role is auto-created), and can be
+   tenants to grant their connections), and can be
    rotated from `/agents` (`POST /agents/:id/rotate`).
    The plaintext `gn_agt_…` is shown **once** — copy it then.
 
@@ -292,7 +292,7 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 - `find_agent` (read, token required): `task` (plain-language description),
   optional `scope`. Answers the inverse question *"which agent can do this?"* —
   keyword-matches the task to candidate tools, then returns ranked agents in
-  your workspace that can call them (with the role, scopes, and connection each
+  your workspace that can call them (with the scopes and connection each
   would use). Also returns `scopeMatches` (accessible scopes whose name appears
   in the task) and, when no agent matched, a `hint` pointing at `list_scopes` —
   so an empty `candidates` is never mistaken for "that scope doesn't exist".

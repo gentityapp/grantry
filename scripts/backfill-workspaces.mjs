@@ -1,7 +1,7 @@
 // Backfill personal workspaces (docs/workspace-design.md, phase 2 migration).
 // For every user that owns any resource (or simply exists), ensure a personal
-// workspace + owner membership, then point their tenants/agents/roles/
-// connections at it. Idempotent: runs on every boot via
+// workspace + owner membership, then point their tenants/agents/connections
+// and legacy role rows at it. Idempotent: runs on every boot via
 // start-with-maintenance.mjs and only touches rows with workspaceId = null.
 import { PrismaClient } from "@prisma/client";
 

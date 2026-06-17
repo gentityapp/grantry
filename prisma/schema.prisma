@@ -84,7 +84,7 @@ model Verification {
   @@map("verification")
 }
 
-// ---------- Agent / connection / role (the "grantry" part) ----------
+// ---------- Agent / tenant / connection grants (the "grantry" part) ----------
 
 // A tenant is a business/domain boundary owned by one user. `slug` is the
 // immutable wire key — it is what agents send as `scope` in tools/call and
@@ -127,6 +127,7 @@ model Agent {
   workspaceId   String?  // null only before workspace backfill
   workspace     Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
+  // Legacy migration relation. Runtime authorization uses connectionGrants.
   roles         AgentRole[]
   connectionGrants AgentConnectionGrant[]
   auditLogs     AuditLog[]
@@ -141,8 +142,8 @@ model Role {
   id            String   @id @default(cuid())
   name          String   @unique
   description   String?
-  allowedTools  String   // ["github/list_repos", "notion/list_dbs", ...]
-  allowedScopes String   // ["rootteam", "acme"] — empty array = any scope
+  allowedTools  String   // legacy migration data; runtime ignores this
+  allowedScopes String   // legacy migration data; runtime ignores this
   ownerId       String
   owner         User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   workspaceId   String?  // null only before workspace backfill
@@ -224,7 +225,7 @@ model OAuthState {
   state        String   @unique
   provider     String
   codeVerifier String?  // for PKCE
-  payload      String?  // wizard metadata (tenant, agent, role info)
+  payload      String?  // wizard metadata (tenant, agent, OAuth queue)
   redirectTo   String?  // URL to send user after success
   createdAt    DateTime @default(now())
   expiresAt    DateTime
@@ -358,7 +359,7 @@ model OauthConsent {
 
 // Maps an OAuth grant (user x dynamically-registered client) to the grantry
 // Agent it should act as. Resolved on every /mcp request, so changing the
-// bound agent's roles/scopes in the dashboard takes effect immediately.
+// bound agent's connection grants in the dashboard takes effect immediately.
 model OauthAgentGrant {
   id        String   @id @default(cuid())
   userId    String

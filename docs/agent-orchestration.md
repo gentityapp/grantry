@@ -15,7 +15,7 @@ does **not** answer is the inverse, fleet-wide question:
 > *"I want to do X. **Which** agent can do it?"*
 
 This bites the moment work spans more than one narrowly-scoped agent (the
-recommended posture: one agent per tenant/role/connection set). Concrete case
+recommended posture: one agent per tenant/connection grant set). Concrete case
 that motivated this doc: a session scoped only to the `seo-marketer` tenant
 needed to set an env var on grantry's own prod Railway project. The agent that
 *could* do it existed somewhere in the fleet, but there was no way to find it.
@@ -98,7 +98,7 @@ Same lookup, two places it shows up — differing only in how it's triggered:
    ```jsonc
    {
      "error": "agent `seo-marketer` cannot call railway/graphql on scope grantry-prod",
-     "capableAgents": [{ "name": "infra-ops", "roles": ["platform-admin"], "connection": "live" }]
+     "capableAgents": [{ "name": "infra-ops", "grantedScopes": ["grantry-prod"], "connection": "live" }]
    }
    ```
 
@@ -149,7 +149,7 @@ Guardrails:
 - **Bound to the requester.** Only the agent the grant was issued to may redeem
   it; the secret token is stored hashed and returned once.
 - **Re-checked at redemption.** `checkPolicy` runs against the target again, so
-  a role/connection change between mint and redeem revokes the grant.
+  a connection grant change between mint and redeem revokes the grant.
 - **Audited end to end.** The redeemed `AuditLog` row is under the *target*
   (executing) agent with `delegatedById` (the requester) and `delegationId`.
 - **No token exposure.** The requester never sees the target's credential.
@@ -189,9 +189,9 @@ use `AuditLog` success history for ranking yet — see open questions.
 
 ## Why this fits grantry
 
-The building blocks are already here — roles, scopes, connections, audit log,
+The building blocks are already here — connection grants, scopes, connections, audit log,
 system tools. This adds one **index** over them, surfaced as a tool you can ask
 and a hint on denials, plus an optional **narrow handoff**. The
 `*-full-manager-routine` agent naming already hints at an intended orchestrator;
-this gives that role real primitives instead of one agent hoarding every
+this gives that agent real primitives instead of one token hoarding every
 permission.

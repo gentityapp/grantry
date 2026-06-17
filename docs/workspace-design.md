@@ -5,7 +5,7 @@
 
 ## 背景：現状モデルの限界
 
-現在のgrantryは構造的に「個人ツール」。Agent / Tenant / Role / Connection の
+現在のgrantryは構造的に「個人ツール」。Agent / Tenant / Connection / Connection Grant の
 すべてが単一ユーザーの `ownerId` にぶら下がっている。これにより：
 
 - 社員がアカウントを作っても何も所有していない（OAuthのagent選択ゲートで
@@ -20,7 +20,7 @@
 User（ログイン主体）
   └─ WorkspaceMember ─→ Workspace（管理の壁：誰がメンバーで誰が設定を触れるか）
                             ├─ Agent（権限の束。OAuth紐付け/トークンの単位）
-                            ├─ Role
+                            ├─ AgentConnectionGrant
                             ├─ Tenant = scope（データの壁：客先A/Bの認証情報を混ぜない）
                             └─ Connection（暗号化された資格情報。Tenantに属す）
 ```
@@ -89,7 +89,7 @@ model WorkspaceMember {
 }
 
 // 所有の付け替え（マイグレーション）：
-// Agent.ownerId / Tenant.ownerId / Role.ownerId / Connection.ownerId
+// Agent.ownerId / Tenant.ownerId / Connection.ownerId
 //   → workspaceId へ移行（+ createdBy で作成者は記録）
 // 既存データは各ユーザーの「パーソナルWorkspace」を自動生成して収容する
 

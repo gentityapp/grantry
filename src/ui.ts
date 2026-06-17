@@ -1210,10 +1210,15 @@ dashboardApp.get("/dashboard", async (c) => {
 
   const wsId = await getActiveWorkspaceId(c);
   const wsWhere = wsId ? { workspaceId: wsId } : {};
-  const [connectionCount, agentCount, roleCount, recentAudits] = await Promise.all([
+  const [connectionCount, agentCount, grantCount, recentAudits] = await Promise.all([
     prisma.connection.count({ where: { ownerId: user.id, ...wsWhere } }),
     prisma.agent.count({ where: { ownerId: user.id, ...wsWhere } }),
-    prisma.role.count({ where: { ownerId: user.id, ...wsWhere } }),
+    prisma.agentConnectionGrant.count({
+      where: {
+        agent: { ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) },
+        connection: { ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) },
+      },
+    }),
     prisma.auditLog.findMany({
       // Scope the feed to the active workspace so it never shows another
       // workspace's activity (wsId is membership-verified in resolveActiveWorkspace,
@@ -1238,7 +1243,7 @@ dashboardApp.get("/dashboard", async (c) => {
       <div class="row" style="gap:16px; margin-bottom:24px;">
         <div class="card" style="flex:1;"><div style="color:#687385;font-size:12px;">Connections</div><div style="font-size:24px;font-weight:700;">${connectionCount}</div></div>
         <div class="card" style="flex:1;"><div style="color:#687385;font-size:12px;">Agents</div><div style="font-size:24px;font-weight:700;">${agentCount}</div></div>
-        <div class="card" style="flex:1;"><div style="color:#687385;font-size:12px;">Roles</div><div style="font-size:24px;font-weight:700;">${roleCount}</div></div>
+        <div class="card" style="flex:1;"><div style="color:#687385;font-size:12px;">Connection grants</div><div style="font-size:24px;font-weight:700;">${grantCount}</div></div>
       </div>
       <h2>Recent activity</h2>
       <div class="card">
@@ -1303,7 +1308,7 @@ dashboardApp.get("/_ops", async (c) => {
     enabledConnectionCount,
     agentCount,
     enabledAgentCount,
-    roleCount,
+    grantCount,
     audit24hCount,
     audit24hErrors,
     audit24hDenied,
@@ -1315,8 +1320,7 @@ dashboardApp.get("/_ops", async (c) => {
     users,
     connectionIssues,
     expiredOAuthConnections,
-    agentsWithoutRoles,
-    roles,
+    agentsWithoutGrants,
   ] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({ where: { role: "admin" } }),
@@ -1324,7 +1328,7 @@ dashboardApp.get("/_ops", async (c) => {
     prisma.connection.count({ where: { enabled: true } }),
     prisma.agent.count(),
     prisma.agent.count({ where: { enabled: true } }),
-    prisma.role.count(),
+    prisma.agentConnectionGrant.count(),
     prisma.auditLog.count({ where: { createdAt: { gte: dayAgo } } }),
     prisma.auditLog.count({ where: { createdAt: { gte: dayAgo }, status: "error" } }),
     prisma.auditLog.count({ where: { createdAt: { gte: dayAgo }, status: "denied" } }),
@@ -1341,7 +1345,7 @@ dashboardApp.get("/_ops", async (c) => {
     prisma.user.findMany({
       take: 50,
       orderBy: { createdAt: "desc" },
-      include: { _count: { select: { connections: true, agents: true, roles: true, auditLogs: true } } },
+      include: { _count: { select: { connections: true, agents: true, connectionGrants: true, auditLogs: true } } },
     }),
     prisma.connection.findMany({
       where: {
@@ -1366,18 +1370,11 @@ dashboardApp.get("/_ops", async (c) => {
       orderBy: { createdAt: "desc" },
       include: { owner: true },
     }),
-    prisma.role.findMany({
-      take: 200,
-      orderBy: { updatedAt: "desc" },
-      include: { owner: true, agents: true },
-    }),
   ]);
 
   const providerDefs = Object.values(PROVIDERS);
   const oauthProviders = providerDefs.filter((p) => p.authTypes.includes("oauth"));
   const totalToolCount = new Set(providerDefs.flatMap((p) => p.tools)).size;
-  const broadRoles = roles.filter((r) => safeJsonArray(r.allowedScopes).length === 0);
-  const unusedRoles = roles.filter((r) => r.agents.length === 0);
   const envRows = oauthProviders.map((p) => {
     const id = envStatus(oauthEnvCandidates(p.key, "CLIENT_ID"));
     const secret = envStatus(oauthEnvCandidates(p.key, "CLIENT_SECRET"));
@@ -1421,7 +1418,7 @@ dashboardApp.get("/_ops", async (c) => {
         ${card("Users", userCount, `${adminUserCount} admin`)}
         ${card("Connections", connectionCount, `${enabledConnectionCount} enabled`)}
         ${card("Agents", agentCount, `${enabledAgentCount} enabled`)}
-        ${card("Legacy roles", roleCount, `${broadRoles.length} broad scope`)}
+        ${card("Connection grants", grantCount)}
         ${card("Audit 24h", audit24hCount, `${audit24hErrors} error / ${audit24hDenied} denied`)}
         ${card("OAuth states", oauthStateCount, `${expiredOAuthStateCount} expired`)}
       </div>
@@ -1440,8 +1437,7 @@ dashboardApp.get("/_ops", async (c) => {
                 <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;" ${expiredOAuthStateCount ? "" : "disabled"}>Prune expired</button>
               </form>
             </td></tr>
-            <tr><td>Agents without connection grants</td><td>${agentsWithoutRoles.length ? okBadge(false, String(agentsWithoutRoles.length)) : okBadge(true)}</td><td>Ungrantable agents cannot access provider connections.</td></tr>
-            <tr><td>Legacy broad roles</td><td>${broadRoles.length ? okBadge(false, String(broadRoles.length)) : okBadge(true)}</td><td>Legacy rows only; runtime policy uses connection grants.</td></tr>
+            <tr><td>Agents without connection grants</td><td>${agentsWithoutGrants.length ? okBadge(false, String(agentsWithoutGrants.length)) : okBadge(true)}</td><td>Agents without grants cannot access provider connections.</td></tr>
           </tbody>
         </table>
       </div>
@@ -1547,35 +1543,13 @@ dashboardApp.get("/_ops", async (c) => {
         </div>`}
 
         <h3>Agents without connection grants</h3>
-        ${agentsWithoutRoles.length === 0 ? '<div class="empty">None.</div>' : `
+        ${agentsWithoutGrants.length === 0 ? '<div class="empty">None.</div>' : `
         <table>
           <thead><tr><th>Owner</th><th>Agent</th><th>Created</th></tr></thead>
           <tbody>
-            ${agentsWithoutRoles.map((a) => `
+            ${agentsWithoutGrants.map((a) => `
               <tr><td>${escapeHtml(a.owner.email)}</td><td><code>${escapeHtml(a.name)}</code></td><td><code>${a.createdAt.toISOString().slice(0, 10)}</code></td></tr>
             `).join("")}
-          </tbody>
-        </table>`}
-
-        <h3>Legacy broad or unused roles</h3>
-        ${broadRoles.length === 0 && unusedRoles.length === 0 ? '<div class="empty">None.</div>' : `
-        <table>
-          <thead><tr><th>Owner</th><th>Role</th><th>Issue</th><th>Tools</th></tr></thead>
-          <tbody>
-            ${Array.from(new Map([...broadRoles, ...unusedRoles].map((r) => [r.id, r])).values()).map((r) => {
-              const issues = [
-                safeJsonArray(r.allowedScopes).length === 0 ? "any-scope" : "",
-                r.agents.length === 0 ? "unused" : "",
-              ].filter(Boolean);
-              return `
-                <tr>
-                  <td>${escapeHtml(r.owner.email)}</td>
-                  <td><code>${escapeHtml(r.name)}</code></td>
-                  <td>${issues.map((i) => `<span class="badge denied">${escapeHtml(i)}</span>`).join(" ")}</td>
-                  <td>${safeJsonArray(r.allowedTools).slice(0, 8).map((t) => `<span class="tool-pill">${escapeHtml(t)}</span>`).join(" ")}${safeJsonArray(r.allowedTools).length > 8 ? ` <span style="color:#687385;">+${safeJsonArray(r.allowedTools).length - 8}</span>` : ""}</td>
-                </tr>
-              `;
-            }).join("")}
           </tbody>
         </table>`}
       </div>
@@ -1607,7 +1581,7 @@ dashboardApp.get("/_ops", async (c) => {
       <div class="card">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Email</th><th>Role</th><th>Connections</th><th>Agents</th><th>Roles</th><th>Audit</th><th>Created</th></tr></thead>
+            <thead><tr><th>Email</th><th>Role</th><th>Connections</th><th>Agents</th><th>Grants created</th><th>Audit</th><th>Created</th></tr></thead>
             <tbody>
               ${users.map((u) => `
                 <tr>
@@ -1615,7 +1589,7 @@ dashboardApp.get("/_ops", async (c) => {
                   <td>${u.role === "admin" ? '<span class="badge ok">admin</span>' : '<span class="badge unscoped">user</span>'}</td>
                   <td>${u._count.connections}</td>
                   <td>${u._count.agents}</td>
-                  <td>${u._count.roles}</td>
+                  <td>${u._count.connectionGrants}</td>
                   <td>${u._count.auditLogs}</td>
                   <td><code>${u.createdAt.toISOString().slice(0, 10)}</code></td>
                 </tr>
@@ -1864,11 +1838,11 @@ dashboardApp.get("/account", async (c) => {
   const user = await getDbSessionUser(c);
   if (!user) return c.redirect("/login");
 
-  const [tenantCount, connectionCount, agentCount, roleCount, sessionCount] = await Promise.all([
+  const [tenantCount, connectionCount, agentCount, grantCount, sessionCount] = await Promise.all([
     prisma.tenant.count({ where: { ownerId: user.id } }),
     prisma.connection.count({ where: { ownerId: user.id } }),
     prisma.agent.count({ where: { ownerId: user.id } }),
-    prisma.role.count({ where: { ownerId: user.id } }),
+    prisma.agentConnectionGrant.count({ where: { agent: { ownerId: user.id } } }),
     prisma.session.count({ where: { userId: user.id, expiresAt: { gt: new Date() } } }),
   ]);
 
@@ -1910,7 +1884,7 @@ dashboardApp.get("/account", async (c) => {
           <a href="/tenants">${tenantCount} tenant${tenantCount === 1 ? "" : "s"}</a> ·
           ${connectionCount} connection${connectionCount === 1 ? "" : "s"} ·
           <a href="/agents">${agentCount} agent${agentCount === 1 ? "" : "s"}</a> ·
-          ${roleCount} role${roleCount === 1 ? "" : "s"}
+          ${grantCount} connection grant${grantCount === 1 ? "" : "s"}
         </p>
       </div>
       <div class="card">
@@ -2085,42 +2059,22 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
     where: { scope, ownerId: user.id },
     orderBy: { createdAt: "asc" },
   });
-  const userIdShort = user.id.slice(0, 8);
-  const role = await prisma.role.findFirst({ where: { name: `${scope}-dev-${userIdShort}`, ownerId: user.id } });
-  const roleTools: string[] = role ? safeJsonArray(role.allowedTools) : [];
-  const roleScopes: string[] = role ? safeJsonArray(role.allowedScopes) : [];
-  const codexAgents = role ? await prisma.agent.findMany({
+  const codexAgents = await prisma.agent.findMany({
     where: {
       ownerId: user.id,
-      roles: { some: { roleId: role.id } },
+      connectionGrants: { some: { connection: { scope, ownerId: user.id } } },
     },
     orderBy: { createdAt: "asc" },
-  }) : [];
+  });
   const providers = listProviders();
   const knownProviders = Object.values(PROVIDERS);
 
-  // Get union of all tools from all connected providers (for the role settings checkboxes)
   const usedProviders = new Set(connections.map((c) => c.provider));
   const usedProviderAuthTypes = new Set(connections.map((c) => `${c.provider}:${c.authType}`));
-  const allAvailableTools = Array.from(new Set(
-    providers.filter((p) => usedProviders.has(p.key)).flatMap((p) => p.tools)
-  ));
   const availableToAdd = providers.flatMap((p) =>
     p.authTypes.map((authType) => ({ provider: p, authType }))
   ).filter((option) => !usedProviderAuthTypes.has(`${option.provider.key}:${option.authType}`));
   const comingSoonProviders = knownProviders.filter((p) => p.implemented === false && !usedProviders.has(p.key));
-
-  // Get all of the user's existing scopes (for allowedScopes multi-select)
-  const userScopes = await prisma.connection.findMany({
-    where: { ownerId: user.id, scope: { not: "" } },
-    select: { scope: true },
-    distinct: ["scope"],
-    orderBy: { scope: "asc" },
-  });
-  const existingScopes = userScopes.map((s) => s.scope);
-
-  const roleScopesStr = roleScopes.join(", ");
-  const roleDesc = role?.description ?? "";
 
   // Flash banner after a successful reconnect (OAuth re-authorization).
   const reauthed = c.req.query("reauthed");
@@ -2137,7 +2091,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
     <main>
       <h1>Edit tenant ${tenantRow && tenantRow.displayName !== tenantRow.slug ? `${escapeHtml(tenantRow.displayName)} ` : ""}<code>${scope}</code></h1>
       <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
-        Edit the tenant's display labels, role tools, and role scopes. To add a new service, scroll down.
+        Edit the tenant's display labels and provider connections. To add a new service, scroll down.
       </p>
       ${reauthBanner}
 
@@ -2241,12 +2195,12 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             </tbody>
           </table>
           </div>
-          <p class="field-hint">↻ <b>Reconnect</b> re-runs the provider's OAuth consent screen and refreshes this connection's access/refresh tokens in place. <b>Delete</b> removes only that credential connection; roles and agents remain.</p>
+          <p class="field-hint">↻ <b>Reconnect</b> re-runs the provider's OAuth consent screen and refreshes this connection's access/refresh tokens in place. <b>Delete</b> removes only that credential connection; agents remain.</p>
         </div>`}
 
         <h2>Connection grants</h2>
         <div class="card">
-          <p class="field-hint" style="margin-top:0;">Agents use explicit connection grants. Provider permissions come from each credential itself; Grantry does not maintain a tool allowlist here.</p>
+          <p class="field-hint" style="margin-top:0;">Agents use explicit connection grants. Provider permissions come from each credential itself; Grantry does not maintain separate per-tool switches here.</p>
           ${connections.length === 0 ? '<div class="empty">No provider connections yet.</div>' : `<p>${connections.length} connection(s) available for this tenant.</p>`}
         </div>
 
@@ -2560,11 +2514,6 @@ async function grantConnectionToTenantAgents(userId: string, scope: string, conn
   return granted;
 }
 
-// --- /tenants/:scope/sync-role-tools (POST) — legacy Role sync removed ---
-dashboardApp.post("/tenants/:scope/sync-role-tools", async (c) => {
-  return c.html("<h1>Role tool sync has been removed. Agent access is managed with connection grants.</h1>", 410);
-});
-
 // --- /tenants/:scope/codex-mcp/create ---
 dashboardApp.post("/tenants/:scope/codex-mcp/create", async (c) => {
   const user = await getSessionUser(c);
@@ -2623,16 +2572,14 @@ dashboardApp.post("/tenants/:scope/codex-mcp/:agentId/rotate", async (c) => {
   const agentId = c.req.param("agentId");
   if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
 
-  const userIdShort = user.id.slice(0, 8);
-  const role = await prisma.role.findFirst({ where: { name: `${scope}-dev-${userIdShort}`, ownerId: user.id } });
-  if (!role) return c.html("<h1>tenant role not found</h1>", 404);
-  const agent = await prisma.agent.findUnique({
-    where: { id: agentId },
-    include: { roles: true },
+  const agent = await prisma.agent.findFirst({
+    where: {
+      id: agentId,
+      ownerId: user.id,
+      connectionGrants: { some: { connection: { scope, ownerId: user.id } } },
+    },
   });
   if (!agent) return c.html("<h1>agent not found</h1>", 404);
-  if (agent.ownerId !== user.id) return c.html("<h1>not your token</h1>", 403);
-  if (!agent.roles.some((r) => r.roleId === role.id)) return c.html("<h1>token is not bound to this tenant</h1>", 403);
 
   const token = `gn_agt_${crypto.randomUUID().replace(/-/g, "")}`;
   const tokenHash = await import("node:crypto").then(c => c.createHash("sha256").update(token).digest("hex"));
@@ -2667,7 +2614,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
   const body = await c.req.parseBody();
   const action = String(body._action ?? "").trim();
 
-  // Roles/connections created here belong to the tenant's own workspace, not
+  // Connection updates belong to the tenant's own workspace, not
   // whatever workspace happens to be active in the cookie.
   const tw = await prisma.tenant.findFirst({ where: { ownerId: user.id, slug: scope }, select: { workspaceId: true } });
   const wsId = tw?.workspaceId ?? (await getActiveWorkspaceId(c));
@@ -2873,7 +2820,7 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/delete", async (c) 
       <h1>✓ Deleted connection <code>${escapeHtml(conn.label)}</code></h1>
       <div class="card">
         <p>Provider <code>${escapeHtml(conn.provider)}</code> was removed from scope <code>${escapeHtml(conn.scope)}</code>.</p>
-        <p>Roles and agents were left unchanged. Calls to this provider will be denied until a new connection is added.</p>
+        <p>Agents were left unchanged. Calls to this provider will be denied until a new connection is added and granted.</p>
       </div>
       <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a></p>
     </main></body></html>
@@ -2936,17 +2883,10 @@ dashboardApp.get("/tenants/new", async (c) => {
             <summary>Or pick an existing tenant (${existingScopes.length})</summary>
             <select name="tenant_select" id="tenant_select">
               <option value="">-- (leave empty to use the text field above) --</option>
-              ${existingScopes.map((s) => `<option value="${s}">${s} (existing — will reuse role '${s}-dev')</option>`).join("")}
+              ${existingScopes.map((s) => `<option value="${s}">${s} (existing — will reuse its connections)</option>`).join("")}
             </select>
             <div class="field-hint">If you pick one, it overrides the text field. Useful when you've already set up the tenant and just want a new agent bound to it.</div>
           </details>
-          ` : ''}
-          ${existingScopes.length > 0 ? `
-          <div class="field" style="margin-top:16px;">
-            <label for="additional_scopes">Additional allowed scopes <span style="color:#687385;">(optional, multi-tenant)</span></label>
-            <input type="text" name="additional_scopes" id="additional_scopes" placeholder="e.g. ${existingScopes.slice(0, 2).join(', ')}${existingScopes.length > 2 ? ', ...' : ''}">
-            <div class="field-hint">Comma-separated. The role will be allowed to access <i>these scopes too</i> in addition to the new tenant. Leave empty to allow <b>only the new tenant</b>. Your other tenants: ${existingScopes.map((s) => `<code>${s}</code>`).join(", ")}.</div>
-          </div>
           ` : ''}
           <div class="field" style="margin-top:16px;">
             <label for="agent">Agent name</label>
@@ -2961,7 +2901,7 @@ dashboardApp.get("/tenants/new", async (c) => {
 
         <div class="step-card">
           <h2><span class="num">2</span> Providers</h2>
-          <p class="field-hint" style="margin-top:0;">Pick one or more services to wire into this tenant. Each one gets its own connection; you can tune which tools each enables.</p>
+          <p class="field-hint" style="margin-top:0;">Pick one or more services to wire into this tenant. Each one gets its own connection, and access follows the credential's own permissions.</p>
           <input type="text" id="providerSearch" placeholder="Search providers… (e.g. notion, github, oauth)" autocomplete="off" style="margin-bottom:12px;">
           <p class="field-hint" id="providerSearchEmpty" style="display:none;margin-top:0;">No providers match your search.</p>
           ${providerAuthOptions.map(({ provider: p, authType }) => {
@@ -3206,11 +3146,6 @@ dashboardApp.post("/tenants/new", async (c) => {
   const tenant = tenantText || tenantSelect;
   // Optional human-facing name; the slug stays the immutable wire key.
   const tenantDisplayName = String(body.display_name ?? "").trim();
-  // Additional scopes the role should allow (comma-separated).
-  const additionalScopesRaw = String(body.additional_scopes ?? "").trim();
-  const additionalScopes = additionalScopesRaw
-    ? additionalScopesRaw.split(",").map((s) => s.trim()).filter((s) => /^[a-z0-9_-]+$/.test(s))
-    : [];
   const agent = String(body.agent ?? "").trim();
   const agentDesc = String(body.agent_desc ?? "").trim();
 
@@ -3296,9 +3231,6 @@ dashboardApp.post("/tenants/new", async (c) => {
     `, 400);
   }
   if (!agent) return c.html("<h1>agent name required</h1>", 400);
-  if (additionalScopesRaw && additionalScopes.length === 0) {
-    return c.html("<h1>additional_scopes must be lowercase a-z, 0-9, hyphens, underscores (comma-separated)</h1>", 400);
-  }
   if (providers.length === 0) return c.html("<h1>select at least one provider</h1>", 400);
   if (providerAuths.length === 0) return c.html("<h1>select at least one provider</h1>", 400);
   for (const item of providerAuths) {
@@ -3334,20 +3266,6 @@ dashboardApp.post("/tenants/new", async (c) => {
     `, 409);
   }
 
-  // Per-user role naming: each user gets their own role row for a given
-  // tenant scope. The role NAME is just an internal label; the
-  // `allowedScopes` field is what actually controls access. So two users
-  // can both have a tenant called `grantry-dev` without colliding —
-  // each gets role `grantry-dev-dev-${userIdShort}`.
-  const userIdShort = user.id.slice(0, 8);
-  const roleName = `${tenant}-dev-${userIdShort}`;
-
-  // Tenant (= scope) names are still globally unique on connections, but
-  // we don't need to enforce it at the role layer. If you really did own
-  // a connection with the same scope from a previous account, you'd get
-  // a separate conflict on the connection create — but that's your own
-  // legacy data, not another user's.
-
   // 0) Materialize the tenant entity up front, before any connections. The
   //    OAuth callback later upserts the same (ownerId, slug) and would lose
   //    the display name, so it must be recorded here.
@@ -3358,7 +3276,7 @@ dashboardApp.post("/tenants/new", async (c) => {
   // 1) Resolve each selected provider into either an immediate connection
   //    (PAT pasted, or an existing connection we reuse) or an OAuth step that
   //    must be authorized via a redirect. OAuth providers are queued and
-  //    authorized one-by-one after the tenant scaffolding (role + PAT
+  //    authorized one-by-one after the tenant scaffolding (PAT
   //    connections) is in place; the agent + token are minted at the very end
   //    of that chain. (MUST filter connection lookups by ownerId — otherwise
   //    user B could inherit user A's credential.)
@@ -3415,10 +3333,8 @@ dashboardApp.post("/tenants/new", async (c) => {
     const params = new URLSearchParams({
       tenant,
       tenant_select: tenantSelect,
-      additional_scopes: additionalScopes.join(","),
       agent,
       agent_desc: agentDesc,
-      tools_json: "[]",
       oauth_queue: rest.join(","),
     });
     return c.redirect(`/oauth/${first}/start?${params.toString()}`);
@@ -3594,8 +3510,7 @@ dashboardApp.get("/agents/new", async (c) => {
     providersByScope.set(cn.scope, list);
   }
 
-  // Union of providers across every tenant — the tool set a full-tenant
-  // manager (allowedScopes = []) can reach.
+  // Union of providers across every tenant, used only for compact UI summaries.
   const allProviders: string[] = [];
   for (const list of providersByScope.values()) {
     for (const p of list) if (!allProviders.includes(p)) allProviders.push(p);
@@ -3943,11 +3858,6 @@ dashboardApp.post("/agents/:id/charter", async (c) => {
   return c.redirect(`/agents/${agent.id}`);
 });
 
-// --- /agents/:id/bind POST (legacy Role binding removed) ---
-dashboardApp.post("/agents/:id/bind", async (c) => {
-  return c.html("<h1>Role binding has been removed. Manage access with connection grants.</h1>", 410);
-});
-
 // --- /agents/:id/rotate (POST) ---
 dashboardApp.post("/agents/:id/rotate", async (c) => {
   const user = await getSessionUser(c);
@@ -4006,7 +3916,7 @@ dashboardApp.post("/agents/:id/rotate", async (c) => {
   `);
 });
 
-// --- DEBUG: /debug/agents — dumps agent/role/connection state ---
+// --- DEBUG: /debug/agents — dumps agent/connection grant state ---
 dashboardApp.get("/debug/agents", async (c) => {
   return c.json({ error: "debug endpoint disabled; use /api/scopes" }, 410);
 });
@@ -4058,10 +3968,6 @@ dashboardApp.get("/audit", async (c) => {
     </main></body></html>
   `);
 });
-
-// --- /admin/migrate-scopes (one-off, REMOVED 2026-06-05) ---
-// (migrate-scopes already executed; endpoint removed. Existing dev roles
-// already have allowedScopes=[] from the previous one-off run.)
 
 // --- /oauth/:provider/start (GET) — initiate OAuth flow for any provider ---
 // Generic. Reads the provider's authorizeUrl + scopes from the registry,
@@ -4117,10 +4023,8 @@ oauthApp.get("/:provider/start", async (c) => {
   const payload: Record<string, any> = {
     tenant: c.req.query("tenant") || "",
     tenant_select: c.req.query("tenant_select") || "",
-    additional_scopes: c.req.query("additional_scopes") || "",
     agent: c.req.query("agent") || "",
     agent_desc: c.req.query("agent_desc") || "",
-    tools_json: c.req.query("tools_json") || "[]",
     oauth_queue: c.req.query("oauth_queue") || "",
     connection_id: c.req.query("connection_id") || "",
     reauth,
@@ -4474,10 +4378,8 @@ oauthApp.get("/:provider/callback", async (c) => {
     const params = new URLSearchParams({
       tenant: payload.tenant || "",
       tenant_select: payload.tenant_select || "",
-      additional_scopes: payload.additional_scopes || "",
       agent: payload.agent || "",
       agent_desc: payload.agent_desc || "",
-      tools_json: payload.tools_json || "[]",
       oauth_queue: rest.join(","),
     });
     return c.redirect(`/oauth/${nextProvider}/start?${params.toString()}`);
@@ -4780,7 +4682,8 @@ dashboardApp.post("/tenants/:scope/delete", async (c) => {
     return c.html(`<h1>No tenant or connections found for scope '${scope}' (yours)</h1>`, 404);
   }
 
-  // 2) Find user's role(s) for this scope (per-user naming)
+  // 2) Find legacy role rows for this scope so deleting the tenant also cleans
+  //    stale migration-era data. Runtime access is based on connection grants.
   const userIdShort = user.id.slice(0, 8);
   const roles = await prisma.role.findMany({
     where: { ownerId: user.id, OR: [{ name: `${scope}-dev-${userIdShort}` }, { name: `${scope}-dev` }, { name: scope }] },
@@ -4792,9 +4695,8 @@ dashboardApp.post("/tenants/:scope/delete", async (c) => {
     where: { scope, ownerId: user.id },
   });
 
-  // 4) Delete role(s) and cascade their AgentRole bindings.
-  //    If any agent is left with NO role bindings after this, leave them
-  //    in place (user can re-bind or delete via the agents page).
+  // 4) Delete legacy role rows, if present. Connection grants are removed by
+  //    the connection delete cascade above.
   const roleDelete = await prisma.role.deleteMany({
     where: { id: { in: roles.map((r) => r.id) } },
   });
@@ -4809,8 +4711,8 @@ dashboardApp.post("/tenants/:scope/delete", async (c) => {
     <main>
       <h1>✓ Deleted tenant <code>${scope}</code></h1>
       <div class="card">
-        <p>Removed <b>${connDelete.count}</b> connection(s) and <b>${roleDelete.count}</b> role(s).</p>
-        <p>Agents that were bound to this role are now unbound. Visit <a href="/agents">/agents</a> to re-bind or delete them.</p>
+        <p>Removed <b>${connDelete.count}</b> connection(s). Related connection grants were removed automatically.</p>
+        ${roleDelete.count ? `<p class="field-hint">Also removed ${roleDelete.count} legacy role row(s).</p>` : ""}
       </div>
       <p><a href="/tenants">← Back to all tenants</a></p>
     </main></body></html>
@@ -4833,7 +4735,7 @@ dashboardApp.post("/tenants/bulk-delete", async (c) => {
   const scopes = Array.from(new Set(collected.filter((s) => /^[a-z0-9_-]+$/.test(s))));
   if (scopes.length === 0) return c.html("<h1>no scopes selected</h1>", 400);
 
-  let conns = 0, roles = 0;
+  let conns = 0, legacyRoles = 0;
   const detail: string[] = [];
   for (const scope of scopes) {
     const connDelete = await prisma.connection.deleteMany({ where: { scope, ownerId: user.id } });
@@ -4844,8 +4746,8 @@ dashboardApp.post("/tenants/bulk-delete", async (c) => {
     const roleDelete = await prisma.role.deleteMany({ where: { id: { in: roleList.map((r) => r.id) } } });
     await prisma.tenant.deleteMany({ where: { slug: scope, ownerId: user.id } });
     conns += connDelete.count;
-    roles += roleDelete.count;
-    detail.push(`<li><code>${escapeHtml(scope)}</code>: ${connDelete.count} conn, ${roleDelete.count} role</li>`);
+    legacyRoles += roleDelete.count;
+    detail.push(`<li><code>${escapeHtml(scope)}</code>: ${connDelete.count} connection(s)</li>`);
   }
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Bulk deleted — grantry</title>
@@ -4854,7 +4756,8 @@ dashboardApp.post("/tenants/bulk-delete", async (c) => {
     <main>
       <h1>✓ Bulk deleted ${scopes.length} tenant(s)</h1>
       <div class="card">
-        <p>Total: <b>${conns}</b> connection(s), <b>${roles}</b> role(s) removed.</p>
+        <p>Total: <b>${conns}</b> connection(s) removed. Related connection grants were removed automatically.</p>
+        ${legacyRoles ? `<p class="field-hint">Also removed ${legacyRoles} legacy role row(s).</p>` : ""}
         <ul>${detail.join("")}</ul>
       </div>
       <p><a href="/tenants">← Back to all tenants</a></p>
@@ -4871,7 +4774,7 @@ dashboardApp.post("/agents/:id/delete", async (c) => {
   if (!agent) return c.html("<h1>agent not found</h1>", 404);
   if (agent.ownerId !== user.id) return c.html("<h1>not your agent</h1>", 403);
 
-  // Cascade AgentRole rows via onDelete: Cascade; the agent itself is then deleted.
+  // Cascade connection grants via onDelete: Cascade; the agent itself is then deleted.
   await prisma.agent.delete({ where: { id: agent.id } });
   return c.redirect("/agents");
 });

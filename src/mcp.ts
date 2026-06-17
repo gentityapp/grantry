@@ -2437,9 +2437,9 @@ async function callSystemTool(toolName: string, args: Record<string, unknown>, c
       const hits = new Set(tw.filter((w) => taskWords.has(w))).size;
       return Math.min(cap, hits * 0.1);
     };
-    // Dedupe by *connection*, not agent (issue #47): ~10 agents sharing one
-    // role must not fill the result cap and hide the single agent holding the
-    // connection that actually reaches the target. Key on (tool, scope, label);
+    // Dedupe by *connection*, not agent (issue #47): ~10 agents sharing the
+    // same connection grants must not fill the result cap and hide the single
+    // agent holding the connection that actually reaches the target. Key on (tool, scope, label);
     // keep the strongest representative agent per distinct connection.
     // The structural signal (credential freshness, explicit scope, single
     // connection) saturates at 0.95, so it crowns every duplicate equally. Give
@@ -2694,8 +2694,8 @@ function buildToolList(
  *  - otherwise — OAuth access token issued by the better-auth mcp plugin
  *    (claude.ai / Claude Desktop via dynamic client registration). The token
  *    maps to a user; OauthAgentGrant (user x client) picks which Agent the
- *    connector acts as. Permissions stay role-based and are evaluated per
- *    request, so dashboard changes apply immediately.
+ *    connector acts as. Permissions are evaluated from live connection grants
+ *    per request, so dashboard changes apply immediately.
  */
 async function resolveAgent(authHeader: string | null): Promise<{ id: string; name: string; enabled: boolean } | null> {
   if (!authHeader?.startsWith("Bearer ")) return null;
@@ -3241,7 +3241,7 @@ const handleMcpPost = async (c: any) => {
         return c.json({ jsonrpc: "2.0", id, error: { code: -32010, message: `delegation grant rejected: ${invalid}` } }, 403);
       }
 
-      // Re-verify the target is still capable (roles/connection may have moved
+      // Re-verify the target is still capable (connection grants may have moved
       // since the grant was minted).
       const decision = await checkPolicy({ agentId: grant!.targetAgentId, tool: toolName, scope });
       if (!decision.allowed) {
