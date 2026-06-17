@@ -34,24 +34,25 @@ description: |
 - **Tenant model**: a `Tenant` is a real entity with an **immutable `slug`**
   (the wire key, e.g. `grantry-dev` — this is what callers pass as `scope`) and a
   freely **renameable `displayName`** (dashboard label only). Each `Connection`
-  belongs to a tenant; `scope` always equals the tenant slug. A `Role` has
-  `allowedTools` + `allowedScopes`. Tool calls pass `scope` in `arguments` to
-  pick the credential. Renaming a tenant's display name never breaks agents.
+  belongs to a tenant; `scope` always equals the tenant slug. Agents receive
+  explicit `AgentConnectionGrant(agentId, connectionId)` rows. Tool calls pass
+  `scope` in `arguments` to pick the credential. Renaming a tenant's display
+  name never breaks agents.
 - Format: `<provider>/<tool>` (e.g. `github/git_push_repo`).
 
 ## The scope rule (the #1 gotcha)
-A tool call is allowed only if **all three** hold (`src/policy.ts`):
-1. the calling agent has a bound role;
-2. a bound role lists the tool in `allowedTools`, and the call's `scope` is in
-   that role's `allowedScopes` — **empty `allowedScopes` = any scope**;
-3. a `Connection` exists with `(provider, scope, enabled=true)` — matched on the
-   **EXACT scope string**.
+A tool call is allowed only if **all** of these hold (`src/policy.ts`):
+1. the calling agent exists, is enabled, and is not expired;
+2. the provider implements the requested tool;
+3. a granted `Connection` exists with `(provider, scope, enabled=true)`;
+4. the agent and connection share the same workspace boundary, or the same owner
+   for legacy workspace-less rows.
 
 Therefore: the `scope` you pass in `arguments` must **exactly equal** the scope the
 connection was registered under (its tenant name). Passing no scope, or a scope
-that has no connection, returns `-32010 policy denied (no enabled connection …)`,
-**even though the role allows any scope.** A connection registered at `scope=""`
-only matches calls that send no scope at all.
+that has no granted connection, returns `-32010 policy denied (no granted enabled
+connection …)`. A connection registered at `scope=""` only matches calls that
+send no scope at all.
 
 You don't have to know the scope in advance, and you should never guess it:
 **`connections/list` resolves the exact scope from the token** (see Procedure §0).
@@ -178,10 +179,10 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 
 ### 6. Grant an agent access to a scope
 1. Ensure a connection exists at that scope (step 5).
-2. The tenant's role must include the tool in **Allowed tools** and the scope in
-   **Allowed scopes** (leave Allowed scopes empty for "any scope").
-3. Bind the role to the agent (`POST /agents/:id/bind`) — or skip role wrangling
-   entirely and create the agent via `/agents/new`.
+2. Grant the connection to the agent. The dashboard does this automatically
+   when creating an agent via `/agents/new` or the tenant wizard.
+3. Use `connections/list` with the agent token to verify the exact
+   `connection_id`, provider, and scope the agent can use.
 
 ## Providers & tools (335)
 - `ping` — liveness (returns `pong from <agent>`)
@@ -663,12 +664,12 @@ When asked to act via grantry:
 - `-32700` → JSON parse error (malformed body).
 - `-32001` → missing `Authorization` header.
 - `-32002` → agent token invalid/disabled/expired. Rotate it via `/ui/agents`.
-- `-32010` → policy denied. Two sub-reasons:
-  - `no role permits (tool=…, scope=…)` → the agent's role lacks the tool, or the
-    scope isn't in a non-empty `allowedScopes`.
-  - `no enabled connection for (provider=…, scope=…)` → role is fine, but **no
-    enabled connection at that exact scope**. Almost always means you passed the
-    wrong/empty `scope`. Call `connections/list` to get the exact scope, then resend.
+- `-32010` → policy denied. Common sub-reasons:
+  - `no granted enabled connection for this agent (...)` → the agent has no
+    enabled connection grant at that exact provider/scope/auth/connection id.
+  - `ambiguous granted connections (...)` → pass `auth_type` or `connection_id`
+    when several granted connections match the same provider/scope.
+  Call `connections/list` to get the exact scope and connection id, then resend.
 - `-32011` → connection row vanished mid-call (rare).
 - `-32029` → rate limited (default 120 `tools/call`/min per agent; HTTP 429).
   Back off and retry after a minute.
@@ -710,7 +711,7 @@ POST /mcp   Authorization: Bearer gn_agt_<token>
 - `/tenants`, `/tenants/new`, `/tenants/:scope/edit` — tenant + connection wizard;
   the edit page also renames the tenant's display name (slug is immutable)
 - `/agents`, `/agents/new` — agents; `/agents/new` creates a **cross-tenant**
-  agent (tenant checkboxes + per-tool unticks, dedicated role auto-created)
+  agent by granting selected tenant connections
 - `/account` — signed-in identity (email shown in every page's nav), owned
   resource counts, change password
 - `/audit` — audit log (per-call scope, status, duration; request args are
@@ -722,8 +723,8 @@ POST /mcp   Authorization: Bearer gn_agt_<token>
   injects the token server-side; the agent only ever sees tool results.
 - Connection scope match is **exact**. `scope=""` is its own bucket: it only serves
   calls that send no scope.
-- A role with empty `allowedScopes` permits **any** scope; a role with
-  `allowedScopes=["grantry-dev"]` permits only `scope="grantry-dev"`.
+- Agent access is connection-grant based. Provider permissions are enforced by
+  the provider credential itself; Grantry does not pre-model provider ACLs.
 - Every call is audited with its `scope` (`/audit`); sensitive request args are
   masked before storage.
 - Token issuance/rotation is UI-only — there is no admin HTTP API.

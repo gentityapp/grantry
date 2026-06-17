@@ -27,6 +27,7 @@ model User {
   agents        Agent[]
   tenants       Tenant[]
   connections   Connection[]
+  connectionGrants AgentConnectionGrant[]
   roles         Role[]
   auditLogs     AuditLog[]
   oauthApplications OauthApplication[]
@@ -127,6 +128,7 @@ model Agent {
   workspace     Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   roles         AgentRole[]
+  connectionGrants AgentConnectionGrant[]
   auditLogs     AuditLog[]
   oauthAgentGrants OauthAgentGrant[]
   assignments   AgentAssignment[]
@@ -164,6 +166,22 @@ model AgentRole {
   @@map("agent_role")
 }
 
+model AgentConnectionGrant {
+  agentId      String
+  connectionId String
+  createdById  String?
+  createdBy    User?      @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt    DateTime   @default(now())
+
+  agent        Agent      @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  connection   Connection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+
+  @@id([agentId, connectionId])
+  @@index([connectionId])
+  @@index([createdById])
+  @@map("agent_connection_grant")
+}
+
 model Connection {
   id                  String   @id @default(cuid())
   provider            String   // "github" | "cloudflare" | "clarity" | "notion" | "google_drive" | "google_gsc" | "google_analytics" | "google_ads" | "yahoo_ads" | "gmail" | "hubspot" | "attio" | "reddit" | "x"
@@ -187,6 +205,8 @@ model Connection {
 
   workspaceId         String?  // null only before workspace backfill
   workspace           Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  agentGrants         AgentConnectionGrant[]
+  auditLogs           AuditLog[]
 
   @@unique([ownerId, provider, scope, authType])
   @@index([provider, scope])
@@ -221,6 +241,8 @@ model AuditLog {
   user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   agentId         String?
   agent           Agent?   @relation(fields: [agentId], references: [id], onDelete: SetNull)
+  connectionId    String?
+  connection      Connection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
   provider        String   // "github" | "notion" | ...
   tool            String   // "github/list_repos"
   scope           String   @default("")
@@ -240,6 +262,7 @@ model AuditLog {
 
   @@index([userId, createdAt])
   @@index([agentId, createdAt])
+  @@index([connectionId, createdAt])
   @@index([provider, createdAt])
   @@map("audit_log")
 }

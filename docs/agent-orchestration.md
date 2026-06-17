@@ -34,20 +34,21 @@ The data to answer "who can do X" is already in the schema:
 
 | Source | What it gives us |
 | --- | --- |
-| `Role.allowedTools` | which tools an agent (via its roles) may call, e.g. `railway/graphql` |
-| `Role.allowedScopes` | which tenant scopes those tools may target (`[]` = any) |
-| `AgentRole` → `Agent` | which agents carry which roles |
+| `AgentConnectionGrant(agentId, connectionId)` | which connections an agent may use |
 | `Connection(provider, scope, enabled)` | which provider connections are actually live per scope |
 | `Connection.credentialMetadata` | observed provider scopes/capabilities (read vs write hints), never the raw token |
-| `AuditLog` | every `tools/call` already records `agent`, `provider`, `tool`, `scope`, `status` |
+| `AuditLog` | every `tools/call` records `agent`, `connection`, `provider`, `tool`, `scope`, `status` |
 
 So the whole thing is one inverse-lookup predicate:
 
 ```
 capable(agent, tool, scope) ⇔
-    tool ∈ ⋃ roles(agent).allowedTools
-  ∧ (scope ∈ ⋃ roles(agent).allowedScopes  ∨  allowedScopes == [])
-  ∧ ∃ Connection(provider(tool), scope, enabled = true)
+    provider(tool) implements tool
+  ∧ ∃ AgentConnectionGrant(agent, connection)
+  ∧ connection.provider = provider(tool)
+  ∧ connection.scope = scope
+  ∧ connection.enabled = true
+  ∧ agent/workspace boundary matches connection
 ```
 
 `provider(tool)` is the prefix of the tool name (`railway/graphql` → `railway`),
@@ -64,7 +65,7 @@ identities and capability facts — **never tokens**.
 
 ```
 GET /api/capabilities?tool=railway/graphql&scope=grantry-prod&action=write
-→ [{ agentId, name, roles, scopes, connection: { authType, enabled }, confidence }]
+→ [{ agentId, name, grants, scopes, connection: { authType, enabled }, confidence }]
 ```
 
 Ranking signals: exact-scope vs `[]`-any match, connection `enabled` +
@@ -72,7 +73,7 @@ Ranking signals: exact-scope vs `[]`-any match, connection `enabled` +
 match, recent success in `AuditLog`.
 
 `grantry_find_agent` dedupes by **connection**, not agent: many agents sharing
-one role collapse to a single candidate so they can't fill the result cap and
+one connection collapse to a single candidate so they can't fill the result cap and
 hide the unique connection that actually reaches the target (issue #47). On top
 of the structural signal it ranks by overlap between the task text and each
 connection's **scope / label / project name** (not the tool name alone), and

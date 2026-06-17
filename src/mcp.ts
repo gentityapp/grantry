@@ -2450,7 +2450,7 @@ async function callSystemTool(toolName: string, args: Record<string, unknown>, c
     const byConn = new Map<string, Match>();
     const rank = (x: Match) => 0.5 * x.confidence + x.targetScore + x.charterScore;
     for (const m of all) {
-      const key = `${m.tool} ${m.connection.scope} ${m.connection.label}`;
+      const key = `${m.tool}::${m.connection.scope}::${m.connection.label}`;
       const enriched: Match = {
         ...m,
         // Scope/label/project overlap is the issue's core fix: a task naming
@@ -3270,6 +3270,7 @@ const handleMcpPost = async (c: any) => {
         const result = await dispatchProviderTool(decision.provider, toolName, innerArgs, credential, conn);
         await prisma.auditLog.create({ data: {
           agentId: grant!.targetAgentId, delegatedById: agent.id, delegationId: grant!.id,
+          connectionId: conn.id,
           provider: decision.provider, tool: toolName, scope, status: "ok",
           responseSummary: JSON.stringify({ delegatedBy: agent.name, connectionId: conn.id, result }).slice(0, 500),
           requestArgs: maskAuditArgs(innerArgs),
@@ -3285,6 +3286,7 @@ const handleMcpPost = async (c: any) => {
         const errMsg = String(e?.message ?? e);
         await prisma.auditLog.create({ data: {
           agentId: grant!.targetAgentId, delegatedById: agent.id, delegationId: grant!.id,
+          connectionId: conn.id,
           provider: decision.provider, tool: toolName, scope, status: "error",
           errorMessage: errMsg.slice(0, 2000),
           requestArgs: maskAuditArgs(innerArgs),
@@ -3326,7 +3328,7 @@ const handleMcpPost = async (c: any) => {
           if (capable.length) {
             errorObj.data = {
               capableAgents: capable.slice(0, 5).map((m) => ({
-                name: m.name, roles: m.roles, scopes: m.scopes,
+                name: m.name, grants: m.grants, scopes: m.scopes,
                 connection: m.connection.enabled ? "live" : "disabled",
               })),
               hint: `another agent in this workspace can run ${toolName}; ask an admin to route this, or call grantry_find_agent`,
@@ -3351,6 +3353,7 @@ const handleMcpPost = async (c: any) => {
       await prisma.auditLog.create({
         data: {
           agentId: agent.id,
+          connectionId: conn.id,
           provider: decision.provider,
           tool: toolName,
           scope,
@@ -3375,6 +3378,7 @@ const handleMcpPost = async (c: any) => {
       await prisma.auditLog.create({
         data: {
           agentId: agent.id,
+          connectionId: conn.id,
           provider: decision.provider,
           tool: toolName,
           scope,
