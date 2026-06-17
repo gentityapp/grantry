@@ -116,6 +116,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   google_tag_manager: "#246FDB",
   google_cloud: "#4285F4",
   bigquery: "#669DF6",
+  google_admin: "#1A73E8",
 };
 
 /** Letter overrides where the label's first character is not the recognizable one. */

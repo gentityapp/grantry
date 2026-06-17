@@ -60,6 +60,7 @@ import { callGoogleSheetsTool } from "./connectors/google_sheets.js";
 import { callGoogleTagManagerTool } from "./connectors/google_tag_manager.js";
 import { callGoogleCloudTool } from "./connectors/google_cloud.js";
 import { callBigQueryTool } from "./connectors/bigquery.js";
+import { callGoogleAdminTool } from "./connectors/google_admin.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 import { userMayUseAgent } from "./workspaces.js";
 
@@ -1901,6 +1902,80 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "bigquery/get_table") { return { project_id: { type: "string", description: "GCP project id." }, dataset_id: { type: "string", description: "Dataset id." }, table_id: { type: "string", description: "Table id." } }; }
   if (toolName === "bigquery/query") { return { project_id: { type: "string", description: "GCP project id (billing project)." }, query: { type: "string", description: "Standard SQL query." }, max_results: { type: "number", description: "Max rows to return." }, use_legacy_sql: { type: "boolean", description: "Use legacy SQL (default false)." }, dry_run: { type: "boolean", description: "Validate without running." } }; }
   if (toolName === "bigquery/get_job") { return { project_id: { type: "string", description: "GCP project id." }, job_id: { type: "string", description: "Job id." }, location: { type: "string", description: "Job location." } }; }
+  // --- google_admin (Admin SDK Directory API) ---
+  if (toolName === "google_admin/list_users") {
+    return {
+      customer: { type: "string", description: "Customer id (default 'my_customer'). Ignored if domain is set." },
+      domain: { type: "string", description: "Restrict to a specific domain." },
+      query: { type: "string", description: "Search query, e.g. \"email:jane*\" or \"orgUnitPath=/Sales\"." },
+      max_results: { type: "number", description: "Max users per page (1-500)." },
+      order_by: { type: "string", description: "email, givenName, or familyName." },
+      sort_order: { type: "string", description: "ASCENDING or DESCENDING." },
+      page_token: { type: "string", description: "Pagination token." },
+      show_deleted: { type: "string", description: "'true' to list recently deleted users." },
+      view_type: { type: "string", description: "admin_view (default) or domain_public." },
+      projection: { type: "string", description: "basic, full, or custom." },
+    };
+  }
+  if (toolName === "google_admin/get_user") { return { user_key: { type: "string", description: "User's primary email or unique id." }, projection: { type: "string", description: "basic, full, or custom." }, view_type: { type: "string", description: "admin_view or domain_public." } }; }
+  if (toolName === "google_admin/create_user") {
+    return {
+      primaryEmail: { type: "string", description: "Primary email address." },
+      name: { type: "object", description: "Name object, e.g. { givenName, familyName }." },
+      password: { type: "string", description: "Initial password (plaintext or hashed; see hashFunction)." },
+      suspended: { type: "boolean", description: "Create the user suspended." },
+      orgUnitPath: { type: "string", description: "Org unit path, e.g. /Sales." },
+      changePasswordAtNextLogin: { type: "boolean", description: "Force password change on first login." },
+      emails: { type: "array", items: { type: "object" }, description: "Additional emails." },
+      phones: { type: "array", items: { type: "object" }, description: "Phone numbers." },
+    };
+  }
+  if (toolName === "google_admin/update_user") {
+    return {
+      user_key: { type: "string", description: "User's primary email or unique id." },
+      primaryEmail: { type: "string", description: "New primary email." },
+      name: { type: "object", description: "Name object, e.g. { givenName, familyName }." },
+      password: { type: "string", description: "New password." },
+      suspended: { type: "boolean", description: "Suspend (true) or unsuspend (false) the user." },
+      orgUnitPath: { type: "string", description: "Move the user to this org unit path." },
+      changePasswordAtNextLogin: { type: "boolean", description: "Force password change on next login." },
+      archived: { type: "boolean", description: "Archive (true) or unarchive (false)." },
+    };
+  }
+  if (toolName === "google_admin/delete_user") { return { user_key: { type: "string", description: "User's primary email or unique id." } }; }
+  if (toolName === "google_admin/list_groups") {
+    return {
+      customer: { type: "string", description: "Customer id (default 'my_customer'). Ignored if domain or user_key is set." },
+      domain: { type: "string", description: "Restrict to a specific domain." },
+      user_key: { type: "string", description: "List groups this user is a member of." },
+      query: { type: "string", description: "Search query, e.g. \"email:team*\"." },
+      max_results: { type: "number", description: "Max groups per page (1-200)." },
+      order_by: { type: "string", description: "email." },
+      sort_order: { type: "string", description: "ASCENDING or DESCENDING." },
+      page_token: { type: "string", description: "Pagination token." },
+    };
+  }
+  if (toolName === "google_admin/get_group") { return { group_key: { type: "string", description: "Group's email or unique id." } }; }
+  if (toolName === "google_admin/create_group") { return { email: { type: "string", description: "Group email address." }, name: { type: "string", description: "Display name." }, description: { type: "string", description: "Group description." } }; }
+  if (toolName === "google_admin/update_group") { return { group_key: { type: "string", description: "Group's email or unique id." }, email: { type: "string", description: "New group email." }, name: { type: "string", description: "Display name." }, description: { type: "string", description: "Group description." } }; }
+  if (toolName === "google_admin/delete_group") { return { group_key: { type: "string", description: "Group's email or unique id." } }; }
+  if (toolName === "google_admin/list_members") {
+    return {
+      group_key: { type: "string", description: "Group's email or unique id." },
+      roles: { type: "string", description: "Comma-separated roles filter: OWNER, MANAGER, MEMBER." },
+      max_results: { type: "number", description: "Max members per page (1-200)." },
+      page_token: { type: "string", description: "Pagination token." },
+      include_derived_membership: { type: "boolean", description: "Include indirect (nested group) members." },
+    };
+  }
+  if (toolName === "google_admin/add_member") { return { group_key: { type: "string", description: "Group's email or unique id." }, email: { type: "string", description: "Member's email address." }, role: { type: "string", description: "OWNER, MANAGER, or MEMBER (default MEMBER)." }, type: { type: "string", description: "USER, GROUP, etc." }, delivery_settings: { type: "string", description: "Email delivery preference." } }; }
+  if (toolName === "google_admin/update_member") { return { group_key: { type: "string", description: "Group's email or unique id." }, member_key: { type: "string", description: "Member's email or unique id." }, role: { type: "string", description: "OWNER, MANAGER, or MEMBER." }, type: { type: "string", description: "USER, GROUP, etc." }, delivery_settings: { type: "string", description: "Email delivery preference." } }; }
+  if (toolName === "google_admin/remove_member") { return { group_key: { type: "string", description: "Group's email or unique id." }, member_key: { type: "string", description: "Member's email or unique id." } }; }
+  if (toolName === "google_admin/list_org_units") { return { customer: { type: "string", description: "Customer id (default 'my_customer')." }, org_unit_path: { type: "string", description: "Parent path to list children of, e.g. /Sales." }, type: { type: "string", description: "all (default) or children." } }; }
+  if (toolName === "google_admin/get_org_unit") { return { customer: { type: "string", description: "Customer id (default 'my_customer')." }, org_unit_path: { type: "string", description: "Org unit path, e.g. /Sales/Engineering." } }; }
+  if (toolName === "google_admin/create_org_unit") { return { customer: { type: "string", description: "Customer id (default 'my_customer')." }, name: { type: "string", description: "Org unit name." }, parentOrgUnitPath: { type: "string", description: "Parent path, e.g. / or /Sales." }, description: { type: "string", description: "Description." }, blockInheritance: { type: "boolean", description: "Block policy inheritance from parent." } }; }
+  if (toolName === "google_admin/update_org_unit") { return { customer: { type: "string", description: "Customer id (default 'my_customer')." }, org_unit_path: { type: "string", description: "Org unit path to update, e.g. /Sales." }, name: { type: "string", description: "New name." }, description: { type: "string", description: "Description." }, parentOrgUnitPath: { type: "string", description: "Move under this parent path." }, blockInheritance: { type: "boolean", description: "Block policy inheritance." } }; }
+  if (toolName === "google_admin/delete_org_unit") { return { customer: { type: "string", description: "Customer id (default 'my_customer')." }, org_unit_path: { type: "string", description: "Org unit path to delete, e.g. /Sales/Old." } }; }
   // --- zoom ---
   if (toolName === "zoom/get_me") { return {}; }
   if (toolName === "zoom/list_users") { return { status: { type: "string", enum: ["active", "inactive", "pending"], description: "User status filter (default active)." }, role_id: { type: "string", description: "Filter by role id." }, page_size: { type: "number", description: "Results per page (max 300)." }, next_page_token: { type: "string", description: "Pagination token." } }; }
@@ -2147,6 +2222,22 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "bigquery/get_table") return ["project_id", "dataset_id", "table_id"];
   if (toolName === "bigquery/query") return ["project_id", "query"];
   if (toolName === "bigquery/get_job") return ["project_id", "job_id"];
+  if (toolName === "google_admin/get_user") return ["user_key"];
+  if (toolName === "google_admin/create_user") return ["primaryEmail", "name", "password"];
+  if (toolName === "google_admin/update_user") return ["user_key"];
+  if (toolName === "google_admin/delete_user") return ["user_key"];
+  if (toolName === "google_admin/get_group") return ["group_key"];
+  if (toolName === "google_admin/create_group") return ["email"];
+  if (toolName === "google_admin/update_group") return ["group_key"];
+  if (toolName === "google_admin/delete_group") return ["group_key"];
+  if (toolName === "google_admin/list_members") return ["group_key"];
+  if (toolName === "google_admin/add_member") return ["group_key", "email"];
+  if (toolName === "google_admin/update_member") return ["group_key", "member_key"];
+  if (toolName === "google_admin/remove_member") return ["group_key", "member_key"];
+  if (toolName === "google_admin/get_org_unit") return ["org_unit_path"];
+  if (toolName === "google_admin/create_org_unit") return ["name", "parentOrgUnitPath"];
+  if (toolName === "google_admin/update_org_unit") return ["org_unit_path"];
+  if (toolName === "google_admin/delete_org_unit") return ["org_unit_path"];
   if (toolName === "zoom/get_meeting_recordings") return ["meeting_id"];
   if (toolName === "zoom/get_meeting") return ["meeting_id"];
   if (toolName === "zoom/create_meeting") return ["topic"];
@@ -2268,6 +2359,7 @@ async function dispatchProviderTool(
   if (provider === "google_tag_manager") return callGoogleTagManagerTool(toolName, args, token);
   if (provider === "google_cloud") return callGoogleCloudTool(toolName, args, token);
   if (provider === "bigquery") return callBigQueryTool(toolName, args, token);
+  if (provider === "google_admin") return callGoogleAdminTool(toolName, args, token);
   throw new Error(`no dispatcher for provider: ${provider}`);
 }
 
