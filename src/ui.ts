@@ -1213,8 +1213,14 @@ dashboardApp.get("/dashboard", async (c) => {
     prisma.agent.count({ where: { ownerId: user.id, ...wsWhere } }),
     prisma.role.count({ where: { ownerId: user.id, ...wsWhere } }),
     prisma.auditLog.findMany({
-      // Activity feed stays owner-wide so system events (no agent) still show.
-      where: { OR: [{ userId: user.id }, { agent: { ownerId: user.id } }] },
+      // Scope the feed to the active workspace so it never shows another
+      // workspace's activity (wsId is membership-verified in resolveActiveWorkspace,
+      // so filtering by the agent's workspace is safe). Tool calls always carry an
+      // agent; only when there's no active workspace do we fall back to the
+      // owner-wide view that also surfaces agent-less system events.
+      where: wsId
+        ? { agent: { ownerId: user.id, workspaceId: wsId } }
+        : { OR: [{ userId: user.id }, { agent: { ownerId: user.id } }] },
       take: 10,
       orderBy: { createdAt: "desc" },
       include: { agent: true },
