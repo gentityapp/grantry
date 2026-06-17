@@ -236,6 +236,28 @@ export async function inspectCredential(provider: string, authType: string, toke
       return meta;
     }
 
+    if (provider === "facebook_messenger") {
+      const apiVersion = process.env.MESSENGER_API_VERSION || process.env.META_ADS_API_VERSION || "v21.0";
+      const resp = await fetchWithTimeout(`https://graph.facebook.com/${apiVersion}/me?fields=id,name,category`, {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok || body.error) {
+        return { provider, authType, status: "error", checkedAt, error: `Messenger token check failed: ${resp.status} ${JSON.stringify(body.error ?? body).slice(0, 300)}` };
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: { id: body.id, name: body.name, category: body.category },
+        notes: [
+          "Page Access Token for the Messenger Platform. Use a long-lived token; short-lived ones expire in ~1 hour.",
+          "Sending is bound by Messenger's 24-hour messaging window — outside it, pass a message tag with messaging_type=MESSAGE_TAG.",
+        ],
+        checkedAt,
+      };
+    }
+
     if (provider === "notion") {
       const resp = await fetchWithTimeout("https://api.notion.com/v1/users/me", {
         headers: {

@@ -573,6 +573,23 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  facebook_messenger: {
+    key: "facebook_messenger",
+    label: "Facebook Messenger",
+    authTypes: ["pat"],
+    helpText:
+      "Create a Meta app with the Messenger product, connect a Facebook Page, and generate a Page Access Token (Messenger > Settings > Access Tokens). Paste the Page Access Token here — a long-lived token is recommended. It is sent as Authorization: Bearer to the Graph API. Sending is bound by Messenger's 24-hour messaging window; outside it you must pass a message tag.",
+    tokenUrl: "https://developers.facebook.com/apps",
+    tools: [
+      "facebook_messenger/get_page",
+      "facebook_messenger/get_user_profile",
+      "facebook_messenger/list_conversations",
+      "facebook_messenger/get_conversation_messages",
+      "facebook_messenger/send_message",
+      "facebook_messenger/send_sender_action",
+    ],
+    implemented: true,
+  },
   airtable: {
     key: "airtable",
     label: "Airtable",

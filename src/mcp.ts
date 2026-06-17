@@ -36,6 +36,7 @@ import { callZoomTool } from "./connectors/zoom.js";
 import { callXTool } from "./connectors/x.js";
 import { callDiscordTool } from "./connectors/discord.js";
 import { callLineTool } from "./connectors/line.js";
+import { callFacebookMessengerTool } from "./connectors/facebook_messenger.js";
 import { callAirtableTool } from "./connectors/airtable.js";
 import { callLinearTool } from "./connectors/linear.js";
 import { callSendGridTool } from "./connectors/sendgrid.js";
@@ -1635,6 +1636,50 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       user_id: { type: "string", description: "LINE user ID of a group member." },
     };
   }
+  // --- facebook_messenger ---
+  if (toolName === "facebook_messenger/get_page") {
+    return {
+      fields: { type: "string", description: "Comma-separated Page fields to return (default id,name,category)." },
+    };
+  }
+  if (toolName === "facebook_messenger/get_user_profile") {
+    return {
+      psid: { type: "string", description: "Page-scoped user ID (PSID) of someone who has messaged the Page." },
+      fields: { type: "string", description: "Comma-separated profile fields (default first_name,last_name,profile_pic)." },
+    };
+  }
+  if (toolName === "facebook_messenger/list_conversations") {
+    return {
+      platform: { type: "string", description: "Inbox platform: messenger (default) or instagram." },
+      fields: { type: "string", description: "Comma-separated conversation fields (default id,participants,updated_time,snippet,message_count,unread_count)." },
+      limit: { type: "number", minimum: 1, maximum: 100, description: "Max conversations to return (1-100, default 25)." },
+      after: { type: "string", description: "Pagination cursor (paging.cursors.after from a prior call)." },
+    };
+  }
+  if (toolName === "facebook_messenger/get_conversation_messages") {
+    return {
+      conversation_id: { type: "string", description: "Conversation ID (from list_conversations)." },
+      fields: { type: "string", description: "Comma-separated message fields (default id,message,from,to,created_time)." },
+      limit: { type: "number", minimum: 1, maximum: 100, description: "Max messages to return (1-100, default 25)." },
+      after: { type: "string", description: "Pagination cursor for the next page." },
+    };
+  }
+  if (toolName === "facebook_messenger/send_message") {
+    return {
+      recipient_id: { type: "string", description: "Recipient PSID (the user's page-scoped ID)." },
+      text: { type: "string", description: "Convenience: send a single text message. Ignored when message is provided." },
+      message: { type: "object", description: "Raw Send API message object (e.g. { text } or { attachment }). Overrides text." },
+      messaging_type: { type: "string", description: "RESPONSE (default), UPDATE, or MESSAGE_TAG. Use MESSAGE_TAG with tag outside the 24h window." },
+      tag: { type: "string", description: "Message tag (e.g. CONFIRMED_EVENT_UPDATE) required when sending outside the 24h window." },
+      notification_type: { type: "string", description: "REGULAR (default), SILENT_PUSH, or NO_PUSH." },
+    };
+  }
+  if (toolName === "facebook_messenger/send_sender_action") {
+    return {
+      recipient_id: { type: "string", description: "Recipient PSID." },
+      sender_action: { type: "string", enum: ["typing_on", "typing_off", "mark_seen"], description: "The sender action to send." },
+    };
+  }
   // --- airtable ---
   if (toolName === "airtable/list_tables") { return { base_id: { type: "string", description: "Airtable base id (appXXXXXXXXXXXXXX)." } }; }
   if (toolName === "airtable/list_records") {
@@ -2131,6 +2176,10 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "line/get_group_summary") return ["group_id"];
   if (toolName === "line/get_group_member_count") return ["group_id"];
   if (toolName === "line/get_group_member_profile") return ["group_id", "user_id"];
+  if (toolName === "facebook_messenger/get_user_profile") return ["psid"];
+  if (toolName === "facebook_messenger/get_conversation_messages") return ["conversation_id"];
+  if (toolName === "facebook_messenger/send_message") return ["recipient_id"];
+  if (toolName === "facebook_messenger/send_sender_action") return ["recipient_id", "sender_action"];
   if (toolName === "airtable/list_tables") return ["base_id"];
   if (toolName === "airtable/list_records") return ["base_id", "table"];
   if (toolName === "airtable/get_record") return ["base_id", "table", "record_id"];
@@ -2335,6 +2384,7 @@ async function dispatchProviderTool(
   if (provider === "x") return callXTool(toolName, args, token);
   if (provider === "discord") return callDiscordTool(toolName, args, token);
   if (provider === "line") return callLineTool(toolName, args, token);
+  if (provider === "facebook_messenger") return callFacebookMessengerTool(toolName, args, token);
   if (provider === "airtable") return callAirtableTool(toolName, args, token);
   if (provider === "linear") return callLinearTool(toolName, args, token);
   if (provider === "sendgrid") return callSendGridTool(toolName, args, token);
