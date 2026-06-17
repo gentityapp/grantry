@@ -43,7 +43,7 @@ function consentHTML(props: {
 </style></head>
 <body><div class="card">
   <h1>${clientName} wants to connect</h1>
-  <p>This MCP client is asking to access your grantry tools. It will act as the agent you choose below, with that agent's roles and tenant scopes — exactly as configured in your dashboard (changes there apply immediately).</p>
+  <p>This MCP client is asking to access your grantry tools. It will act as the agent you choose below, using that agent's granted connections exactly as configured in your dashboard (changes there apply immediately).</p>
   <div class="scopes">Requested scopes: ${esc(props.scopes.join(", ") || "(default)")}</div>
   <label for="agent">Act as agent</label>
   <select id="agent" disabled><option>Loading agents…</option></select>

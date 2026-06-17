@@ -7,13 +7,13 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
+    "check": "npm run build && DATABASE_URL=${DATABASE_URL:-postgresql://user:pass@localhost:5432/grantry} prisma validate",
     "start": "node scripts/start-with-maintenance.mjs",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "db:dedupe-connections": "node scripts/dedupe-connections.mjs",
     "db:backfill-tenants": "node scripts/backfill-tenants.mjs",
-    "db:backfill-notion-tools": "node scripts/backfill-notion-tools.mjs",
-    "db:harden-roles": "node scripts/harden-roles.mjs",
+    "db:backfill-agent-connection-grants": "node scripts/backfill-agent-connection-grants.mjs",
     "user:reset-password": "node scripts/reset-password.mjs",
     "db:studio": "prisma studio"
   },

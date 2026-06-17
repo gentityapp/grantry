@@ -688,7 +688,7 @@ export async function mcpAuthorizeGate(c: any): Promise<Response | null> {
     </style></head><body>
     <h1>Connect ${escapeHtml(clientName)}</h1>
     <div class="card">
-      <p>${escapeHtml(clientName)} will act as the agent you choose — with that agent's roles and tenant scopes, exactly as configured in the dashboard. You can change or revoke this anytime.</p>
+      <p>${escapeHtml(clientName)} will act as the agent you choose, using that agent's granted connections exactly as configured in the dashboard. You can change or revoke this anytime.</p>
       <form id="pick">${options}
         <button type="submit" style="width:100%;margin-top:8px;">Continue</button>
         <div id="err" style="color:#df1b41;margin-top:8px;font-size:13px;"></div>
@@ -1361,7 +1361,7 @@ dashboardApp.get("/_ops", async (c) => {
       include: { owner: true },
     }),
     prisma.agent.findMany({
-      where: { roles: { none: {} } },
+      where: { connectionGrants: { none: {} } },
       take: 50,
       orderBy: { createdAt: "desc" },
       include: { owner: true },
@@ -1421,7 +1421,7 @@ dashboardApp.get("/_ops", async (c) => {
         ${card("Users", userCount, `${adminUserCount} admin`)}
         ${card("Connections", connectionCount, `${enabledConnectionCount} enabled`)}
         ${card("Agents", agentCount, `${enabledAgentCount} enabled`)}
-        ${card("Roles", roleCount, `${broadRoles.length} broad scope`)}
+        ${card("Legacy roles", roleCount, `${broadRoles.length} broad scope`)}
         ${card("Audit 24h", audit24hCount, `${audit24hErrors} error / ${audit24hDenied} denied`)}
         ${card("OAuth states", oauthStateCount, `${expiredOAuthStateCount} expired`)}
       </div>
@@ -1440,8 +1440,8 @@ dashboardApp.get("/_ops", async (c) => {
                 <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;" ${expiredOAuthStateCount ? "" : "disabled"}>Prune expired</button>
               </form>
             </td></tr>
-            <tr><td>Agents without roles</td><td>${agentsWithoutRoles.length ? okBadge(false, String(agentsWithoutRoles.length)) : okBadge(true)}</td><td>Unbound agents cannot access tenant connections.</td></tr>
-            <tr><td>Broad roles</td><td>${broadRoles.length ? okBadge(false, String(broadRoles.length)) : okBadge(true)}</td><td>Roles with empty <code>allowedScopes</code> can access any owner scope.</td></tr>
+            <tr><td>Agents without connection grants</td><td>${agentsWithoutRoles.length ? okBadge(false, String(agentsWithoutRoles.length)) : okBadge(true)}</td><td>Ungrantable agents cannot access provider connections.</td></tr>
+            <tr><td>Legacy broad roles</td><td>${broadRoles.length ? okBadge(false, String(broadRoles.length)) : okBadge(true)}</td><td>Legacy rows only; runtime policy uses connection grants.</td></tr>
           </tbody>
         </table>
       </div>
@@ -1546,7 +1546,7 @@ dashboardApp.get("/_ops", async (c) => {
           </table>
         </div>`}
 
-        <h3>Agents without roles</h3>
+        <h3>Agents without connection grants</h3>
         ${agentsWithoutRoles.length === 0 ? '<div class="empty">None.</div>' : `
         <table>
           <thead><tr><th>Owner</th><th>Agent</th><th>Created</th></tr></thead>
@@ -1557,7 +1557,7 @@ dashboardApp.get("/_ops", async (c) => {
           </tbody>
         </table>`}
 
-        <h3>Broad or unused roles</h3>
+        <h3>Legacy broad or unused roles</h3>
         ${broadRoles.length === 0 && unusedRoles.length === 0 ? '<div class="empty">None.</div>' : `
         <table>
           <thead><tr><th>Owner</th><th>Role</th><th>Issue</th><th>Tools</th></tr></thead>
@@ -2025,7 +2025,7 @@ dashboardApp.get("/tenants", async (c) => {
   // it. Build the set of (provider, scope) pairs that some enabled agent can
   // actually reach, then flag any enabled connection outside it.
   const anyScopeProviders = new Set<string>();
-  const scopedReach = new Set<string>(); // `${provider} ${scope}`
+  const scopedReach = new Set<string>(); // `${provider}::${scope}`
   for (const r of ownerRoles) {
     const hasEnabledAgent = r.agents.some((ar) => ar.agent.enabled && (!wsId || ar.agent.workspaceId === wsId));
     if (!hasEnabledAgent) continue;
@@ -2033,11 +2033,11 @@ dashboardApp.get("/tenants", async (c) => {
     const scopes = safeJsonArray(r.allowedScopes);
     for (const p of providers) {
       if (scopes.length === 0) anyScopeProviders.add(p);
-      else for (const s of scopes) scopedReach.add(`${p} ${s}`);
+      else for (const s of scopes) scopedReach.add(`${p}::${s}`);
     }
   }
   const isOrphan = (conn: { enabled: boolean; provider: string; scope: string | null }): boolean =>
-    conn.enabled && !(anyScopeProviders.has(conn.provider) || scopedReach.has(`${conn.provider} ${conn.scope ?? ""}`));
+    conn.enabled && !(anyScopeProviders.has(conn.provider) || scopedReach.has(`${conn.provider}::${conn.scope ?? ""}`));
 
   // The tenant table drives the list (so tenants with zero connections still
   // show); connections group under their scope. Scoped connections whose
@@ -2289,30 +2289,10 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           <p class="field-hint">↻ <b>Reconnect</b> re-runs the provider's OAuth consent screen and refreshes this connection's access/refresh tokens in place. <b>Delete</b> removes only that credential connection; roles and agents remain.</p>
         </div>`}
 
-        <h2>Role <code>${scope}-dev-${userIdShort}</code></h2>
+        <h2>Connection grants</h2>
         <div class="card">
-          <div class="field">
-            <label for="role_desc">Description</label>
-            <input type="text" name="role_desc" id="role_desc" value="${escapeHtml(roleDesc)}" placeholder="What this role is for">
-          </div>
-          <div class="field">
-            <label>Agent tool allowlist</label>
-            <p class="field-hint" style="margin-top:0;">These are grantry permissions, not SaaS permissions. The SaaS credential above may still reject calls if its own scopes are narrower.</p>
-            <div class="field-hint" style="margin:8px 0 12px;">
-              ${allAvailableTools.filter((t) => !roleTools.includes(t)).length > 0
-                ? `<span style="color:#f0b429;">${allAvailableTools.filter((t) => !roleTools.includes(t)).length} connected tool(s) are not granted to this role yet.</span>`
-                : `<span style="color:#7bd88f;">All connected provider tools are granted to this role.</span>`}
-              <button type="submit" form="sync_role_tools_form" class="secondary" style="font-size:12px;padding:4px 10px;margin-left:8px;">Refresh grants</button>
-            </div>
-            ${allAvailableTools.length === 0 ? '<div class="empty">No providers connected yet.</div>' : `
-            <div id="roleToolsList">${allAvailableTools.map((t) => `<label style="font-weight:normal;display:block;padding:2px 0;"><input type="checkbox" name="role_tools" value="${t}" ${roleTools.includes(t) ? "checked" : ""}> <code>${t}</code></label>`).join("")}</div>
-            `}
-          </div>
-          <div class="field">
-            <label for="role_scopes">Allowed scopes</label>
-            <input type="text" name="role_scopes" id="role_scopes" value="${escapeHtml(roleScopesStr)}" placeholder="${escapeHtml(scope)}">
-            <div class="field-hint">Comma-separated scope names. Use exact tenant names. <b>Empty = any scope</b> and is only for legacy/admin use. Your other tenants: ${existingScopes.map((s) => `<code>${s}</code>`).join(", ") || "<em>none</em>"}.</div>
-          </div>
+          <p class="field-hint" style="margin-top:0;">Agents use explicit connection grants. Provider permissions come from each credential itself; Grantry does not maintain a tool allowlist here.</p>
+          ${connections.length === 0 ? '<div class="empty">No provider connections yet.</div>' : `<p>${connections.length} connection(s) available for this tenant.</p>`}
         </div>
 
         <div style="display:flex;gap:8px;margin-bottom:32px;">
@@ -2320,21 +2300,14 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           <a href="/tenants" class="btn secondary">Cancel</a>
         </div>
       </form>
-      <script>
-        document.getElementById('settingsForm').addEventListener('submit', () => {
-          const selected = Array.from(document.querySelectorAll('#roleToolsList input[name="role_tools"]:checked')).map(i => i.value);
-          document.getElementById('roleToolsJson').value = JSON.stringify(selected);
-        });
-      </script>
       ${connections.map((cn) => `
         <form id="recheck_connection_${cn.id}" method="post" action="/tenants/${scope}/connections/${cn.id}/recheck"></form>
-        <form id="delete_connection_${cn.id}" method="post" action="/tenants/${scope}/connections/${cn.id}/delete" onsubmit="return confirm(${jsString(`Delete connection ${cn.label}?\n\nProvider: ${cn.provider}\nScope: ${cn.scope}\n\nRoles and agents remain, but this provider credential will no longer be usable.`)});"></form>
+        <form id="delete_connection_${cn.id}" method="post" action="/tenants/${scope}/connections/${cn.id}/delete" onsubmit="return confirm(${jsString(`Delete connection ${cn.label}?\n\nProvider: ${cn.provider}\nScope: ${cn.scope}\n\nRelated agent connection grants will be removed automatically.`)});"></form>
       `).join("")}
-      <form id="sync_role_tools_form" method="post" action="/tenants/${scope}/sync-role-tools"></form>
 
       <h2>Advanced: additional agent token</h2>
       <div class="card">
-        <p class="field-hint" style="margin-top:0;">Most users should use <b>Codex MCP</b> above. This creates an extra internal agent token bound to <code>${scope}-dev-${userIdShort}</code> for custom automation or testing.</p>
+        <p class="field-hint" style="margin-top:0;">Most users should use <b>Codex MCP</b> above. This creates an extra internal agent token with grants to this tenant's enabled connections.</p>
         <form method="post" action="/tenants/${scope}/agents/new" id="addAgentForm">
           <div class="field">
             <label for="agent">Agent name</label>
@@ -2347,8 +2320,8 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           </div>
           <div class="field">
             <label>Additional tools to enable</label>
-            <p class="field-hint" style="margin-top:0;">The agent will inherit all tools the role already has. Uncheck to NOT add any extras (rare — leave as-is unless you need a tool the role doesn't have).</p>
-            <div id="agentToolsList" style="font-size:13px;color:#687385;">${roleTools.length} tools already in role: <code>${roleTools.slice(0, 4).join("</code> · <code>")}${roleTools.length > 4 ? `</code> · +${roleTools.length - 4} more` : "</code>"}</div>
+            <p class="field-hint" style="margin-top:0;">Tool visibility is derived from the granted connections. Provider credentials may still reject calls if their own permissions are narrower.</p>
+            <div id="agentToolsList" style="font-size:13px;color:#687385;">${allAvailableTools.length} provider tool(s) available from this tenant's connections.</div>
             <input type="hidden" name="tools_json" id="agentToolsJson" value="">
           </div>
           <div style="display:flex;gap:8px;">
@@ -2359,8 +2332,8 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
 
       <h2 style="color:#df1b41;">Danger zone</h2>
       <div class="card" style="border-color:#df1b41;">
-        <p>Delete this tenant entirely. This removes <b>all your connections</b> for scope <code>${scope}</code> and the role <code>${scope}-dev-${userIdShort}</code>. Agents bound to that role will be left <b>unbound</b> (use <a href="/agents">/agents</a> to clean them up).</p>
-        <form method="post" action="/tenants/${scope}/delete" onsubmit="return confirm('Delete tenant ${scope}?\\n\\nThis removes all YOUR connections and the role for this scope. This action cannot be undone.');">
+        <p>Delete this tenant entirely. This removes <b>all your connections</b> for scope <code>${scope}</code>; related agent connection grants are removed automatically.</p>
+        <form method="post" action="/tenants/${scope}/delete" onsubmit="return confirm('Delete tenant ${scope}?\\n\\nThis removes all YOUR connections for this scope and related grants. This action cannot be undone.');">
           <button type="submit" style="background:#df1b41;color:#ffffff;">🗑 Delete tenant ${scope}</button>
         </form>
       </div>
@@ -2610,89 +2583,47 @@ async function uniqueAgentName(base: string): Promise<string> {
   return `${safeBase}-${crypto.randomUUID().replace(/-/g, "").slice(0, 12)}`;
 }
 
-async function roleForTenantOrCreate(userId: string, scope: string, workspaceId?: string | null) {
-  const userIdShort = userId.slice(0, 8);
-  let role = await prisma.role.findFirst({ where: { name: `${scope}-dev-${userIdShort}`, ownerId: userId } });
-  if (role) return role;
-
-  const conns = await prisma.connection.findMany({
-    where: { ownerId: userId, scope, enabled: true },
-    select: { provider: true },
-  });
-  const tools = Array.from(new Set(conns.flatMap((cn) => toolsForProvider(cn.provider))));
-  return prisma.role.create({
-    data: {
-      name: `${scope}-dev-${userIdShort}`,
-      description: `Default role for ${scope}`,
-      allowedTools: JSON.stringify(tools),
-      allowedScopes: JSON.stringify([scope]),
-      ownerId: userId,
-      workspaceId: workspaceId ?? null,
-    },
-  });
-}
-
-async function syncTenantRoleTools(userId: string, scope: string, workspaceId?: string | null) {
-  const userIdShort = userId.slice(0, 8);
-  const conns = await prisma.connection.findMany({
-    where: { ownerId: userId, scope, enabled: true },
-    select: { provider: true },
-  });
-  const connectedTools = Array.from(new Set(conns.flatMap((cn) => toolsForProvider(cn.provider))));
-  let role = await prisma.role.findFirst({ where: { name: `${scope}-dev-${userIdShort}`, ownerId: userId } });
-  if (!role) {
-    role = await prisma.role.create({
-      data: {
-        name: `${scope}-dev-${userIdShort}`,
-        description: `Default role for ${scope}`,
-        allowedTools: JSON.stringify(connectedTools),
-        allowedScopes: JSON.stringify([scope]),
-        ownerId: userId,
-        workspaceId: workspaceId ?? null,
-      },
+async function grantConnectionsToAgent(agentId: string, connectionIds: string[], createdById: string) {
+  const ids = Array.from(new Set(connectionIds.filter(Boolean)));
+  if (!ids.length) return 0;
+  let granted = 0;
+  for (const connectionId of ids) {
+    await prisma.agentConnectionGrant.upsert({
+      where: { agentId_connectionId: { agentId, connectionId } },
+      create: { agentId, connectionId, createdById },
+      update: {},
     });
-    return { role, addedTools: connectedTools, connectedTools };
+    granted++;
   }
-
-  const existingTools = safeJsonArray(role.allowedTools);
-  const existingScopes = safeJsonArray(role.allowedScopes);
-  const mergedTools = Array.from(new Set([...existingTools, ...connectedTools]));
-  const mergedScopes = existingScopes.length === 0 ? [scope] : Array.from(new Set([...existingScopes, scope]));
-  const addedTools = mergedTools.filter((tool) => !existingTools.includes(tool));
-  role = await prisma.role.update({
-    where: { id: role.id },
-    data: {
-      allowedTools: JSON.stringify(mergedTools),
-      allowedScopes: JSON.stringify(mergedScopes),
-    },
-  });
-  return { role, addedTools, connectedTools };
+  return granted;
 }
 
-// --- /tenants/:scope/sync-role-tools (POST) — grant all connected provider tools to tenant role ---
-dashboardApp.post("/tenants/:scope/sync-role-tools", async (c) => {
-  const user = await getSessionUser(c);
-  if (!user) return c.json({ error: "not authenticated" }, 401);
-  const scope = c.req.param("scope");
-  if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
+async function grantTenantConnectionsToAgent(userId: string, agentId: string, scope: string) {
+  const connections = await prisma.connection.findMany({
+    where: { ownerId: userId, scope, enabled: true },
+    select: { id: true },
+  });
+  return grantConnectionsToAgent(agentId, connections.map((cn) => cn.id), userId);
+}
 
-  const tw = await prisma.tenant.findFirst({ where: { ownerId: user.id, slug: scope }, select: { workspaceId: true } });
-  const wsId = tw?.workspaceId ?? (await getActiveWorkspaceId(c));
-  const { role, addedTools, connectedTools } = await syncTenantRoleTools(user.id, scope, wsId);
-  return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Role tools synced — grantry</title>
-    ${FAVICON}<style>${CSS}</style></head><body>
-    ${NAV("tenants", user?.email)}
-    <main>
-      <h1>✓ Granted connected tools for <code>${escapeHtml(scope)}</code></h1>
-      <div class="card">
-        <p>Role <code>${escapeHtml(role.name)}</code> now includes ${safeJsonArray(role.allowedTools).length} tool(s).</p>
-        <p>Connected provider tools: ${connectedTools.map((tool) => `<span class="tool-pill">${escapeHtml(tool)}</span>`).join(" ") || "<em>none</em>"}</p>
-        <p>Newly added: ${addedTools.map((tool) => `<span class="tool-pill">${escapeHtml(tool)}</span>`).join(" ") || "<em>none</em>"}</p>
-      </div>
-      <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a></p>
-    </main></body></html>
-  `);
+async function grantConnectionToTenantAgents(userId: string, scope: string, connectionId: string) {
+  const agents = await prisma.agent.findMany({
+    where: {
+      ownerId: userId,
+      connectionGrants: { some: { connection: { scope } } },
+    },
+    select: { id: true },
+  });
+  let granted = 0;
+  for (const agent of agents) {
+    granted += await grantConnectionsToAgent(agent.id, [connectionId], userId);
+  }
+  return granted;
+}
+
+// --- /tenants/:scope/sync-role-tools (POST) — legacy Role sync removed ---
+dashboardApp.post("/tenants/:scope/sync-role-tools", async (c) => {
+  return c.html("<h1>Role tool sync has been removed. Agent access is managed with connection grants.</h1>", 410);
 });
 
 // --- /tenants/:scope/codex-mcp/create ---
@@ -2704,11 +2635,10 @@ dashboardApp.post("/tenants/:scope/codex-mcp/create", async (c) => {
 
   const tw = await prisma.tenant.findFirst({ where: { ownerId: user.id, slug: scope }, select: { workspaceId: true } });
   const wsId = tw?.workspaceId ?? (await getActiveWorkspaceId(c));
-  const role = await roleForTenantOrCreate(user.id, scope, wsId);
   const existing = await prisma.agent.findFirst({
     where: {
       ownerId: user.id,
-      roles: { some: { roleId: role.id } },
+      connectionGrants: { some: { connection: { scope } } },
     },
     orderBy: { createdAt: "asc" },
   });
@@ -2725,9 +2655,9 @@ dashboardApp.post("/tenants/:scope/codex-mcp/create", async (c) => {
       tokenPrefix: token.slice(0, 16),
       ownerId: user.id,
       workspaceId: wsId,
-      roles: { create: [{ roleId: role.id }] },
     },
   });
+  const granted = await grantTenantConnectionsToAgent(user.id, agent.id, scope);
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Codex MCP created — grantry</title>
@@ -2737,7 +2667,7 @@ dashboardApp.post("/tenants/:scope/codex-mcp/create", async (c) => {
       <h1>Codex MCP ready for <code>${escapeHtml(scope)}</code></h1>
       <div class="card">
         <h2>Internal token</h2>
-        <p><code>${escapeHtml(agent.name)}</code> is bound to <code>${escapeHtml(role.name)}</code>.</p>
+        <p><code>${escapeHtml(agent.name)}</code> was granted ${granted} connection(s) for <code>${escapeHtml(scope)}</code>.</p>
       </div>
       ${agentTokenCard(token)}
       ${mcpConfigCard(mcpOrigin(c), agent.name, token, true, scope)}
@@ -2851,61 +2781,6 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
       }
     }
 
-    // Update role
-    const roleDesc = String(body.role_desc ?? "").trim();
-    const roleScopesRaw = String(body.role_scopes ?? "").trim();
-    const roleScopes = roleScopesRaw
-      ? roleScopesRaw.split(",").map((s) => s.trim()).filter((s) => /^[a-z0-9_-]+$/.test(s))
-      : [];
-    let roleTools: string[] = [];
-    const roleToolsJson = String(body.role_tools_json ?? "").trim();
-    if (roleToolsJson) {
-      try {
-        const parsed = JSON.parse(roleToolsJson);
-        roleTools = Array.isArray(parsed) ? parsed.map(String) : [];
-      } catch {
-        roleTools = [];
-      }
-    } else {
-      roleTools = Array.isArray(body.role_tools) ? body.role_tools.map(String) : (body.role_tools ? [String(body.role_tools)] : []);
-    }
-
-    let role = await prisma.role.findFirst({ where: { name: `${scope}-dev-${userIdShort}`, ownerId: user.id } });
-    if (role) {
-      role = await prisma.role.update({
-        where: { id: role.id },
-        data: {
-          description: roleDesc || null,
-          allowedTools: JSON.stringify(roleTools),
-          allowedScopes: JSON.stringify(roleScopes),
-        },
-      });
-    } else {
-      role = await prisma.role.create({
-        data: {
-          name: `${scope}-dev-${userIdShort}`,
-          description: roleDesc || null,
-          allowedTools: JSON.stringify(roleTools),
-          allowedScopes: JSON.stringify(roleScopes),
-          ownerId: user.id,
-          workspaceId: wsId,
-        },
-      });
-    }
-    if (role) {
-      const enabledConnections = await prisma.connection.findMany({
-        where: { scope, ownerId: user.id, enabled: true },
-        select: { provider: true },
-      });
-      const existingTools = safeJsonArray(role.allowedTools);
-      const connectedTools = enabledConnections.flatMap((cn) => toolsForProvider(cn.provider));
-      const mergedTools = Array.from(new Set([...existingTools, ...connectedTools]));
-      role = await prisma.role.update({
-        where: { id: role.id },
-        data: { allowedTools: JSON.stringify(mergedTools) },
-      });
-    }
-
     return c.html(`
       <!doctype html><html><head><meta charset="utf-8"><title>Saved — grantry</title>
       ${FAVICON}<style>${CSS}</style></head><body>
@@ -2917,12 +2792,6 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
           ${connUpdates.length === 0 ? '<p><em>No changes.</em></p>' : `
           <ul>${connUpdates.map((u) => `<li><code>${escapeHtml(u.label)}</code> · ${u.enabled ? "enabled" : "DISABLED"}</li>`).join("")}</ul>
           `}
-        </div>
-        <div class="card">
-          <h2>Role <code>${role.name}</code></h2>
-          <p><b>Description:</b> ${role.description ? escapeHtml(role.description) : "<em>none</em>"}</p>
-          <p><b>Tools (${JSON.parse(role.allowedTools).length}):</b> ${(JSON.parse(role.allowedTools) as string[]).map((t) => `<span class="tool-pill">${t}</span>`).join(" ") || "<em>none</em>"}</p>
-          <p><b>Scopes:</b> ${(JSON.parse(role.allowedScopes) as string[]).map((s) => `<code>${s}</code>`).join(", ") || "<em>any (empty)</em>"}</p>
         </div>
         <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a> · <a href="/tenants">All tenants</a></p>
       </main></body></html>
@@ -2949,28 +2818,6 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     }
     if (wantsOauth) {
       if (!providerDef.authTypes.includes("oauth")) return c.html("<h1>OAuth is not supported for this provider</h1>", 400);
-      const selectedTools = tools.length > 0 ? tools : toolsForProvider(provider);
-      let role = await prisma.role.findFirst({ where: { name: `${scope}-dev-${userIdShort2}`, ownerId: user.id } });
-      const currentTools: string[] = role ? safeJsonArray(role.allowedTools) : [];
-      const currentScopes: string[] = role ? safeJsonArray(role.allowedScopes) : [scope];
-      const mergedTools = Array.from(new Set([...currentTools, ...selectedTools]));
-      const mergedScopes = currentScopes.length === 0 ? [scope] : Array.from(new Set([...currentScopes, scope]));
-      if (role) {
-        await prisma.role.update({
-          where: { id: role.id },
-          data: { allowedTools: JSON.stringify(mergedTools), allowedScopes: JSON.stringify(mergedScopes) },
-        });
-      } else {
-        await prisma.role.create({
-          data: {
-            name: `${scope}-dev-${userIdShort2}`,
-            allowedTools: JSON.stringify(mergedTools),
-            allowedScopes: JSON.stringify([scope]),
-            ownerId: user.id,
-            workspaceId: wsId,
-          },
-        });
-      }
       return c.redirect(`/oauth/${provider}/start?tenant=${encodeURIComponent(scope)}&reauth=1`);
     }
     if (!wantsPat || !providerDef.authTypes.includes("pat")) return c.html("<h1>paste token is not supported for this provider</h1>", 400);
@@ -3005,34 +2852,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
             ...credentialMeta,
           },
         });
-
-    // 2) Find or create role, then merge allowedTools (union)
-    let role = await prisma.role.findFirst({ where: { name: `${scope}-dev-${userIdShort2}`, ownerId: user.id } });
-    let currentTools: string[] = role ? safeJsonArray(role.allowedTools) : [];
-    let currentScopes: string[] = role ? safeJsonArray(role.allowedScopes) : [];
-    if (currentScopes.length === 0) {
-      currentScopes = [scope];
-    } else if (!currentScopes.includes(scope)) {
-      currentScopes.push(scope);
-    }
-    const mergedTools = Array.from(new Set([...currentTools, ...tools]));
-
-    if (role) {
-      role = await prisma.role.update({
-        where: { id: role.id },
-        data: { allowedTools: JSON.stringify(mergedTools), allowedScopes: JSON.stringify(currentScopes) },
-      });
-    } else {
-      role = await prisma.role.create({
-        data: {
-          name: `${scope}-dev-${userIdShort2}`,
-          allowedTools: JSON.stringify(mergedTools.length > 0 ? mergedTools : toolsForProvider(provider)),
-          allowedScopes: JSON.stringify([scope]),
-          ownerId: user.id,
-          workspaceId: tenantRow.workspaceId ?? wsId,
-        },
-      });
-    }
+    await grantConnectionToTenantAgents(user.id, scope, conn.id);
 
     return c.html(`
       <!doctype html><html><head><meta charset="utf-8"><title>Service added — grantry</title>
@@ -3042,12 +2862,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
         <h1>✓ Service added to <code>${scope}</code></h1>
         <div class="card">
           <h2>New connection</h2>
-          <p><code>${conn.label}</code> · scope=<code>${conn.scope}</code> · ${tools.length} tools enabled</p>
-        </div>
-        <div class="card">
-          <h2>Role updated</h2>
-          <p><code>${role.name}</code> now has ${mergedTools.length} tools (added ${mergedTools.length - currentTools.length} new ones)</p>
-          <p>${mergedTools.map((t) => `<span class="tool-pill">${t}</span>`).join(" ")}</p>
+          <p><code>${conn.label}</code> · scope=<code>${conn.scope}</code></p>
         </div>
         <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a> · <a href="/tenants">All tenants</a></p>
       </main></body></html>
@@ -3165,7 +2980,7 @@ dashboardApp.get("/tenants/new", async (c) => {
       <h1>+ New tenant</h1>
       <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
         Create an isolated tenant in one step. This sets up: a <b>connection</b> with scope=&lt;tenant&gt;,
-        a <b>role</b> with allowed_scopes bound to that tenant, an <b>agent</b>, and a fresh <b>token</b>.
+        connection grants for that tenant, an <b>agent</b>, and a fresh <b>token</b>.
       </p>
       <form method="post" action="/tenants/new" id="wizForm">
         <div class="step-card">
@@ -3683,67 +3498,19 @@ dashboardApp.post("/tenants/new", async (c) => {
     }
   }
 
-  // 2) Find or create role. Reuse existing ${tenant}-dev if present.
-  // This way, running the wizard twice for the same tenant doesn't create
-  // an orphan role; the new agent gets bound to the same role as before.
-  //
-  // allowedScopes logic:
-  //   - Always pin new roles to [tenant, ...additionalScopes].
-  //   - Empty [] still means "any scope" for legacy rows, but new rows should
-  //     not use it by default because it broadens every future connection.
-  // Union of every selected provider's chosen tools (falling back to that
-  // provider's full tool set when the wizard sent no explicit selection).
+  // 2) Compute selected provider tools only for OAuth handoff metadata.
+  // Execution authorization is connection-grant based; new agents no longer
+  // get Role / AgentRole rows.
   const desiredTools = Array.from(new Set(
     providerAuths.flatMap(({ provider, authType }) => {
       const t = toolsByProvider[`${provider}:${authType}`] ?? toolsByProvider[provider];
       return t && t.length > 0 ? t : toolsForProvider(provider);
     })
   ));
-  // Decide the initial allowedScopes for a NEW role.
-  const initialAllowedScopes = additionalScopes.length > 0
-    ? Array.from(new Set([tenant, ...additionalScopes]))
-    : [tenant];
-
-  // roleName is globally unique (it encodes the owner via the per-user suffix),
-  // so look it up by name alone — filtering by ownerId could miss it and fall
-  // through to create(), hitting the unique constraint as an uncaught 500.
-  let role = await prisma.role.findUnique({ where: { name: roleName } });
-  if (role) {
-    // Merge: keep existing scopes (don't shrink), union tools.
-    const existingTools = safeJsonArray(role.allowedTools);
-    const existingScopes = safeJsonArray(role.allowedScopes);
-    const mergedTools = Array.from(new Set([...existingTools, ...desiredTools]));
-    let mergedScopes: string[];
-    if (existingScopes.length === 0) {
-      mergedScopes = initialAllowedScopes;
-    } else {
-      // Existing role has an allowlist — widen by adding new scopes. Never narrow.
-      mergedScopes = Array.from(new Set([...existingScopes, tenant, ...additionalScopes]));
-    }
-    role = await prisma.role.update({
-      where: { id: role.id },
-      data: {
-        allowedTools: JSON.stringify(mergedTools),
-        allowedScopes: JSON.stringify(mergedScopes),
-      },
-    });
-  } else {
-    role = await prisma.role.create({
-      data: {
-        name: roleName,
-        description: `Role for tenant '${tenant}' (per-user) — providers: ${providerAuths.map((item) => `${item.provider}:${item.authType}`).join(", ")}`,
-        allowedTools: JSON.stringify(desiredTools),
-        allowedScopes: JSON.stringify(initialAllowedScopes),
-        ownerId: user.id,
-        workspaceId: tenantRow.workspaceId ?? wsId,
-      },
-    });
-  }
 
   // If any selected providers still need OAuth authorization, defer agent
-  // creation and kick off the OAuth chain. The role (with all tools/scopes)
-  // already exists, so each callback only attaches its connection; the final
-  // callback mints the agent + token and shows the success page.
+  // creation and kick off the OAuth chain. The final callback mints the agent
+  // and grants the tenant connections.
   if (oauthQueue.length > 0) {
     const [first, ...rest] = oauthQueue;
     const params = new URLSearchParams({
@@ -3758,7 +3525,7 @@ dashboardApp.post("/tenants/new", async (c) => {
     return c.redirect(`/oauth/${first}/start?${params.toString()}`);
   }
 
-  // 3) Create agent + bind role + mint token
+  // 3) Create agent + grant tenant connections + mint token
   const token = `gn_agt_${crypto.randomUUID().replace(/-/g, "")}`;
   const tokenHash = await import("node:crypto").then(c => c.createHash("sha256").update(token).digest("hex"));
   const agentRow = await prisma.agent.create({
@@ -3769,9 +3536,9 @@ dashboardApp.post("/tenants/new", async (c) => {
       tokenPrefix: token.slice(0, 16),
       ownerId: user.id,
       workspaceId: tenantRow.workspaceId ?? wsId,
-      roles: { create: [{ roleId: role.id }] },
     },
   });
+  const granted = await grantTenantConnectionsToAgent(user.id, agentRow.id, tenant);
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Tenant created — grantry</title>
@@ -3784,12 +3551,8 @@ dashboardApp.post("/tenants/new", async (c) => {
         ${connections.map((cn) => `<p><code>${escapeHtml(cn.label)}</code> · scope=<code>${escapeHtml(cn.scope)}</code></p>`).join("")}
       </div>
       <div class="card">
-        <h2>Role</h2>
-        <p><code>${role.name}</code> · allowed_scopes=<code>${safeJsonArray(role.allowedScopes).join(", ") || "any"}</code> · ${JSON.parse(role.allowedTools).length} tools</p>
-      </div>
-      <div class="card">
         <h2>Agent</h2>
-        <p><code>${agentRow.name}</code> · bound to <code>${role.name}</code></p>
+        <p><code>${agentRow.name}</code> · granted ${granted} connection(s)</p>
       </div>
       ${agentTokenCard(token, "⚠️  Save this token now. You won't see it again. Revoke and re-mint in <a href=\"/agents\">/agents</a> if lost.")}
       ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true, tenant)}
@@ -3821,9 +3584,13 @@ dashboardApp.get("/agents", async (c) => {
   const agents = await prisma.agent.findMany({
     where: { ownerId: user.id, ...wsWhere },
     orderBy: { createdAt: "desc" },
-    include: { roles: { include: { role: true } } },
+    include: {
+      connectionGrants: {
+        include: { connection: true },
+        orderBy: { createdAt: "asc" },
+      },
+    },
   });
-  const roles = await prisma.role.findMany({ where: { ownerId: user.id, ...wsWhere }, orderBy: { name: "asc" } });
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Agents — grantry</title>
@@ -3844,49 +3611,34 @@ dashboardApp.get("/agents", async (c) => {
       ${agents.length === 0 ? '<div class="card"><div class="empty">No agents yet. <a href="/tenants/new">Create one via the tenant wizard</a>.</div></div>' : `
       <div class="card">
         <table>
-          <thead><tr><th></th><th>Name</th><th>Token prefix</th><th>Role(s)</th><th>Accessible scopes</th><th>Status</th><th>Last used</th><th>Created</th><th>Actions</th></tr></thead>
+          <thead><tr><th></th><th>Name</th><th>Token prefix</th><th>Granted connections</th><th>Accessible scopes</th><th>Status</th><th>Last used</th><th>Created</th><th>Actions</th></tr></thead>
           <tbody>
           ${agents.map((a) => {
             const allScopes = new Set<string>();
-            const roleNames: string[] = [];
-            for (const r of a.roles) {
-              roleNames.push(r.role.name);
-              for (const s of safeJsonArray(r.role.allowedScopes)) allScopes.add(s);
-            }
+            const liveGrants = a.connectionGrants.filter((g) => g.connection.enabled);
+            for (const g of liveGrants) allScopes.add(g.connection.scope);
             const scopesDisplay = allScopes.size === 0
-              ? '<span class="badge denied" title="Legacy broad access: this role can use any of your enabled connection scopes">any</span>'
+              ? '<span class="badge denied">none</span>'
               : Array.from(allScopes).map((s) => `<span class="badge scoped">${s}</span>`).join(" ");
-            const rolesDisplay = roleNames.length === 0
-              ? '<em style="color:#df1b41;">no role bound</em>'
-              : roleNames.map((n) => `<span class="tool-pill">${n}</span>`).join(" ");
+            const grantsDisplay = liveGrants.length === 0
+              ? '<em style="color:#df1b41;">no granted connections</em>'
+              : `<span class="badge ok">${liveGrants.length}</span>`;
             return `
             <tr>
               <td><input type="checkbox" form="bulkAgentForm" name="agent_ids" value="${a.id}" class="agentCheck"></td>
               <td><code>${a.name}</code></td>
               <td><code>${a.tokenPrefix}...</code></td>
-              <td>${rolesDisplay}</td>
+              <td>${grantsDisplay}</td>
               <td>${scopesDisplay}</td>
               <td>${a.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</td>
               <td>${a.lastUsedAt ? a.lastUsedAt.toISOString().slice(0, 16) : "—"}</td>
               <td>${a.createdAt.toISOString().slice(0, 10)}</td>
               <td style="position:relative;white-space:nowrap;">
-                <details style="display:inline-block; margin-right: 6px;">
-                  <summary style="display:inline-block; cursor:pointer; background:#e3e8ee; color:#3c4257; padding:4px 10px; border-radius:4px; font-size:12px; list-style:none;">Bind</summary>
-                  <div style="position:absolute; right:0; background:#f6f9fc; border:1px solid #e3e8ee; border-radius:4px; padding:8px; z-index:10; min-width:280px; margin-top:4px;">
-                    <form method="post" action="/agents/${a.id}/bind">
-                      <div style="margin-bottom:6px; font-size:12px; color:#687385;">Replace bindings with:</div>
-                      <select name="role_id" style="margin-bottom:6px; font-size:12px; padding:4px; width:100%;">
-                        ${roles.map((r) => `<option value="${r.id}">${r.name} (scopes: ${safeJsonArray(r.allowedScopes).join(", ") || "any"})</option>`).join("")}
-                      </select>
-                      <button type="submit" style="font-size:12px; padding:4px 10px; width:100%;">Bind</button>
-                    </form>
-                  </div>
-                </details>
                 <form method="post" action="/agents/${a.id}/rotate" style="display:inline;" onsubmit="return confirm('Rotate token for ${a.name}?\\n\\nThe OLD token will be invalidated immediately. The NEW token will be shown ONCE on the next page.')">
                   <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;">Rotate</button>
                 </form>
                 <a href="/agents/${a.id}" class="btn secondary" style="font-size:12px;padding:4px 10px;">Details</a>
-                <form method="post" action="/agents/${a.id}/delete" style="display:inline;" onsubmit="return confirm('Delete agent ${a.name}?\\n\\nThis permanently destroys its token. The role(s) it was bound to are not deleted.')">
+                <form method="post" action="/agents/${a.id}/delete" style="display:inline;" onsubmit="return confirm('Delete agent ${a.name}?\\n\\nThis permanently destroys its token and connection grants.')">
                   <button type="submit" style="font-size:12px;padding:4px 10px;background:#df1b41;color:#ffffff;">🗑</button>
                 </form>
               </td>
@@ -3918,11 +3670,9 @@ dashboardApp.get("/agents", async (c) => {
 });
 
 // --- /agents/new — cross-tenant agent over existing tenants ---
-// The dual of the tenant wizard: instead of tenant → role → agent, this flow
-// starts from the agent and grants it existing tenants. One dedicated role is
-// auto-created per agent (1:1), so the user never manages roles directly and
-// broadening it never affects other agents. Registered before /agents/:id so
-// the static segment wins the route match.
+// The dual of the tenant wizard: instead of tenant -> agent, this flow starts
+// from the agent and grants it existing tenant connections. Registered before
+// /agents/:id so the static segment wins the route match.
 dashboardApp.get("/agents/new", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
@@ -3984,7 +3734,7 @@ dashboardApp.get("/agents/new", async (c) => {
               Full-tenant manager
               <div class="field-hint" style="margin-top:4px;font-weight:normal;">
                 Reach <b>all</b> your tenants with one token — including tenants you create later.
-                Equivalent to <code>allowed_scopes = []</code> (any scope). Owner-bounded: only ever your own connections.
+                Grants every enabled tenant connection you own. Owner-bounded: only ever your own connections.
               </div>
             </span>
           </label>
@@ -3994,7 +3744,7 @@ dashboardApp.get("/agents/new", async (c) => {
           <h2>Tenant access</h2>
           <p class="field-hint" style="margin-top:-8px;">
             Check the tenants this agent may reach, then untick any tools it should not use.
-            Tool permissions apply role-wide: if the same provider is connected in two selected tenants, its tools are allowed in both.
+            The agent receives grants to each enabled connection in the selected tenants. Provider permissions still come from the credential itself.
           </p>
           ${tenants.map((t) => {
             const providers = providersByScope.get(t.slug) ?? [];
@@ -4026,9 +3776,8 @@ dashboardApp.get("/agents/new", async (c) => {
           <div class="card" style="background:rgba(229,83,75,0.10);border:1px solid rgba(229,83,75,0.5);">
             <h2 style="color:#e5534b;margin-top:0;">⚠ Full-tenant access</h2>
             <p style="margin-top:0;">
-              This token can call the selected tools against <b>every tenant you own — now and in the future</b>.
-              If it leaks, your entire footprint is exposed at once. It is also flagged
-              as a broad or unused role with <span class="badge denied">any-scope</span>.
+              This token can use <b>every enabled tenant connection you own right now</b>.
+              If it leaks, your granted footprint is exposed at once.
             </p>
             <label style="cursor:pointer;display:flex;align-items:center;gap:8px;font-weight:600;">
               <input type="checkbox" id="managerConfirm" name="manager_confirm" style="transform:scale(1.2);">
@@ -4057,7 +3806,7 @@ dashboardApp.get("/agents/new", async (c) => {
         </div>
 
         <button type="submit" id="createBtn" disabled>🔑 Create agent &amp; mint token</button>
-        <p class="field-hint">A dedicated role is created for this agent automatically. The token is shown once, right after creation.</p>
+        <p class="field-hint">Connection grants are created for this agent automatically. The token is shown once, right after creation.</p>
       </form>
       <script>
         const managerToggle = document.getElementById('managerToggle');
@@ -4195,31 +3944,7 @@ dashboardApp.post("/agents/new", async (c) => {
     return c.html(`<h1>⚠️ Agent name <code>${escapeHtml(agent)}</code> already exists</h1><p>Pick a different name, or <a href="/agents/${existingAgent.id}">reuse the existing agent</a>. <a href="/agents/new">← Back</a></p>`, 409);
   }
 
-  // Dedicated 1:1 role, named after the agent. Role names are globally
-  // unique, so suffix with the user id (same convention as the wizard).
-  const userIdShort = user.id.slice(0, 8);
   const wsId = await getActiveWorkspaceId(c);
-  let roleName = `${agent}-${userIdShort}`;
-  const roleClash = await prisma.role.findUnique({ where: { name: roleName } });
-  if (roleClash && roleClash.ownerId !== user.id) {
-    roleName = `${agent}-${crypto.randomUUID().replace(/-/g, "").slice(0, 6)}`;
-  }
-  const role = roleClash && roleClash.ownerId === user.id
-    ? await prisma.role.update({
-        where: { id: roleClash.id },
-        data: { allowedTools: JSON.stringify(tools), allowedScopes: JSON.stringify(scopes), description: agentDesc || null },
-      })
-    : await prisma.role.create({
-        data: {
-          name: roleName,
-          description: agentDesc || `Dedicated role for agent ${agent}`,
-          allowedTools: JSON.stringify(tools),
-          allowedScopes: JSON.stringify(scopes),
-          ownerId: user.id,
-          workspaceId: wsId,
-        },
-      });
-
   const token = `gn_agt_${crypto.randomUUID().replace(/-/g, "")}`;
   const tokenHash = await import("node:crypto").then((m) => m.createHash("sha256").update(token).digest("hex"));
   const agentRow = await prisma.agent.create({
@@ -4230,9 +3955,22 @@ dashboardApp.post("/agents/new", async (c) => {
       tokenPrefix: token.slice(0, 16),
       ownerId: user.id,
       workspaceId: wsId,
-      roles: { create: [{ roleId: role.id }] },
     },
   });
+  let granted = 0;
+  if (managerMode) {
+    const conns = await prisma.connection.findMany({
+      where: { ownerId: user.id, enabled: true, scope: { not: "" } },
+      select: { id: true },
+    });
+    granted = await grantConnectionsToAgent(agentRow.id, conns.map((cn) => cn.id), user.id);
+  } else {
+    const conns = await prisma.connection.findMany({
+      where: { ownerId: user.id, enabled: true, scope: { in: scopes } },
+      select: { id: true },
+    });
+    granted = await grantConnectionsToAgent(agentRow.id, conns.map((cn) => cn.id), user.id);
+  }
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Agent created — grantry</title>
@@ -4242,7 +3980,7 @@ dashboardApp.post("/agents/new", async (c) => {
       <h1>✓ Agent <code>${escapeHtml(agentRow.name)}</code> created</h1>
       <div class="card">
         <h2>Access</h2>
-        <p>${managerMode ? `<span class="badge denied">all tenants (any scope, incl. future)</span>` : `Scopes: ${scopes.map((s) => `<span class="badge scoped">${s}</span>`).join(" ")}`} · ${tools.length} tools via dedicated role <code>${escapeHtml(role.name)}</code></p>
+        <p>${managerMode ? `<span class="badge denied">all current tenant connections</span>` : `Scopes: ${scopes.map((s) => `<span class="badge scoped">${s}</span>`).join(" ")}`} · granted ${granted} connection(s)</p>
       </div>
       ${agentTokenCard(token)}
       ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true)}
@@ -4267,7 +4005,7 @@ dashboardApp.get("/agents/:id", async (c) => {
   const id = c.req.param("id");
   const agent = await prisma.agent.findUnique({
     where: { id },
-    include: { roles: { include: { role: true } } },
+    include: { connectionGrants: true },
   });
   if (!agent) return c.html("<h1>agent not found</h1>", 404);
   if (agent.ownerId !== user.id) return c.html("<h1>not your agent</h1>", 403);
@@ -4287,12 +4025,12 @@ dashboardApp.get("/agents/:id", async (c) => {
     <main>
       <h1>Agent <code>${escapeHtml(agent.name)}</code></h1>
       <div class="card">
-        <h2>Binding</h2>
+        <h2>Connection grants</h2>
         <p>Status: ${agent.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</p>
         <p>Token prefix: <code>${escapeHtml(agent.tokenPrefix)}...</code></p>
-        <p>Roles: ${agent.roles.length
-          ? agent.roles.map((ar) => `<span class="tool-pill">${escapeHtml(ar.role.name)}</span>`).join(" ")
-          : '<em style="color:#df1b41;">no role bound</em>'}</p>
+        <p>Granted connections: ${connections.length
+          ? `<span class="badge ok">${connections.length}</span>`
+          : '<span class="badge denied">none</span>'}</p>
         <p>Accessible tenants: ${scopeSet.size
           ? Array.from(scopeSet).sort().map((s) => `<span class="badge scoped">${escapeHtml(s)}</span>`).join(" ")
           : '<span class="badge denied">none</span>'}</p>
@@ -4307,7 +4045,7 @@ dashboardApp.get("/agents/:id", async (c) => {
       </div>
       <div class="card">
         <h2>Callable connections</h2>
-        ${connections.length === 0 ? '<div class="empty">No enabled connection is callable by this agent. Check role scopes, role tools, and tenant connections.</div>' : `
+        ${connections.length === 0 ? '<div class="empty">No enabled connection is callable by this agent. Grant at least one connection to enable provider tools.</div>' : `
         <div class="table-wrap">
           <table>
             <thead><tr><th>Tenant</th><th>Provider</th><th>Auth</th><th>Label</th><th>Tools</th></tr></thead>
@@ -4360,27 +4098,9 @@ dashboardApp.post("/agents/:id/charter", async (c) => {
   return c.redirect(`/agents/${agent.id}`);
 });
 
-// --- /agents/:id/bind POST (rebind to a different role) ---
+// --- /agents/:id/bind POST (legacy Role binding removed) ---
 dashboardApp.post("/agents/:id/bind", async (c) => {
-  const user = await getSessionUser(c);
-  if (!user) return c.json({ error: "not authenticated" }, 401);
-  const id = c.req.param("id");
-  const agent = await prisma.agent.findUnique({ where: { id } });
-  if (!agent) return c.html("<h1>agent not found</h1>", 404);
-  if (agent.ownerId !== user.id) return c.html("<h1>not your agent</h1>", 403);
-
-  const body = await c.req.parseBody();
-  const roleId = String(body.role_id ?? "").trim();
-  if (!roleId) return c.html("<h1>role_id required</h1>", 400);
-  const role = await prisma.role.findUnique({ where: { id: roleId } });
-  if (!role) return c.html("<h1>role not found</h1>", 404);
-  if (role.ownerId !== user.id) return c.html("<h1>not your role</h1>", 403);
-
-  // Replace all bindings with this one role
-  await prisma.agentRole.deleteMany({ where: { agentId: agent.id } });
-  await prisma.agentRole.create({ data: { agentId: agent.id, roleId: role.id } });
-
-  return c.redirect("/agents");
+  return c.html("<h1>Role binding has been removed. Manage access with connection grants.</h1>", 410);
 });
 
 // --- /agents/:id/rotate (POST) ---
@@ -4846,7 +4566,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     } else {
       // No existing connection for this tenant/provider — create one so the
       // reconnect still leaves a usable credential behind.
-      await prisma.connection.create({
+      const created = await prisma.connection.create({
         data: {
           provider: providerKey,
           authType: "oauth",
@@ -4858,8 +4578,8 @@ oauthApp.get("/:provider/callback", async (c) => {
           ...data,
         },
       });
+      await grantConnectionToTenantAgents(user.id, effectiveTenant, created.id);
     }
-    await syncTenantRoleTools(user.id, effectiveTenant, wsId);
     return c.redirect(`/tenants/${effectiveTenant}/edit?reauthed=${encodeURIComponent(providerKey)}`);
   }
 
@@ -4899,45 +4619,11 @@ oauthApp.get("/:provider/callback", async (c) => {
       },
     });
   }
-  await syncTenantRoleTools(user.id, effectiveTenant, wsId);
-
-  // 2) Find or create role. Use the per-user role name (matching the wizard
-  //    and edit flows) so a chained multi-provider creation reuses the same
-  //    role across every provider's callback.
-  const userIdShort = user.id.slice(0, 8);
-  const roleName = `${effectiveTenant}-dev-${userIdShort}`;
-  const desiredTools = tools.length > 0 ? tools : toolsForProvider(providerKey);
-  // Role.name is globally unique — look it up by name alone. Filtering by
-  // ownerId here would miss an existing same-named role and fall through to
-  // create(), triggering a unique-constraint violation (an uncaught 500).
-  // roleName already encodes the owner (per-user suffix), so this is safe.
-  let role = await prisma.role.findUnique({ where: { name: roleName } });
-  if (role) {
-    const existingTools = safeJsonArray(role.allowedTools);
-    const existingScopes = safeJsonArray(role.allowedScopes);
-    const mergedTools = Array.from(new Set([...existingTools, ...desiredTools]));
-    const mergedScopes = existingScopes.length === 0 ? [effectiveTenant] : Array.from(new Set([...existingScopes, effectiveTenant]));
-    role = await prisma.role.update({
-      where: { id: role.id },
-      data: { allowedTools: JSON.stringify(mergedTools), allowedScopes: JSON.stringify(mergedScopes) },
-    });
-  } else {
-    role = await prisma.role.create({
-      data: {
-        name: roleName,
-        description: `Role for tenant '${effectiveTenant}' (via OAuth)`,
-        allowedTools: JSON.stringify(desiredTools),
-        allowedScopes: JSON.stringify([effectiveTenant]),
-        ownerId: user.id,
-        workspaceId: wsId,
-      },
-    });
-  }
+  await grantConnectionToTenantAgents(user.id, effectiveTenant, conn.id);
 
   // If more providers in the chain still need OAuth authorization, hand off
-  // to the next one before minting the agent. The role already carries every
-  // provider's tools (set when the wizard was submitted), so each callback
-  // just needs to attach its own connection.
+  // to the next one before minting the agent. Each callback attaches its own
+  // connection; the final callback grants all tenant connections to the agent.
   const remainingQueue = String(payload.oauth_queue || "")
     .split(",").map((s: string) => s.trim()).filter(Boolean);
   if (remainingQueue.length > 0) {
@@ -4954,7 +4640,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     return c.redirect(`/oauth/${nextProvider}/start?${params.toString()}`);
   }
 
-  // 3) Create agent + bind role + mint token
+  // 3) Create agent + grant tenant connections + mint token
   const existingAgent = await prisma.agent.findUnique({ where: { name: agent } });
   if (existingAgent) {
     return c.html(`
@@ -4980,9 +4666,9 @@ oauthApp.get("/:provider/callback", async (c) => {
       tokenPrefix: token.slice(0, 16),
       ownerId: user.id,
       workspaceId: wsId,
-      roles: { create: [{ roleId: role.id }] },
     },
   });
+  const granted = await grantTenantConnectionsToAgent(user.id, agentRow.id, effectiveTenant);
 
   // List every connection on this tenant so chained multi-provider setups
   // show all the services that were wired up, not just the last one.
@@ -5012,12 +4698,8 @@ oauthApp.get("/:provider/callback", async (c) => {
         ${allConns.map((cn) => `<p><code>${escapeHtml(cn.label)}</code> · auth=<code>${escapeHtml(cn.authType)}</code> · scope=<code>${escapeHtml(cn.scope)}</code></p>`).join("")}
       </div>
       <div class="card">
-        <h2>Role</h2>
-        <p><code>${role.name}</code> · allowed_scopes=<code>${safeJsonArray(role.allowedScopes).join(", ") || "any"}</code> · ${JSON.parse(role.allowedTools).length} tools</p>
-      </div>
-      <div class="card">
         <h2>Agent</h2>
-        <p><code>${agentRow.name}</code> · bound to <code>${role.name}</code></p>
+        <p><code>${agentRow.name}</code> · granted ${granted} connection(s)</p>
       </div>
       ${agentTokenCard(token, "")}
       ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true, effectiveTenant)}
@@ -5045,13 +4727,13 @@ oauthApp.get("/:provider/callback", async (c) => {
 });
 
 // --- /api/scopes (JSON dump of caller's wiring) ---
-// Returns the user's distinct scopes, connections, roles, and agents.
+// Returns the user's distinct scopes, connections, and agents.
 // Useful for agents that need to know what they can call before hitting /mcp.
 dashboardApp.get("/api/scopes", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
 
-  const [tenants, conns, roles, agents] = await Promise.all([
+  const [tenants, conns, agents] = await Promise.all([
     prisma.tenant.findMany({
       where: { ownerId: user.id },
       select: { id: true, slug: true, displayName: true, description: true, createdAt: true },
@@ -5062,16 +4744,17 @@ dashboardApp.get("/api/scopes", async (c) => {
       select: { id: true, provider: true, authType: true, scope: true, label: true, enabled: true, createdAt: true },
       orderBy: [{ scope: "asc" }, { provider: "asc" }, { authType: "asc" }],
     }),
-    prisma.role.findMany({
-      where: { ownerId: user.id },
-      select: { id: true, name: true, allowedTools: true, allowedScopes: true, description: true },
-      orderBy: { name: "asc" },
-    }),
     prisma.agent.findMany({
       where: { ownerId: user.id },
       select: {
         id: true, name: true, tokenPrefix: true, enabled: true, createdAt: true, lastUsedAt: true,
-        roles: { select: { role: { select: { name: true, allowedTools: true, allowedScopes: true } } } },
+        connectionGrants: {
+          select: {
+            connection: {
+              select: { id: true, provider: true, authType: true, scope: true, label: true, enabled: true },
+            },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -5085,21 +4768,25 @@ dashboardApp.get("/api/scopes", async (c) => {
       ...conns.map((cn) => cn.scope).filter((s) => s),
     ])),
     connections: conns.map((cn) => ({ ...cn, createdAt: cn.createdAt.toISOString() })),
-    roles: roles.map((r) => ({
-      id: r.id, name: r.name, description: r.description,
-      allowedTools: safeJsonArray(r.allowedTools),
-      allowedScopes: safeJsonArray(r.allowedScopes),
-    })),
     agents: agents.map((a) => ({
       id: a.id, name: a.name, tokenPrefix: a.tokenPrefix, enabled: a.enabled,
       createdAt: a.createdAt.toISOString(),
       lastUsedAt: a.lastUsedAt?.toISOString() ?? null,
-      boundRoles: a.roles.map((ar) => ar.role.name),
-      accessibleTools: Array.from(new Set(a.roles.flatMap((ar) => safeJsonArray(ar.role.allowedTools)))),
+      grantedConnections: a.connectionGrants.map((g) => ({
+        id: g.connection.id,
+        provider: g.connection.provider,
+        authType: g.connection.authType,
+        scope: g.connection.scope,
+        label: g.connection.label,
+        enabled: g.connection.enabled,
+      })),
+      accessibleTools: Array.from(new Set(a.connectionGrants.flatMap((g) =>
+        g.connection.enabled ? toolsForProvider(g.connection.provider) : []
+      ))),
       accessibleScopes: Array.from(new Set(
-        a.roles.flatMap((ar) => safeJsonArray(ar.role.allowedScopes).length === 0
-          ? ["<any>"]
-          : safeJsonArray(ar.role.allowedScopes))
+        a.connectionGrants
+          .filter((g) => g.connection.enabled)
+          .map((g) => g.connection.scope)
       )),
     })),
   });
@@ -5157,14 +4844,11 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
     return c.html("<h1>invalid agent name (a-z, 0-9, hyphens, underscores)</h1>", 400);
   }
 
-  // Find the existing role for this tenant (per-user naming)
-  const userIdShort = user.id.slice(0, 8);
-  const role = await prisma.role.findFirst({
-    where: { name: `${scope}-dev-${userIdShort}`, ownerId: user.id },
+  const tenant = await prisma.tenant.findFirst({
+    where: { slug: scope, ownerId: user.id },
+    select: { workspaceId: true },
   });
-  if (!role) {
-    return c.html(`<h1>no role found for scope '${scope}' (yours). Use the wizard to create a new tenant first.</h1>`, 404);
-  }
+  if (!tenant) return c.html(`<h1>tenant '${escapeHtml(scope)}' not found</h1>`, 404);
 
   // Check for agent name conflict up front
   const existingAgent = await prisma.agent.findUnique({ where: { name: agent } });
@@ -5183,26 +4867,8 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
     `, 409);
   }
 
-  // If the form provided a custom tools list, optionally update the role
-  // with the union. (Most users won't customize this — they get the role's
-  // existing tool set.)
-  let customTools: string[] | null = null;
-  if (toolsJson) {
-    try { customTools = JSON.parse(toolsJson); } catch {}
-  }
-  if (customTools && customTools.length > 0) {
-    const existing = safeJsonArray(role.allowedTools);
-    const merged = Array.from(new Set([...existing, ...customTools]));
-    if (merged.length !== existing.length) {
-      await prisma.role.update({
-        where: { id: role.id },
-        data: { allowedTools: JSON.stringify(merged) },
-      });
-    }
-  }
-
-  // Mint token + create agent — same workspace as the tenant's role.
-  const wsId = role.workspaceId ?? (await getActiveWorkspaceId(c));
+  // Mint token + create agent — same workspace as the tenant.
+  const wsId = tenant.workspaceId ?? (await getActiveWorkspaceId(c));
   const token = `gn_agt_${crypto.randomUUID().replace(/-/g, "")}`;
   const tokenHash = await import("node:crypto").then(c => c.createHash("sha256").update(token).digest("hex"));
   const agentRow = await prisma.agent.create({
@@ -5213,9 +4879,9 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
       tokenPrefix: token.slice(0, 16),
       ownerId: user.id,
       workspaceId: wsId,
-      roles: { create: [{ roleId: role.id }] },
     },
   });
+  const granted = await grantTenantConnectionsToAgent(user.id, agentRow.id, scope);
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Agent created — grantry</title>
@@ -5228,9 +4894,8 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
         <p>Reused the existing <code>${scope}</code> connection(s) — no new PAT/OAuth needed.</p>
       </div>
       <div class="card">
-        <h2>Role</h2>
-        <p>Bound to <code>${role.name}</code> (allowed_scopes: <code>${safeJsonArray(role.allowedScopes).join(", ") || "<em>any</em>"}</code>)</p>
-        <p>Tools: ${safeJsonArray(role.allowedTools).map((t: string) => `<span class="tool-pill">${t}</span>`).join(" ")}</p>
+        <h2>Connection grants</h2>
+        <p>Granted ${granted} connection(s) for <code>${escapeHtml(scope)}</code>.</p>
       </div>
       ${agentTokenCard(token)}
       ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true, scope)}
