@@ -2223,7 +2223,6 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
 
       <form method="post" action="/tenants/${scope}/edit" id="settingsForm">
         <input type="hidden" name="_action" value="save_settings">
-        <input type="hidden" name="role_tools_json" id="roleToolsJson" value="">
 
         <h2>Tenant</h2>
         <div class="card">
@@ -2318,12 +2317,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             <label for="agent_desc">Description <span style="color:#687385;">(optional)</span></label>
             <input type="text" name="agent_desc" id="agent_desc" placeholder="What this agent is for">
           </div>
-          <div class="field">
-            <label>Additional tools to enable</label>
-            <p class="field-hint" style="margin-top:0;">Tool visibility is derived from the granted connections. Provider credentials may still reject calls if their own permissions are narrower.</p>
-            <div id="agentToolsList" style="font-size:13px;color:#687385;">${allAvailableTools.length} provider tool(s) available from this tenant's connections.</div>
-            <input type="hidden" name="tools_json" id="agentToolsJson" value="">
-          </div>
+          <p class="field-hint">Tool visibility is derived from this tenant's granted connections. Provider credentials may still reject calls if their own permissions are narrower.</p>
           <div style="display:flex;gap:8px;">
             <button type="submit" class="secondary">Create additional token</button>
           </div>
@@ -2382,12 +2376,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
               <a id="oauthSetupLink" href="#" target="_blank" rel="noopener" style="font-size:13px;">🔗 Register/manage OAuth app here →</a>
             </div>
           </div>
-          <div class="field">
-            <label>Tools to enable</label>
-            <p class="field-hint" style="margin-top:0;">All tools for this provider are listed; check the ones you want this tenant to access.</p>
-            <div id="toolsList"></div>
-            <input type="hidden" name="tools_json" id="toolsJson" value="">
-          </div>
+          <p class="field-hint">This creates a provider connection. Agents get access when this connection is granted to them; provider permissions are enforced by the credential itself.</p>
         </div>
         <div style="display:flex;gap:8px;">
           <button type="submit" id="addServiceButton">Add service</button>
@@ -2406,7 +2395,6 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         const providerOpts = Array.from(providerList.querySelectorAll('.combo-opt'));
         const providerSearch = document.getElementById('providerSearch');
         const providerSearchEmpty = document.getElementById('providerSearchEmpty');
-        const toolsList = document.getElementById('toolsList');
         const credHint = document.getElementById('credHint');
         const credField = document.getElementById('credential');
         const credFieldRow = document.getElementById('credFieldRow');
@@ -2484,7 +2472,6 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           } else {
             oauthSetupLinkRow.style.display = "none";
           }
-          toolsList.innerHTML = p.tools.map(t => '<label style="font-weight:normal;display:block;padding:4px 0;"><input type="checkbox" name="tools" value="' + t + '" checked> <code>' + t + '</code></label>').join("");
         }
         function closeProviderList() {
           providerList.hidden = true;
@@ -2562,10 +2549,6 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           }
         });
         updateUI();
-        document.getElementById('addConnForm').addEventListener('submit', () => {
-          const selected = Array.from(document.querySelectorAll('input[name="tools"]:checked')).map(i => i.value);
-          document.getElementById('toolsJson').value = JSON.stringify(selected);
-        });
       </script>
       `}
     </main></body></html>
@@ -2803,10 +2786,6 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     const provider = String(body.provider ?? "").trim();
     const authMethod = String(body.auth_method ?? "").trim();
     const credential = String(body.credential ?? "").trim();
-    const userIdShort2 = user.id.slice(0, 8);
-    let tools: string[] = [];
-    const toolsJson = String(body.tools_json ?? "").trim();
-    if (toolsJson) { try { tools = JSON.parse(toolsJson); } catch {} }
 
     const providerDef = getProvider(provider);
     if (!providerDef) return c.html("<h1>unknown provider</h1>", 400);
@@ -3060,12 +3039,7 @@ dashboardApp.get("/tenants/new", async (c) => {
                 ${serverCredentialHint(p.key)}
                 ${p.oauthSetupUrl ? `<div style="margin-top:4px;"><a href="${p.oauthSetupUrl}" target="_blank" rel="noopener" style="font-size:13px;">${p.key === "google_ads" ? "🔗 Register/manage Google OAuth client here →" : p.key === "yahoo_ads" ? "🔗 Register/manage LINE Yahoo Ads application here →" : `🔗 Register/manage your ${p.label} OAuth app here →`}</a></div>` : ""}
               </div>` : ""}
-              <div class="field" style="margin-bottom:0;">
-                <label style="font-size:13px;">Tools</label>
-                <div class="tools-list">
-                  ${p.tools.map(t => `<label style="font-weight:normal;display:block;padding:2px 0;"><input type="checkbox" class="tool-check" value="${t}" checked> <code>${t}</code></label>`).join("")}
-                </div>
-              </div>
+              <p class="field-hint" style="margin-bottom:0;">This connection exposes provider tools according to the credential's own permissions.</p>
             </div>
             ` : `
             <div class="field-hint" style="margin:8px 0 0 34px;">Provider registration is defined, but MCP tools and dispatch are not enabled yet.</div>
@@ -3074,7 +3048,6 @@ dashboardApp.get("/tenants/new", async (c) => {
           }).join("")}
           <input type="hidden" name="providers_json" id="providersJson" value="">
           <input type="hidden" name="provider_auths_json" id="providerAuthsJson" value="">
-          <input type="hidden" name="tools_json" id="toolsJson" value="">
         </div>
 
         <div style="display:flex;gap:8px;">
@@ -3176,7 +3149,6 @@ dashboardApp.get("/tenants/new", async (c) => {
         document.getElementById('wizForm').addEventListener('submit', (e) => {
           const selectedProviders = [];
           const selectedProviderAuths = [];
-          const toolsMap = {};
           blocks.forEach((block) => {
             const check = block.querySelector('.provider-check');
             if (!check.checked) return;
@@ -3185,7 +3157,6 @@ dashboardApp.get("/tenants/new", async (c) => {
             const authType = block.dataset.authType;
             selectedProviders.push(key);
             selectedProviderAuths.push({ provider: key, authType });
-            toolsMap[key + ':' + authType] = Array.from(block.querySelectorAll('.tool-check:checked')).map(i => i.value);
           });
           if (selectedProviders.length === 0) {
             e.preventDefault();
@@ -3194,7 +3165,6 @@ dashboardApp.get("/tenants/new", async (c) => {
           }
           document.getElementById('providersJson').value = JSON.stringify(selectedProviders);
           document.getElementById('providerAuthsJson').value = JSON.stringify(selectedProviderAuths);
-          document.getElementById('toolsJson').value = JSON.stringify(toolsMap);
         });
         updateAllBlocks();
 
@@ -3289,11 +3259,10 @@ dashboardApp.post("/tenants/new", async (c) => {
   const agentDesc = String(body.agent_desc ?? "").trim();
 
   // --- Multi-provider parsing ---
-  // The wizard submits the chosen providers as a JSON array (providers_json)
-  // and the per-provider tool selection as a JSON object map (tools_json:
-  // { providerKey: ["tool", ...] }). Per-provider credentials arrive in
-  // separate fields named credential_<providerKey>. JSON blobs are used
-  // because Hono's parseBody keeps only the last value for repeated keys.
+  // The wizard submits the chosen providers as a JSON array (providers_json).
+  // Per-provider credentials arrive in separate fields named
+  // credential_<providerKey>. JSON blobs are used because Hono's parseBody
+  // keeps only the last value for repeated keys.
   let providers: string[] = [];
   let providerAuths: Array<{ provider: string; authType: string }> = [];
   const providerAuthsJson = String(body.provider_auths_json ?? "").trim();
@@ -3335,22 +3304,6 @@ dashboardApp.post("/tenants/new", async (c) => {
     new Map(providerAuths.map((item) => [`${item.provider}:${item.authType}`, item])).values()
   );
 
-  // Per-provider tool selection map.
-  let toolsByProvider: Record<string, string[]> = {};
-  const toolsJson = String(body.tools_json ?? "").trim();
-  if (toolsJson) {
-    try {
-      const parsed = JSON.parse(toolsJson);
-      if (Array.isArray(parsed)) {
-        // Legacy flat array — applies to the single selected provider.
-        if (providers.length === 1) toolsByProvider[providers[0]] = parsed.map(String);
-      } else if (parsed && typeof parsed === "object") {
-        for (const [k, v] of Object.entries(parsed)) {
-          if (Array.isArray(v)) toolsByProvider[k] = v.map(String);
-        }
-      }
-    } catch { toolsByProvider = {}; }
-  }
   // Resolve the credential for a given provider (per-provider field first,
   // falling back to the legacy single `credential` field when there's one provider).
   const credentialFor = (p: string, authType = "pat") => {
@@ -3498,16 +3451,6 @@ dashboardApp.post("/tenants/new", async (c) => {
     }
   }
 
-  // 2) Compute selected provider tools only for OAuth handoff metadata.
-  // Execution authorization is connection-grant based; new agents no longer
-  // get Role / AgentRole rows.
-  const desiredTools = Array.from(new Set(
-    providerAuths.flatMap(({ provider, authType }) => {
-      const t = toolsByProvider[`${provider}:${authType}`] ?? toolsByProvider[provider];
-      return t && t.length > 0 ? t : toolsForProvider(provider);
-    })
-  ));
-
   // If any selected providers still need OAuth authorization, defer agent
   // creation and kick off the OAuth chain. The final callback mints the agent
   // and grants the tenant connections.
@@ -3519,7 +3462,7 @@ dashboardApp.post("/tenants/new", async (c) => {
       additional_scopes: additionalScopes.join(","),
       agent,
       agent_desc: agentDesc,
-      tools_json: JSON.stringify(desiredTools),
+      tools_json: "[]",
       oauth_queue: rest.join(","),
     });
     return c.redirect(`/oauth/${first}/start?${params.toString()}`);
@@ -3716,7 +3659,6 @@ dashboardApp.get("/agents/new", async (c) => {
       ${tenants.length === 0 ? `<div class="card"><div class="empty">No tenants yet. <a href="/tenants/new">Create one first</a>.</div></div>` : `
       <form method="post" action="/agents/new" id="agentForm">
         <input type="hidden" name="scopes_json" id="scopesJson" value="[]">
-        <input type="hidden" name="tools_json" id="toolsJson" value="[]">
         <input type="hidden" name="manager_mode" id="managerModeInput" value="0">
 
         <div class="card">
@@ -3743,8 +3685,7 @@ dashboardApp.get("/agents/new", async (c) => {
         <div id="tenantSection">
           <h2>Tenant access</h2>
           <p class="field-hint" style="margin-top:-8px;">
-            Check the tenants this agent may reach, then untick any tools it should not use.
-            The agent receives grants to each enabled connection in the selected tenants. Provider permissions still come from the credential itself.
+            Check the tenants this agent may reach. The agent receives grants to each enabled connection in the selected tenants. Provider permissions still come from the credential itself.
           </p>
           ${tenants.map((t) => {
             const providers = providersByScope.get(t.slug) ?? [];
@@ -3760,13 +3701,6 @@ dashboardApp.get("/agents/new", async (c) => {
             ${providers.length === 0 ? `<div class="empty" style="padding:8px 0;">No enabled connections — selecting this tenant grants nothing.</div>` : providers.map((p) => `
             <div style="margin:10px 0 0 28px;">
               <code>${p}</code>
-              <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px;">
-                ${toolsForProvider(p).map((tool) => `
-                <label style="cursor:pointer;font-size:13px;white-space:nowrap;">
-                  <input type="checkbox" class="toolCheck" data-scope="${t.slug}" value="${tool}" checked>
-                  <code>${tool.split("/")[1] ?? tool}</code>
-                </label>`).join("")}
-              </div>
             </div>`).join("")}
           </div>`;
           }).join("")}
@@ -3785,18 +3719,8 @@ dashboardApp.get("/agents/new", async (c) => {
             </label>
           </div>
           <div class="card">
-            <h2>Tools</h2>
-            ${allProviders.length === 0 ? '<div class="empty">No enabled connections in any tenant.</div>' : allProviders.map((p) => `
-            <div style="margin:10px 0 0 0;">
-              <code>${p}</code>
-              <div style="display:flex;flex-wrap:wrap;gap:6px 14px;margin-top:6px;">
-                ${toolsForProvider(p).map((tool) => `
-                <label style="cursor:pointer;font-size:13px;white-space:nowrap;">
-                  <input type="checkbox" class="managerToolCheck" value="${tool}" checked>
-                  <code>${tool.split("/")[1] ?? tool}</code>
-                </label>`).join("")}
-              </div>
-            </div>`).join("")}
+            <h2>Connections</h2>
+            ${allProviders.length === 0 ? '<div class="empty">No enabled connections in any tenant.</div>' : `<p>${connections.length} enabled connection(s) across ${providersByScope.size} tenant(s) will be granted.</p>`}
           </div>
         </div>
 
@@ -3811,67 +3735,44 @@ dashboardApp.get("/agents/new", async (c) => {
       <script>
         const managerToggle = document.getElementById('managerToggle');
         const managerConfirm = document.getElementById('managerConfirm');
-        const managerToolChecks = Array.from(document.querySelectorAll('.managerToolCheck'));
         const tenantSection = document.getElementById('tenantSection');
         const managerSection = document.getElementById('managerSection');
         const managerModeInput = document.getElementById('managerModeInput');
         const tenantChecks = Array.from(document.querySelectorAll('.tenantCheck'));
-        const toolChecks = Array.from(document.querySelectorAll('.toolCheck'));
         const previewText = document.getElementById('previewText');
         const createBtn = document.getElementById('createBtn');
         const scopesJson = document.getElementById('scopesJson');
-        const toolsJson = document.getElementById('toolsJson');
         function updateAgentPreview() {
           const manager = managerToggle.checked;
           managerModeInput.value = manager ? '1' : '0';
           tenantSection.style.display = manager ? 'none' : '';
           managerSection.style.display = manager ? '' : 'none';
           if (manager) {
-            const tools = managerToolChecks.filter(c => c.checked).map(c => c.value);
             scopesJson.value = '[]';
-            toolsJson.value = JSON.stringify(tools);
             createBtn.textContent = '🔑 Create full-tenant manager & mint token';
             if (!managerConfirm.checked) {
               previewText.textContent = 'Tick the confirmation above to enable creation.';
               createBtn.disabled = true;
-            } else if (tools.length === 0) {
-              previewText.textContent = 'Select at least one tool.';
-              createBtn.disabled = true;
             } else {
-              previewText.innerHTML = '<b>Full-tenant manager</b> — ' + tools.length + ' tools across <b>all</b> tenants (any scope, incl. future). The MCP config has no scope lock; pass <code>scope</code> per call.';
+              previewText.innerHTML = '<b>Full-tenant manager</b> — all current enabled tenant connections. The MCP config has no scope lock; pass <code>scope</code> per call.';
               createBtn.disabled = false;
             }
             return;
           }
           createBtn.textContent = '🔑 Create agent & mint token';
           const scopes = tenantChecks.filter(c => c.checked).map(c => c.value);
-          const tools = [];
-          const perScope = {};
-          toolChecks.forEach(t => {
-            const on = scopes.includes(t.dataset.scope);
-            t.disabled = !on;
-            t.closest('label').style.opacity = on ? '1' : '0.45';
-            if (on && t.checked) {
-              if (!tools.includes(t.value)) tools.push(t.value);
-              perScope[t.dataset.scope] = (perScope[t.dataset.scope] || 0) + 1;
-            }
-          });
           scopesJson.value = JSON.stringify(scopes);
-          toolsJson.value = JSON.stringify(tools);
           if (scopes.length === 0) {
             previewText.textContent = 'Select at least one tenant above.';
             createBtn.disabled = true;
           } else {
-            const parts = scopes.map(s => s + ' (' + (perScope[s] || 0) + ' tools)');
-            previewText.innerHTML = 'Scopes: ' + parts.join(' · ') + ' — ' + tools.length + ' tools total. The MCP config has no scope lock; pass <code>scope</code> per call.';
-            createBtn.disabled = tools.length === 0;
+            previewText.innerHTML = 'Scopes: ' + scopes.join(' · ') + '. The MCP config has no scope lock; pass <code>scope</code> per call.';
+            createBtn.disabled = false;
           }
         }
         managerToggle.addEventListener('change', updateAgentPreview);
         managerConfirm.addEventListener('change', updateAgentPreview);
-        managerToolChecks.forEach(c => c.addEventListener('change', updateAgentPreview));
         tenantChecks.forEach(c => c.addEventListener('change', updateAgentPreview));
-        toolChecks.forEach(c => c.addEventListener('change', updateAgentPreview));
         updateAgentPreview();
       </script>
       `}
@@ -3889,17 +3790,12 @@ dashboardApp.post("/agents/new", async (c) => {
   const agentDesc = String(body.agent_desc ?? "").trim();
   const managerMode = String(body.manager_mode ?? "") === "1";
   let scopes: string[] = [];
-  let tools: string[] = [];
   try { scopes = (JSON.parse(String(body.scopes_json ?? "[]")) as unknown[]).map(String); } catch { scopes = []; }
-  try { tools = (JSON.parse(String(body.tools_json ?? "[]")) as unknown[]).map(String); } catch { tools = []; }
   scopes = Array.from(new Set(scopes.filter((s) => /^[a-z0-9_-]+$/.test(s))));
 
   if (!agent || !/^[a-zA-Z0-9_-]+$/.test(agent)) return c.html("<h1>agent name required (alphanumeric, hyphens, underscores)</h1>", 400);
 
-  // `availableProviders` is the set of providers whose tools may be granted.
-  // Manager mode: allowedScopes = [] (any scope, incl. future tenants), tools
-  // drawn from every tenant. Normal mode: tools confined to the chosen tenants.
-  let availableProviders: Set<string>;
+  let grantableConnectionCount = 0;
   if (managerMode) {
     if (String(body.manager_confirm ?? "") !== "on") {
       return c.html("<h1>confirm full-tenant access to create a manager</h1>", 400);
@@ -3907,9 +3803,9 @@ dashboardApp.post("/agents/new", async (c) => {
     scopes = []; // any scope
     const conns = await prisma.connection.findMany({
       where: { ownerId: user.id, enabled: true, scope: { not: "" } },
-      select: { provider: true },
+      select: { id: true },
     });
-    availableProviders = new Set(conns.map((cn) => cn.provider));
+    grantableConnectionCount = conns.length;
   } else {
     if (scopes.length === 0) return c.html("<h1>select at least one tenant</h1>", 400);
 
@@ -3926,18 +3822,11 @@ dashboardApp.post("/agents/new", async (c) => {
 
     const conns = await prisma.connection.findMany({
       where: { ownerId: user.id, enabled: true, scope: { in: scopes } },
-      select: { provider: true },
+      select: { id: true },
     });
-    availableProviders = new Set(conns.map((cn) => cn.provider));
+    grantableConnectionCount = conns.length;
   }
-
-  // Tools must be real tools of providers with an enabled connection in scope.
-  tools = Array.from(new Set(tools)).filter((t) => {
-    const p = t.includes("/") ? t.split("/", 1)[0] : "";
-    const def = getProvider(p);
-    return !!def && def.implemented !== false && availableProviders.has(p) && toolsForProvider(p).includes(t);
-  });
-  if (tools.length === 0) return c.html(`<h1>select at least one tool${managerMode ? "" : " available in the chosen tenants"}</h1>`, 400);
+  if (grantableConnectionCount === 0) return c.html("<h1>select at least one tenant with an enabled connection</h1>", 400);
 
   const existingAgent = await prisma.agent.findUnique({ where: { name: agent } });
   if (existingAgent) {
@@ -3990,7 +3879,7 @@ dashboardApp.post("/agents/new", async (c) => {
         <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
   -H "Authorization: Bearer ${token}" \\
   -H "Content-Type: application/json" \\
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"${tools[0]}","arguments":{"scope":"${scopes[0] ?? "&lt;any-of-your-tenants&gt;"}"}}}'</pre>
+  -d '{"jsonrpc":"2.0","id":1,"method":"connections/list","params":{}}'</pre>
       </div>
       <p><a href="/agents">← Back to agents</a></p>
     </main></body></html>
@@ -4522,8 +4411,6 @@ oauthApp.get("/:provider/callback", async (c) => {
   const effectiveTenant = tenant || tenantSelect;
   const agent = payload.agent;
   const agentDesc = payload.agent_desc || "";
-  let tools: string[] = [];
-  try { tools = JSON.parse(payload.tools_json || "[]"); } catch {}
   if (!/^[a-z0-9_-]+$/.test(effectiveTenant)) {
     return c.html(`<h1>invalid tenant in saved payload</h1>`, 400);
   }
@@ -4838,7 +4725,6 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
   const body = await c.req.parseBody();
   const agent = String(body.agent ?? "").trim();
   const agentDesc = String(body.agent_desc ?? "").trim();
-  const toolsJson = String(body.tools_json ?? "").trim();
   if (!agent) return c.html("<h1>agent name required</h1>", 400);
   if (!/^[a-zA-Z0-9_-]+$/.test(agent)) {
     return c.html("<h1>invalid agent name (a-z, 0-9, hyphens, underscores)</h1>", 400);
