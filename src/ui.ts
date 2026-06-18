@@ -4344,7 +4344,21 @@ oauthApp.get("/:provider/callback", async (c) => {
     body: tokenBody,
   });
   if (!tokenResp.ok) {
-    return c.html(`<h1>${escapeHtml(providerDef.label)} token exchange failed</h1><p>HTTP ${tokenResp.status}</p>`, 500);
+    const errBody = await tokenResp.text().catch(() => "");
+    console.error("[oauth] token exchange failed", {
+      provider: providerKey,
+      tokenUrl: providerDef.oauthTokenUrl,
+      status: tokenResp.status,
+      redirectUri,
+      usedPkce: !!pkceVerifier,
+      body: errBody.slice(0, 2000),
+    });
+    return c.html(
+      `<h1>${escapeHtml(providerDef.label)} token exchange failed</h1>` +
+        `<p>HTTP ${tokenResp.status} from <code>${escapeHtml(providerDef.oauthTokenUrl || "")}</code></p>` +
+        `<pre>${escapeHtml(errBody.slice(0, 2000))}</pre>`,
+      500,
+    );
   }
   const tokenJson: any = await tokenResp.json();
   if (tokenJson.error || !tokenJson.access_token) {
