@@ -1,6 +1,6 @@
 # Provider Capability Gateway
 
-Status: **design direction**.
+Status: **Phase 1 partially implemented**.
 Audience: grantry maintainers
 
 ## Why this exists
@@ -227,11 +227,14 @@ Agent instructions should prefer:
 
 Build the minimum safe gateway:
 
-- Add provider manifest fields for `baseUrl` and allowed path prefixes.
-- Add `<provider>/request` for selected providers.
-- Start with `GET` only.
-- Keep response size caps and audit logs.
-- Add error classification.
+- Add provider manifest fields for `baseUrl` and allowed path prefixes. ✅
+- Add `<provider>/request` for selected providers. ✅
+- Start with `GET` only. ✅
+- Keep response size caps and audit logs. ✅
+- Add error classification. Partial: guardrail/provider request errors now use
+  stable prefixes such as `provider_path_not_allowed` and
+  `provider_request_failed`; deeper provider-specific scope classification is
+  still pending.
 
 HubSpot is the first proving ground because it already exposed the failure:
 marketing email APIs exist, but Grantry had no tool path to reach them.

@@ -184,7 +184,7 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 3. Use `connections/list` with the agent token to verify the exact
    `connection_id`, provider, and scope the agent can use.
 
-## Providers & tools (335)
+## Providers & tools
 - `ping` — liveness (returns `pong from <agent>`)
 - **grantry** (system metadata, no SaaS credential required): `get_skill`,
   `get_providers`; plus capability discovery (token required): `list_scopes`,
@@ -196,7 +196,13 @@ Set the connection's **scope to the tenant name**; that's the scope callers must
 - **google_drive** (OAuth, read-only): `list_files`, `get_file`, `search`
 - **google_gsc** (OAuth, read-only): `list_sites`, `search_analytics`
 - **google_ads** (OAuth, read-only): `list_campaigns`, `get_campaign`
-- **hubspot** (Private App token): `list_deals`, `get_contact`, `create_deal`
+- Most implemented providers also expose read-only `request` as a safe generic
+  provider API escape hatch. Use curated tools first; use `<provider>/request`
+  with `method: "GET"`, a relative `path`, and optional `query` when a read API
+  exists but Grantry has no curated tool for it.
+- **hubspot** (Private App token or OAuth): `list_deals`, `get_contact`,
+  `create_deal`, `list_marketing_emails`, `get_marketing_email`,
+  `get_marketing_email_statistics`, `request`
 - **attio** (access token): `search_records`, `list_records`, `get_record`,
   `create_record`, `upsert_record`, `update_record`, `list_notes`, `get_note`,
   `create_note`, `delete_note`, `list_tasks`, `get_task`, `create_task`,
@@ -658,6 +664,8 @@ When asked to act via grantry:
    get explicit confirmation first —
    these hit the real SaaS via real tokens and are not reversible. **Read-only**
    calls (incl. the connectivity smoke test) need no confirmation — just run them.
+   `<provider>/request` is GET-only in the generic gateway and is treated as a
+   read-only call.
 5. Report the result. The `scope` is recorded in the audit log (`/audit`).
 
 ## Failure handling (error codes)

@@ -63,6 +63,7 @@ import { callGoogleCloudTool } from "./connectors/google_cloud.js";
 import { callBigQueryTool } from "./connectors/bigquery.js";
 import { callGoogleAdminTool } from "./connectors/google_admin.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
+import { callGenericProviderRequest } from "./connectors/generic_request.js";
 import { userMayUseAgent } from "./workspaces.js";
 
 export const mcpApp = new Hono();
@@ -623,6 +624,13 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "hubspot/create_deal") {
     return {
       properties: { type: "object", description: "HubSpot deal properties, e.g. dealname, amount, pipeline, dealstage, closedate." },
+    };
+  }
+  if (toolName.endsWith("/request")) {
+    return {
+      path: { type: "string", description: "Provider API path relative to the provider base URL. Full URLs are rejected." },
+      method: { type: "string", enum: ["GET"], description: "HTTP method. Phase 1 generic requests are read-only and allow GET only." },
+      query: { type: "object", description: "Optional query parameters. Array values are repeated." },
     };
   }
   if (toolName === "attio/search_records") {
@@ -2094,6 +2102,7 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "meta_ads/update_campaign") return ["campaign_id", "updates"];
   if (toolName === "hubspot/get_contact") return ["contact_id"];
   if (toolName === "hubspot/create_deal") return ["properties"];
+  if (toolName.endsWith("/request")) return ["path"];
   if (toolName === "attio/search_records") return ["query", "objects"];
   if (toolName === "attio/list_records") return ["object"];
   if (toolName === "attio/get_record") return ["object", "record_id"];
@@ -2386,6 +2395,11 @@ async function dispatchProviderTool(
   token: string,
   conn: { encryptedServerCredential: string | null },
 ): Promise<any> {
+  if (toolName === `${provider}/request`) {
+    const providerDef = PROVIDERS[provider];
+    if (!providerDef) throw new Error(`provider not implemented: ${provider}`);
+    return callGenericProviderRequest({ provider: providerDef, toolName, requestArgs: args, credential: token });
+  }
   if (provider === "notion") return callNotionTool(toolName, args, token);
   if (provider === "github") return callGitHubTool(toolName, args, token);
   if (provider === "cloudflare") return callCloudflareTool(toolName, args, token);

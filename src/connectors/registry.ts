@@ -30,6 +30,15 @@ export type ProviderDef = {
   oauthTokenUrl?: string;
   /** Tools this provider exposes, by name */
   tools: string[];
+  /** Safe generic provider API request manifest. Phase 1 is read-only. */
+  genericRequest?: {
+    baseUrl: string;
+    defaultMethods: string[];
+    allowedPathPrefixes: string[];
+    blockedPathPrefixes?: string[];
+    authScheme?: "bearer" | "api_key";
+    apiKeyHeader?: string;
+  };
   /** Whether this provider has an MCP dispatcher implemented in this service. */
   implemented?: boolean;
 };
@@ -849,6 +858,221 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     implemented: true,
   },
 };
+
+const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]>> = {
+  github: {
+    baseUrl: "https://api.github.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  cloudflare: {
+    baseUrl: "https://api.cloudflare.com/client/v4",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  google_drive: {
+    baseUrl: "https://www.googleapis.com/drive/v3",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  google_gsc: {
+    baseUrl: "https://searchconsole.googleapis.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  google_analytics: {
+    baseUrl: "https://analyticsdata.googleapis.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  meta_ads: {
+    baseUrl: "https://graph.facebook.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  gmail: {
+    baseUrl: "https://gmail.googleapis.com/gmail/v1",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  youtube: {
+    baseUrl: "https://www.googleapis.com/youtube/v3",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  hubspot: {
+    baseUrl: "https://api.hubapi.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  attio: {
+    baseUrl: "https://api.attio.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/v2/"],
+  },
+  clay: {
+    baseUrl: "https://api.clay.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/v1/"],
+  },
+  heyreach: {
+    baseUrl: "https://api.heyreach.io",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  chatwork: {
+    baseUrl: "https://api.chatwork.com/v2",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    authScheme: "api_key",
+    apiKeyHeader: "X-ChatWorkToken",
+  },
+  freee: {
+    baseUrl: "https://api.freee.co.jp",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  moneyforward: {
+    baseUrl: "https://invoice.moneyforward.com/api/v3",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  google_maps: {
+    baseUrl: "https://maps.googleapis.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    authScheme: "api_key",
+    apiKeyHeader: "X-Goog-Api-Key",
+  },
+  resend: {
+    baseUrl: "https://api.resend.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  slack: {
+    baseUrl: "https://slack.com/api",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  reddit: {
+    baseUrl: "https://oauth.reddit.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  x: {
+    baseUrl: "https://api.x.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  discord: {
+    baseUrl: "https://discord.com/api/v10",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  line: {
+    baseUrl: "https://api.line.me",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  facebook_messenger: {
+    baseUrl: "https://graph.facebook.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  airtable: {
+    baseUrl: "https://api.airtable.com/v0",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  linear: {
+    baseUrl: "https://api.linear.app",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  sendgrid: {
+    baseUrl: "https://api.sendgrid.com/v3",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  vercel: {
+    baseUrl: "https://api.vercel.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  stripe: {
+    baseUrl: "https://api.stripe.com/v1",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  webflow: {
+    baseUrl: "https://api.webflow.com/v2",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  intercom: {
+    baseUrl: "https://api.intercom.io",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  mailchimp: {
+    baseUrl: "https://us1.api.mailchimp.com/3.0",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  salesforce: {
+    baseUrl: "credential.instance_url",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/services/data/"],
+  },
+  linkedin_ads: {
+    baseUrl: "https://api.linkedin.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  tiktok_ads: {
+    baseUrl: "https://business-api.tiktok.com/open_api",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  google_calendar: {
+    baseUrl: "https://www.googleapis.com/calendar/v3",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  google_sheets: {
+    baseUrl: "https://sheets.googleapis.com/v4",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  google_tag_manager: {
+    baseUrl: "https://tagmanager.googleapis.com/tagmanager/v2",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  google_cloud: {
+    baseUrl: "https://cloudresourcemanager.googleapis.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  google_admin: {
+    baseUrl: "https://admin.googleapis.com/admin/directory/v1",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  bigquery: {
+    baseUrl: "https://bigquery.googleapis.com/bigquery/v2",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+};
+
+for (const provider of Object.values(PROVIDERS)) {
+  const genericRequest = GENERIC_REQUESTS[provider.key];
+  if (!genericRequest || provider.implemented === false) continue;
+  provider.genericRequest = genericRequest;
+  const requestTool = `${provider.key}/request`;
+  if (!provider.tools.includes(requestTool)) provider.tools.push(requestTool);
+}
 
 export function getProvider(key: string): ProviderDef | undefined {
   return PROVIDERS[key];
