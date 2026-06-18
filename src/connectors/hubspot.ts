@@ -7,8 +7,9 @@ const HUBSPOT_TIMEOUT_MS = 10_000;
 // Marketing-email read tools. Registered onto the existing hubspot provider at
 // module load so policy.ts (which gates on provider.tools.includes(tool)) and
 // tools/list pick them up without editing registry.ts. Idempotent.
-// NOTE: these endpoints require the Private App token to hold the `content`
-// (marketing email read) scope; otherwise HubSpot returns 403.
+// NOTE: these endpoints require the `content` granular scope; PAT connections
+// need it on the Private App, OAuth connections must reconnect after the scope
+// below is added to the authorize request.
 const HUBSPOT_MARKETING_EMAIL_TOOLS = [
   "hubspot/list_marketing_emails",
   "hubspot/get_marketing_email",
@@ -18,6 +19,14 @@ const hubspotProvider = PROVIDERS.hubspot;
 if (hubspotProvider) {
   for (const t of HUBSPOT_MARKETING_EMAIL_TOOLS) {
     if (!hubspotProvider.tools.includes(t)) hubspotProvider.tools.push(t);
+  }
+  // The marketing email API requires the `content` scope. grantry's hubspot
+  // OAuth flow only requested CRM scopes, so add it here (idempotent).
+  if (Array.isArray(hubspotProvider.oauthScopes) && !hubspotProvider.oauthScopes.includes("content")) {
+    // insert before the trailing "oauth" marker if present, else append
+    const idx = hubspotProvider.oauthScopes.indexOf("oauth");
+    if (idx >= 0) hubspotProvider.oauthScopes.splice(idx, 0, "content");
+    else hubspotProvider.oauthScopes.push("content");
   }
 }
 
