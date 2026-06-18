@@ -44,6 +44,21 @@ export type ProviderDef = {
     blockedPathPrefixes?: string[];
     authScheme?: "bearer" | "api_key";
     apiKeyHeader?: string;
+    smokeTests?: Array<{
+      id: string;
+      method: "GET";
+      path: string;
+      query?: Record<string, string | number | boolean>;
+      requiredScopes?: string[];
+    }>;
+    operations?: Array<{
+      id: string;
+      method: string;
+      path: string;
+      description: string;
+      requiredScopes?: string[];
+      risk: "read" | "write" | "destructive";
+    }>;
   };
   /** Whether this provider has an MCP dispatcher implemented in this service. */
   implemented?: boolean;
@@ -883,6 +898,7 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     baseUrl: "https://api.github.com",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "viewer", method: "GET", path: "/user" }],
   },
   cloudflare: {
     baseUrl: "https://api.cloudflare.com/client/v4",
@@ -923,6 +939,35 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     baseUrl: "https://api.hubapi.com",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
+    smokeTests: [
+      { id: "account", method: "GET", path: "/account-info/v3/details" },
+    ],
+    operations: [
+      {
+        id: "crm_deals",
+        method: "GET",
+        path: "/crm/v3/objects/deals",
+        description: "Read CRM deals.",
+        requiredScopes: ["crm.objects.deals.read"],
+        risk: "read",
+      },
+      {
+        id: "crm_contacts",
+        method: "GET",
+        path: "/crm/v3/objects/contacts",
+        description: "Read CRM contacts.",
+        requiredScopes: ["crm.objects.contacts.read"],
+        risk: "read",
+      },
+      {
+        id: "marketing_emails",
+        method: "GET",
+        path: "/marketing/v3/emails",
+        description: "Read HubSpot marketing emails.",
+        requiredScopes: ["content"],
+        risk: "read",
+      },
+    ],
   },
   attio: {
     baseUrl: "https://api.attio.com",
@@ -972,6 +1017,7 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     baseUrl: "https://slack.com/api",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "auth", method: "GET", path: "/auth.test" }],
   },
   reddit: {
     baseUrl: "https://oauth.reddit.com",
@@ -1091,6 +1137,10 @@ for (const provider of Object.values(PROVIDERS)) {
   provider.genericRequest = genericRequest;
   const requestTool = `${provider.key}/request`;
   if (!provider.tools.includes(requestTool)) provider.tools.push(requestTool);
+  const checkTool = `${provider.key}/check_connection`;
+  if (!provider.tools.includes(checkTool)) provider.tools.push(checkTool);
+  const capabilitiesTool = `${provider.key}/list_capabilities`;
+  if (!provider.tools.includes(capabilitiesTool)) provider.tools.push(capabilitiesTool);
 }
 
 export function getProvider(key: string): ProviderDef | undefined {

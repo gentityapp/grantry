@@ -245,7 +245,9 @@ the same provider+scope; disambiguate with `auth_type` (`service_account` vs
 - Most implemented providers also expose read-only `request` as a safe generic
   provider API escape hatch. Use curated tools first; use `<provider>/request`
   with `method: "GET"`, a relative `path`, and optional `query` when a read API
-  exists but Grantry has no curated tool for it.
+  exists but Grantry has no curated tool for it. Use `<provider>/check_connection`
+  to run provider smoke tests, and `<provider>/list_capabilities` to inspect
+  known operations, required scopes, and generic request guardrails.
 - **hubspot** (Private App token or OAuth): `list_deals`, `get_contact`,
   `create_deal`, `list_marketing_emails`, `get_marketing_email`,
   `get_marketing_email_statistics`, `request`

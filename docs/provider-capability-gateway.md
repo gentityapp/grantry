@@ -1,6 +1,6 @@
 # Provider Capability Gateway
 
-Status: **Phase 1 partially implemented**.
+Status: **Phase 1 implemented; Phase 2 partially implemented**.
 Audience: grantry maintainers
 
 ## Why this exists
@@ -377,10 +377,14 @@ marketing email APIs exist, but Grantry had no tool path to reach them.
 Store capability observations on `Connection.credentialMetadata` or a successor
 metadata model:
 
-- Last successful paths.
-- Last provider errors by path.
-- Inferred missing scopes.
-- Available account identifiers when safe.
+- Manifest-backed `<provider>/check_connection`. ✅
+- Manifest-backed `<provider>/list_capabilities`. ✅
+- Last successful paths. Pending.
+- Last provider errors by path. Pending.
+- Inferred missing scopes. Partial: provider request/check errors now expose
+  `provider_scope_missing` where the provider error body includes missing scope
+  hints; durable metadata storage is still pending.
+- Available account identifiers when safe. Pending.
 
 This lets the dashboard and agents answer "can this connection probably do X?"
 without rediscovering from scratch every time.
