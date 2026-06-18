@@ -1,4 +1,5 @@
 // HubSpot CRM connector — OAuth access token.
+// redeploy-marker: activate content scope request (v2)
 import { PROVIDERS } from "./registry.js";
 
 const HUBSPOT_API = "https://api.hubapi.com";
