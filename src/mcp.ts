@@ -2370,6 +2370,7 @@ function getProviderMetadata(includeTools = true) {
       token_url: p.tokenUrl ?? null,
       oauth_setup_url: p.oauthSetupUrl ?? null,
       oauth_scopes: p.oauthScopes ?? [],
+      oauth_optional_scopes: p.oauthOptionalScopes ?? [],
       server_credential: p.serverCredentialEnv
         ? {
             label: p.serverCredentialLabel ?? null,

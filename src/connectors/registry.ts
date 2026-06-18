@@ -25,6 +25,8 @@ export type ProviderDef = {
   serverCredentialUrl?: string;
   /** OAuth scopes to request (oauth only) */
   oauthScopes?: string[];
+  /** OAuth optional scopes to request when the provider supports optional_scope. */
+  oauthOptionalScopes?: string[];
   /** Google API scopes to mint when using Domain-Wide Delegation (service_account only).
    *  These are the exact scopes the customer's Workspace admin must authorize for the
    *  service account's client_id in Admin console → Security → API controls →
@@ -305,12 +307,20 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "hubspot",
     label: "HubSpot",
     authTypes: ["pat", "oauth"],
-    helpText: "Connect via OAuth, or paste a HubSpot Private App access token to access CRM and marketing email data. Marketing email APIs require HubSpot's content scope.",
+    helpText: "Connect via OAuth, or paste a HubSpot Private App access token to access CRM and marketing email data. Marketing email APIs require HubSpot's content scope. For OAuth apps, configure content as an optional scope in HubSpot.",
     tokenUrl: "https://app.hubspot.com/private-apps",
-    oauthScopes: ["crm.objects.deals.read", "crm.objects.deals.write", "crm.objects.contacts.read", "crm.objects.contacts.write", "content", "oauth"],
+    oauthScopes: ["crm.objects.deals.read", "crm.objects.deals.write", "crm.objects.contacts.read", "crm.objects.contacts.write", "oauth"],
+    oauthOptionalScopes: ["content"],
     authorizeUrl: "https://app.hubspot.com/oauth/authorize",
     oauthTokenUrl: "https://api.hubapi.com/oauth/v1/token",
-    tools: ["hubspot/list_deals", "hubspot/get_contact", "hubspot/create_deal"],
+    tools: [
+      "hubspot/list_deals",
+      "hubspot/get_contact",
+      "hubspot/create_deal",
+      "hubspot/list_marketing_emails",
+      "hubspot/get_marketing_email",
+      "hubspot/get_marketing_email_statistics",
+    ],
     implemented: true,
   },
   attio: {

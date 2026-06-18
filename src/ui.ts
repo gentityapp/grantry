@@ -556,7 +556,46 @@ function renderCredentialSummary(cn: {
     }
   }
   const validated = cn.credentialValidatedAt ? ` title="Checked ${cn.credentialValidatedAt.toISOString()}"` : "";
-  return `<div class="credential-summary"${validated}>${parts.join("<br>")}</div>`;
+  const capabilities = renderCapabilitySummary(cn.provider, cn.authType, meta);
+  return `<div class="credential-summary"${validated}>${parts.join("<br>")}${capabilities}</div>`;
+}
+
+function renderCapabilitySummary(provider: string | undefined, authType: string | undefined, meta: Record<string, any>) {
+  const caps = meta.capabilities && typeof meta.capabilities === "object" ? meta.capabilities : null;
+  if (!caps) return "";
+  const status = String(caps.status ?? "unknown");
+  const smokeTests = Array.isArray(caps.smokeTests) ? caps.smokeTests : [];
+  const operations = Array.isArray(caps.operations) ? caps.operations : [];
+  const missingScopes: string[] = Array.isArray(caps.missingScopes) ? caps.missingScopes.map(String).filter(Boolean) : [];
+  const okTests = smokeTests.filter((t: any) => t?.status === "ok").length;
+  const failedTests = smokeTests.filter((t: any) => t?.status === "error").length;
+  const knownOps = operations.length;
+  const badge = status === "ok"
+    ? '<span class="badge ok">capabilities ok</span>'
+    : status === "error"
+      ? '<span class="badge denied">capability issue</span>'
+      : '<span class="badge unscoped">capabilities unknown</span>';
+  const rows: string[] = [
+    `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed #e3e8ee;">${badge}</div>`,
+  ];
+  if (okTests || failedTests) {
+    rows.push(`<span style="color:#687385;font-size:12px;">Smoke tests: ${okTests} ok${failedTests ? `, ${failedTests} failed` : ""}</span>`);
+  }
+  if (knownOps) {
+    rows.push(`<span style="color:#687385;font-size:12px;">Known capabilities: ${knownOps}</span>`);
+  }
+  if (missingScopes.length) {
+    rows.push(`<span class="badge denied">missing ${missingScopes.map((s: string) => escapeHtml(s)).join(", ")}</span>`);
+    rows.push(`<span style="color:#687385;font-size:12px;">Fix: ${authType === "oauth" ? "Reconnect after granting the missing scope." : "Add the missing permission to the provider token/private app, then recheck."}</span>`);
+  }
+  if (caps.error) {
+    rows.push(`<span style="color:#687385;font-size:12px;">${escapeHtml(String(caps.error)).slice(0, 100)}</span>`);
+  }
+  const providerDef = provider ? getProvider(provider) : null;
+  if (providerDef?.genericRequest) {
+    rows.push(`<span style="color:#687385;font-size:12px;">Generic read request: enabled</span>`);
+  }
+  return rows.join("<br>");
 }
 
 // Onboarding panel for a Domain-Wide Delegation connection: the Client ID and
@@ -4365,6 +4404,7 @@ oauthApp.get("/:provider/start", async (c) => {
   // (bot scopes in `scope`); most other providers use space-separated scopes.
   const scopeSeparator = providerKey === "slack" ? "," : " ";
   const scopeStr = (providerDef.oauthScopes || []).join(scopeSeparator);
+  const optionalScopeStr = (providerDef.oauthOptionalScopes || []).join(scopeSeparator);
   const params = new URLSearchParams({
     response_type: "code",
     client_id: clientId,
@@ -4372,6 +4412,9 @@ oauthApp.get("/:provider/start", async (c) => {
     scope: scopeStr,
     state,
   });
+  if (optionalScopeStr) {
+    params.set("optional_scope", optionalScopeStr);
+  }
   if (pkceVerifier) {
     params.set("code_challenge", await pkceCodeChallenge(pkceVerifier));
     params.set("code_challenge_method", "S256");

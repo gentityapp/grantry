@@ -1,3 +1,6 @@
+import { callGenericCheckConnection, callGenericListCapabilities } from "./generic_request.js";
+import { getProvider } from "./registry.js";
+
 const META_TIMEOUT_MS = 8_000;
 
 export type CredentialMetadata = {
@@ -10,6 +13,14 @@ export type CredentialMetadata = {
   notes?: string[];
   checkedAt: string;
   error?: string;
+  capabilities?: {
+    status: "ok" | "error" | "unknown";
+    smokeTests?: Array<Record<string, unknown>>;
+    operations?: Array<Record<string, unknown>>;
+    missingScopes?: string[];
+    checkedAt: string;
+    error?: string;
+  };
 };
 
 async function fetchWithTimeout(url: string, init: RequestInit = {}) {
@@ -862,8 +873,38 @@ export async function inspectCredential(provider: string, authType: string, toke
 
 export async function credentialMetadataForStorage(provider: string, authType: string, token: string) {
   const metadata = await inspectCredential(provider, authType, token);
+  const providerDef = getProvider(provider);
+  if (providerDef?.genericRequest) {
+    const checkedAt = new Date().toISOString();
+    try {
+      const [check, capabilities] = await Promise.all([
+        callGenericCheckConnection({ provider: providerDef, credential: token }),
+        callGenericListCapabilities({ provider: providerDef }),
+      ]);
+      const checkContent = check.structuredContent ?? {};
+      const capabilityContent = capabilities.structuredContent ?? {};
+      const smokeTests = Array.isArray(checkContent.tests) ? checkContent.tests : [];
+      const operations = Array.isArray(capabilityContent.operations) ? capabilityContent.operations : [];
+      const missingScopes = Array.from(new Set(
+        smokeTests.flatMap((test: any) => Array.isArray(test.missingScopes) ? test.missingScopes.map(String) : []),
+      ));
+      metadata.capabilities = {
+        status: checkContent.status === "ok" ? "ok" : checkContent.status === "error" ? "error" : "unknown",
+        smokeTests,
+        operations,
+        missingScopes,
+        checkedAt,
+      };
+    } catch (e: any) {
+      metadata.capabilities = {
+        status: "unknown",
+        checkedAt,
+        error: String(e?.message ?? e).slice(0, 500),
+      };
+    }
+  }
   return {
-    credentialMetadata: JSON.stringify(metadata).slice(0, 8000),
+    credentialMetadata: JSON.stringify(metadata).slice(0, 16000),
     credentialValidatedAt: new Date(),
   };
 }

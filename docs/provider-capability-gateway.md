@@ -1,6 +1,6 @@
 # Provider Capability Gateway
 
-Status: **Phase 1 implemented; Phase 2 partially implemented**.
+Status: **Phase 1 implemented; Phase 2 implemented for manifest-backed diagnostics**.
 Audience: grantry maintainers
 
 ## Why this exists
@@ -336,6 +336,24 @@ Add the required Marketing Email permission to the Private App token,
 then recheck the connection.
 ```
 
+Capability diagnostics should run automatically when a credential is saved,
+rotated, reconnected, or manually rechecked. The result is stored with the
+credential metadata so the dashboard and agent instructions can show the last
+known state without requiring a fresh provider call on every page load.
+
+Stored diagnostic metadata should include:
+
+```
+capabilities.status
+capabilities.smokeTests
+capabilities.operations
+capabilities.missingScopes
+capabilities.checkedAt
+```
+
+This metadata is advisory, not an authorization source. Grantry still enforces
+workspace, tenant, grant, provider, and manifest guardrails at request time.
+
 ## MCP implications
 
 `tools/list` should eventually expose:
@@ -381,9 +399,10 @@ metadata model:
 - Manifest-backed `<provider>/list_capabilities`. ✅
 - Last successful paths. Pending.
 - Last provider errors by path. Pending.
-- Inferred missing scopes. Partial: provider request/check errors now expose
+- Inferred missing scopes. Partial: provider request/check errors expose
   `provider_scope_missing` where the provider error body includes missing scope
-  hints; durable metadata storage is still pending.
+  hints; connection save/recheck stores smoke-test missing scopes in durable
+  credential metadata.
 - Available account identifiers when safe. Pending.
 
 This lets the dashboard and agents answer "can this connection probably do X?"
