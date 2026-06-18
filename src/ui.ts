@@ -7,6 +7,7 @@ import { decrypt, encrypt } from "./crypto.js";
 import { PROVIDERS, getProvider, listProviders, toolsForProvider } from "./connectors/registry.js";
 import { providerIcon, providerIconMap } from "./connectors/icons.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
+import { parseServiceAccountInput, serviceAccountPublicMeta, invalidateDwdToken, mintDwdAccessToken, type ServiceAccountCredential } from "./google_dwd.js";
 import { connectionsForAgent, findCapableAgents, normalizeToolName } from "./policy.js";
 import { ensureTenant } from "./tenants.js";
 import { createTenantConnectionFromCredential, ensureProviderCredentialForConnection, rotateSharedCredential, syncProviderCredentialFromConnection } from "./provider_credentials.js";
@@ -37,6 +38,7 @@ function jsString(s: string): string {
 
 function authTypeLabel(providerKey: string, authType: string): string {
   if (authType === "oauth") return "OAuth";
+  if (authType === "service_account") return "Service Account (DWD)";
   if (providerKey === "hubspot") return "Private App token";
   if (providerKey === "attio") return "Access token";
   if (providerKey === "clay") return "API key";
@@ -56,6 +58,7 @@ function authTypeLabel(providerKey: string, authType: string): string {
 
 function credentialPlaceholder(providerKey: string, providerLabel: string, authType: string): string {
   if (authType === "oauth") return "OAuth flow will start after submit";
+  if (authType === "service_account") return "Paste the full service account JSON key file";
   if (providerKey === "hubspot") return "Paste your HubSpot Private App access token here (starts with pat-)";
   if (providerKey === "attio") return "Paste your Attio access token from Settings > Developers";
   if (providerKey === "clay") return "Paste your Clay API key from Settings > Account > API key";
@@ -554,6 +557,24 @@ function renderCredentialSummary(cn: {
   }
   const validated = cn.credentialValidatedAt ? ` title="Checked ${cn.credentialValidatedAt.toISOString()}"` : "";
   return `<div class="credential-summary"${validated}>${parts.join("<br>")}</div>`;
+}
+
+// Onboarding panel for a Domain-Wide Delegation connection: the Client ID and
+// scopes the customer's Workspace admin must register, plus the impersonated
+// subject. Pulled from the non-secret credentialMetadata (never the SA key).
+function renderDwdInfo(cn: { authType?: string; credentialMetadata?: string | null }) {
+  if (cn.authType !== "service_account") return "";
+  const meta = safeJsonObject(cn.credentialMetadata);
+  const clientId = meta.client_id ? String(meta.client_id) : "";
+  const subject = meta.subject ? String(meta.subject) : "";
+  const scopes = Array.isArray(meta.scopes) ? meta.scopes.map(String) : [];
+  return `
+    <div style="margin-top:6px;padding-top:8px;border-top:1px dashed #e3e8ee;">
+      <div class="field-hint" style="margin-bottom:4px;"><b>Domain-Wide Delegation</b> — register in the customer's <b>Admin console → Security → Access and data control → API controls → Domain-wide delegation</b>.</div>
+      ${subject ? `<div class="field-hint">Impersonating: <code>${escapeHtml(subject)}</code></div>` : ""}
+      <div class="field-hint">Client ID: <code>${escapeHtml(clientId || "(unknown)")}</code></div>
+      ${scopes.length ? `<div class="field-hint" style="margin-top:4px;">OAuth scopes (comma-separated):</div><textarea rows="3" readonly style="width:100%;font-family:monospace;font-size:11px;">${escapeHtml(scopes.join(","))}</textarea>` : ""}
+    </div>`;
 }
 
 function oauthTokenStatus(cn: { authType: string; accessTokenExpiresAt?: Date | null; refreshToken?: string | null }) {
@@ -2183,6 +2204,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                 <td>
                   ${oauthTokenStatus(cn)}
                   ${renderCredentialSummary(cn)}
+                  ${renderDwdInfo(cn)}
                   ${cn.provider === "google_ads" ? `
                     <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #e3e8ee;">
                       <div class="field-hint" style="margin-bottom:6px;">
@@ -2305,6 +2327,11 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
               <a id="oauthSetupLink" href="#" target="_blank" rel="noopener" style="font-size:13px;">🔗 Register/manage OAuth app here →</a>
             </div>
           </div>
+          <div class="field" id="subjectFieldRow" style="display:none;">
+            <label for="subject">Impersonate admin email (subject)</label>
+            <input type="text" name="subject" id="subject" autocomplete="off" placeholder="admin@customer-domain.com">
+            <div class="field-hint">The Workspace admin whose authority the service account acts as (Domain-Wide Delegation). Must be a real admin in the customer's domain.</div>
+          </div>
           <p class="field-hint">This creates a provider connection. Agents get access when this connection is granted to them; provider permissions are enforced by the credential itself.</p>
         </div>
         <div style="display:flex;gap:8px;">
@@ -2336,6 +2363,8 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         const oauthSetupLinkRow = document.getElementById('oauthSetupLinkRow');
         const oauthSetupLink = document.getElementById('oauthSetupLink');
         const addServiceButton = document.getElementById('addServiceButton');
+        const subjectFieldRow = document.getElementById('subjectFieldRow');
+        const subjectField = document.getElementById('subject');
         function escapeText(s) {
           return String(s || '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
         }
@@ -2348,6 +2377,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           authMethodHidden.value = authType;
           const usePat = authType === "pat";
           const useOauth = authType === "oauth";
+          const useSa = authType === "service_account";
           const reusable = REUSABLE_BY_PROVIDER_AUTH[sel.value + ':' + authType] || [];
           credHint.textContent = p.helpText;
           if (reuseHint) {
@@ -2376,12 +2406,17 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                     : (sel.value === "resend"
                       ? "Resend API key"
                       : (sel.value === "google_maps" ? "Google Maps Platform API key" : p.label + " token"))))));
-          credField.placeholder = usePat ? "Paste your " + tokenLabel + (sel.value === "hubspot" ? " here (starts with pat-)" : " here") : "OAuth flow will start after submit";
-          credField.disabled = !usePat;
-          credField.required = usePat && reusable.length === 0;
-          credFieldRow.style.opacity = usePat ? "1" : "0.55";
+          credField.placeholder = useSa
+            ? "Paste the full service account JSON key file ({ \\"type\\": \\"service_account\\", ... })"
+            : (usePat ? "Paste your " + tokenLabel + (sel.value === "hubspot" ? " here (starts with pat-)" : " here") : "OAuth flow will start after submit");
+          credField.disabled = !usePat && !useSa;
+          credField.required = (usePat && reusable.length === 0) || useSa;
+          credFieldRow.style.opacity = (usePat || useSa) ? "1" : "0.55";
           addServiceButton.textContent = useOauth ? "Connect with OAuth" : "Add service";
-          if (!usePat) credField.value = "";
+          if (!usePat && !useSa) credField.value = "";
+          if (subjectFieldRow) subjectFieldRow.style.display = useSa ? "" : "none";
+          if (subjectField) { subjectField.required = useSa; if (!useSa) subjectField.value = ""; }
+          if (useSa) credHint.textContent = "Domain-Wide Delegation: the customer's Workspace admin authorizes this service account's client ID + scopes once in their Admin console. No per-user OAuth, no 7-day token expiry.";
           if (usePat && p.tokenUrl) {
             patLink.href = p.tokenUrl;
             patLink.textContent = sel.value === "hubspot"
@@ -2408,6 +2443,10 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             oauthSetupLink.textContent = sel.value === "google_ads"
               ? "🔗 Register/manage Google OAuth client here →"
               : (sel.value === "yahoo_ads" ? "🔗 Register/manage LINE Yahoo Ads application here →" : "🔗 Register/manage your " + p.label + " OAuth app here →");
+            oauthSetupLinkRow.style.display = "";
+          } else if (useSa && p.oauthSetupUrl) {
+            oauthSetupLink.href = "https://console.cloud.google.com/iam-admin/serviceaccounts";
+            oauthSetupLink.textContent = "🔗 Create/manage the service account & JSON key here →";
             oauthSetupLinkRow.style.display = "";
           } else {
             oauthSetupLinkRow.style.display = "none";
@@ -2724,9 +2763,76 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     const providerDef = getProvider(provider);
     if (!providerDef) return c.html("<h1>unknown provider</h1>", 400);
     if (providerDef.implemented === false) return c.html("<h1>provider not implemented</h1>", 400);
-    const wantsOauth = authMethod === "oauth" || (providerDef.authTypes.includes("oauth") && !providerDef.authTypes.includes("pat"));
-    const wantsPat = authMethod === "pat" || (providerDef.authTypes.includes("pat") && !providerDef.authTypes.includes("oauth"));
-    if (!wantsPat && credential) {
+    // Explicit auth_method from the form is authoritative; the includes()-based
+    // inference is only a fallback for providers with a single auth method.
+    const wantsSa = authMethod === "service_account";
+    const wantsOauth = authMethod === "oauth" || (!authMethod && providerDef.authTypes.includes("oauth") && !providerDef.authTypes.includes("pat") && !providerDef.authTypes.includes("service_account"));
+    const wantsPat = authMethod === "pat" || (!authMethod && providerDef.authTypes.includes("pat") && !providerDef.authTypes.includes("oauth"));
+
+    // --- service_account (Domain-Wide Delegation) ---
+    if (wantsSa) {
+      if (!providerDef.authTypes.includes("service_account")) return c.html("<h1>service account is not supported for this provider</h1>", 400);
+      const subject = String(body.subject ?? "").trim();
+      let saCred;
+      try {
+        saCred = parseServiceAccountInput(credential, subject);
+      } catch (e: any) {
+        return c.html(`<h1>Invalid service account credential</h1><p>${escapeHtml(String(e?.message ?? e))}</p><p><a href="/tenants/${scope}/edit">← Back</a></p>`, 400);
+      }
+      const scopes = providerDef.dwdScopes ?? [];
+      const blob = JSON.stringify({ sa_key: saCred.sa_key, subject: saCred.subject });
+      const credentialMetadata = JSON.stringify({ kind: "service_account", ...serviceAccountPublicMeta(saCred, scopes) });
+      const tenantRow = await ensureTenant(user.id, scope, undefined, wsId);
+      const existingSa = await prisma.connection.findFirst({
+        where: { provider, authType: "service_account", scope, ownerId: user.id },
+      });
+      const saData = {
+        encryptedCredential: encrypt(blob),
+        refreshToken: null,
+        accessTokenExpiresAt: null,
+        credentialMetadata,
+        credentialValidatedAt: null,
+      };
+      const conn = existingSa
+        ? await prisma.connection.update({ where: { id: existingSa.id }, data: saData })
+        : await prisma.connection.create({
+            data: {
+              provider,
+              authType: "service_account",
+              label: `${provider}-${scope}-service_account`,
+              scope,
+              tenantId: tenantRow.id,
+              ownerId: user.id,
+              workspaceId: tenantRow.workspaceId ?? wsId,
+              ...saData,
+            },
+          });
+      invalidateDwdToken(conn.id);
+      await ensureProviderCredentialForConnection(conn, user.id);
+      await syncProviderCredentialFromConnection(conn);
+      await grantConnectionToTenantAgents(user.id, scope, conn.id);
+
+      const clientId = saCred.sa_key.client_id ?? "";
+      return c.html(`
+        <!doctype html><html><head><meta charset="utf-8"><title>Service account added — grantry</title>
+        ${FAVICON}<style>${CSS}</style></head><body>
+        ${NAV("tenants", user?.email)}
+        <main>
+          <h1>✓ Service account connected to <code>${escapeHtml(scope)}</code></h1>
+          <div class="card">
+            <h2>${escapeHtml(providerDef.label)} · Domain-Wide Delegation</h2>
+            <p>Connection <code>${escapeHtml(conn.label)}</code> · impersonating <code>${escapeHtml(saCred.subject)}</code></p>
+            <p>The customer's Workspace admin must authorize this in <strong>Admin console → Security → Access and data control → API controls → Domain-wide delegation</strong>:</p>
+            <p><strong>Client ID</strong>: <code>${escapeHtml(clientId)}</code></p>
+            <p><strong>OAuth scopes</strong> (comma-separated):</p>
+            <textarea rows="4" readonly style="width:100%;font-family:monospace;font-size:12px;">${escapeHtml(scopes.join(","))}</textarea>
+          </div>
+          <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a> · <a href="/tenants">All tenants</a></p>
+        </main></body></html>
+      `);
+    }
+
+    if (!wantsPat && !wantsSa && credential) {
       return c.html("<h1>pasted credentials are not accepted for this OAuth-only provider</h1>", 400);
     }
     if (wantsOauth) {
@@ -2832,6 +2938,45 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/recheck", async (c)
     return c.html(`<h1>OAuth connection uses Reconnect</h1><p>Use the Reconnect button to refresh this credential.</p><p><a href="/tenants/${scope}/edit">← Back</a></p>`, 400);
   }
 
+  // Service account: the stored blob is the SA key + subject, not a bearer token.
+  // Validate by actually minting a DWD access token for the provider's scopes;
+  // surface Google's error (usually unauthorized_client) if the admin hasn't
+  // registered the client ID + scopes yet.
+  if (conn.authType === "service_account") {
+    const scopes = getProvider(conn.provider)?.dwdScopes ?? [];
+    let ok = false;
+    let errorMsg = "";
+    try {
+      const cred = JSON.parse(decrypt(conn.encryptedCredential)) as ServiceAccountCredential;
+      invalidateDwdToken(conn.id);
+      await mintDwdAccessToken(conn.id, cred, scopes);
+      ok = true;
+    } catch (e: any) {
+      errorMsg = String(e?.message ?? e);
+    }
+    const meta = safeJsonObject(conn.credentialMetadata);
+    const newMeta = JSON.stringify({ ...meta, status: ok ? "ok" : "error", ...(ok ? {} : { error: errorMsg.slice(0, 300) }) });
+    await rotateSharedCredential({
+      credentialId: conn.credentialId,
+      connectionId: conn.id,
+      data: { credentialMetadata: newMeta, credentialValidatedAt: ok ? new Date() : null },
+    });
+    return c.html(`
+      <!doctype html><html><head><meta charset="utf-8"><title>Connection rechecked — grantry</title>
+      ${FAVICON}<style>${CSS}</style></head><body>
+      ${NAV("tenants", user?.email)}
+      <main>
+        <h1>${ok ? "✓" : "✗"} Rechecked <code>${escapeHtml(conn.label)}</code></h1>
+        <div class="card">
+          ${ok
+            ? `<p>Successfully minted a Domain-Wide Delegation access token. The delegation is correctly configured.</p>`
+            : `<p>Could not mint a token:</p><pre style="white-space:pre-wrap;font-size:12px;">${escapeHtml(errorMsg)}</pre>`}
+        </div>
+        <p><a href="/tenants/${scope}/edit">← Back to ${escapeHtml(scope)}</a></p>
+      </main></body></html>
+    `);
+  }
+
   const token = decrypt(conn.encryptedCredential);
   const credentialMeta = await credentialMetadataForStorage(conn.provider, conn.authType, token);
   await rotateSharedCredential({
@@ -2872,6 +3017,7 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/delete", async (c) 
   }
 
   await prisma.connection.delete({ where: { id: conn.id } });
+  invalidateDwdToken(conn.id);
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Connection deleted — grantry</title>
@@ -2895,8 +3041,11 @@ dashboardApp.get("/tenants/new", async (c) => {
 
   const providers = listProviders();
   const knownProviders = Object.values(PROVIDERS);
+  // service_account (DWD) needs a JSON-key paste + subject email, which the
+  // multi-provider new-tenant wizard isn't set up to collect. Add it from the
+  // tenant edit page (/tenants/:scope/edit) instead.
   const providerAuthOptions = knownProviders.flatMap((p) =>
-    p.authTypes.map((authType) => ({ provider: p, authType }))
+    p.authTypes.filter((authType) => authType !== "service_account").map((authType) => ({ provider: p, authType }))
   );
   const wsId = await getActiveWorkspaceId(c);
   // Get existing tenants (distinct scope values) and which providers each has.

@@ -130,6 +130,9 @@ Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing tenant):
   provider's OAuth app settings — the legacy Railway domain may also be listed).
 - **Notion**: paste an internal integration token (`ntn_…` / `secret_…`).
 - **Google (Drive/GSC/Ads)**: OAuth only, via `/oauth/<provider>/start`.
+- **Google Workspace data (google_admin / gmail / google_drive / google_calendar /
+  google_sheets)**: in addition to per-user OAuth, these support **Service Account
+  + Domain-Wide Delegation (DWD)** — the multi-tenant approach. See §5a.
 - **HubSpot**: paste a Private App access token.
 - **Attio**: paste a workspace access token from Settings > Developers > Access tokens.
 - **Clay**: paste the API key from Clay Settings > Account > API key.
@@ -176,6 +179,49 @@ Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing tenant):
   **google_calendar**, **google_sheets**, **google_tag_manager**, **google_cloud**,
   **bigquery** — enable the matching API in the Google Cloud project.
 Set the connection's **scope to the tenant name**; that's the scope callers must pass.
+
+### 5a. Google Workspace via Service Account + Domain-Wide Delegation (DWD)
+For Workspace **domain data** (`google_admin`, `gmail`, `google_drive`,
+`google_calendar`, `google_sheets`) across **other tenants' Workspaces**, per-user
+OAuth doesn't scale: our consent screen is in Testing (refresh tokens expire ~7
+days, 100-user cap), and going to production requires Google brand verification
+(sensitive scopes) or a CASA security assessment (restricted Gmail/Drive scopes).
+DWD sidesteps all of that — the customer's Workspace admin authorizes our service
+account once, with no Google verification, no CASA, and no token expiry.
+
+Other Google providers (`google_ads`, `google_gsc`, `google_analytics`,
+`bigquery`, `google_tag_manager`, `google_cloud`) stay on per-user OAuth — they
+key off individual Google accounts / GCP IAM, not Workspace domain data, so DWD
+doesn't apply.
+
+**One-time setup (Grantry operator):**
+1. In Google Cloud Console, create a **service account** in the `gentity` project
+   and download its **JSON key** (`console.cloud.google.com/iam-admin/serviceaccounts`).
+2. In `/tenants/:scope/edit`, add a connection and pick the provider with auth
+   type **Service Account (DWD)**. Paste the **full JSON key** and the **admin
+   email to impersonate** (the `subject` — a real admin in the customer's domain).
+   The key + subject are encrypted at rest; only non-secret metadata (client ID,
+   client email, subject, scopes) is stored in the clear for display.
+3. The edit page then shows the **Client ID** (the SA's numeric `client_id`) and
+   the **OAuth scopes** to hand to the customer.
+
+**Customer onboarding (their Workspace admin, once):**
+1. Admin console → **Security → Access and data control → API controls →
+   Domain-wide delegation** → **Add new**.
+2. Paste the **Client ID** from step 3 above.
+3. Paste the **comma-separated OAuth scopes** shown on the same page.
+4. Authorize. (Propagation can take a few minutes.)
+
+Then click **Recheck** on the connection: Grantry mints a real DWD access token
+to confirm the delegation works. If the admin hasn't registered the client ID +
+scopes yet, the mint fails with `unauthorized_client` and the exact client ID /
+subject / scopes to fix are shown.
+
+At call time Grantry signs a JWT with the SA key, impersonates the `subject`, and
+exchanges it for a short-lived access token (cached in-process) — agents call the
+tools exactly as before. A DWD connection coexists with an OAuth connection for
+the same provider+scope; disambiguate with `auth_type` (`service_account` vs
+`oauth`) or `connection_id` if both exist (see the scope rule / error `-32010`).
 
 ### 6. Grant an agent access to a scope
 1. Ensure a connection exists at that scope (step 5).
