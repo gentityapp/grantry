@@ -63,7 +63,8 @@ import { callGoogleCloudTool } from "./connectors/google_cloud.js";
 import { callBigQueryTool } from "./connectors/bigquery.js";
 import { callGoogleAdminTool } from "./connectors/google_admin.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
-import { callGenericProviderRequest } from "./connectors/generic_request.js";
+import { mintDwdAccessToken, type ServiceAccountCredential } from "./google_dwd.js";
+import { callGenericCheckConnection, callGenericListCapabilities, callGenericProviderRequest } from "./connectors/generic_request.js";
 import { userMayUseAgent } from "./workspaces.js";
 
 export const mcpApp = new Hono();
@@ -632,6 +633,12 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       method: { type: "string", enum: ["GET"], description: "HTTP method. Phase 1 generic requests are read-only and allow GET only." },
       query: { type: "object", description: "Optional query parameters. Array values are repeated." },
     };
+  }
+  if (toolName.endsWith("/check_connection")) {
+    return {};
+  }
+  if (toolName.endsWith("/list_capabilities")) {
+    return {};
   }
   if (toolName === "attio/search_records") {
     return {
@@ -2103,6 +2110,8 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "hubspot/get_contact") return ["contact_id"];
   if (toolName === "hubspot/create_deal") return ["properties"];
   if (toolName.endsWith("/request")) return ["path"];
+  if (toolName.endsWith("/check_connection")) return [];
+  if (toolName.endsWith("/list_capabilities")) return [];
   if (toolName === "attio/search_records") return ["query", "objects"];
   if (toolName === "attio/list_records") return ["object"];
   if (toolName === "attio/get_record") return ["object", "record_id"];
@@ -2361,6 +2370,7 @@ function getProviderMetadata(includeTools = true) {
       token_url: p.tokenUrl ?? null,
       oauth_setup_url: p.oauthSetupUrl ?? null,
       oauth_scopes: p.oauthScopes ?? [],
+      oauth_optional_scopes: p.oauthOptionalScopes ?? [],
       server_credential: p.serverCredentialEnv
         ? {
             label: p.serverCredentialLabel ?? null,
@@ -2399,6 +2409,16 @@ async function dispatchProviderTool(
     const providerDef = PROVIDERS[provider];
     if (!providerDef) throw new Error(`provider not implemented: ${provider}`);
     return callGenericProviderRequest({ provider: providerDef, toolName, requestArgs: args, credential: token });
+  }
+  if (toolName === `${provider}/check_connection`) {
+    const providerDef = PROVIDERS[provider];
+    if (!providerDef) throw new Error(`provider not implemented: ${provider}`);
+    return callGenericCheckConnection({ provider: providerDef, credential: token });
+  }
+  if (toolName === `${provider}/list_capabilities`) {
+    const providerDef = PROVIDERS[provider];
+    if (!providerDef) throw new Error(`provider not implemented: ${provider}`);
+    return callGenericListCapabilities({ provider: providerDef });
   }
   if (provider === "notion") return callNotionTool(toolName, args, token);
   if (provider === "github") return callGitHubTool(toolName, args, token);
@@ -2971,6 +2991,16 @@ async function credentialForConnection(conn: {
     ? await prisma.providerCredential.findUnique({ where: { id: conn.credentialId } })
     : null;
   const encryptedCredential = shared?.encryptedCredential ?? conn.encryptedCredential;
+
+  // Service account (Domain-Wide Delegation): the stored credential is the SA key
+  // + impersonated subject, not a bearer token. Mint a short-lived access token
+  // for the provider's DWD scopes (cached in-process by google_dwd.ts).
+  if (conn.authType === "service_account") {
+    const cred = JSON.parse(decrypt(encryptedCredential)) as ServiceAccountCredential;
+    const scopes = PROVIDERS[conn.provider]?.dwdScopes ?? [];
+    return mintDwdAccessToken(conn.id, cred, scopes);
+  }
+
   const refreshToken = shared?.refreshToken ?? conn.refreshToken;
   const accessTokenExpiresAt = shared?.accessTokenExpiresAt ?? conn.accessTokenExpiresAt;
   const currentToken = decrypt(encryptedCredential);

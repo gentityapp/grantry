@@ -1,6 +1,6 @@
 # Provider Capability Gateway
 
-Status: **Phase 1 partially implemented**.
+Status: **Phase 1 implemented; Phase 2 implemented for manifest-backed diagnostics**.
 Audience: grantry maintainers
 
 ## Why this exists
@@ -43,6 +43,139 @@ provider credential
 
 This gives all providers an escape hatch before Grantry has curated every API.
 Provider-specific tools become product polish, not the only path to execution.
+
+## Manifest is an internal product primitive
+
+`ProviderManifest` is a Grantry maintainer/developer concept, not a user-facing
+product term. Users should not have to understand manifests, base URLs, allowed
+path prefixes, or OpenAPI operation IDs.
+
+The user-facing surfaces are derived from the manifest:
+
+```
+Connection health
+Available capabilities
+Missing permissions
+Suggested fixes
+```
+
+For example, the manifest may say:
+
+```ts
+{
+  provider: "hubspot",
+  operations: [{
+    id: "marketing_emails",
+    method: "GET",
+    path: "/marketing/v3/emails",
+    requiredScopes: ["content"],
+    risk: "read"
+  }]
+}
+```
+
+The dashboard should say:
+
+```
+Marketing emails: unavailable
+Missing permission: content
+Fix: reconnect HubSpot OAuth, or add Content permission to the Private App token.
+```
+
+This distinction matters. The manifest is how Grantry lowers engineering and CS
+cost. The product experience is "this connection works / needs this fix."
+
+## Provider onboarding framework
+
+The goal is that adding a new provider is not equivalent to hand-building a full
+connector. A new provider should become minimally usable by registering a
+manifest first.
+
+Target minimum:
+
+```ts
+type ProviderManifest = {
+  provider: string;
+  label: string;
+  auth: {
+    types: Array<"pat" | "oauth" | "service_account">;
+    scheme: "bearer" | "api_key" | "basic" | "custom";
+  };
+  genericRequest: {
+    baseUrl: string;
+    defaultMethods: ["GET"];
+    allowedPathPrefixes: string[];
+  };
+  smokeTests: Array<{
+    id: string;
+    method: "GET";
+    path: string;
+    requiredScopes?: string[];
+  }>;
+  operations?: Array<{
+    id: string;
+    method: string;
+    path: string;
+    description: string;
+    requiredScopes?: string[];
+    risk: "read" | "write" | "destructive";
+  }>;
+};
+```
+
+With only this manifest, Grantry should be able to provide:
+
+```
+<provider>/request
+<provider>/check_connection
+<provider>/list_capabilities
+connection save/recheck smoke tests
+capability status for dashboard and agents
+```
+
+Curated tools remain valuable, but they are no longer the entry fee for making a
+provider useful.
+
+### Capability levels
+
+Provider support should be described in levels:
+
+| Level | Meaning | Minimum work |
+| --- | --- | --- |
+| 0 | Connected and explorable | Manifest + read-only request |
+| 1 | Diagnosable | Smoke tests + required scopes + error classification |
+| 2 | Productized | Curated tools + normalized responses + write policies |
+
+This is the practical path to "minimum effort, maximum connectivity." A provider
+can ship at Level 0, become supportable at Level 1, and become polished at Level
+2 only where usage justifies it.
+
+### Why this reduces CS load
+
+Without a manifest-driven onboarding framework, every provider gap becomes a
+support conversation:
+
+```
+Does the token work?
+Is the scope missing?
+Does Grantry have a tool?
+Which API path should be called?
+Is this a provider plan limitation?
+```
+
+With a manifest, Grantry can answer most of that before the user asks:
+
+```
+Credential valid: yes
+Read request available: yes
+Smoke test passed: no
+Missing permission: content
+Fix: reconnect OAuth after granting content
+```
+
+The purpose is not full automation. Provider APIs still require research and
+maintenance. The purpose is to make every new provider follow the same path and
+to keep unknown failures from becoming vague "it does not connect" tickets.
 
 ## Layers
 
@@ -203,6 +336,24 @@ Add the required Marketing Email permission to the Private App token,
 then recheck the connection.
 ```
 
+Capability diagnostics should run automatically when a credential is saved,
+rotated, reconnected, or manually rechecked. The result is stored with the
+credential metadata so the dashboard and agent instructions can show the last
+known state without requiring a fresh provider call on every page load.
+
+Stored diagnostic metadata should include:
+
+```
+capabilities.status
+capabilities.smokeTests
+capabilities.operations
+capabilities.missingScopes
+capabilities.checkedAt
+```
+
+This metadata is advisory, not an authorization source. Grantry still enforces
+workspace, tenant, grant, provider, and manifest guardrails at request time.
+
 ## MCP implications
 
 `tools/list` should eventually expose:
@@ -244,10 +395,15 @@ marketing email APIs exist, but Grantry had no tool path to reach them.
 Store capability observations on `Connection.credentialMetadata` or a successor
 metadata model:
 
-- Last successful paths.
-- Last provider errors by path.
-- Inferred missing scopes.
-- Available account identifiers when safe.
+- Manifest-backed `<provider>/check_connection`. ✅
+- Manifest-backed `<provider>/list_capabilities`. ✅
+- Last successful paths. Pending.
+- Last provider errors by path. Pending.
+- Inferred missing scopes. Partial: provider request/check errors expose
+  `provider_scope_missing` where the provider error body includes missing scope
+  hints; connection save/recheck stores smoke-test missing scopes in durable
+  credential metadata.
+- Available account identifiers when safe. Pending.
 
 This lets the dashboard and agents answer "can this connection probably do X?"
 without rediscovering from scratch every time.

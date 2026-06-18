@@ -5,9 +5,8 @@ import { PROVIDERS } from "./registry.js";
 const HUBSPOT_API = "https://api.hubapi.com";
 const HUBSPOT_TIMEOUT_MS = 10_000;
 
-// Marketing-email read tools. Registered onto the existing hubspot provider at
-// module load so policy.ts (which gates on provider.tools.includes(tool)) and
-// tools/list pick them up without editing registry.ts. Idempotent.
+// Marketing-email read tools. Registered idempotently for deployments that may
+// still have an older registry shape loaded.
 // NOTE: these endpoints require the `content` granular scope; PAT connections
 // need it on the Private App, OAuth connections must reconnect after the scope
 // below is added to the authorize request.
@@ -21,13 +20,14 @@ if (hubspotProvider) {
   for (const t of HUBSPOT_MARKETING_EMAIL_TOOLS) {
     if (!hubspotProvider.tools.includes(t)) hubspotProvider.tools.push(t);
   }
-  // The marketing email API requires the `content` scope. grantry's hubspot
-  // OAuth flow only requested CRM scopes, so add it here (idempotent).
-  if (Array.isArray(hubspotProvider.oauthScopes) && !hubspotProvider.oauthScopes.includes("content")) {
-    // insert before the trailing "oauth" marker if present, else append
-    const idx = hubspotProvider.oauthScopes.indexOf("oauth");
-    if (idx >= 0) hubspotProvider.oauthScopes.splice(idx, 0, "content");
-    else hubspotProvider.oauthScopes.push("content");
+  // HubSpot optional app scopes must be sent with the `optional_scope` query
+  // parameter. Keep content out of the required scope list to avoid mismatches
+  // when the HubSpot app config marks it optional.
+  if (!Array.isArray(hubspotProvider.oauthOptionalScopes)) {
+    hubspotProvider.oauthOptionalScopes = [];
+  }
+  if (!hubspotProvider.oauthOptionalScopes.includes("content")) {
+    hubspotProvider.oauthOptionalScopes.push("content");
   }
 }
 

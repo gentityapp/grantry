@@ -10,8 +10,9 @@ export type ProviderDef = {
   /** Display name */
   label: string;
   /** Supported authentication methods. e.g. ["pat"] or ["oauth"] or ["pat", "oauth"].
-   *  The wizard exposes both options when multiple are listed. */
-  authTypes: ("pat" | "oauth")[];
+   *  The wizard exposes both options when multiple are listed.
+   *  "service_account" = Google Workspace Domain-Wide Delegation (SA key + impersonated admin). */
+  authTypes: ("pat" | "oauth" | "service_account")[];
   /** Help text shown in the wizard */
   helpText: string;
   /** Where to get a token (for pat) or register OAuth app (for oauth) */
@@ -24,6 +25,13 @@ export type ProviderDef = {
   serverCredentialUrl?: string;
   /** OAuth scopes to request (oauth only) */
   oauthScopes?: string[];
+  /** OAuth optional scopes to request when the provider supports optional_scope. */
+  oauthOptionalScopes?: string[];
+  /** Google API scopes to mint when using Domain-Wide Delegation (service_account only).
+   *  These are the exact scopes the customer's Workspace admin must authorize for the
+   *  service account's client_id in Admin console → Security → API controls →
+   *  Domain-wide delegation. Typically oauthScopes minus userinfo.email. */
+  dwdScopes?: string[];
   /** OAuth App authorize URL (oauth only) */
   authorizeUrl?: string;
   /** OAuth App token exchange URL (oauth only) */
@@ -38,6 +46,21 @@ export type ProviderDef = {
     blockedPathPrefixes?: string[];
     authScheme?: "bearer" | "api_key";
     apiKeyHeader?: string;
+    smokeTests?: Array<{
+      id: string;
+      method: "GET";
+      path: string;
+      query?: Record<string, string | number | boolean>;
+      requiredScopes?: string[];
+    }>;
+    operations?: Array<{
+      id: string;
+      method: string;
+      path: string;
+      description: string;
+      requiredScopes?: string[];
+      risk: "read" | "write" | "destructive";
+    }>;
   };
   /** Whether this provider has an MCP dispatcher implemented in this service. */
   implemented?: boolean;
@@ -137,7 +160,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
   google_drive: {
     key: "google_drive",
     label: "Google Drive",
-    authTypes: ["oauth"],
+    authTypes: ["oauth", "service_account"],
     helpText: "Connect your Google account. We'll request read-only access to Drive files you choose to share with the integration.",
     /** Where to register/manage an OAuth client (callback URL setup) */
     oauthSetupUrl: "https://console.cloud.google.com/apis/credentials",
@@ -145,6 +168,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "https://www.googleapis.com/auth/drive.readonly",
       "https://www.googleapis.com/auth/userinfo.email",
     ],
+    dwdScopes: ["https://www.googleapis.com/auth/drive.readonly"],
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     oauthTokenUrl: "https://oauth2.googleapis.com/token",
     tools: ["google_drive/list_files", "google_drive/get_file", "google_drive/search"],
@@ -235,13 +259,17 @@ export const PROVIDERS: Record<string, ProviderDef> = {
   gmail: {
     key: "gmail",
     label: "Gmail",
-    authTypes: ["oauth"],
+    authTypes: ["oauth", "service_account"],
     helpText: "Connect Gmail to list, read, and send messages through the Gmail API.",
     oauthSetupUrl: "https://console.cloud.google.com/apis/credentials",
     oauthScopes: [
       "https://www.googleapis.com/auth/gmail.readonly",
       "https://www.googleapis.com/auth/gmail.send",
       "https://www.googleapis.com/auth/userinfo.email",
+    ],
+    dwdScopes: [
+      "https://www.googleapis.com/auth/gmail.readonly",
+      "https://www.googleapis.com/auth/gmail.send",
     ],
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     oauthTokenUrl: "https://oauth2.googleapis.com/token",
@@ -279,12 +307,20 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "hubspot",
     label: "HubSpot",
     authTypes: ["pat", "oauth"],
-    helpText: "Connect via OAuth, or paste a HubSpot Private App access token to access CRM and marketing email data. Marketing email APIs require HubSpot's content scope.",
+    helpText: "Connect via OAuth, or paste a HubSpot Private App access token to access CRM and marketing email data. Marketing email APIs require HubSpot's content scope. For OAuth apps, configure content as an optional scope in HubSpot.",
     tokenUrl: "https://app.hubspot.com/private-apps",
-    oauthScopes: ["crm.objects.deals.read", "crm.objects.deals.write", "crm.objects.contacts.read", "crm.objects.contacts.write", "content", "oauth"],
+    oauthScopes: ["crm.objects.deals.read", "crm.objects.deals.write", "crm.objects.contacts.read", "crm.objects.contacts.write", "oauth"],
+    oauthOptionalScopes: ["content"],
     authorizeUrl: "https://app.hubspot.com/oauth/authorize",
     oauthTokenUrl: "https://api.hubapi.com/oauth/v1/token",
-    tools: ["hubspot/list_deals", "hubspot/get_contact", "hubspot/create_deal"],
+    tools: [
+      "hubspot/list_deals",
+      "hubspot/get_contact",
+      "hubspot/create_deal",
+      "hubspot/list_marketing_emails",
+      "hubspot/get_marketing_email",
+      "hubspot/get_marketing_email_statistics",
+    ],
     implemented: true,
   },
   attio: {
@@ -777,10 +813,11 @@ export const PROVIDERS: Record<string, ProviderDef> = {
   google_calendar: {
     key: "google_calendar",
     label: "Google Calendar",
-    authTypes: ["oauth"],
+    authTypes: ["oauth", "service_account"],
     helpText: "Connect your Google account to read and manage calendar events through the Calendar API.",
     oauthSetupUrl: "https://console.cloud.google.com/apis/credentials",
     oauthScopes: ["https://www.googleapis.com/auth/calendar", "https://www.googleapis.com/auth/userinfo.email"],
+    dwdScopes: ["https://www.googleapis.com/auth/calendar"],
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     oauthTokenUrl: "https://oauth2.googleapis.com/token",
     tools: ["google_calendar/list_calendars", "google_calendar/list_events", "google_calendar/get_event", "google_calendar/create_event", "google_calendar/update_event", "google_calendar/delete_event"],
@@ -789,10 +826,11 @@ export const PROVIDERS: Record<string, ProviderDef> = {
   google_sheets: {
     key: "google_sheets",
     label: "Google Sheets",
-    authTypes: ["oauth"],
+    authTypes: ["oauth", "service_account"],
     helpText: "Connect your Google account to read and write spreadsheet values through the Sheets API.",
     oauthSetupUrl: "https://console.cloud.google.com/apis/credentials",
     oauthScopes: ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/userinfo.email"],
+    dwdScopes: ["https://www.googleapis.com/auth/spreadsheets"],
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     oauthTokenUrl: "https://oauth2.googleapis.com/token",
     tools: ["google_sheets/get_spreadsheet", "google_sheets/get_values", "google_sheets/batch_get_values", "google_sheets/update_values", "google_sheets/append_values", "google_sheets/create_spreadsheet"],
@@ -825,8 +863,8 @@ export const PROVIDERS: Record<string, ProviderDef> = {
   google_admin: {
     key: "google_admin",
     label: "Google Admin",
-    authTypes: ["oauth"],
-    helpText: "Connect a Google Workspace administrator account to manage users, groups, group members, and org units through the Admin SDK Directory API. The connecting account must be a Workspace admin.",
+    authTypes: ["oauth", "service_account"],
+    helpText: "Connect a Google Workspace administrator account to manage users, groups, group members, and org units through the Admin SDK Directory API. The connecting account must be a Workspace admin. For multi-tenant use, prefer Service Account (Domain-Wide Delegation).",
     oauthSetupUrl: "https://console.cloud.google.com/apis/credentials",
     oauthScopes: [
       "https://www.googleapis.com/auth/admin.directory.user",
@@ -834,6 +872,12 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "https://www.googleapis.com/auth/admin.directory.group.member",
       "https://www.googleapis.com/auth/admin.directory.orgunit",
       "https://www.googleapis.com/auth/userinfo.email",
+    ],
+    dwdScopes: [
+      "https://www.googleapis.com/auth/admin.directory.user",
+      "https://www.googleapis.com/auth/admin.directory.group",
+      "https://www.googleapis.com/auth/admin.directory.group.member",
+      "https://www.googleapis.com/auth/admin.directory.orgunit",
     ],
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     oauthTokenUrl: "https://oauth2.googleapis.com/token",
@@ -864,6 +908,7 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     baseUrl: "https://api.github.com",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "viewer", method: "GET", path: "/user" }],
   },
   cloudflare: {
     baseUrl: "https://api.cloudflare.com/client/v4",
@@ -904,6 +949,35 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     baseUrl: "https://api.hubapi.com",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
+    smokeTests: [
+      { id: "account", method: "GET", path: "/account-info/v3/details" },
+    ],
+    operations: [
+      {
+        id: "crm_deals",
+        method: "GET",
+        path: "/crm/v3/objects/deals",
+        description: "Read CRM deals.",
+        requiredScopes: ["crm.objects.deals.read"],
+        risk: "read",
+      },
+      {
+        id: "crm_contacts",
+        method: "GET",
+        path: "/crm/v3/objects/contacts",
+        description: "Read CRM contacts.",
+        requiredScopes: ["crm.objects.contacts.read"],
+        risk: "read",
+      },
+      {
+        id: "marketing_emails",
+        method: "GET",
+        path: "/marketing/v3/emails",
+        description: "Read HubSpot marketing emails.",
+        requiredScopes: ["content"],
+        risk: "read",
+      },
+    ],
   },
   attio: {
     baseUrl: "https://api.attio.com",
@@ -953,6 +1027,7 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     baseUrl: "https://slack.com/api",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "auth", method: "GET", path: "/auth.test" }],
   },
   reddit: {
     baseUrl: "https://oauth.reddit.com",
@@ -1072,6 +1147,10 @@ for (const provider of Object.values(PROVIDERS)) {
   provider.genericRequest = genericRequest;
   const requestTool = `${provider.key}/request`;
   if (!provider.tools.includes(requestTool)) provider.tools.push(requestTool);
+  const checkTool = `${provider.key}/check_connection`;
+  if (!provider.tools.includes(checkTool)) provider.tools.push(checkTool);
+  const capabilitiesTool = `${provider.key}/list_capabilities`;
+  if (!provider.tools.includes(capabilitiesTool)) provider.tools.push(capabilitiesTool);
 }
 
 export function getProvider(key: string): ProviderDef | undefined {
