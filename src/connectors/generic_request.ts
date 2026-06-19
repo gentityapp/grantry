@@ -434,6 +434,12 @@ export async function callGenericListCapabilities(args: {
       smokeTests: manifest.smokeTests ?? [],
       operations: (manifest.operations ?? []).map((op) => ({
         ...op,
+        requestTemplate: {
+          tool: `${args.provider.key}/request`,
+          method: op.method,
+          base_url_key: op.baseUrlKey ?? op.base_url_key ?? null,
+          path: op.path,
+        },
         capabilityStatus: "manifest_known",
       })),
     },
