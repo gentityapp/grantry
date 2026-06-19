@@ -30,7 +30,6 @@ import { callRailwayTool } from "./connectors/railway.js";
 import { callResendTool } from "./connectors/resend.js";
 import { callSlackTool } from "./connectors/slack.js";
 import { callFreeeTool } from "./connectors/freee.js";
-import { callMoneyForwardTool, exchangeMoneyForwardApiKey } from "./connectors/moneyforward.js";
 import { callRedditTool } from "./connectors/reddit.js";
 import { callZoomTool } from "./connectors/zoom.js";
 import { callXTool } from "./connectors/x.js";
@@ -1388,42 +1387,6 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       breakdown_display_type: { type: "string", enum: ["partner", "item", "section", "account_item"], description: "Breakdown axis." },
     };
   }
-  if (toolName === "moneyforward/accounting_request") {
-    return {
-      path: { type: "string", description: "Relative Cloud Accounting API path, e.g. /accounts. Required." },
-      method: { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE"], description: "HTTP method. Defaults to GET." },
-      query: { type: "object", description: "Query parameters." },
-      body: { type: "object", description: "JSON request body for write requests." },
-    };
-  }
-  if (toolName === "moneyforward/accounting_get_journal") {
-    return {
-      journal_id: { type: "string", description: "Journal id. Required." },
-    };
-  }
-  if (toolName === "moneyforward/accounting_list_journals") {
-    return {
-      query: {
-        type: "object",
-        description: "Query parameters such as start_date, end_date, account_id, is_realized, page, per_page. start_date or end_date is required by Money Forward.",
-      },
-    };
-  }
-  if (
-    toolName === "moneyforward/accounting_trial_balance_bs"
-    || toolName === "moneyforward/accounting_trial_balance_pl"
-    || toolName === "moneyforward/accounting_transition_bs"
-    || toolName === "moneyforward/accounting_transition_pl"
-  ) {
-    return {
-      query: { type: "object", description: "Report query parameters supported by Money Forward, such as fiscal_year, start_month, end_month, start_date, end_date." },
-    };
-  }
-  if (toolName.startsWith("moneyforward/accounting_")) {
-    return {
-      query: { type: "object", description: "Query parameters supported by the Money Forward Cloud Accounting endpoint." },
-    };
-  }
   if (toolName === "reddit/get_me") {
     return {};
   }
@@ -2180,8 +2143,6 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "freee/create_partner") return ["company_id", "name"];
   if (toolName === "freee/trial_pl") return ["company_id"];
   if (toolName === "freee/trial_bs") return ["company_id"];
-  if (toolName === "moneyforward/accounting_request") return ["path"];
-  if (toolName === "moneyforward/accounting_get_journal") return ["journal_id"];
   if (toolName === "reddit/get_subreddit") return ["subreddit"];
   if (toolName === "reddit/list_posts") return ["subreddit"];
   if (toolName === "reddit/search") return ["query"];
@@ -2434,7 +2395,6 @@ async function dispatchProviderTool(
   if (provider === "resend") return callResendTool(toolName, args, token);
   if (provider === "slack") return callSlackTool(toolName, args, token);
   if (provider === "freee") return callFreeeTool(toolName, args, token);
-  if (provider === "moneyforward") return callMoneyForwardTool(toolName, args, token);
   if (provider === "reddit") return callRedditTool(toolName, args, token);
   if (provider === "zoom") return callZoomTool(toolName, args, token);
   if (provider === "x") return callXTool(toolName, args, token);
@@ -2902,7 +2862,7 @@ function safeJsonObject(s: string | null | undefined): Record<string, any> {
 }
 
 function providerRequiresWorkspaceOAuthApp(provider: string) {
-  return provider === "moneyforward";
+  return false;
 }
 
 function oauthEnvClientConfig(provider: string) {
@@ -2974,13 +2934,10 @@ async function refreshOAuthToken(provider: string, refreshToken: string, workspa
   }
 
   // Some OAuth providers require HTTP Basic auth at the token endpoint rather
-  // than client credentials in the body. Money Forward exposes this as an app
-  // portal setting; default to Basic because that is the safer/current setting.
-  const moneyForwardClientAuthMethod = String(clientAuthMethod || "CLIENT_SECRET_BASIC").toUpperCase();
+  // than client credentials in the body.
   const usesBasicAuth = provider === "reddit"
     || provider === "x"
-    || provider === "zoom"
-    || (provider === "moneyforward" && moneyForwardClientAuthMethod !== "CLIENT_SECRET_POST");
+    || provider === "zoom";
   const refreshBody = new URLSearchParams({
     client_id: clientId,
     refresh_token: refreshToken,
@@ -3047,29 +3004,6 @@ async function credentialForConnection(conn: {
     const cred = JSON.parse(decrypt(encryptedCredential)) as ServiceAccountCredential;
     const scopes = PROVIDERS[conn.provider]?.dwdScopes ?? [];
     return mintDwdAccessToken(conn.id, cred, scopes);
-  }
-
-  if (conn.provider === "moneyforward" && conn.authType === "pat") {
-    const encryptedCachedJwt = shared?.encryptedServerCredential ?? conn.encryptedServerCredential;
-    const accessTokenExpiresAt = shared?.accessTokenExpiresAt ?? conn.accessTokenExpiresAt;
-    if (encryptedCachedJwt && accessTokenExpiresAt && accessTokenExpiresAt.getTime() > Date.now() + TOKEN_REFRESH_SKEW_MS) {
-      return decrypt(encryptedCachedJwt);
-    }
-    console.log("[moneyforward] exchanging API key for JWT", { connectionId: conn.id });
-    const exchanged = await exchangeMoneyForwardApiKey(decrypt(encryptedCredential));
-    const data = {
-      encryptedServerCredential: encrypt(exchanged.access_token),
-      accessTokenExpiresAt: new Date(Date.now() + exchanged.expires_in * 1000),
-    };
-    if (conn.credentialId) {
-      await prisma.$transaction([
-        prisma.providerCredential.update({ where: { id: conn.credentialId }, data }),
-        prisma.connection.updateMany({ where: { credentialId: conn.credentialId }, data }),
-      ]);
-    } else {
-      await prisma.connection.update({ where: { id: conn.id }, data });
-    }
-    return exchanged.access_token;
   }
 
   const refreshToken = shared?.refreshToken ?? conn.refreshToken;

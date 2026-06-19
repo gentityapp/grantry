@@ -91,7 +91,6 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   chatwork: "#EA3C3C",
   yahoo_ads: "#FF0033", // Yahoo! JAPAN red
   freee: "#2864F0", // freee blue
-  moneyforward: "#3686C3", // Money Forward blue
   google_maps: "#34A853", // Google Maps green
   reddit: "#FF4500", // Reddit orange-red
   zoom: "#2D8CFF", // Zoom blue
@@ -128,7 +127,6 @@ const LETTER_TILE_LETTERS: Record<string, string> = {
   clarity: "C", // label is "Microsoft Clarity"
   yahoo_ads: "Y", // label is "LINE Yahoo Ads"
   freee: "f", // freee is stylized lowercase
-  moneyforward: "M", // label is Japanese (マネーフォワード …)
 };
 
 const DEFAULT_TILE_COLOR = "#4a4d55";
