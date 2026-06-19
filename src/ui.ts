@@ -340,8 +340,9 @@ const CSS = `
   .conn-list { list-style: none; margin: 0; padding: 0; }
   .conn-item { display: flex; align-items: center; gap: 14px; padding: 9px 0; border-bottom: 1px solid var(--border); font-size: 14px; }
   .conn-item:last-child { border-bottom: 0; }
-  .conn-item .provider-cell { width: 132px; flex-shrink: 0; }
-  .conn-auth { flex-shrink: 0; }
+  .conn-item .provider-cell { width: 190px; flex-shrink: 0; }
+  .conn-item .provider-cell code, .conn-auth { white-space: nowrap; overflow-wrap: normal; }
+  .conn-auth { flex-shrink: 0; min-width: 66px; text-align: center; }
   .conn-label { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .conn-meta { display: flex; align-items: center; gap: 10px; margin-left: auto; white-space: nowrap; }
   .badge.scoped { background: var(--accent-soft); color: var(--accent); }
