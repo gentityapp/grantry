@@ -5,8 +5,8 @@ import { PROVIDERS } from "./registry.js";
 const HUBSPOT_API = "https://api.hubapi.com";
 const HUBSPOT_TIMEOUT_MS = 10_000;
 
-// Marketing-email read tools. Registered idempotently for deployments that may
-// still have an older registry shape loaded.
+// Marketing-email tools (read + write). Registered idempotently for deployments
+// that may still have an older registry shape loaded.
 // NOTE: these endpoints require the `content` granular scope; PAT connections
 // need it on the Private App, OAuth connections must reconnect after the scope
 // below is added to the authorize request.
@@ -14,6 +14,8 @@ const HUBSPOT_MARKETING_EMAIL_TOOLS = [
   "hubspot/list_marketing_emails",
   "hubspot/get_marketing_email",
   "hubspot/get_marketing_email_statistics",
+  "hubspot/update_marketing_email",
+  "hubspot/publish_marketing_email",
 ];
 const hubspotProvider = PROVIDERS.hubspot;
 if (hubspotProvider) {
@@ -181,6 +183,48 @@ export async function callHubSpotTool(tool: string, args: HubSpotArgs, token: st
     const r = await fetchHubSpot(`/marketing/v3/emails/statistics/list?${params.toString()}`, { headers: headers(token) }, { tool });
     const j: any = await readJsonResponse(r);
     if (!r.ok) throw new Error(`HubSpot get_marketing_email_statistics failed: ${r.status} ${JSON.stringify(j).slice(0, 1200)}`);
+    return { structuredContent: j };
+  }
+
+  // PATCH /marketing/v3/emails/{emailId} — update subject/name/content, etc.
+  // Pass `updates` (raw object PATCHed as-is) and/or convenience args
+  // subject/name/content. This is a WRITE on live marketing assets.
+  if (tool === "hubspot/update_marketing_email") {
+    const emailId = String(args.email_id ?? args.emailId ?? "").trim();
+    if (!emailId) throw new Error("email_id is required");
+    let body: Record<string, unknown> = {};
+    if (args.updates && typeof args.updates === "object" && !Array.isArray(args.updates)) {
+      body = { ...(args.updates as Record<string, unknown>) };
+    }
+    if (args.subject !== undefined) body.subject = String(args.subject);
+    if (args.name !== undefined) body.name = String(args.name);
+    if (args.content && typeof args.content === "object" && !Array.isArray(args.content)) {
+      body.content = args.content;
+    }
+    if (Object.keys(body).length === 0) {
+      throw new Error("nothing to update: provide `updates` (object) and/or subject/name/content");
+    }
+    const r = await fetchHubSpot(`/marketing/v3/emails/${encodeURIComponent(emailId)}`, {
+      method: "PATCH",
+      headers: headers(token),
+      body: JSON.stringify(body),
+    }, { tool, emailId });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`HubSpot update_marketing_email failed: ${r.status} ${JSON.stringify(j).slice(0, 1500)}`);
+    return { structuredContent: j };
+  }
+
+  // POST /marketing/v3/emails/{emailId}/publish — publish the email.
+  if (tool === "hubspot/publish_marketing_email") {
+    const emailId = String(args.email_id ?? args.emailId ?? "").trim();
+    if (!emailId) throw new Error("email_id is required");
+    const r = await fetchHubSpot(`/marketing/v3/emails/${encodeURIComponent(emailId)}/publish`, {
+      method: "POST",
+      headers: headers(token),
+      body: JSON.stringify({}),
+    }, { tool, emailId });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`HubSpot publish_marketing_email failed: ${r.status} ${JSON.stringify(j).slice(0, 1200)}`);
     return { structuredContent: j };
   }
 
