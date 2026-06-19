@@ -207,6 +207,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authTypes: ["oauth"],
     helpText: "Connect your Google account to access Search Console data for sites you own.",
     oauthSetupUrl: "https://console.cloud.google.com/apis/credentials",
+    oauthAppOwner: "workspace",
     oauthScopes: [
       "https://www.googleapis.com/auth/webmasters.readonly",
       "https://www.googleapis.com/auth/userinfo.email",
