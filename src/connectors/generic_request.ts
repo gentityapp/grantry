@@ -2,6 +2,7 @@ import type { ProviderDef } from "./registry.js";
 
 const GENERIC_TIMEOUT_MS = 12_000;
 const MAX_RESPONSE_CHARS = 120_000;
+const MAX_FULL_JSON_PARSE_CHARS = 2_000_000;
 
 type GenericRequestArgs = Record<string, unknown>;
 type GenericManifest = NonNullable<ProviderDef["genericRequest"]>;
@@ -95,15 +96,117 @@ function classifyProviderError(provider: string, status: number, body: unknown) 
   return { code, missingScopes: Array.from(missingScopes), provider };
 }
 
+function getPathValue(root: unknown, path: string[]): unknown {
+  let current = root;
+  for (const key of path) {
+    if (!current || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current;
+}
+
+function stringValue(value: unknown) {
+  if (typeof value === "string" && value.trim()) return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return null;
+}
+
+function parseCompleteJsonForMetadata(text: string) {
+  if (!text || text.length > MAX_FULL_JSON_PARSE_CHARS) return null;
+  return parseJsonMaybe(text);
+}
+
+function extractLastDataId(parsed: unknown) {
+  if (!parsed || typeof parsed !== "object") return null;
+  const data = (parsed as Record<string, unknown>).data;
+  if (!Array.isArray(data) || data.length === 0) return null;
+  for (let i = data.length - 1; i >= 0; i -= 1) {
+    const id = stringValue((data[i] as Record<string, unknown> | null)?.id);
+    if (id) return id;
+  }
+  return null;
+}
+
+function extractCursorFromParsed(parsed: unknown) {
+  const paths = [
+    ["next_cursor"],
+    ["nextCursor"],
+    ["next_page_token"],
+    ["nextPageToken"],
+    ["paging", "next", "after"],
+    ["paging", "cursors", "after"],
+    ["paging", "cursor", "after"],
+    ["pagination", "next_cursor"],
+    ["pagination", "nextCursor"],
+    ["meta", "next_cursor"],
+    ["meta", "nextCursor"],
+    ["links", "next"],
+  ];
+  for (const path of paths) {
+    const cursor = stringValue(getPathValue(parsed, path));
+    if (cursor) return { cursor, source: path.join(".") };
+  }
+  const lastDataId = extractLastDataId(parsed);
+  if (lastDataId) return { cursor: lastDataId, source: "data.last.id" };
+  return null;
+}
+
+function extractHasMoreFromParsed(parsed: unknown) {
+  if (!parsed || typeof parsed !== "object") return null;
+  const direct = (parsed as Record<string, unknown>).has_more;
+  if (typeof direct === "boolean") return direct;
+  const hasMore = getPathValue(parsed, ["paging", "has_more"]) ?? getPathValue(parsed, ["pagination", "has_more"]);
+  return typeof hasMore === "boolean" ? hasMore : null;
+}
+
+function extractHasMoreFromText(text: string) {
+  const match = text.match(/"has_more"\s*:\s*(true|false)/);
+  return match ? match[1] === "true" : null;
+}
+
+function extractObjectCount(parsed: unknown) {
+  if (!parsed || typeof parsed !== "object") return null;
+  const data = (parsed as Record<string, unknown>).data;
+  if (Array.isArray(data)) return data.length;
+  const results = (parsed as Record<string, unknown>).results;
+  if (Array.isArray(results)) return results.length;
+  const items = (parsed as Record<string, unknown>).items;
+  if (Array.isArray(items)) return items.length;
+  return null;
+}
+
+function paginationMetadata(text: string, parsedBody: unknown, truncated: boolean) {
+  const completeParsed = parseCompleteJsonForMetadata(text);
+  const metadataSource = completeParsed ?? parsedBody;
+  const cursor = extractCursorFromParsed(metadataSource);
+  const hasMore = extractHasMoreFromParsed(metadataSource) ?? extractHasMoreFromText(text);
+  const objectCount = extractObjectCount(metadataSource);
+  if (!truncated && !cursor && hasMore === null && objectCount === null) return undefined;
+  return {
+    truncated,
+    has_more: hasMore,
+    next_cursor: hasMore === false ? null : (cursor?.cursor ?? null),
+    cursor_source: cursor?.source ?? null,
+    object_count: objectCount,
+    body_preview_chars: truncated ? Math.min(text.length, MAX_RESPONSE_CHARS) : text.length,
+    full_body_chars: text.length,
+  };
+}
+
 async function readResponse(response: Response) {
   const text = await response.text();
   const truncated = text.length > MAX_RESPONSE_CHARS;
   const bodyText = truncated ? text.slice(0, MAX_RESPONSE_CHARS) : text;
-  if (!bodyText) return { body: {}, truncated };
+  if (!bodyText) {
+    const body = {};
+    return { body, truncated, pagination: paginationMetadata(text, body, truncated) };
+  }
   try {
-    return { body: JSON.parse(bodyText), truncated };
+    const body = JSON.parse(bodyText);
+    return { body, truncated, pagination: paginationMetadata(text, body, truncated) };
   } catch {
-    return { body: { raw: bodyText }, truncated };
+    const body = { raw: bodyText };
+    return { body, truncated, pagination: paginationMetadata(text, body, truncated) };
   }
 }
 
@@ -140,7 +243,7 @@ async function executeGenericRequest(args: {
   try {
     console.log("[provider-request] request", { provider: args.provider.key, method, path });
     const response = await fetch(url, { method, headers, signal: controller.signal });
-    const { body, truncated } = await readResponse(response);
+    const { body, truncated, pagination } = await readResponse(response);
     console.log("[provider-request] response", {
       provider: args.provider.key,
       method,
@@ -160,6 +263,7 @@ async function executeGenericRequest(args: {
         path,
         status: response.status,
         truncated,
+        ...(pagination ? { pagination } : {}),
         body,
       },
     };
