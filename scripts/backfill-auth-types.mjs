@@ -29,15 +29,32 @@ try {
       authType: true,
       label: true,
       scope: true,
+      ownerId: true,
       refreshToken: true,
       accessTokenExpiresAt: true,
     },
   });
 
   let updated = 0;
+  let skippedConflicts = 0;
   for (const conn of connections) {
     const authType = inferAuthType(conn);
     if (conn.authType === authType) continue;
+    const conflict = await prisma.connection.findFirst({
+      where: {
+        id: { not: conn.id },
+        ownerId: conn.ownerId,
+        provider: conn.provider,
+        scope: conn.scope,
+        authType,
+      },
+      select: { id: true },
+    });
+    if (conflict) {
+      skippedConflicts += 1;
+      console.log("[backfill-auth-types] skipped conflict", { id: conn.id, conflictId: conflict.id, provider: conn.provider, scope: conn.scope, authType });
+      continue;
+    }
     await prisma.connection.update({
       where: { id: conn.id },
       data: { authType },
@@ -55,7 +72,7 @@ try {
     data: { authType: "pat" },
   });
 
-  console.log(`[backfill-auth-types] complete; updated ${updated} connection(s), ${providerCredentialResult.count} provider credential(s)`);
+  console.log(`[backfill-auth-types] complete; updated ${updated} connection(s), skipped ${skippedConflicts} conflict(s), ${providerCredentialResult.count} provider credential(s)`);
 } finally {
   await prisma.$disconnect();
 }

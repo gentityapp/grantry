@@ -28,6 +28,7 @@ model User {
   tenants       Tenant[]
   connections   Connection[]
   providerCredentials ProviderCredential[]
+  customProviders   CustomProvider[]
   connectionGrants AgentConnectionGrant[]
   roles         Role[]
   auditLogs     AuditLog[]
@@ -253,26 +254,29 @@ model ProviderCredential {
 }
 
 model CustomProvider {
-  id                  String   @id @default(cuid())
+  id                  String    @id @default(cuid())
   workspaceId         String
   workspace           Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  ownerId             String
+  owner               User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   key                 String
   label               String
-  helpText            String?
+  helpText            String
   tokenUrl            String?
   baseUrl             String
-  defaultMethods      String   @default("[\"GET\"]")
-  allowedPathPrefixes String   @default("[\"/\"]")
-  blockedPathPrefixes String   @default("[]")
-  smokeTests          String   @default("[]")
-  operations          String   @default("[]")
-  authScheme          String   @default("bearer")
+  authScheme          String    @default("bearer")
   apiKeyHeader        String?
-  enabled             Boolean  @default(true)
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  allowedPathPrefixes String    @default("[\"/\"]")
+  blockedPathPrefixes String    @default("[]")
+  defaultMethods      String    @default("[\"GET\"]")
+  smokeTests          String    @default("[]")
+  operations          String    @default("[]")
+  enabled             Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   @@unique([workspaceId, key])
+  @@index([ownerId])
   @@index([workspaceId, enabled])
   @@map("custom_provider")
 }
@@ -453,9 +457,10 @@ model Workspace {
   connections Connection[]
   providerCredentials ProviderCredential[]
   customProviders CustomProvider[]
-
   @@map("workspace")
 }
+
+
 
 model WorkspaceMember {
   workspaceId String
