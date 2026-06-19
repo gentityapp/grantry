@@ -19,7 +19,7 @@ export type ProviderDef = {
   tokenUrl?: string;
   /** Where to register/manage an OAuth App (shown in the wizard for oauth flow) */
   oauthSetupUrl?: string;
-  /** Who owns the OAuth app client credentials. Defaults to workspace for OAuth providers. */
+  /** Who owns the OAuth app client credentials. Defaults to platform/env credentials. */
   oauthAppOwner?: "workspace" | "platform";
   /** Default OAuth client authentication method for token exchange. */
   oauthClientAuthMethod?: "CLIENT_SECRET_BASIC" | "CLIENT_SECRET_POST";
@@ -468,6 +468,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authTypes: ["oauth"],
     helpText: "Connect Money Forward Cloud Accounting via a workspace-owned OAuth app. Cloud Accounting API uses OAuth 2.0; API key authentication is not supported for this provider.",
     oauthSetupUrl: "https://app-portal.moneyforward.com/",
+    oauthAppOwner: "workspace",
     oauthClientAuthMethod: "CLIENT_SECRET_BASIC",
     oauthScopes: [
       "mfc/accounting/offices.read",

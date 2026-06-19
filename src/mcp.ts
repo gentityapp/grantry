@@ -3091,7 +3091,7 @@ function providerRequiresWorkspaceOAuthApp(provider: string) {
   const providerDef = PROVIDERS[provider];
   return Array.isArray(providerDef?.authTypes)
     && providerDef.authTypes.includes("oauth")
-    && providerDef.oauthAppOwner !== "platform";
+    && providerDef.oauthAppOwner === "workspace";
 }
 
 function oauthEnvClientConfig(provider: string) {
@@ -3104,6 +3104,12 @@ function oauthEnvClientConfig(provider: string) {
     google_drive: ["GOOGLE_CLIENT_ID"],
     gmail: ["GOOGLE_CLIENT_ID"],
     youtube: ["GOOGLE_CLIENT_ID"],
+    google_calendar: ["GOOGLE_CLIENT_ID"],
+    google_sheets: ["GOOGLE_CLIENT_ID"],
+    google_tag_manager: ["GOOGLE_CLIENT_ID"],
+    google_cloud: ["GOOGLE_CLIENT_ID"],
+    bigquery: ["GOOGLE_CLIENT_ID"],
+    google_admin: ["GOOGLE_CLIENT_ID"],
     yahoo_ads: ["YAHOO_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
@@ -3114,6 +3120,12 @@ function oauthEnvClientConfig(provider: string) {
     google_drive: ["GOOGLE_CLIENT_SECRET"],
     gmail: ["GOOGLE_CLIENT_SECRET"],
     youtube: ["GOOGLE_CLIENT_SECRET"],
+    google_calendar: ["GOOGLE_CLIENT_SECRET"],
+    google_sheets: ["GOOGLE_CLIENT_SECRET"],
+    google_tag_manager: ["GOOGLE_CLIENT_SECRET"],
+    google_cloud: ["GOOGLE_CLIENT_SECRET"],
+    bigquery: ["GOOGLE_CLIENT_SECRET"],
+    google_admin: ["GOOGLE_CLIENT_SECRET"],
     yahoo_ads: ["YAHOO_CLIENT_SECRET"],
   };
   return {

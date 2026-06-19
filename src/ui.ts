@@ -577,7 +577,7 @@ function parseScopeList(raw: string | null | undefined): string[] {
 function providerUsesWorkspaceOAuthApp(providerDef: any) {
   return Array.isArray(providerDef?.authTypes)
     && providerDef.authTypes.includes("oauth")
-    && providerDef.oauthAppOwner !== "platform";
+    && providerDef.oauthAppOwner === "workspace";
 }
 
 function providerRequiresWorkspaceOAuthApp(providerKey: string, providerDef?: any) {
