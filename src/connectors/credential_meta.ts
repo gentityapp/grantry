@@ -1,5 +1,10 @@
 import { callGenericCheckConnection, callGenericListCapabilities } from "./generic_request.js";
-import { exchangeMoneyForwardApiKey } from "./moneyforward.js";
+import {
+  decodeMoneyForwardJwt,
+  exchangeMoneyForwardApiKey,
+  moneyForwardScopesFromClaims,
+  moneyForwardServicesFromClaims,
+} from "./moneyforward.js";
 import { getProvider } from "./registry.js";
 
 const META_TIMEOUT_MS = 8_000;
@@ -546,29 +551,66 @@ export async function inspectCredential(provider: string, authType: string, toke
     }
 
     if (provider === "moneyforward") {
-      const bearerToken = authType === "pat"
-        ? (await exchangeMoneyForwardApiKey(token)).access_token
-        : token;
-      const resp = await fetchWithTimeout("https://invoice.moneyforward.com/api/v3/office", {
-        headers: { Authorization: `Bearer ${bearerToken}`, Accept: "application/json" },
-      });
-      const body: any = await readJson(resp);
-      if (!resp.ok) {
-        return { provider, authType, status: "error", checkedAt, error: `Money Forward token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      if (authType === "pat") {
+        const exchanged = await exchangeMoneyForwardApiKey(token);
+        const claims = decodeMoneyForwardJwt(exchanged.access_token);
+        const services = moneyForwardServicesFromClaims(claims);
+        const scopes = moneyForwardScopesFromClaims(claims);
+        const notes = [
+          "Money Forward API keys are exchanged for one-hour JWTs via /auth/exchange before API calls.",
+          "API key access follows the issuing user's Money Forward permissions and selected services.",
+        ];
+
+        if (services.includes("conac")) {
+          const resp = await fetchWithTimeout("https://public-api.consolidated-accounting.moneyforward.com/api/v1/masters/companies", {
+            headers: { Authorization: `Bearer ${exchanged.access_token}`, Accept: "application/json" },
+          });
+          const body: any = await readJson(resp);
+          if (!resp.ok) {
+            return {
+              provider,
+              authType,
+              status: "error",
+              checkedAt,
+              scopes,
+              subject: { id: claims.sub, issuer: claims.iss },
+              resources: services.map((service) => ({ id: service, type: "service" })),
+              notes,
+              error: `Money Forward API key exchange succeeded, but conac check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}`,
+            };
+          }
+          return {
+            provider,
+            authType,
+            status: "ok",
+            checkedAt,
+            scopes,
+            subject: { id: claims.sub, issuer: claims.iss },
+            resources: services.map((service) => ({ id: service, type: "service" })),
+            notes,
+          };
+        }
+
+        return {
+          provider,
+          authType,
+          status: "ok",
+          checkedAt,
+          scopes,
+          subject: { id: claims.sub, issuer: claims.iss },
+          resources: services.map((service) => ({ id: service, type: "service" })),
+          notes: [...notes, "No service-specific smoke test is configured for this Money Forward API key's services."],
+        };
       }
-      const office = body.office ?? body.data ?? body;
+
       return {
         provider,
         authType,
-        status: "ok",
-        subject: { id: office.id, name: office.name ?? office.office_name },
+        status: "unknown",
+        subject: undefined,
         notes: [
-          authType === "pat"
-            ? "Money Forward API keys are exchanged for one-hour JWTs via /auth/exchange before API calls."
-            : "Money Forward Cloud Invoice API v3 tokens are scoped to one office.",
-          authType === "pat"
-            ? "API key access follows the issuing user's Money Forward permissions and selected services."
-            : "Scopes (mfc/invoice/data.read / .write) are configured in the Money Forward app portal and are not enumerated by this check.",
+          "Money Forward OAuth tokens are endpoint-specific; configure the workspace-owned OAuth app scopes for the Money Forward service you want to call.",
+          "Grantry does not use a global Money Forward OAuth app or hardcoded customer credential.",
         ],
         checkedAt,
       };

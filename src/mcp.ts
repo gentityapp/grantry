@@ -1388,57 +1388,26 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       breakdown_display_type: { type: "string", enum: ["partner", "item", "section", "account_item"], description: "Breakdown axis." },
     };
   }
-  if (toolName === "moneyforward/get_office") {
+  if (toolName === "moneyforward/list_services") {
     return {};
   }
-  if (toolName === "moneyforward/list_partners") {
+  if (toolName === "moneyforward/request") {
     return {
-      page: { type: "number", description: "Page number." },
-      per_page: { type: "number", minimum: 1, maximum: 100, description: "Results per page, max 100." },
-      q: { type: "string", description: "Search keyword." },
+      service: { type: "string", description: "Money Forward service id from the API key JWT, e.g. conac. Required." },
+      path: { type: "string", description: "Relative API path, e.g. /masters/companies. Required." },
+      method: { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE"], description: "HTTP method. Defaults to GET." },
+      query: { type: "object", description: "Query parameters." },
+      body: { type: "object", description: "JSON request body for write requests." },
     };
   }
-  if (toolName === "moneyforward/get_partner") {
+  if (toolName === "moneyforward/conac_get_company") {
     return {
-      partner_id: { type: "string", description: "Money Forward partner (取引先) id. Required." },
+      company_code: { type: "string", description: "Company abbreviation/code. Required." },
     };
   }
-  if (toolName === "moneyforward/create_partner") {
+  if (toolName.startsWith("moneyforward/conac_list_")) {
     return {
-      name: { type: "string", description: "Partner (取引先) name. Required." },
-      partner: { type: "object", description: "Raw Money Forward partner body; overrides individual fields." },
-    };
-  }
-  if (toolName === "moneyforward/list_billings") {
-    return {
-      page: { type: "number", description: "Page number." },
-      per_page: { type: "number", minimum: 1, maximum: 100, description: "Results per page, max 100." },
-      range_key: { type: "string", description: "Date field to filter on, e.g. billing_date." },
-      from: { type: "string", description: "Range lower bound, YYYY-MM-DD." },
-      to: { type: "string", description: "Range upper bound, YYYY-MM-DD." },
-      q: { type: "string", description: "Search keyword." },
-    };
-  }
-  if (toolName === "moneyforward/get_billing") {
-    return {
-      billing_id: { type: "string", description: "Money Forward billing (請求書) id. Required." },
-    };
-  }
-  if (toolName === "moneyforward/list_quotes") {
-    return {
-      page: { type: "number", description: "Page number." },
-      per_page: { type: "number", minimum: 1, maximum: 100, description: "Results per page, max 100." },
-      range_key: { type: "string", description: "Date field to filter on, e.g. quote_date." },
-      from: { type: "string", description: "Range lower bound, YYYY-MM-DD." },
-      to: { type: "string", description: "Range upper bound, YYYY-MM-DD." },
-      q: { type: "string", description: "Search keyword." },
-    };
-  }
-  if (toolName === "moneyforward/list_items") {
-    return {
-      page: { type: "number", description: "Page number." },
-      per_page: { type: "number", minimum: 1, maximum: 100, description: "Results per page, max 100." },
-      q: { type: "string", description: "Search keyword." },
+      query: { type: "object", description: "Query parameters supported by the Money Forward endpoint." },
     };
   }
   if (toolName === "reddit/get_me") {
@@ -2197,9 +2166,8 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "freee/create_partner") return ["company_id", "name"];
   if (toolName === "freee/trial_pl") return ["company_id"];
   if (toolName === "freee/trial_bs") return ["company_id"];
-  if (toolName === "moneyforward/get_partner") return ["partner_id"];
-  if (toolName === "moneyforward/create_partner") return ["name"];
-  if (toolName === "moneyforward/get_billing") return ["billing_id"];
+  if (toolName === "moneyforward/request") return ["service", "path"];
+  if (toolName === "moneyforward/conac_get_company") return ["company_code"];
   if (toolName === "reddit/get_subreddit") return ["subreddit"];
   if (toolName === "reddit/list_posts") return ["subreddit"];
   if (toolName === "reddit/search") return ["query"];

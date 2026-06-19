@@ -1,12 +1,30 @@
-// Money Forward (マネーフォワード クラウド請求書) connector — OAuth 2.0 access
-// token via Authorization: Bearer. Implements the Cloud Invoice API v3.
-// Access tokens expire; grantry stores the refresh token and refreshes
-// automatically. The token is scoped to a single office (取得先事業者).
-const MF_API = "https://invoice.moneyforward.com/api/v3";
+// Money Forward Cloud API connector.
+// API keys are customer/workspace credentials. Grantry exchanges them for a
+// short-lived JWT via /auth/exchange and calls the service APIs enabled on that
+// key; it never stores a company-wide Money Forward credential in code.
+import { Buffer } from "node:buffer";
+
 const MF_AUTH_EXCHANGE = "https://api.biz.moneyforward.com/auth/exchange";
+const MF_DEFAULT_SERVICE_API_BASE = "https://api.biz.moneyforward.com";
 const MF_TIMEOUT_MS = 12_000;
 
+const SERVICE_BASE_URLS: Record<string, string> = {
+  conac: "https://public-api.consolidated-accounting.moneyforward.com/api/v1",
+};
+
 type MoneyForwardArgs = Record<string, unknown>;
+
+export type MoneyForwardJwtClaims = {
+  iss?: string;
+  sub?: string;
+  aud?: string | string[];
+  exp?: number;
+  iat?: number;
+  services?: string[];
+  scopes?: string[];
+  scope?: string;
+  [key: string]: unknown;
+};
 
 async function readJsonResponse(r: Response) {
   const text = await r.text();
@@ -26,19 +44,19 @@ function headers(token: string) {
   };
 }
 
-async function fetchMoneyForward(path: string, init: RequestInit, logContext: Record<string, unknown>) {
+async function fetchWithTimeout(url: string, init: RequestInit, logContext: Record<string, unknown>) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), MF_TIMEOUT_MS);
   const started = Date.now();
   try {
-    console.log("[moneyforward] request", { path, ...logContext });
-    const response = await fetch(`${MF_API}${path}`, { ...init, signal: controller.signal });
-    console.log("[moneyforward] response", { path, status: response.status, durationMs: Date.now() - started, ...logContext });
+    console.log("[moneyforward] request", { url, ...logContext });
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    console.log("[moneyforward] response", { url, status: response.status, durationMs: Date.now() - started, ...logContext });
     return response;
   } catch (e: any) {
     const aborted = e?.name === "AbortError";
     console.error("[moneyforward] failed", {
-      path,
+      url,
       durationMs: Date.now() - started,
       error: aborted ? `timeout after ${MF_TIMEOUT_MS}ms` : String(e?.message ?? e),
       ...logContext,
@@ -50,10 +68,10 @@ async function fetchMoneyForward(path: string, init: RequestInit, logContext: Re
   }
 }
 
-async function requestJson(token: string, method: string, path: string, body: unknown, tool: string) {
+async function requestJson(token: string, method: string, url: string, body: unknown, tool: string) {
   const init: RequestInit = { method, headers: headers(token) };
-  if (body !== undefined) init.body = JSON.stringify(body);
-  const r = await fetchMoneyForward(path, init, { tool });
+  if (body !== undefined && method !== "GET") init.body = JSON.stringify(body);
+  const r = await fetchWithTimeout(url, init, { tool });
   const j: any = await readJsonResponse(r);
   if (!r.ok) throw new Error(`Money Forward ${tool} failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
   return j;
@@ -74,33 +92,41 @@ export async function exchangeMoneyForwardApiKey(apiKey: string) {
   };
 }
 
-async function fetchMoneyForwardAuthExchange(apiKey: string) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), MF_TIMEOUT_MS);
-  const started = Date.now();
+export function decodeMoneyForwardJwt(token: string): MoneyForwardJwtClaims {
+  const payload = String(token ?? "").split(".")[1];
+  if (!payload) return {};
+  const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+  const padded = normalized.padEnd(normalized.length + ((4 - (normalized.length % 4)) % 4), "=");
   try {
-    console.log("[moneyforward] api_key_exchange request");
-    const response = await fetch(MF_AUTH_EXCHANGE, {
+    const parsed = JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+export function moneyForwardServicesFromClaims(claims: MoneyForwardJwtClaims) {
+  return Array.isArray(claims.services) ? claims.services.map(String).filter(Boolean) : [];
+}
+
+export function moneyForwardScopesFromClaims(claims: MoneyForwardJwtClaims) {
+  if (Array.isArray(claims.scopes)) return claims.scopes.map(String).filter(Boolean);
+  if (typeof claims.scope === "string") return claims.scope.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+  return [];
+}
+
+async function fetchMoneyForwardAuthExchange(apiKey: string) {
+  return fetchWithTimeout(
+    MF_AUTH_EXCHANGE,
+    {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         Accept: "application/json",
       },
-      signal: controller.signal,
-    });
-    console.log("[moneyforward] api_key_exchange response", { status: response.status, durationMs: Date.now() - started });
-    return response;
-  } catch (e: any) {
-    const aborted = e?.name === "AbortError";
-    console.error("[moneyforward] api_key_exchange failed", {
-      durationMs: Date.now() - started,
-      error: aborted ? `timeout after ${MF_TIMEOUT_MS}ms` : String(e?.message ?? e),
-    });
-    if (aborted) throw new Error(`Money Forward API key exchange timed out after ${MF_TIMEOUT_MS}ms`);
-    throw e;
-  } finally {
-    clearTimeout(timeout);
-  }
+    },
+    { operation: "api_key_exchange" },
+  );
 }
 
 function stringArg(args: MoneyForwardArgs, snake: string, aliases: string[] = []) {
@@ -112,15 +138,13 @@ function stringArg(args: MoneyForwardArgs, snake: string, aliases: string[] = []
   throw new Error(`${snake} is required`);
 }
 
-function queryString(args: MoneyForwardArgs, keys: string[]) {
-  const params = new URLSearchParams();
-  for (const key of keys) {
-    const value = args[key] ?? args[key.replace(/_([a-z])/g, (_, c) => c.toUpperCase())];
-    if (value === undefined || value === null || value === "") continue;
-    params.set(key, Array.isArray(value) ? value.join(",") : String(value));
+function optionalStringArg(args: MoneyForwardArgs, snake: string, aliases: string[] = []) {
+  const candidates = [snake, snake.replace(/_([a-z])/g, (_, c) => c.toUpperCase()), ...aliases];
+  for (const key of candidates) {
+    const value = String(args[key] ?? "").trim();
+    if (value) return value;
   }
-  const s = params.toString();
-  return s ? `?${s}` : "";
+  return undefined;
 }
 
 function objArg(args: MoneyForwardArgs, key: string) {
@@ -129,44 +153,87 @@ function objArg(args: MoneyForwardArgs, key: string) {
   return undefined;
 }
 
+function queryString(query: unknown) {
+  if (!query || typeof query !== "object" || Array.isArray(query)) return "";
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(query as Record<string, unknown>)) {
+    if (value === undefined || value === null || value === "") continue;
+    params.set(key, Array.isArray(value) ? value.join(",") : String(value));
+  }
+  const s = params.toString();
+  return s ? `?${s}` : "";
+}
+
+function serviceBaseUrl(service: string) {
+  const normalized = service.trim().toLowerCase();
+  if (!/^[a-z0-9_-]+$/.test(normalized)) throw new Error("service must contain only letters, numbers, '_' or '-'");
+  return SERVICE_BASE_URLS[normalized] ?? `${MF_DEFAULT_SERVICE_API_BASE}/${normalized}/api/v1`;
+}
+
+function serviceUrl(service: string, path: string, query?: unknown) {
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  if (cleanPath.includes("://") || cleanPath.includes("..")) throw new Error("path must be a relative API path");
+  return `${serviceBaseUrl(service)}${cleanPath}${queryString(query)}`;
+}
+
+async function requestService(token: string, tool: string, service: string, path: string, args: MoneyForwardArgs = {}) {
+  const method = String(args.method ?? "GET").toUpperCase();
+  if (!["GET", "POST", "PUT", "PATCH", "DELETE"].includes(method)) throw new Error("Unsupported method");
+  const body = objArg(args, "body");
+  return requestJson(token, method, serviceUrl(service, path, args.query), body, tool);
+}
+
+function conacList(token: string, tool: string, path: string, args: MoneyForwardArgs) {
+  return requestJson(token, "GET", serviceUrl("conac", path, args.query), undefined, tool);
+}
+
 export async function callMoneyForwardTool(tool: string, args: MoneyForwardArgs, token: string) {
-  if (tool === "moneyforward/get_office") {
-    return { structuredContent: await requestJson(token, "GET", "/office", undefined, tool) };
+  if (tool === "moneyforward/list_services") {
+    const claims = decodeMoneyForwardJwt(token);
+    return {
+      structuredContent: {
+        issuer: claims.iss,
+        subject: claims.sub,
+        expires_at: claims.exp ? new Date(Number(claims.exp) * 1000).toISOString() : undefined,
+        services: moneyForwardServicesFromClaims(claims),
+        scopes: moneyForwardScopesFromClaims(claims),
+      },
+    };
   }
 
-  if (tool === "moneyforward/list_partners") {
-    const qs = queryString(args, ["page", "per_page", "q"]);
-    return { structuredContent: await requestJson(token, "GET", `/partners${qs}`, undefined, tool) };
+  if (tool === "moneyforward/request") {
+    const service = stringArg(args, "service");
+    const path = stringArg(args, "path");
+    return { structuredContent: await requestService(token, tool, service, path, args) };
   }
 
-  if (tool === "moneyforward/get_partner") {
-    const partnerId = stringArg(args, "partner_id", ["id"]);
-    return { structuredContent: await requestJson(token, "GET", `/partners/${encodeURIComponent(partnerId)}`, undefined, tool) };
+  if (tool === "moneyforward/conac_list_companies") {
+    return { structuredContent: await conacList(token, tool, "/masters/companies", args) };
   }
 
-  if (tool === "moneyforward/create_partner") {
-    const body = objArg(args, "partner") ?? { name: stringArg(args, "name") };
-    return { structuredContent: await requestJson(token, "POST", "/partners", body, tool) };
+  if (tool === "moneyforward/conac_list_segments") {
+    return { structuredContent: await conacList(token, tool, "/masters/segments", args) };
   }
 
-  if (tool === "moneyforward/list_billings") {
-    const qs = queryString(args, ["page", "per_page", "range_key", "from", "to", "q"]);
-    return { structuredContent: await requestJson(token, "GET", `/billings${qs}`, undefined, tool) };
+  if (tool === "moneyforward/conac_list_users") {
+    return { structuredContent: await conacList(token, tool, "/masters/users", args) };
   }
 
-  if (tool === "moneyforward/get_billing") {
-    const billingId = stringArg(args, "billing_id", ["id"]);
-    return { structuredContent: await requestJson(token, "GET", `/billings/${encodeURIComponent(billingId)}`, undefined, tool) };
+  if (tool === "moneyforward/conac_list_consolidated_accounts") {
+    return { structuredContent: await conacList(token, tool, "/masters/consolidated_accounts", args) };
   }
 
-  if (tool === "moneyforward/list_quotes") {
-    const qs = queryString(args, ["page", "per_page", "range_key", "from", "to", "q"]);
-    return { structuredContent: await requestJson(token, "GET", `/quotes${qs}`, undefined, tool) };
+  if (tool === "moneyforward/conac_list_journal_types") {
+    return { structuredContent: await conacList(token, tool, "/masters/consolidation_journal_types", args) };
   }
 
-  if (tool === "moneyforward/list_items") {
-    const qs = queryString(args, ["page", "per_page", "q"]);
-    return { structuredContent: await requestJson(token, "GET", `/items${qs}`, undefined, tool) };
+  if (tool === "moneyforward/conac_list_accounting_units") {
+    return { structuredContent: await conacList(token, tool, "/masters/consolidation_accounting_units", args) };
+  }
+
+  if (tool === "moneyforward/conac_get_company") {
+    const companyCode = optionalStringArg(args, "company_code", ["companyCode", "code"]) ?? stringArg(args, "abbr", ["company_abbr"]);
+    return { structuredContent: await conacList(token, tool, `/masters/companies/${encodeURIComponent(companyCode)}`, args) };
   }
 
   throw new Error(`Unknown Money Forward tool: ${tool}`);
