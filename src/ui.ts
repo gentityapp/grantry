@@ -3332,7 +3332,6 @@ dashboardApp.get("/tenants/new", async (c) => {
     select: { id: true, scope: true, provider: true, authType: true, label: true },
     orderBy: { scope: "asc" },
   });
-  const existingScopes = Array.from(new Set(existingConns.map((c: { scope: string }) => c.scope).filter((s: string) => s.length > 0)));
   // Map: scope -> { "provider:authType" -> label } so the JS can detect "reusing" mode
   const scopeProviders: Record<string, Record<string, string>> = {};
   for (const c of existingConns) {
@@ -3355,45 +3354,26 @@ dashboardApp.get("/tenants/new", async (c) => {
     <main>
       <h1>+ New scope</h1>
       <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
-        Create an isolated scope in one step. This sets up: a <b>connection</b>, connection grants for that scope, an <b>agent</b>, and a fresh <b>token</b>.
+        Step 1 creates a scope and its provider connections. Step 2 assigns or creates the agent that can use this scope.
       </p>
       <form method="post" action="/tenants/new" id="wizForm">
         <div class="step-card">
           <h2><span class="num">1</span> Scope</h2>
           <div class="field field-primary">
-            <label for="tenant">New scope name</label>
-            <input type="text" name="tenant" id="tenant" pattern="[a-z0-9_-]+" placeholder="my-new-scope" title="Lowercase letters, numbers, hyphens and underscores only (a-z 0-9 - _). Use the Display name field below for Japanese or other names." autofocus required>
-            <div class="field-hint">lowercase, alphanumeric, hyphens, underscores. This is the <b>scope</b> for all your API calls — it cannot be changed later, so pick carefully.</div>
+            <label for="tenant">Scope key</label>
+            <input type="text" name="tenant" id="tenant" pattern="[a-z0-9_-]+" placeholder="backoffice" title="Lowercase letters, numbers, hyphens and underscores only (a-z 0-9 - _). Use the Display name field below for Japanese or other names." autofocus required>
+            <div class="field-hint">lowercase, alphanumeric, hyphens, underscores. Agents send this as <b>scope</b> in API calls — it cannot be changed later, so pick carefully.</div>
             <div class="field-hint" id="tenantWarn" style="display:none;color:#df1b41;"></div>
           </div>
           <div class="field">
             <label for="display_name">Display name (optional)</label>
             <input type="text" name="display_name" id="display_name" placeholder="e.g. Grantry 開発環境">
-            <div class="field-hint">Human-facing label shown in dashboards. Unlike the scope name, you can rename this anytime.</div>
-          </div>
-          ${existingScopes.length > 0 ? `
-          <details class="field-secondary">
-            <summary>Or pick an existing scope (${existingScopes.length})</summary>
-            <select name="tenant_select" id="tenant_select">
-              <option value="">-- (leave empty to use the text field above) --</option>
-              ${existingScopes.map((s) => `<option value="${s}">${s} (existing — will reuse its connections)</option>`).join("")}
-            </select>
-            <div class="field-hint">If you pick one, it overrides the text field. Useful when you've already set up the scope and just want a new agent bound to it.</div>
-          </details>
-          ` : ''}
-          <div class="field" style="margin-top:16px;">
-            <label for="agent">Agent name</label>
-            <input type="text" name="agent" id="agent" placeholder="auto-suggested when you type a scope name">
-            <div class="field-hint">Globally unique. Auto-suggested from scope name. Override if you want.</div>
-          </div>
-          <div class="field">
-            <label for="agent_desc">Agent description <span style="color:#687385;">(optional)</span></label>
-            <input type="text" name="agent_desc" id="agent_desc" placeholder="What this agent does">
+            <div class="field-hint">Human-facing label shown in dashboards. Unlike the scope key, you can rename this anytime.</div>
           </div>
         </div>
 
         <div class="step-card">
-          <h2><span class="num">2</span> Providers</h2>
+          <h2><span class="num">2</span> Connections</h2>
           <p class="field-hint" style="margin-top:0;">Pick one or more services to wire into this scope. If this workspace already has a matching connection, leaving the credential blank reuses that existing provider credential for the new scope.</p>
           <input type="text" id="providerSearch" placeholder="Search providers… (e.g. notion, github, oauth)" autocomplete="off" style="margin-bottom:12px;">
           <p class="field-hint" id="providerSearchEmpty" style="display:none;margin-top:0;">No providers match your search.</p>
@@ -3422,7 +3402,7 @@ dashboardApp.get("/tenants/new", async (c) => {
                   ${reusableOptions.map((cn) => `<option value="${escapeHtml(cn.id)}">Use existing: ${escapeHtml(cn.label)} (${escapeHtml(cn.scope)})</option>`).join("")}
                   <option value="">Paste a new credential instead</option>
                 </select>
-                <div class="field-hint">Creates a new scope connection that uses the selected workspace credential.</div>
+                <div class="field-hint">Creates a new scope-scoped connection that uses the selected workspace credential.</div>
                 ` : ""}
                 <label>Credential</label>
                 <textarea name="credential_${p.key}_${authType}" class="cred-input" rows="2" placeholder="${escapeHtml(credentialPlaceholder(p.key, p.label, authType))}"></textarea>
@@ -3464,12 +3444,10 @@ dashboardApp.get("/tenants/new", async (c) => {
         const tenantField = document.getElementById('tenant');
         const blocks = Array.from(document.querySelectorAll('.provider-block'));
 
-        // Returns the current scope (either typed or selected) and whether it's an existing tenant.
+        // Returns the current scope key from the typed value.
         function getCurrentScope() {
-          const tSelect = document.getElementById('tenant_select');
-          const selected = tSelect && tSelect.value ? tSelect.value : '';
           const typed = tenantField.value.trim();
-          return { scope: selected || typed, isExisting: !!selected };
+          return { scope: typed, isExisting: false };
         }
 
         // Show/hide a provider's detail panel based on its checkbox, and refresh
@@ -3592,21 +3570,10 @@ dashboardApp.get("/tenants/new", async (c) => {
         });
         updateAllBlocks();
 
-        // Wizard: live auto-suggest agent name from tenant name (text input).
-        // Also clear the dropdown when typing in the text field, and vice versa.
         const tenantInput = document.getElementById('tenant');
-        const tenantSelect = document.getElementById('tenant_select');
-        const agentInput = document.getElementById('agent');
-        function suggestAgentName(tenantName) {
-          if (!agentInput.value || agentInput.dataset.autoSuggested === '1') {
-            const rand = Date.now().toString(36).slice(-4);
-            agentInput.value = tenantName + '-agent-' + rand;
-            agentInput.dataset.autoSuggested = '1';
-          }
-        }
         const tenantWarn = document.getElementById('tenantWarn');
         const displayNameInput = document.getElementById('display_name');
-        // Live-flag non-ASCII tenant names (commonly Japanese) the moment they
+        // Live-flag non-ASCII scope keys (commonly Japanese) the moment they
         // are typed, instead of waiting for the browser's generic pattern error
         // on submit. Offer to move the value into the Display name field, where
         // any language is fine.
@@ -3614,8 +3581,8 @@ dashboardApp.get("/tenants/new", async (c) => {
           const v = tenantInput.value;
           if (v && /[^a-z0-9_-]/.test(v)) {
             const slug = v.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
-            tenantWarn.innerHTML = 'Scope names allow only <code>a-z 0-9 - _</code>. Japanese and other characters aren\\'t allowed here — put them in <b>Display name</b> below.'
-              + (slug ? ' Suggested scope name: <code>' + slug + '</code>' : '')
+            tenantWarn.innerHTML = 'Scope keys allow only <code>a-z 0-9 - _</code>. Japanese and other characters aren\\'t allowed here — put them in <b>Display name</b> below.'
+              + (slug ? ' Suggested scope key: <code>' + slug + '</code>' : '')
               + ' <a href="#" id="moveToDisplay">move this to Display name →</a>';
             tenantWarn.style.display = '';
             const mv = document.getElementById('moveToDisplay');
@@ -3624,38 +3591,15 @@ dashboardApp.get("/tenants/new", async (c) => {
               if (displayNameInput && !displayNameInput.value) displayNameInput.value = v;
               tenantInput.value = slug;
               tenantWarn.style.display = 'none';
-              if (tenantInput.value) suggestAgentName(tenantInput.value);
+              updateAllBlocks();
             });
           } else {
             tenantWarn.style.display = 'none';
           }
         }
         tenantInput.addEventListener('input', () => {
-          if (tenantSelect) tenantSelect.value = '';
-          if (tenantInput.value) suggestAgentName(tenantInput.value);
           checkTenantChars();
-        });
-        if (tenantSelect) {
-          tenantSelect.addEventListener('change', () => {
-            if (tenantSelect.value) {
-              tenantInput.value = '';
-              suggestAgentName(tenantSelect.value);
-              // Re-evaluate credential reuse: a chosen provider may have an
-              // existing connection for this scope, which means we don't need
-              // to ask for a new credential.
-              updateAllBlocks();
-            }
-          });
-        }
-        tenantInput.addEventListener('input', () => {
-          if (tenantSelect) tenantSelect.value = '';
-          // Tenant name changed: re-evaluate reuse too (user might be typing
-          // a name that matches an existing scope).
           updateAllBlocks();
-        });
-        // User-typed agent names should not be overwritten by auto-suggest.
-        agentInput.addEventListener('input', () => {
-          if (agentInput.value) agentInput.dataset.autoSuggested = '';
         });
       </script>
     </main></body></html>
@@ -3668,14 +3612,12 @@ dashboardApp.post("/tenants/new", async (c) => {
   if (!user) return c.json({ error: "not authenticated" }, 401);
 
   const body = await c.req.parseBody();
-  // Tenant resolution: text input wins over dropdown selection.
+  // Scope resolution: text input wins over legacy dropdown selection.
   const tenantText = String(body.tenant ?? "").trim();
   const tenantSelect = String(body.tenant_select ?? "").trim();
   const tenant = tenantText || tenantSelect;
   // Optional human-facing name; the slug stays the immutable wire key.
   const tenantDisplayName = String(body.display_name ?? "").trim();
-  const agent = String(body.agent ?? "").trim();
-  const agentDesc = String(body.agent_desc ?? "").trim();
 
   // --- Multi-provider parsing ---
   // The wizard submits the chosen providers as a JSON array (providers_json).
@@ -3735,7 +3677,7 @@ dashboardApp.post("/tenants/new", async (c) => {
   };
   const reuseConnectionIdFor = (p: string, authType = "pat") =>
     String((body as any)[`reuse_connection_${p}_${authType}`] ?? "").trim();
-  console.log("[tenants/new POST] tenant=", tenant, "providerAuths=", providerAuths);
+  console.log("[tenants/new POST] scope=", tenant, "providerAuths=", providerAuths);
 
   if (!/^[a-z0-9_-]+$/.test(tenant)) {
     // The slug is the immutable wire key (agents send it as `scope`), so it
@@ -3746,21 +3688,20 @@ dashboardApp.post("/tenants/new", async (c) => {
     const suggestion = slugifyWorkspace(tenant);
     const hasSuggestion = !!tenant && suggestion !== "workspace";
     return c.html(`
-      <!doctype html><html><head><meta charset="utf-8"><title>Invalid scope name — grantry</title>
+      <!doctype html><html><head><meta charset="utf-8"><title>Invalid scope key — grantry</title>
       ${FAVICON}<style>${CSS}</style></head><body>
       ${NAV("tenants", user?.email)}
       <main>
-        <h1>⚠️  Scope name ${tenant ? `<code>${escapeHtml(tenant)}</code> ` : ""}can't be used</h1>
+        <h1>⚠️  Scope key ${tenant ? `<code>${escapeHtml(tenant)}</code> ` : ""}can't be used</h1>
         <div class="card" style="border-color:#df1b41;">
-          <p>The <b>scope name</b> is the immutable <b>scope</b> key your agents send with every API call, so it's restricted to <b>lowercase letters, numbers, hyphens, and underscores</b> (<code>a-z 0-9 - _</code>). Japanese and other non-ASCII characters aren't allowed here.</p>
+          <p>The <b>scope key</b> is the immutable key your agents send with every API call, so it's restricted to <b>lowercase letters, numbers, hyphens, and underscores</b> (<code>a-z 0-9 - _</code>). Japanese and other non-ASCII characters aren't allowed here.</p>
           <p>👉 Put the Japanese (or any human-friendly) name in the <b>Display name</b> field instead — that's shown in dashboards and can be renamed anytime.</p>
-          ${hasSuggestion ? `<p>Suggested scope name based on what you typed: <code>${escapeHtml(suggestion)}</code></p>` : `<p>Example: scope name <code>kaihatsu</code> · display name <code>${escapeHtml(tenant || "開発環境")}</code></p>`}
+          ${hasSuggestion ? `<p>Suggested scope key based on what you typed: <code>${escapeHtml(suggestion)}</code></p>` : `<p>Example: scope key <code>kaihatsu</code> · display name <code>${escapeHtml(tenant || "開発環境")}</code></p>`}
           <p><a href="/tenants/new">← Back to the wizard</a></p>
         </div>
       </main></body></html>
     `, 400);
   }
-  if (!agent) return c.html("<h1>agent name required</h1>", 400);
   if (providers.length === 0) return c.html("<h1>select at least one provider</h1>", 400);
   if (providerAuths.length === 0) return c.html("<h1>select at least one provider</h1>", 400);
   for (const item of providerAuths) {
@@ -3770,30 +3711,6 @@ dashboardApp.post("/tenants/new", async (c) => {
     if (!providerDef.authTypes.includes(item.authType as any)) {
       return c.html(`<h1>auth type not supported: ${escapeHtml(item.provider)} / ${escapeHtml(item.authType)}</h1>`, 400);
     }
-  }
-
-  // Check for agent name conflict up front so we can return a clean error
-  // instead of letting Prisma's P2002 bubble up as a generic 500.
-  const existingAgent = await prisma.agent.findUnique({ where: { name: agent } });
-  if (existingAgent) {
-    return c.html(`
-      <!doctype html><html><head><meta charset="utf-8"><title>Agent name taken — grantry</title>
-      ${FAVICON}<style>${CSS}</style></head><body>
-      ${NAV("tenants", user?.email)}
-      <main>
-        <h1>⚠️  Agent name <code>${escapeHtml(agent)}</code> already exists</h1>
-        <div class="card" style="border-color:#df1b41;">
-          <p>Agent names are globally unique. Someone already created an agent with this name (created ${existingAgent.createdAt.toISOString().slice(0,10)}).</p>
-          <p><b>Options:</b></p>
-          <ul>
-            <li>Pick a different agent name (e.g. <code>${escapeHtml(agent)}-v2</code>, <code>${escapeHtml(agent)}-${Date.now().toString(36).slice(-4)}</code>)</li>
-            <li><a href="/agents/${existingAgent.id}">Reuse the existing agent</a> and rotate its token instead</li>
-            <li><a href="/tenants/new">← Back to wizard</a></li>
-          </ul>
-        </div>
-        <p style="color:#687385;font-size:13px;">Why globally unique? Agent names double as the agent's display ID in audit logs and MCP routing. <a href="https://github.com/gentityapp/grantry/issues/new">file an issue</a> if you want per-user uniqueness.</p>
-      </main></body></html>
-    `, 409);
   }
 
   // 0) Materialize the tenant entity up front, before any connections. The
@@ -3917,69 +3834,20 @@ dashboardApp.post("/tenants/new", async (c) => {
     }
   }
 
-  // If any selected providers still need OAuth authorization, defer agent
-  // creation and kick off the OAuth chain. The final callback mints the agent
-  // and grants the tenant connections.
+  // If any selected providers still need OAuth authorization, kick off the
+  // OAuth chain. The final callback now redirects to the agent setup step.
   if (oauthQueue.length > 0) {
     const [first, ...rest] = oauthQueue;
     const params = new URLSearchParams({
       tenant,
       tenant_select: tenantSelect,
-      agent,
-      agent_desc: agentDesc,
       oauth_queue: rest.map((item) => item.provider).join(","),
     });
     if (first.oauthAppCredentialId) params.set("oauth_app_credential_id", first.oauthAppCredentialId);
     return c.redirect(`/oauth/${first.provider}/start?${params.toString()}`);
   }
 
-  // 3) Create agent + grant tenant connections + mint token
-  const token = `gn_agt_${crypto.randomUUID().replace(/-/g, "")}`;
-  const tokenHash = await import("node:crypto").then(c => c.createHash("sha256").update(token).digest("hex"));
-  const agentRow = await prisma.agent.create({
-    data: {
-      name: agent,
-      description: agentDesc || null,
-      hashedToken: tokenHash,
-      tokenPrefix: token.slice(0, 16),
-      ownerId: user.id,
-      workspaceId: tenantRow.workspaceId ?? wsId,
-    },
-  });
-  const granted = await grantTenantConnectionsToAgent(user.id, agentRow.id, tenant);
-
-  return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Scope created — grantry</title>
-    ${FAVICON}<style>${CSS}</style></head><body>
-    ${NAV("tenants", user?.email)}
-    <main>
-      <h1>✓ Scope <code>${tenant}</code> created</h1>
-      <div class="card">
-        <h2>Connections (${connections.length})</h2>
-        ${connections.map((cn) => `<p><code>${escapeHtml(cn.label)}</code> · scope=<code>${escapeHtml(cn.scope)}</code></p>`).join("")}
-      </div>
-      <div class="card">
-        <h2>Agent</h2>
-        <p><code>${agentRow.name}</code> · granted ${granted} connection(s)</p>
-      </div>
-      ${agentTokenCard(token, "⚠️  Save this token now. You won't see it again. Revoke and re-mint in <a href=\"/agents\">/agents</a> if lost.")}
-      ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true, tenant)}
-      <div class="card">
-        <h2>Test it</h2>
-        <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
-  -H "Authorization: Bearer ${token}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping"}}'</pre>
-        ${providers.includes("notion") ? `
-        <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
-  -H "Authorization: Bearer ${token}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"notion/list_dbs","arguments":{"scope":"${tenant}"}}}'</pre>
-        ` : ""}
-      </div>
-      <p><a href="/tenants">← Back to scopes</a> · <a href="/agents">Manage agents</a></p>
-    </main></body></html>
-  `);
+  return c.redirect(`/tenants/${tenant}/agents/setup?created=1&connections=${connections.length}`);
 });
 
 // --- /agents ---
@@ -4994,10 +4862,6 @@ oauthApp.get("/:provider/callback", async (c) => {
     return c.redirect(`/tenants/${effectiveTenant}/edit?reauthed=${encodeURIComponent(providerKey)}`);
   }
 
-  if (!agent) {
-    return c.html(`<h1>agent name missing in saved payload</h1>`, 400);
-  }
-
   // 1) Create connection (idempotent by provider+scope for this user)
   const existingConn = await prisma.connection.findFirst({
     where: { provider: providerKey, authType: "oauth", scope: effectiveTenant, ownerId: user.id },
@@ -5045,11 +4909,15 @@ oauthApp.get("/:provider/callback", async (c) => {
     const params = new URLSearchParams({
       tenant: payload.tenant || "",
       tenant_select: payload.tenant_select || "",
-      agent: payload.agent || "",
-      agent_desc: payload.agent_desc || "",
       oauth_queue: rest.join(","),
     });
+    if (payload.agent) params.set("agent", payload.agent);
+    if (payload.agent_desc) params.set("agent_desc", payload.agent_desc);
     return c.redirect(`/oauth/${nextProvider}/start?${params.toString()}`);
+  }
+
+  if (!agent) {
+    return c.redirect(`/tenants/${effectiveTenant}/agents/setup?created=1&connected=${encodeURIComponent(providerKey)}`);
   }
 
   // 3) Create agent + grant tenant connections + mint token
@@ -5241,7 +5109,163 @@ dashboardApp.get("/api/capabilities", async (c) => {
   return c.json({ tool, scope: scope ?? null, candidates });
 });
 
-// --- /tenants/:scope/agents/new (POST) — add another agent to existing tenant ---
+// --- /tenants/:scope/agents/setup (GET) — step 2 after scope creation ---
+dashboardApp.get("/tenants/:scope/agents/setup", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+  const scope = c.req.param("scope");
+  if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
+
+  const tenant = await prisma.tenant.findFirst({
+    where: { slug: scope, ownerId: user.id },
+    select: { displayName: true, slug: true, workspaceId: true },
+  });
+  if (!tenant) return c.html(`<h1>scope '${escapeHtml(scope)}' not found</h1>`, 404);
+
+  const [connections, agents] = await Promise.all([
+    prisma.connection.findMany({
+      where: { scope, ownerId: user.id, enabled: true },
+      select: { id: true, provider: true, authType: true, label: true },
+      orderBy: [{ provider: "asc" }, { authType: "asc" }],
+    }),
+    prisma.agent.findMany({
+      where: {
+        ownerId: user.id,
+        enabled: true,
+        ...(tenant.workspaceId ? { OR: [{ workspaceId: tenant.workspaceId }, { workspaceId: null }] } : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        description: true,
+        tokenPrefix: true,
+        createdAt: true,
+        connectionGrants: {
+          where: { connection: { scope, ownerId: user.id } },
+          select: { connectionId: true },
+        },
+      },
+      orderBy: { createdAt: "asc" },
+    }),
+  ]);
+  const assignableAgents = agents.filter((agent) => agent.connectionGrants.length === 0);
+  const created = c.req.query("created") === "1";
+  const connected = c.req.query("connected");
+  const assigned = c.req.query("assigned");
+  const showName = tenant.displayName && tenant.displayName !== tenant.slug;
+
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Set up agents — grantry</title>
+    ${FAVICON}<style>${CSS}</style></head><body>
+    ${NAV("tenants", user?.email)}
+    <main>
+      <h1>Set up agents for ${showName ? `${escapeHtml(tenant.displayName)} ` : ""}<code>${escapeHtml(scope)}</code></h1>
+      <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
+        Step 2: create an agent for this scope, or assign an existing agent to this scope's enabled connections.
+      </p>
+      ${created ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">✓ Scope <code>${escapeHtml(scope)}</code> is ready.${connected ? ` Connected <code>${escapeHtml(connected)}</code>.` : ""}</div>` : ""}
+      ${assigned ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">✓ Existing agent granted ${escapeHtml(assigned)} connection(s).</div>` : ""}
+
+      <div class="card">
+        <h2>Scope</h2>
+        <p><span class="badge scoped">${escapeHtml(scope)}</span> · ${connections.length} enabled connection(s)</p>
+        ${connections.length === 0 ? `<div class="empty">No enabled connections yet. <a href="/tenants/${scope}/edit">Add a service</a> before this scope can be used by an agent.</div>` : `
+          <ul class="conn-list">
+            ${connections.map((cn) => `
+              <li class="conn-item">
+                <span class="provider-cell">${providerIcon(cn.provider)}<code>${escapeHtml(cn.provider)}</code></span>
+                <code class="conn-auth">${escapeHtml(cn.authType)}</code>
+                <span class="conn-label">${escapeHtml(cn.label)}</span>
+              </li>
+            `).join("")}
+          </ul>
+        `}
+      </div>
+
+      <div class="card">
+        <h2>Create new agent</h2>
+        <form method="post" action="/tenants/${scope}/agents/new" id="addAgentForm">
+          <div class="field">
+            <label for="agent">Agent name</label>
+            <input type="text" name="agent" id="agent" pattern="[a-zA-Z0-9_-]+" placeholder="e.g. ${escapeHtml(scope)}-agent" required>
+            <div class="field-hint">Globally unique. This creates a new token and grants this scope's enabled connections.</div>
+          </div>
+          <div class="field">
+            <label for="agent_desc">Description <span style="color:#687385;">(optional)</span></label>
+            <input type="text" name="agent_desc" id="agent_desc" placeholder="What this agent is for">
+          </div>
+          <button type="submit">Create agent &amp; mint token</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Assign existing agent</h2>
+        ${assignableAgents.length === 0 ? `<div class="empty">No unassigned agents are available in this workspace. Create a new agent above.</div>` : `
+        <form method="post" action="/tenants/${scope}/agents/assign-existing">
+          <label for="agent_id">Agent</label>
+          <select name="agent_id" id="agent_id" required>
+            ${assignableAgents.map((agent) => `<option value="${escapeHtml(agent.id)}">${escapeHtml(agent.name)}${agent.description ? ` — ${escapeHtml(agent.description)}` : ""}</option>`).join("")}
+          </select>
+          <p class="field-hint">The selected agent keeps its existing token. Grantry only adds connection grants for this scope.</p>
+          <button type="submit" class="secondary">Grant this scope</button>
+        </form>
+        `}
+      </div>
+
+      <p><a href="/tenants/${scope}/edit">Edit scope</a> · <a href="/tenants">Back to scopes</a></p>
+    </main></body></html>
+  `);
+});
+
+// --- /tenants/:scope/agents/assign-existing (POST) ---
+dashboardApp.post("/tenants/:scope/agents/assign-existing", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ error: "not authenticated" }, 401);
+  const scope = c.req.param("scope");
+  if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
+  const body = await c.req.parseBody();
+  const agentId = String(body.agent_id ?? "").trim();
+  if (!agentId) return c.html("<h1>agent required</h1>", 400);
+
+  const tenant = await prisma.tenant.findFirst({
+    where: { slug: scope, ownerId: user.id },
+    select: { workspaceId: true },
+  });
+  if (!tenant) return c.html(`<h1>scope '${escapeHtml(scope)}' not found</h1>`, 404);
+
+  const agent = await prisma.agent.findFirst({
+    where: {
+      id: agentId,
+      ownerId: user.id,
+      enabled: true,
+      ...(tenant.workspaceId ? { OR: [{ workspaceId: tenant.workspaceId }, { workspaceId: null }] } : {}),
+    },
+  });
+  if (!agent) return c.html("<h1>agent not found</h1>", 404);
+
+  const granted = await grantTenantConnectionsToAgent(user.id, agent.id, scope);
+
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Agent assigned — grantry</title>
+    ${FAVICON}<style>${CSS}</style></head><body>
+    ${NAV("tenants", user?.email)}
+    <main>
+      <h1>✓ Agent <code>${escapeHtml(agent.name)}</code> can use <code>${escapeHtml(scope)}</code></h1>
+      <div class="card">
+        <h2>Connection grants</h2>
+        <p>Granted ${granted} enabled connection(s) for this scope.</p>
+      </div>
+      <div class="card">
+        <h2>Token</h2>
+        <p>This agent keeps its existing token. The plaintext token cannot be shown again; rotate it from the agent page if you need a fresh copy.</p>
+        ${mcpConfigCard(mcpOrigin(c), agent.name, `${agent.tokenPrefix}...ROTATE_TO_VIEW_FULL_TOKEN`, false, scope)}
+      </div>
+      <p><a href="/tenants/${scope}/agents/setup?assigned=${granted}">Back to agent setup</a> · <a href="/agents/${agent.id}">Open agent</a></p>
+    </main></body></html>
+  `);
+});
+
+// --- /tenants/:scope/agents/new (POST) — add another agent to existing scope ---
 dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
