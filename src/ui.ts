@@ -48,7 +48,6 @@ function authTypeLabel(providerKey: string, authType: string): string {
   if (providerKey === "resend") return "API key";
   if (providerKey === "slack") return "Bot token";
   if (providerKey === "google_maps") return "API key";
-  if (providerKey === "moneyforward") return "API key";
   if (providerKey === "discord") return "Bot token";
   if (providerKey === "line") return "Channel access token";
   if (["airtable", "linear", "sendgrid", "vercel", "stripe", "webflow", "intercom", "customerio", "mailchimp"].includes(providerKey)) return "API key";
@@ -69,7 +68,6 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
   if (providerKey === "resend") return "Paste your Resend API key";
   if (providerKey === "slack") return "Paste your Slack Bot User OAuth Token (starts with xoxb-)";
   if (providerKey === "google_maps") return "Paste your Google Maps Platform API key";
-  if (providerKey === "moneyforward") return "Paste your Money Forward API key (starts with mf_api_prd_)";
   if (providerKey === "discord") return "Paste your Discord Bot Token from the Developer Portal > Bot";
   if (providerKey === "line") return "Paste your LINE Channel Access Token (Messaging API > Channel access token)";
   if (providerKey === "airtable") return "Paste your Airtable Personal Access Token (patXXXX...)";
@@ -4803,7 +4801,9 @@ oauthApp.get("/:provider/callback", async (c) => {
       const u: any = await (await fetch("https://api.freee.co.jp/api/1/users/me", { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } })).json();
       if (u?.user?.email) userLogin = u.user.email;
     } else if (providerKey === "moneyforward") {
-      userLogin = "moneyforward";
+      const u: any = await (await fetch("https://api-accounting.moneyforward.com/api/v3/offices", { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } })).json();
+      if (u?.name) userLogin = u.name;
+      else userLogin = "moneyforward-accounting";
     } else if (providerKey === "meta_ads") {
       const metaVersion = process.env.META_ADS_API_VERSION || "v21.0";
       const u: any = await (await fetch(`https://graph.facebook.com/${metaVersion}/me?fields=id,name`, { headers: { Authorization: `Bearer ${accessToken}` } })).json();

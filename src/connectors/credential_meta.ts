@@ -1,10 +1,4 @@
 import { callGenericCheckConnection, callGenericListCapabilities } from "./generic_request.js";
-import {
-  decodeMoneyForwardJwt,
-  exchangeMoneyForwardApiKey,
-  moneyForwardScopesFromClaims,
-  moneyForwardServicesFromClaims,
-} from "./moneyforward.js";
 import { getProvider } from "./registry.js";
 
 const META_TIMEOUT_MS = 8_000;
@@ -552,64 +546,43 @@ export async function inspectCredential(provider: string, authType: string, toke
 
     if (provider === "moneyforward") {
       if (authType === "pat") {
-        const exchanged = await exchangeMoneyForwardApiKey(token);
-        const claims = decodeMoneyForwardJwt(exchanged.access_token);
-        const services = moneyForwardServicesFromClaims(claims);
-        const scopes = moneyForwardScopesFromClaims(claims);
-        const notes = [
-          "Money Forward API keys are exchanged for one-hour JWTs via /auth/exchange before API calls.",
-          "API key access follows the issuing user's Money Forward permissions and selected services.",
-        ];
-
-        if (services.includes("conac")) {
-          const resp = await fetchWithTimeout("https://public-api.consolidated-accounting.moneyforward.com/api/v1/masters/companies", {
-            headers: { Authorization: `Bearer ${exchanged.access_token}`, Accept: "application/json" },
-          });
-          const body: any = await readJson(resp);
-          if (!resp.ok) {
-            return {
-              provider,
-              authType,
-              status: "error",
-              checkedAt,
-              scopes,
-              subject: { id: claims.sub, issuer: claims.iss },
-              resources: services.map((service) => ({ id: service, type: "service" })),
-              notes,
-              error: `Money Forward API key exchange succeeded, but conac check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}`,
-            };
-          }
-          return {
-            provider,
-            authType,
-            status: "ok",
-            checkedAt,
-            scopes,
-            subject: { id: claims.sub, issuer: claims.iss },
-            resources: services.map((service) => ({ id: service, type: "service" })),
-            notes,
-          };
-        }
-
         return {
           provider,
           authType,
-          status: "ok",
+          status: "error",
           checkedAt,
-          scopes,
-          subject: { id: claims.sub, issuer: claims.iss },
-          resources: services.map((service) => ({ id: service, type: "service" })),
-          notes: [...notes, "No service-specific smoke test is configured for this Money Forward API key's services."],
+          error: "Money Forward Cloud Accounting API does not support API key authentication. Register a workspace-owned OAuth app and connect with OAuth.",
+          notes: ["Cloud Accounting API uses OAuth 2.0 only. API keys are service-specific and cannot call api-accounting.moneyforward.com."],
         };
       }
 
+      const resp = await fetchWithTimeout("https://api-accounting.moneyforward.com/api/v3/offices", {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) {
+        return { provider, authType, status: "error", checkedAt, error: `Money Forward Cloud Accounting token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      }
       return {
         provider,
         authType,
-        status: "unknown",
-        subject: undefined,
+        status: "ok",
+        subject: { code: body.code, name: body.name, type: body.type },
+        scopes: [
+          "mfc/accounting/offices.read",
+          "mfc/accounting/accounts.read",
+          "mfc/accounting/departments.read",
+          "mfc/accounting/taxes.read",
+          "mfc/accounting/journal.read",
+          "mfc/accounting/report.read",
+          "mfc/accounting/trade_partners.read",
+          "mfc/accounting/connected_account.read",
+        ],
+        resources: Array.isArray(body.accounting_periods)
+          ? body.accounting_periods.map((period: any) => ({ type: "accounting_period", ...period }))
+          : undefined,
         notes: [
-          "Money Forward OAuth tokens are endpoint-specific; configure the workspace-owned OAuth app scopes for the Money Forward service you want to call.",
+          "Money Forward Cloud Accounting API uses OAuth 2.0; API key authentication is not supported for this API.",
           "Grantry does not use a global Money Forward OAuth app or hardcoded customer credential.",
         ],
         checkedAt,

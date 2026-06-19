@@ -1388,26 +1388,40 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       breakdown_display_type: { type: "string", enum: ["partner", "item", "section", "account_item"], description: "Breakdown axis." },
     };
   }
-  if (toolName === "moneyforward/list_services") {
-    return {};
-  }
-  if (toolName === "moneyforward/request") {
+  if (toolName === "moneyforward/accounting_request") {
     return {
-      service: { type: "string", description: "Money Forward service id from the API key JWT, e.g. conac. Required." },
-      path: { type: "string", description: "Relative API path, e.g. /masters/companies. Required." },
+      path: { type: "string", description: "Relative Cloud Accounting API path, e.g. /accounts. Required." },
       method: { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE"], description: "HTTP method. Defaults to GET." },
       query: { type: "object", description: "Query parameters." },
       body: { type: "object", description: "JSON request body for write requests." },
     };
   }
-  if (toolName === "moneyforward/conac_get_company") {
+  if (toolName === "moneyforward/accounting_get_journal") {
     return {
-      company_code: { type: "string", description: "Company abbreviation/code. Required." },
+      journal_id: { type: "string", description: "Journal id. Required." },
     };
   }
-  if (toolName.startsWith("moneyforward/conac_list_")) {
+  if (toolName === "moneyforward/accounting_list_journals") {
     return {
-      query: { type: "object", description: "Query parameters supported by the Money Forward endpoint." },
+      query: {
+        type: "object",
+        description: "Query parameters such as start_date, end_date, account_id, is_realized, page, per_page. start_date or end_date is required by Money Forward.",
+      },
+    };
+  }
+  if (
+    toolName === "moneyforward/accounting_trial_balance_bs"
+    || toolName === "moneyforward/accounting_trial_balance_pl"
+    || toolName === "moneyforward/accounting_transition_bs"
+    || toolName === "moneyforward/accounting_transition_pl"
+  ) {
+    return {
+      query: { type: "object", description: "Report query parameters supported by Money Forward, such as fiscal_year, start_month, end_month, start_date, end_date." },
+    };
+  }
+  if (toolName.startsWith("moneyforward/accounting_")) {
+    return {
+      query: { type: "object", description: "Query parameters supported by the Money Forward Cloud Accounting endpoint." },
     };
   }
   if (toolName === "reddit/get_me") {
@@ -2166,8 +2180,8 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "freee/create_partner") return ["company_id", "name"];
   if (toolName === "freee/trial_pl") return ["company_id"];
   if (toolName === "freee/trial_bs") return ["company_id"];
-  if (toolName === "moneyforward/request") return ["service", "path"];
-  if (toolName === "moneyforward/conac_get_company") return ["company_code"];
+  if (toolName === "moneyforward/accounting_request") return ["path"];
+  if (toolName === "moneyforward/accounting_get_journal") return ["journal_id"];
   if (toolName === "reddit/get_subreddit") return ["subreddit"];
   if (toolName === "reddit/list_posts") return ["subreddit"];
   if (toolName === "reddit/search") return ["query"];

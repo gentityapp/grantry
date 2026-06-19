@@ -5,12 +5,8 @@
 import { Buffer } from "node:buffer";
 
 const MF_AUTH_EXCHANGE = "https://api.biz.moneyforward.com/auth/exchange";
-const MF_DEFAULT_SERVICE_API_BASE = "https://api.biz.moneyforward.com";
+const MF_ACCOUNTING_API = "https://api-accounting.moneyforward.com/api/v3";
 const MF_TIMEOUT_MS = 12_000;
-
-const SERVICE_BASE_URLS: Record<string, string> = {
-  conac: "https://public-api.consolidated-accounting.moneyforward.com/api/v1",
-};
 
 type MoneyForwardArgs = Record<string, unknown>;
 
@@ -138,15 +134,6 @@ function stringArg(args: MoneyForwardArgs, snake: string, aliases: string[] = []
   throw new Error(`${snake} is required`);
 }
 
-function optionalStringArg(args: MoneyForwardArgs, snake: string, aliases: string[] = []) {
-  const candidates = [snake, snake.replace(/_([a-z])/g, (_, c) => c.toUpperCase()), ...aliases];
-  for (const key of candidates) {
-    const value = String(args[key] ?? "").trim();
-    if (value) return value;
-  }
-  return undefined;
-}
-
 function objArg(args: MoneyForwardArgs, key: string) {
   const value = args[key];
   if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
@@ -164,27 +151,15 @@ function queryString(query: unknown) {
   return s ? `?${s}` : "";
 }
 
-function serviceBaseUrl(service: string) {
-  const normalized = service.trim().toLowerCase();
-  if (!/^[a-z0-9_-]+$/.test(normalized)) throw new Error("service must contain only letters, numbers, '_' or '-'");
-  return SERVICE_BASE_URLS[normalized] ?? `${MF_DEFAULT_SERVICE_API_BASE}/${normalized}/api/v1`;
-}
-
-function serviceUrl(service: string, path: string, query?: unknown) {
+function accountingUrl(path: string, query?: unknown) {
   const cleanPath = path.startsWith("/") ? path : `/${path}`;
   if (cleanPath.includes("://") || cleanPath.includes("..")) throw new Error("path must be a relative API path");
-  return `${serviceBaseUrl(service)}${cleanPath}${queryString(query)}`;
+  return `${MF_ACCOUNTING_API}${cleanPath}${queryString(query)}`;
 }
 
-async function requestService(token: string, tool: string, service: string, path: string, args: MoneyForwardArgs = {}) {
-  const method = String(args.method ?? "GET").toUpperCase();
-  if (!["GET", "POST", "PUT", "PATCH", "DELETE"].includes(method)) throw new Error("Unsupported method");
+async function requestAccounting(token: string, tool: string, method: string, path: string, args: MoneyForwardArgs = {}) {
   const body = objArg(args, "body");
-  return requestJson(token, method, serviceUrl(service, path, args.query), body, tool);
-}
-
-function conacList(token: string, tool: string, path: string, args: MoneyForwardArgs) {
-  return requestJson(token, "GET", serviceUrl("conac", path, args.query), undefined, tool);
+  return requestJson(token, method, accountingUrl(path, args.query), body, tool);
 }
 
 export async function callMoneyForwardTool(tool: string, args: MoneyForwardArgs, token: string) {
@@ -201,39 +176,64 @@ export async function callMoneyForwardTool(tool: string, args: MoneyForwardArgs,
     };
   }
 
-  if (tool === "moneyforward/request") {
-    const service = stringArg(args, "service");
+  if (tool === "moneyforward/accounting_request") {
     const path = stringArg(args, "path");
-    return { structuredContent: await requestService(token, tool, service, path, args) };
+    const method = String(args.method ?? "GET").toUpperCase();
+    if (!["GET", "POST", "PUT", "PATCH", "DELETE"].includes(method)) throw new Error("Unsupported method");
+    return { structuredContent: await requestAccounting(token, tool, method, path, args) };
   }
 
-  if (tool === "moneyforward/conac_list_companies") {
-    return { structuredContent: await conacList(token, tool, "/masters/companies", args) };
+  if (tool === "moneyforward/accounting_get_office") {
+    return { structuredContent: await requestAccounting(token, tool, "GET", "/offices", args) };
   }
 
-  if (tool === "moneyforward/conac_list_segments") {
-    return { structuredContent: await conacList(token, tool, "/masters/segments", args) };
+  if (tool === "moneyforward/accounting_list_accounts") {
+    return { structuredContent: await requestAccounting(token, tool, "GET", "/accounts", args) };
   }
 
-  if (tool === "moneyforward/conac_list_users") {
-    return { structuredContent: await conacList(token, tool, "/masters/users", args) };
+  if (tool === "moneyforward/accounting_list_departments") {
+    return { structuredContent: await requestAccounting(token, tool, "GET", "/departments", args) };
   }
 
-  if (tool === "moneyforward/conac_list_consolidated_accounts") {
-    return { structuredContent: await conacList(token, tool, "/masters/consolidated_accounts", args) };
+  if (tool === "moneyforward/accounting_list_taxes") {
+    return { structuredContent: await requestAccounting(token, tool, "GET", "/taxes", args) };
   }
 
-  if (tool === "moneyforward/conac_list_journal_types") {
-    return { structuredContent: await conacList(token, tool, "/masters/consolidation_journal_types", args) };
+  if (tool === "moneyforward/accounting_list_sub_accounts") {
+    return { structuredContent: await requestAccounting(token, tool, "GET", "/sub_accounts", args) };
   }
 
-  if (tool === "moneyforward/conac_list_accounting_units") {
-    return { structuredContent: await conacList(token, tool, "/masters/consolidation_accounting_units", args) };
+  if (tool === "moneyforward/accounting_list_journals") {
+    return { structuredContent: await requestAccounting(token, tool, "GET", "/journals", args) };
   }
 
-  if (tool === "moneyforward/conac_get_company") {
-    const companyCode = optionalStringArg(args, "company_code", ["companyCode", "code"]) ?? stringArg(args, "abbr", ["company_abbr"]);
-    return { structuredContent: await conacList(token, tool, `/masters/companies/${encodeURIComponent(companyCode)}`, args) };
+  if (tool === "moneyforward/accounting_get_journal") {
+    const journalId = stringArg(args, "journal_id", ["id"]);
+    return { structuredContent: await requestAccounting(token, tool, "GET", `/journals/${encodeURIComponent(journalId)}`, args) };
+  }
+
+  if (tool === "moneyforward/accounting_list_trade_partners") {
+    return { structuredContent: await requestAccounting(token, tool, "GET", "/trade_partners", args) };
+  }
+
+  if (tool === "moneyforward/accounting_trial_balance_bs") {
+    return { structuredContent: await requestAccounting(token, tool, "GET", "/reports/trial_balance_bs", args) };
+  }
+
+  if (tool === "moneyforward/accounting_trial_balance_pl") {
+    return { structuredContent: await requestAccounting(token, tool, "GET", "/reports/trial_balance_pl", args) };
+  }
+
+  if (tool === "moneyforward/accounting_transition_bs") {
+    return { structuredContent: await requestAccounting(token, tool, "GET", "/reports/transition_bs", args) };
+  }
+
+  if (tool === "moneyforward/accounting_transition_pl") {
+    return { structuredContent: await requestAccounting(token, tool, "GET", "/reports/transition_pl", args) };
+  }
+
+  if (tool === "moneyforward/accounting_list_term_settings") {
+    return { structuredContent: await requestAccounting(token, tool, "GET", "/term_settings", args) };
   }
 
   throw new Error(`Unknown Money Forward tool: ${tool}`);
