@@ -6,6 +6,18 @@ import { mcp } from "better-auth/plugins";
 import { prisma } from "./db.js";
 import { sendSystemEmail } from "./email.js";
 
+const googleSignInClientId =
+  process.env.AUTH_GOOGLE_CLIENT_ID
+  || process.env.GRANTRY_GOOGLE_CLIENT_ID
+  || process.env.GOOGLE_CLIENT_ID
+  || "";
+
+const googleSignInClientSecret =
+  process.env.AUTH_GOOGLE_CLIENT_SECRET
+  || process.env.GRANTRY_GOOGLE_CLIENT_SECRET
+  || process.env.GOOGLE_CLIENT_SECRET
+  || "";
+
 // Consent screen for MCP OAuth (claude.ai / Claude Desktop connecting via
 // dynamic client registration). Rendered by the /mcp/authorize endpoint when
 // the logged-in user still has to approve the client. The page also lets the
@@ -141,8 +153,8 @@ If you didn't request this, you can safely ignore this email.`,
   },
   socialProviders: {
     google: {
-      clientId: process.env.GOOGLE_CLIENT_ID ?? "",
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET ?? "",
+      clientId: googleSignInClientId,
+      clientSecret: googleSignInClientSecret,
     },
     github: {
       clientId: process.env.GITHUB_CLIENT_ID ?? "",
