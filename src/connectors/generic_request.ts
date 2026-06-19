@@ -196,7 +196,8 @@ export async function callGenericCheckConnection(args: {
   const manifest = args.provider.genericRequest;
   if (!manifest) throw new Error(`tool_not_implemented: ${args.provider.key}/check_connection is not enabled`);
   const tests = manifest.smokeTests ?? [];
-  if (!tests.length) {
+  const operations = manifest.operations ?? [];
+  if (!tests.length && !operations.length) {
     return {
       structuredContent: {
         provider: args.provider.key,
@@ -236,6 +237,44 @@ export async function callGenericCheckConnection(args: {
         method: test.method,
         path: test.path,
         requiredScopes: test.requiredScopes ?? [],
+        missingScopes,
+        error: message.slice(0, 1200),
+      });
+    }
+  }
+  for (const op of operations) {
+    const method = String(op.method ?? "").toUpperCase();
+    const path = String(op.path ?? "");
+    if (method !== "GET" || path.includes("{")) continue;
+    try {
+      const result = await executeGenericRequest({
+        provider: args.provider,
+        credential: args.credential,
+        method,
+        path,
+        query: { limit: 1 },
+        logTool: `${args.provider.key}/check_connection`,
+      });
+      results.push({
+        id: `operation:${op.id}`,
+        operationId: op.id,
+        status: "ok",
+        method,
+        path,
+        requiredScopes: op.requiredScopes ?? [],
+        responseStatus: result.structuredContent.status,
+      });
+    } catch (e: any) {
+      const message = String(e?.message ?? e);
+      const missingScopes = Array.from(message.matchAll(/"missingScopes":\[(.*?)\]/g))
+        .flatMap((m) => m[1].split(",").map((s) => s.replace(/["\s]/g, "")).filter(Boolean));
+      results.push({
+        id: `operation:${op.id}`,
+        operationId: op.id,
+        status: "error",
+        method,
+        path,
+        requiredScopes: op.requiredScopes ?? [],
         missingScopes,
         error: message.slice(0, 1200),
       });

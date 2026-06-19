@@ -55,6 +55,7 @@ export type ProviderDef = {
     }>;
     operations?: Array<{
       id: string;
+      tools?: string[];
       method: string;
       path: string;
       description: string;
@@ -320,6 +321,8 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "hubspot/list_marketing_emails",
       "hubspot/get_marketing_email",
       "hubspot/get_marketing_email_statistics",
+      "hubspot/update_marketing_email",
+      "hubspot/publish_marketing_email",
     ],
     implemented: true,
   },
@@ -945,6 +948,7 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     operations: [
       {
         id: "crm_deals",
+        tools: ["hubspot/list_deals"],
         method: "GET",
         path: "/crm/v3/objects/deals",
         description: "Read CRM deals.",
@@ -953,6 +957,7 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
       },
       {
         id: "crm_contacts",
+        tools: ["hubspot/get_contact"],
         method: "GET",
         path: "/crm/v3/objects/contacts",
         description: "Read CRM contacts.",
@@ -961,11 +966,30 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
       },
       {
         id: "marketing_emails",
+        tools: ["hubspot/list_marketing_emails", "hubspot/get_marketing_email", "hubspot/get_marketing_email_statistics"],
         method: "GET",
         path: "/marketing/v3/emails",
         description: "Read HubSpot marketing emails.",
         requiredScopes: ["content"],
         risk: "read",
+      },
+      {
+        id: "update_marketing_email",
+        tools: ["hubspot/update_marketing_email"],
+        method: "PATCH",
+        path: "/marketing/v3/emails/{emailId}",
+        description: "Update a HubSpot marketing email.",
+        requiredScopes: ["content"],
+        risk: "write",
+      },
+      {
+        id: "publish_marketing_email",
+        tools: ["hubspot/publish_marketing_email"],
+        method: "POST",
+        path: "/marketing/v3/emails/{emailId}/publish",
+        description: "Publish a HubSpot marketing email.",
+        requiredScopes: ["content"],
+        risk: "write",
       },
     ],
   },
@@ -1150,4 +1174,88 @@ export function toolsForProvider(providerKey: string): string[] {
   const provider = PROVIDERS[providerKey];
   if (!provider || provider.implemented === false) return [];
   return provider.tools;
+}
+
+function parseArray(raw: string | null | undefined, fallback: unknown[]) {
+  try {
+    const parsed = JSON.parse(String(raw ?? ""));
+    return Array.isArray(parsed) ? parsed : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function stringArray(raw: string | null | undefined, fallback: string[]) {
+  return parseArray(raw, fallback).map(String).map((s) => s.trim()).filter(Boolean);
+}
+
+export function customProviderTools(key: string) {
+  return [`${key}/request`, `${key}/check_connection`, `${key}/list_capabilities`];
+}
+
+function customProviderDef(row: any): ProviderDef {
+  const methods = Array.from(new Set(stringArray(row.defaultMethods, ["GET"]).map((m) => m.toUpperCase())));
+  const allowed = stringArray(row.allowedPathPrefixes, ["/"]);
+  const blocked = stringArray(row.blockedPathPrefixes, []);
+  const smokeTests = parseArray(row.smokeTests, []);
+  const operations = parseArray(row.operations, []);
+  return {
+    key: row.key,
+    label: row.label,
+    authTypes: ["pat"],
+    helpText: row.helpText || `Paste your ${row.label} API key or access token.`,
+    tokenUrl: row.tokenUrl || undefined,
+    tools: customProviderTools(row.key),
+    implemented: row.enabled !== false,
+    genericRequest: {
+      baseUrl: String(row.baseUrl).replace(/\/+$/, ""),
+      defaultMethods: methods.length ? methods : ["GET"],
+      allowedPathPrefixes: allowed.length ? allowed : ["/"],
+      ...(blocked.length ? { blockedPathPrefixes: blocked } : {}),
+      authScheme: row.authScheme === "api_key" ? "api_key" : "bearer",
+      ...(row.apiKeyHeader ? { apiKeyHeader: row.apiKeyHeader } : {}),
+      ...(smokeTests.length ? { smokeTests: smokeTests as any } : {}),
+      ...(operations.length ? { operations: operations as any } : {}),
+    },
+  };
+}
+
+export async function getCustomProvider(key: string, workspaceId?: string | null): Promise<ProviderDef | undefined> {
+  if (!workspaceId) return undefined;
+  const { prisma } = await import("../db.js");
+  const row = await prisma.customProvider.findFirst({ where: { workspaceId, key, enabled: true } });
+  return row ? customProviderDef(row) : undefined;
+}
+
+export async function getProviderForWorkspace(key: string, workspaceId?: string | null): Promise<ProviderDef | undefined> {
+  return getProvider(key) ?? await getCustomProvider(key, workspaceId);
+}
+
+export async function listProvidersForWorkspace(workspaceId?: string | null): Promise<ProviderDef[]> {
+  const builtIns = listProviders();
+  if (!workspaceId) return builtIns;
+  const { prisma } = await import("../db.js");
+  const reserved = new Set(builtIns.map((p) => p.key));
+  const rows = await prisma.customProvider.findMany({
+    where: { workspaceId, enabled: true, key: { notIn: Array.from(reserved) } },
+    orderBy: [{ label: "asc" }, { key: "asc" }],
+  });
+  return [...builtIns, ...rows.map(customProviderDef)];
+}
+
+export async function toolsForProviderForWorkspace(providerKey: string, workspaceId?: string | null): Promise<string[]> {
+  const builtIn = toolsForProvider(providerKey);
+  if (builtIn.length) return builtIn;
+  return (await getCustomProvider(providerKey, workspaceId))?.tools ?? [];
+}
+
+export function validateCustomProviderKey(key: string) {
+  if (!/^[a-z0-9_-]+$/.test(key)) return "Provider key must use lowercase letters, numbers, underscores, and hyphens.";
+  if (getProvider(key)) return "Provider key is reserved by an included provider.";
+  return "";
+}
+
+export function normalizePathPrefixes(raw: string) {
+  const prefixes = raw.split(/\r?\n|,/).map((s) => s.trim()).filter(Boolean);
+  return prefixes.length ? prefixes.map((p) => p.startsWith("/") ? p : `/${p}`) : ["/"];
 }
