@@ -578,6 +578,28 @@ function providerRequiresWorkspaceOAuthApp(providerKey: string) {
   return providerKey === "moneyforward";
 }
 
+function workspaceOAuthAppProviderKeys() {
+  return ["moneyforward"];
+}
+
+function oauthCallbackUrl(c: any, providerKey: string) {
+  const origin = String(process.env.BETTER_AUTH_URL || publicOrigin(c)).replace(/\/+$/, "");
+  return `${origin}/oauth/${providerKey}/callback`;
+}
+
+function oauthAppCredentialFromStructuredFields(body: any, suffix = "") {
+  const field = (name: string) => suffix ? `${name}_${suffix}` : name;
+  const clientId = String(body[field("oauth_client_id")] ?? "").trim();
+  const clientSecret = String(body[field("oauth_client_secret")] ?? "").trim();
+  if (!clientId && !clientSecret) return "";
+  const clientAuthMethod = String(body[field("oauth_client_auth_method")] ?? "CLIENT_SECRET_BASIC").trim().toUpperCase() || "CLIENT_SECRET_BASIC";
+  return JSON.stringify({
+    client_id: clientId,
+    client_secret: clientSecret,
+    client_auth_method: clientAuthMethod,
+  });
+}
+
 function parseOAuthAppCredentialInput(raw: string, providerDef: any) {
   const text = String(raw ?? "").trim();
   if (!text) return null;
@@ -2625,6 +2647,35 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
               <a id="oauthSetupLink" href="#" target="_blank" rel="noopener" style="font-size:13px;">🔗 Register/manage OAuth app here →</a>
             </div>
           </div>
+          <div class="field" id="oauthAppFieldRow" style="display:none;">
+            <label>OAuth app settings</label>
+            <div class="field-hint" style="margin-top:0;">Create the OAuth app in the provider console, copy the redirect URI below into that app, then paste the issued Client ID and Client Secret here.</div>
+            <div class="field" style="margin-bottom:10px;">
+              <label for="oauthRedirectUri">Redirect URI</label>
+              <div style="display:flex;gap:8px;align-items:center;">
+                <input type="text" id="oauthRedirectUri" readonly value="" style="font-family:monospace;">
+                <button type="button" class="secondary" id="copyOauthRedirectUri" style="white-space:nowrap;">Copy</button>
+              </div>
+            </div>
+            <div class="field" style="margin-bottom:10px;">
+              <label for="oauthClientId">Client ID</label>
+              <input type="text" name="oauth_client_id" id="oauthClientId" autocomplete="off" placeholder="Client ID">
+            </div>
+            <div class="field" style="margin-bottom:10px;">
+              <label for="oauthClientSecret">Client Secret</label>
+              <input type="password" name="oauth_client_secret" id="oauthClientSecret" autocomplete="off" placeholder="Client Secret">
+            </div>
+            <div class="field" style="margin-bottom:0;">
+              <label for="oauthClientAuthMethod">Client authentication method</label>
+              <select name="oauth_client_auth_method" id="oauthClientAuthMethod">
+                <option value="CLIENT_SECRET_BASIC">CLIENT_SECRET_BASIC</option>
+                <option value="CLIENT_SECRET_POST">CLIENT_SECRET_POST</option>
+              </select>
+            </div>
+            <div id="oauthAppSetupLinkRow" style="margin-top:8px;display:none;">
+              <a id="oauthAppSetupLink" href="#" target="_blank" rel="noopener" style="font-size:13px;">🔗 Register/manage OAuth app here →</a>
+            </div>
+          </div>
           <div class="field" id="subjectFieldRow" style="display:none;">
             <label for="subject">Impersonate admin email (subject)</label>
             <input type="text" name="subject" id="subject" autocomplete="off" placeholder="admin@customer-domain.com">
@@ -2640,6 +2691,8 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         const PROVIDERS = ${JSON.stringify(Object.fromEntries(providers.map(p => [p.key, p])))};
         const PROVIDER_ICONS = ${JSON.stringify(providerIconMap(24))};
         const REUSABLE_BY_PROVIDER_AUTH = ${JSON.stringify(reusableByProviderAuth)};
+        const WORKSPACE_OAUTH_APP_PROVIDERS = new Set(${JSON.stringify(workspaceOAuthAppProviderKeys())});
+        const OAUTH_REDIRECT_ORIGIN = ${JSON.stringify(String(process.env.BETTER_AUTH_URL || publicOrigin(c)).replace(/\/+$/, ""))};
         const providerIconBox = document.getElementById('providerIconBox');
         const sel = document.getElementById('provider');
         const providerAuth = document.getElementById('providerAuth');
@@ -2660,6 +2713,12 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         const patLink = document.getElementById('patLink');
         const oauthSetupLinkRow = document.getElementById('oauthSetupLinkRow');
         const oauthSetupLink = document.getElementById('oauthSetupLink');
+        const oauthAppFieldRow = document.getElementById('oauthAppFieldRow');
+        const oauthRedirectUri = document.getElementById('oauthRedirectUri');
+        const oauthClientId = document.getElementById('oauthClientId');
+        const oauthClientSecret = document.getElementById('oauthClientSecret');
+        const oauthAppSetupLinkRow = document.getElementById('oauthAppSetupLinkRow');
+        const oauthAppSetupLink = document.getElementById('oauthAppSetupLink');
         const addServiceButton = document.getElementById('addServiceButton');
         const subjectFieldRow = document.getElementById('subjectFieldRow');
         const subjectField = document.getElementById('subject');
@@ -2676,6 +2735,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           const usePat = authType === "pat";
           const useOauth = authType === "oauth";
           const useSa = authType === "service_account";
+          const needsWorkspaceOAuthApp = useOauth && WORKSPACE_OAUTH_APP_PROVIDERS.has(sel.value);
           const reusable = REUSABLE_BY_PROVIDER_AUTH[sel.value + ':' + authType] || [];
           credHint.textContent = p.helpText;
           if (reuseHint) {
@@ -2712,6 +2772,13 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           credField.disabled = false;
           credField.required = (usePat && reusable.length === 0) || useSa;
           credFieldRow.style.opacity = "1";
+          credFieldRow.style.display = needsWorkspaceOAuthApp ? "none" : "";
+          if (oauthAppFieldRow) {
+            oauthAppFieldRow.style.display = needsWorkspaceOAuthApp ? "" : "none";
+            if (oauthRedirectUri) oauthRedirectUri.value = OAUTH_REDIRECT_ORIGIN + "/oauth/" + sel.value + "/callback";
+            if (oauthClientId) oauthClientId.required = needsWorkspaceOAuthApp;
+            if (oauthClientSecret) oauthClientSecret.required = needsWorkspaceOAuthApp;
+          }
           addServiceButton.textContent = useOauth ? "Connect with OAuth" : "Add service";
           if (!usePat && !useSa && !useOauth) credField.value = "";
           if (subjectFieldRow) subjectFieldRow.style.display = useSa ? "" : "none";
@@ -2744,13 +2811,34 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
               ? "🔗 Register/manage Google OAuth client here →"
               : (sel.value === "yahoo_ads" ? "🔗 Register/manage LINE Yahoo Ads application here →" : "🔗 Register/manage your " + p.label + " OAuth app here →");
             oauthSetupLinkRow.style.display = "";
+            if (oauthAppSetupLinkRow && oauthAppSetupLink) {
+              oauthAppSetupLink.href = p.oauthSetupUrl;
+              oauthAppSetupLink.textContent = "🔗 Register/manage your " + p.label + " OAuth app here →";
+              oauthAppSetupLinkRow.style.display = needsWorkspaceOAuthApp ? "" : "none";
+            }
           } else if (useSa && p.oauthSetupUrl) {
             oauthSetupLink.href = "https://console.cloud.google.com/iam-admin/serviceaccounts";
             oauthSetupLink.textContent = "🔗 Create/manage the service account & JSON key here →";
             oauthSetupLinkRow.style.display = "";
+            if (oauthAppSetupLinkRow) oauthAppSetupLinkRow.style.display = "none";
           } else {
             oauthSetupLinkRow.style.display = "none";
+            if (oauthAppSetupLinkRow) oauthAppSetupLinkRow.style.display = "none";
           }
+        }
+        const copyOauthRedirectUri = document.getElementById('copyOauthRedirectUri');
+        if (copyOauthRedirectUri) {
+          copyOauthRedirectUri.addEventListener('click', async () => {
+            if (!oauthRedirectUri) return;
+            try {
+              await navigator.clipboard.writeText(oauthRedirectUri.value);
+              copyOauthRedirectUri.textContent = "Copied";
+              setTimeout(() => { copyOauthRedirectUri.textContent = "Copy"; }, 1200);
+            } catch {
+              oauthRedirectUri.select();
+              document.execCommand('copy');
+            }
+          });
         }
         function closeProviderList() {
           providerList.hidden = true;
@@ -3101,7 +3189,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
   if (action === "add_service") {
     const provider = String(body.provider ?? "").trim();
     const authMethod = String(body.auth_method ?? "").trim();
-    const credential = String(body.credential ?? "").trim();
+    let credential = String(body.credential ?? "").trim();
 
     const providerDef = await getProviderForWorkspace(provider, wsId);
     if (!providerDef) return c.html("<h1>unknown provider</h1>", 400);
@@ -3111,6 +3199,10 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     const wantsSa = authMethod === "service_account";
     const wantsOauth = authMethod === "oauth" || (!authMethod && providerDef.authTypes.includes("oauth") && !providerDef.authTypes.includes("pat") && !providerDef.authTypes.includes("service_account"));
     const wantsPat = authMethod === "pat" || (!authMethod && providerDef.authTypes.includes("pat") && !providerDef.authTypes.includes("oauth"));
+    if (wantsOauth && providerRequiresWorkspaceOAuthApp(provider)) {
+      const structuredOAuthAppCredential = oauthAppCredentialFromStructuredFields(body);
+      if (structuredOAuthAppCredential) credential = structuredOAuthAppCredential;
+    }
 
     // --- service_account (Domain-Wide Delegation) ---
     if (wantsSa) {
@@ -3536,6 +3628,8 @@ dashboardApp.get("/tenants/new", async (c) => {
             const isImplemented = p.implemented !== false;
             const optionKey = `${p.key}:${authType}`;
             const reusableOptions = reusableByProviderAuth[optionKey] || [];
+            const requiresWorkspaceOAuthApp = authType === "oauth" && providerRequiresWorkspaceOAuthApp(p.key);
+            const redirectUri = authType === "oauth" ? oauthCallbackUrl(c, p.key) : "";
             return `
           <div class="provider-block" data-provider="${p.key}" data-auth-type="${authType}" data-haspat="${hasPat}" data-hasoauth="${hasOauth}" data-implemented="${isImplemented}" style="border:1px solid #e3e8ee;border-radius:8px;padding:12px 16px;margin-bottom:12px;${isImplemented ? "" : "opacity:.62;"}">
             <label style="font-weight:600;display:flex;align-items:center;gap:8px;cursor:${isImplemented ? "pointer" : "not-allowed"};margin:0;">
@@ -3567,9 +3661,37 @@ dashboardApp.get("/tenants/new", async (c) => {
               ${authType === "oauth" ? `
               <div class="field oauth-row">
                 <div class="field-hint" style="margin-top:0;">${escapeHtml(p.helpText)} You'll be redirected to authorize after clicking <b>Create scope</b>.</div>
+                ${requiresWorkspaceOAuthApp ? `
+                <label>OAuth app settings</label>
+                <div class="field" style="margin-bottom:10px;">
+                  <label for="oauth_redirect_${p.key}_${authType}">Redirect URI</label>
+                  <div style="display:flex;gap:8px;align-items:center;">
+                    <input type="text" id="oauth_redirect_${p.key}_${authType}" class="oauth-redirect-uri" readonly value="${escapeHtml(redirectUri)}" style="font-family:monospace;">
+                    <button type="button" class="secondary copy-oauth-redirect" data-copy-target="oauth_redirect_${p.key}_${authType}" style="white-space:nowrap;">Copy</button>
+                  </div>
+                  <div class="field-hint">Copy this redirect URI into the OAuth application settings in ${escapeHtml(p.label)}.</div>
+                </div>
+                <div class="field" style="margin-bottom:10px;">
+                  <label for="oauth_client_id_${p.key}_${authType}">Client ID</label>
+                  <input type="text" name="oauth_client_id_${p.key}_${authType}" id="oauth_client_id_${p.key}_${authType}" autocomplete="off" placeholder="Client ID">
+                </div>
+                <div class="field" style="margin-bottom:10px;">
+                  <label for="oauth_client_secret_${p.key}_${authType}">Client Secret</label>
+                  <input type="password" name="oauth_client_secret_${p.key}_${authType}" id="oauth_client_secret_${p.key}_${authType}" autocomplete="off" placeholder="Client Secret">
+                </div>
+                <div class="field" style="margin-bottom:0;">
+                  <label for="oauth_client_auth_method_${p.key}_${authType}">Client authentication method</label>
+                  <select name="oauth_client_auth_method_${p.key}_${authType}" id="oauth_client_auth_method_${p.key}_${authType}">
+                    <option value="CLIENT_SECRET_BASIC">CLIENT_SECRET_BASIC</option>
+                    <option value="CLIENT_SECRET_POST">CLIENT_SECRET_POST</option>
+                  </select>
+                </div>
+                <div class="field-hint">Stored on this workspace and used for this provider's OAuth redirects and token refreshes.</div>
+                ` : `
                 <label>Workspace OAuth app <span style="color:#687385;">(optional if already saved)</span></label>
                 <textarea name="credential_${p.key}_${authType}" class="cred-input" rows="2" placeholder='{"client_id":"...","client_secret":"..."}'></textarea>
                 <div class="field-hint">Stored on this workspace and used for this provider's OAuth redirects and token refreshes. Each customer workspace should use its own OAuth app.</div>
+                `}
                 ${serverCredentialHint(p.key)}
                 ${p.oauthSetupUrl ? `<div style="margin-top:4px;"><a href="${p.oauthSetupUrl}" target="_blank" rel="noopener" style="font-size:13px;">${p.key === "google_ads" ? "🔗 Register/manage Google OAuth client here →" : p.key === "yahoo_ads" ? "🔗 Register/manage LINE Yahoo Ads application here →" : `🔗 Register/manage your ${p.label} OAuth app here →`}</a></div>` : ""}
               </div>` : ""}
@@ -3611,6 +3733,9 @@ dashboardApp.get("/tenants/new", async (c) => {
           const detail = block.querySelector('.provider-detail');
           if (!detail) return;
           detail.style.display = check.checked ? "" : "none";
+          block.querySelectorAll('input[name^="oauth_client_id_"], input[name^="oauth_client_secret_"]').forEach((input) => {
+            input.required = !!check.checked;
+          });
 
           const { scope } = getCurrentScope();
           const existingConnLabel = (SCOPE_PROVIDERS[scope] || {})[key + ':' + authType];
@@ -3698,6 +3823,20 @@ dashboardApp.get("/tenants/new", async (c) => {
           block.querySelector('.provider-check').addEventListener('change', () => updateBlock(block));
           const reuseSelect = block.querySelector('.reuse-select');
           if (reuseSelect) reuseSelect.addEventListener('change', () => updateBlock(block));
+        });
+        document.querySelectorAll('.copy-oauth-redirect').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            const target = document.getElementById(btn.dataset.copyTarget || '');
+            if (!target) return;
+            try {
+              await navigator.clipboard.writeText(target.value);
+              btn.textContent = 'Copied';
+              setTimeout(() => { btn.textContent = 'Copy'; }, 1200);
+            } catch {
+              target.select();
+              document.execCommand('copy');
+            }
+          });
         });
 
         document.getElementById('wizForm').addEventListener('submit', (e) => {
@@ -3821,6 +3960,10 @@ dashboardApp.post("/tenants/new", async (c) => {
   // Resolve the credential for a given provider (per-provider field first,
   // falling back to the legacy single `credential` field when there's one provider).
   const credentialFor = (p: string, authType = "pat") => {
+    if (authType === "oauth" && providerRequiresWorkspaceOAuthApp(p)) {
+      const structuredOAuthAppCredential = oauthAppCredentialFromStructuredFields(body, `${p}_${authType}`);
+      if (structuredOAuthAppCredential) return structuredOAuthAppCredential;
+    }
     const specificAuth = String((body as any)[`credential_${p}_${authType}`] ?? "").trim();
     if (specificAuth) return specificAuth;
     const specific = String((body as any)[`credential_${p}`] ?? "").trim();
