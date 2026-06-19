@@ -1980,6 +1980,9 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "google_tag_manager/get_container") { return { account_id: { type: "string", description: "GTM account id." }, container_id: { type: "string", description: "GTM container id." } }; }
   if (toolName === "google_tag_manager/list_workspaces") { return { account_id: { type: "string", description: "GTM account id." }, container_id: { type: "string", description: "GTM container id." } }; }
   if (toolName === "google_tag_manager/list_tags") { return { account_id: { type: "string", description: "GTM account id." }, container_id: { type: "string", description: "GTM container id." }, workspace_id: { type: "string", description: "GTM workspace id." } }; }
+  if (toolName === "google_tag_manager/create_tag") { return { account_id: { type: "string", description: "GTM account id." }, container_id: { type: "string", description: "GTM container id." }, workspace_id: { type: "string", description: "GTM workspace id." }, tag: { type: "object", description: "Raw GTM Tag resource, e.g. a GA4 config tag: {\"name\":\"GA4 Config\",\"type\":\"googtag\",\"parameter\":[{\"type\":\"template\",\"key\":\"tagId\",\"value\":\"G-XXXX\"}],\"firingTriggerId\":[\"2147479553\"]}. 2147479553 is the built-in All Pages trigger." } }; }
+  if (toolName === "google_tag_manager/create_version") { return { account_id: { type: "string", description: "GTM account id." }, container_id: { type: "string", description: "GTM container id." }, workspace_id: { type: "string", description: "GTM workspace id." }, name: { type: "string", description: "Optional version name." }, notes: { type: "string", description: "Optional version notes." } }; }
+  if (toolName === "google_tag_manager/publish_version") { return { account_id: { type: "string", description: "GTM account id." }, container_id: { type: "string", description: "GTM container id." }, version_id: { type: "string", description: "GTM container version id (from create_version's containerVersion.containerVersionId)." } }; }
   // --- google_cloud ---
   if (toolName === "google_cloud/list_projects") { return { filter: { type: "string", description: "Project list filter." }, page_size: { type: "number", description: "Results per page." }, page_token: { type: "string", description: "Pagination token." } }; }
   if (toolName === "google_cloud/get_project") { return { project_id: { type: "string", description: "GCP project id." } }; }
@@ -2321,6 +2324,9 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "google_tag_manager/get_container") return ["account_id", "container_id"];
   if (toolName === "google_tag_manager/list_workspaces") return ["account_id", "container_id"];
   if (toolName === "google_tag_manager/list_tags") return ["account_id", "container_id", "workspace_id"];
+  if (toolName === "google_tag_manager/create_tag") return ["account_id", "container_id", "workspace_id", "tag"];
+  if (toolName === "google_tag_manager/create_version") return ["account_id", "container_id", "workspace_id"];
+  if (toolName === "google_tag_manager/publish_version") return ["account_id", "container_id", "version_id"];
   if (toolName === "google_cloud/get_project") return ["project_id"];
   if (toolName === "google_cloud/list_services") return ["project_id"];
   if (toolName === "google_cloud/list_log_entries") return ["project_id"];

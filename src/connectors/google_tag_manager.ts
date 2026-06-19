@@ -1,5 +1,7 @@
 // Google Tag Manager connector - OAuth access token via Authorization: Bearer.
-// Targets the Tag Manager API v2 (read-only operations).
+// Targets the Tag Manager API v2 (read operations + scoped write operations:
+// create_tag / create_version / publish_version). Writes require the
+// tagmanager.edit.containers and tagmanager.publish OAuth scopes.
 const GTM_API = "https://www.googleapis.com/tagmanager/v2";
 const GTM_TIMEOUT_MS = 12_000;
 
@@ -54,6 +56,24 @@ async function get(accessToken: string, path: string, tool: string, logContext: 
   return j;
 }
 
+async function post(accessToken: string, path: string, body: unknown, tool: string, logContext: Record<string, unknown> = {}) {
+  const init: RequestInit = {
+    method: "POST",
+    headers: { ...headers(accessToken), "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  };
+  const r = await fetchGtm(path, init, { tool, ...logContext });
+  const j: any = await readJsonResponse(r);
+  if (!r.ok) throw new Error(`Google Tag Manager ${tool} failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+  return j;
+}
+
+function objArg(args: GtmArgs, key: string): Record<string, unknown> {
+  const v = args[key];
+  if (!v || typeof v !== "object" || Array.isArray(v)) throw new Error(`${key} (object) is required`);
+  return v as Record<string, unknown>;
+}
+
 export async function callGoogleTagManagerTool(tool: string, args: GtmArgs, accessToken: string) {
   if (tool === "google_tag_manager/list_accounts") {
     return { structuredContent: await get(accessToken, "/accounts", tool) };
@@ -81,6 +101,38 @@ export async function callGoogleTagManagerTool(tool: string, args: GtmArgs, acce
     const containerId = idArg(args, "container_id", ["containerId"]);
     const workspaceId = idArg(args, "workspace_id", ["workspaceId"]);
     return { structuredContent: await get(accessToken, `/accounts/${encodeURIComponent(accountId)}/containers/${encodeURIComponent(containerId)}/workspaces/${encodeURIComponent(workspaceId)}/tags`, tool, { accountId, containerId, workspaceId }) };
+  }
+
+  // --- write operations (require tagmanager.edit.containers / tagmanager.publish) ---
+
+  if (tool === "google_tag_manager/create_tag") {
+    const accountId = idArg(args, "account_id", ["accountId"]);
+    const containerId = idArg(args, "container_id", ["containerId"]);
+    const workspaceId = idArg(args, "workspace_id", ["workspaceId"]);
+    const tag = objArg(args, "tag");
+    const path = `/accounts/${encodeURIComponent(accountId)}/containers/${encodeURIComponent(containerId)}/workspaces/${encodeURIComponent(workspaceId)}/tags`;
+    return { structuredContent: await post(accessToken, path, tag, tool, { accountId, containerId, workspaceId }) };
+  }
+
+  if (tool === "google_tag_manager/create_version") {
+    const accountId = idArg(args, "account_id", ["accountId"]);
+    const containerId = idArg(args, "container_id", ["containerId"]);
+    const workspaceId = idArg(args, "workspace_id", ["workspaceId"]);
+    const body: Record<string, unknown> = {};
+    const name = String(args.name ?? "").trim();
+    const notes = String(args.notes ?? "").trim();
+    if (name) body.name = name;
+    if (notes) body.notes = notes;
+    const path = `/accounts/${encodeURIComponent(accountId)}/containers/${encodeURIComponent(containerId)}/workspaces/${encodeURIComponent(workspaceId)}:create_version`;
+    return { structuredContent: await post(accessToken, path, body, tool, { accountId, containerId, workspaceId }) };
+  }
+
+  if (tool === "google_tag_manager/publish_version") {
+    const accountId = idArg(args, "account_id", ["accountId"]);
+    const containerId = idArg(args, "container_id", ["containerId"]);
+    const versionId = idArg(args, "version_id", ["versionId"]);
+    const path = `/accounts/${encodeURIComponent(accountId)}/containers/${encodeURIComponent(containerId)}/versions/${encodeURIComponent(versionId)}:publish`;
+    return { structuredContent: await post(accessToken, path, undefined, tool, { accountId, containerId, versionId }) };
   }
 
   throw new Error(`Unknown Google Tag Manager tool: ${tool}`);
