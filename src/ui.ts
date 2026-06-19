@@ -3028,19 +3028,17 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                       : (sel.value === "google_maps" ? "Google Maps Platform API key" : p.label + " token"))))));
           credField.placeholder = useSa
             ? "Paste the full service account JSON key file ({ \\"type\\": \\"service_account\\", ... })"
-            : (usePat
-              ? "Paste your " + tokenLabel + (sel.value === "hubspot" ? " here (starts with pat-)" : " here")
-              : 'Optional: paste this workspace OAuth app JSON {"client_id":"...","client_secret":"..."} before connecting');
+            : "Paste your " + tokenLabel + (sel.value === "hubspot" ? " here (starts with pat-)" : " here");
           credField.disabled = false;
           credField.required = (usePat && reusable.length === 0) || useSa;
           credFieldRow.style.opacity = "1";
-          credFieldRow.style.display = needsWorkspaceOAuthApp ? "none" : "";
+          credFieldRow.style.display = useOauth ? "none" : "";
           if (oauthAppFieldRow) {
-            oauthAppFieldRow.style.display = needsWorkspaceOAuthApp ? "" : "none";
+            oauthAppFieldRow.style.display = useOauth ? "" : "none";
             if (oauthRedirectUri) oauthRedirectUri.value = OAUTH_REDIRECT_ORIGIN + "/oauth/" + sel.value + "/callback";
             if (oauthClientId) oauthClientId.required = needsWorkspaceOAuthApp;
             if (oauthClientSecret) oauthClientSecret.required = needsWorkspaceOAuthApp;
-            if (oauthClientAuthMethod && needsWorkspaceOAuthApp) oauthClientAuthMethod.value = DEFAULT_OAUTH_CLIENT_AUTH_METHOD_BY_PROVIDER[sel.value] || "CLIENT_SECRET_POST";
+            if (oauthClientAuthMethod && useOauth) oauthClientAuthMethod.value = DEFAULT_OAUTH_CLIENT_AUTH_METHOD_BY_PROVIDER[sel.value] || "CLIENT_SECRET_POST";
           }
           addServiceButton.textContent = useOauth ? "Connect with OAuth" : "Add service";
           if (!usePat && !useSa && !useOauth) credField.value = "";
@@ -3457,7 +3455,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     const wantsSa = authMethod === "service_account";
     const wantsOauth = authMethod === "oauth" || (!authMethod && providerDef.authTypes.includes("oauth") && !providerDef.authTypes.includes("pat") && !providerDef.authTypes.includes("service_account"));
     const wantsPat = authMethod === "pat" || (!authMethod && providerDef.authTypes.includes("pat") && !providerDef.authTypes.includes("oauth"));
-    if (wantsOauth && providerRequiresWorkspaceOAuthApp(provider, providerDef)) {
+    if (wantsOauth) {
       const structuredOAuthAppCredential = oauthAppCredentialFromStructuredFields(body, "", defaultOAuthClientAuthMethod(provider, providerDef));
       if (structuredOAuthAppCredential) credential = structuredOAuthAppCredential;
     }
@@ -3869,8 +3867,8 @@ dashboardApp.get("/tenants/new", async (c) => {
               ${authType === "oauth" ? `
               <div class="field oauth-row">
                 <div class="field-hint" style="margin-top:0;">${escapeHtml(p.helpText)} You'll be redirected to authorize after clicking <b>Create scope</b>.</div>
-                ${requiresWorkspaceOAuthApp ? `
                 <label>OAuth app settings</label>
+                ${requiresWorkspaceOAuthApp ? "" : `<div class="field-hint" style="margin-top:0;">Optional if a workspace OAuth app was already saved or this provider still uses platform environment credentials.</div>`}
                 <div class="field" style="margin-bottom:10px;">
                   <label for="oauth_redirect_${p.key}_${authType}">Redirect URI</label>
                   <div style="display:flex;gap:8px;align-items:center;">
@@ -3881,11 +3879,11 @@ dashboardApp.get("/tenants/new", async (c) => {
                 </div>
                 <div class="field" style="margin-bottom:10px;">
                   <label for="oauth_client_id_${p.key}_${authType}">Client ID</label>
-                  <input type="text" name="oauth_client_id_${p.key}_${authType}" id="oauth_client_id_${p.key}_${authType}" autocomplete="off" placeholder="Client ID">
+                  <input type="text" name="oauth_client_id_${p.key}_${authType}" id="oauth_client_id_${p.key}_${authType}" autocomplete="off" placeholder="Client ID" data-oauth-required="${requiresWorkspaceOAuthApp ? "1" : "0"}">
                 </div>
                 <div class="field" style="margin-bottom:10px;">
                   <label for="oauth_client_secret_${p.key}_${authType}">Client Secret</label>
-                  <input type="password" name="oauth_client_secret_${p.key}_${authType}" id="oauth_client_secret_${p.key}_${authType}" autocomplete="off" placeholder="Client Secret">
+                  <input type="password" name="oauth_client_secret_${p.key}_${authType}" id="oauth_client_secret_${p.key}_${authType}" autocomplete="off" placeholder="Client Secret" data-oauth-required="${requiresWorkspaceOAuthApp ? "1" : "0"}">
                 </div>
                 <div class="field" style="margin-bottom:0;">
                   <label for="oauth_client_auth_method_${p.key}_${authType}">Client authentication method</label>
@@ -3895,11 +3893,6 @@ dashboardApp.get("/tenants/new", async (c) => {
                   </select>
                 </div>
                 <div class="field-hint">Stored on this workspace and used for this provider's OAuth redirects and token refreshes.</div>
-                ` : `
-                <label>Workspace OAuth app <span style="color:#687385;">(optional if already saved)</span></label>
-                <textarea name="credential_${p.key}_${authType}" class="cred-input" rows="2" placeholder='{"client_id":"...","client_secret":"..."}'></textarea>
-                <div class="field-hint">Stored on this workspace and used for this provider's OAuth redirects and token refreshes. Each customer workspace should use its own OAuth app.</div>
-                `}
                 ${serverCredentialHint(p.key)}
                 ${p.oauthSetupUrl ? `<div style="margin-top:4px;"><a href="${p.oauthSetupUrl}" target="_blank" rel="noopener" style="font-size:13px;">${p.key === "google_ads" ? "🔗 Register/manage Google OAuth client here →" : p.key === "yahoo_ads" ? "🔗 Register/manage LINE Yahoo Ads application here →" : `🔗 Register/manage your ${p.label} OAuth app here →`}</a></div>` : ""}
               </div>` : ""}
@@ -3942,7 +3935,7 @@ dashboardApp.get("/tenants/new", async (c) => {
           if (!detail) return;
           detail.style.display = check.checked ? "" : "none";
           block.querySelectorAll('input[name^="oauth_client_id_"], input[name^="oauth_client_secret_"]').forEach((input) => {
-            input.required = !!check.checked;
+            input.required = !!check.checked && input.dataset.oauthRequired === "1";
           });
 
           const { scope } = getCurrentScope();
@@ -4168,7 +4161,7 @@ dashboardApp.post("/tenants/new", async (c) => {
   // Resolve the credential for a given provider (per-provider field first,
   // falling back to the legacy single `credential` field when there's one provider).
   const credentialFor = (p: string, authType = "pat", providerDef?: any) => {
-    if (authType === "oauth" && providerRequiresWorkspaceOAuthApp(p, providerDef)) {
+    if (authType === "oauth") {
       const structuredOAuthAppCredential = oauthAppCredentialFromStructuredFields(body, `${p}_${authType}`, defaultOAuthClientAuthMethod(p, providerDef));
       if (structuredOAuthAppCredential) return structuredOAuthAppCredential;
     }
