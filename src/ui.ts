@@ -346,11 +346,14 @@ const CSS = `
   .conn-label { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .conn-meta { display: flex; align-items: center; gap: 10px; margin-left: auto; white-space: nowrap; }
   .scope-card { padding: 16px 18px; }
-  .scope-row { display: flex; align-items: center; gap: 14px; min-width: 0; white-space: nowrap; }
-  .scope-title { display: inline-flex; align-items: center; gap: 8px; min-width: 240px; flex-shrink: 0; }
+  .scope-row { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .scope-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-width: 0; }
+  .scope-title { display: inline-flex; align-items: center; gap: 8px; min-width: 0; flex: 1; white-space: nowrap; }
+  .scope-title-name { overflow: hidden; text-overflow: ellipsis; }
+  .scope-controls { display: inline-flex; align-items: center; gap: 10px; flex-shrink: 0; }
   .scope-actions { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
   .scope-actions .btn { font-size: 12px; padding: 4px 10px; }
-  .scope-services { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; overflow: hidden; }
+  .scope-services { display: flex; align-items: center; gap: 8px; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 1px 0 2px; }
   .scope-service-pill { display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 3px 8px; background: var(--bg); border-radius: 6px; color: var(--ink-2); }
   .scope-service-pill code { white-space: nowrap; overflow-wrap: normal; }
   .scope-meta { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
@@ -2273,12 +2276,21 @@ dashboardApp.get("/tenants", async (c) => {
           return `
         <div class="card scope-card">
           <div class="scope-row">
-            <span class="scope-title">
-              ${scope === "(unscoped)"
-                ? '<span class="badge unscoped">unscoped</span> <span>Legacy connections</span>'
-                : `<input type="checkbox" name="scopes" value="${escapeHtml(scope)}" class="rowCheck" style="margin:0;transform:scale(1.2);">${showName ? `<span>${escapeHtml(t!.displayName)}</span>` : ""}<span class="badge scoped">${escapeHtml(scope)}</span>`}
-            </span>
-            ${scope !== "(unscoped)" ? `<span class="scope-actions"><a href="/tenants/${encodeURIComponent(scope)}/edit" class="btn secondary">+ Add service</a><a href="/tenants/${encodeURIComponent(scope)}/edit" class="btn secondary">✎ Edit</a></span>` : ""}
+            <div class="scope-head">
+              <span class="scope-title">
+                ${scope === "(unscoped)"
+                  ? '<span class="badge unscoped">unscoped</span> <span class="scope-title-name">Legacy connections</span>'
+                  : `<input type="checkbox" name="scopes" value="${escapeHtml(scope)}" class="rowCheck" style="margin:0;transform:scale(1.2);">${showName ? `<span class="scope-title-name">${escapeHtml(t!.displayName)}</span>` : ""}<span class="badge scoped">${escapeHtml(scope)}</span>`}
+              </span>
+              <span class="scope-controls">
+                <span class="scope-meta">
+                  <span class="badge ${enabledCount === conns.length ? "ok" : "unscoped"}">${enabledCount}/${conns.length} enabled</span>
+                  ${orphanCount ? `<span class="badge denied" title="Enabled, but no enabled agent has a grant to this connection.">no agent: ${orphanCount}</span>` : ""}
+                  ${newest ? `<code>${newest.toISOString().slice(0, 10)}</code>` : ""}
+                </span>
+                ${scope !== "(unscoped)" ? `<span class="scope-actions"><a href="/tenants/${encodeURIComponent(scope)}/edit" class="btn secondary">+ Add service</a><a href="/tenants/${encodeURIComponent(scope)}/edit" class="btn secondary">✎ Edit</a></span>` : ""}
+              </span>
+            </div>
             <span class="scope-services">
               ${conns.length === 0
                 ? `<span style="color:#687385;font-size:13px;">No connections yet</span>`
@@ -2287,11 +2299,6 @@ dashboardApp.get("/tenants", async (c) => {
                     ${providerIcon(cn.provider)}<code>${escapeHtml(cn.provider)}</code><code>${escapeHtml(cn.authType)}</code>
                   </span>
                 `).join("")}
-            </span>
-            <span class="scope-meta">
-              <span class="badge ${enabledCount === conns.length ? "ok" : "unscoped"}">${enabledCount}/${conns.length} enabled</span>
-              ${orphanCount ? `<span class="badge denied" title="Enabled, but no enabled agent has a grant to this connection.">no agent: ${orphanCount}</span>` : ""}
-              ${newest ? `<code>${newest.toISOString().slice(0, 10)}</code>` : ""}
             </span>
           </div>
         </div>
