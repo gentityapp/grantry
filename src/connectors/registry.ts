@@ -316,6 +316,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authTypes: ["pat", "oauth"],
     helpText: "Connect via OAuth, or paste a HubSpot Private App access token to access CRM and marketing email data. Marketing email APIs require HubSpot's content scope. For OAuth apps, configure content as an optional scope in HubSpot.",
     tokenUrl: "https://app.hubspot.com/private-apps",
+    oauthSetupUrl: "https://app.hubspot.com/developer",
     oauthScopes: ["crm.objects.deals.read", "crm.objects.deals.write", "crm.objects.contacts.read", "crm.objects.contacts.write", "oauth"],
     oauthOptionalScopes: ["content"],
     authorizeUrl: "https://app.hubspot.com/oauth/authorize",

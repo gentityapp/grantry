@@ -3074,8 +3074,10 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             oauthSetupLinkRow.style.display = "";
             if (oauthAppSetupLinkRow && oauthAppSetupLink) {
               oauthAppSetupLink.href = p.oauthSetupUrl;
-              oauthAppSetupLink.textContent = "🔗 Register/manage your " + p.label + " OAuth app here →";
-              oauthAppSetupLinkRow.style.display = needsWorkspaceOAuthApp ? "" : "none";
+              oauthAppSetupLink.textContent = sel.value === "google_ads"
+                ? "🔗 Register/manage Google OAuth client here →"
+                : (sel.value === "yahoo_ads" ? "🔗 Register/manage LINE Yahoo Ads application here →" : "🔗 Register/manage your " + p.label + " OAuth app here →");
+              oauthAppSetupLinkRow.style.display = "";
             }
           } else if (useSa && p.oauthSetupUrl) {
             oauthSetupLink.href = "https://console.cloud.google.com/iam-admin/serviceaccounts";
