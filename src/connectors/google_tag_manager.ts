@@ -1,7 +1,8 @@
 // Google Tag Manager connector - OAuth access token via Authorization: Bearer.
 // Targets the Tag Manager API v2 (read operations + scoped write operations:
 // create_tag / create_version / publish_version). Writes require the
-// tagmanager.edit.containers and tagmanager.publish OAuth scopes.
+// tagmanager.edit.containers, tagmanager.edit.containerversions, and
+// tagmanager.publish OAuth scopes.
 const GTM_API = "https://www.googleapis.com/tagmanager/v2";
 const GTM_TIMEOUT_MS = 12_000;
 
@@ -130,9 +131,11 @@ export async function callGoogleTagManagerTool(tool: string, args: GtmArgs, acce
   if (tool === "google_tag_manager/publish_version") {
     const accountId = idArg(args, "account_id", ["accountId"]);
     const containerId = idArg(args, "container_id", ["containerId"]);
-    const versionId = idArg(args, "version_id", ["versionId"]);
+    const versionId = idArg(args, "version_id", ["versionId", "container_version_id", "containerVersionId"]);
+    const fingerprint = typeof args.fingerprint === "string" ? args.fingerprint.trim() : "";
+    const query = fingerprint ? `?fingerprint=${encodeURIComponent(fingerprint)}` : "";
     const path = `/accounts/${encodeURIComponent(accountId)}/containers/${encodeURIComponent(containerId)}/versions/${encodeURIComponent(versionId)}:publish`;
-    return { structuredContent: await post(accessToken, path, undefined, tool, { accountId, containerId, versionId }) };
+    return { structuredContent: await post(accessToken, `${path}${query}`, undefined, tool, { accountId, containerId, versionId }) };
   }
 
   throw new Error(`Unknown Google Tag Manager tool: ${tool}`);
