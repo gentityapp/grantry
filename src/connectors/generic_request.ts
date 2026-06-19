@@ -41,10 +41,23 @@ function queryFromArgs(args: GenericRequestArgs) {
   return queryFromRecord(query);
 }
 
-function resolveBaseUrl(provider: string, manifest: GenericManifest, credential: string) {
+function normalizeBaseUrl(url: string) {
+  return url.replace(/\/+$/, "");
+}
+
+function resolveBaseUrl(provider: string, manifest: GenericManifest, credential: string, baseUrlKeyValue?: unknown) {
+  const baseUrlKey = String(baseUrlKeyValue ?? "").trim();
+  if (baseUrlKey) {
+    const baseUrl = manifest.baseUrls?.[baseUrlKey];
+    if (!baseUrl) {
+      const allowed = Object.keys(manifest.baseUrls ?? {});
+      throw new Error(`provider_base_url_not_allowed: ${provider}/request base_url_key must be one of ${allowed.join(", ") || "(none)"}`);
+    }
+    return normalizeBaseUrl(baseUrl);
+  }
   if (manifest.baseUrl === "credential.instance_url") {
     const parsed = parseJsonMaybe(credential);
-    const instanceUrl = String(parsed?.instance_url ?? parsed?.instanceUrl ?? "").replace(/\/+$/, "");
+    const instanceUrl = normalizeBaseUrl(String(parsed?.instance_url ?? parsed?.instanceUrl ?? ""));
     if (!instanceUrl) throw new Error(`${provider}/request requires a JSON credential with instance_url`);
     return instanceUrl;
   }
@@ -52,7 +65,7 @@ function resolveBaseUrl(provider: string, manifest: GenericManifest, credential:
     const dc = credential.match(/-([a-z]{2,}\d+)$/i)?.[1];
     if (dc) return `https://${dc}.api.mailchimp.com/3.0`;
   }
-  return manifest.baseUrl.replace(/\/+$/, "");
+  return normalizeBaseUrl(manifest.baseUrl);
 }
 
 function credentialToken(provider: string, credential: string) {
@@ -216,6 +229,7 @@ async function executeGenericRequest(args: {
   method: string;
   path: string;
   query?: Record<string, unknown>;
+  baseUrlKey?: unknown;
   logTool: string;
 }) {
   const manifest = args.provider.genericRequest;
@@ -224,7 +238,7 @@ async function executeGenericRequest(args: {
   const path = normalizePath(args.path);
   assertAllowed(args.provider.key, manifest, method, path);
 
-  const baseUrl = resolveBaseUrl(args.provider.key, manifest, args.credential);
+  const baseUrl = resolveBaseUrl(args.provider.key, manifest, args.credential, args.baseUrlKey);
   const qs = queryFromRecord(args.query ?? {});
   const url = `${baseUrl}${path}${qs ? `?${qs}` : ""}`;
   const token = credentialToken(args.provider.key, args.credential);
@@ -241,13 +255,14 @@ async function executeGenericRequest(args: {
   const timeout = setTimeout(() => controller.abort(), GENERIC_TIMEOUT_MS);
   const started = Date.now();
   try {
-    console.log("[provider-request] request", { provider: args.provider.key, method, path });
+    console.log("[provider-request] request", { provider: args.provider.key, method, path, baseUrlKey: args.baseUrlKey });
     const response = await fetch(url, { method, headers, signal: controller.signal });
     const { body, truncated, pagination } = await readResponse(response);
     console.log("[provider-request] response", {
       provider: args.provider.key,
       method,
       path,
+      baseUrlKey: args.baseUrlKey,
       status: response.status,
       durationMs: Date.now() - started,
       truncated,
@@ -261,6 +276,7 @@ async function executeGenericRequest(args: {
         provider: args.provider.key,
         method,
         path,
+        base_url_key: args.baseUrlKey ?? null,
         status: response.status,
         truncated,
         ...(pagination ? { pagination } : {}),
@@ -289,6 +305,7 @@ export async function callGenericProviderRequest(args: {
     query: args.requestArgs.query && typeof args.requestArgs.query === "object" && !Array.isArray(args.requestArgs.query)
       ? args.requestArgs.query as Record<string, unknown>
       : {},
+    baseUrlKey: args.requestArgs.base_url_key ?? args.requestArgs.baseUrlKey,
     logTool: args.toolName,
   });
 }
@@ -321,6 +338,7 @@ export async function callGenericCheckConnection(args: {
         method: test.method,
         path: test.path,
         query: test.query ?? {},
+        baseUrlKey: (test as Record<string, unknown>).base_url_key ?? (test as Record<string, unknown>).baseUrlKey,
         logTool: `${args.provider.key}/check_connection`,
       });
       results.push({
@@ -329,6 +347,7 @@ export async function callGenericCheckConnection(args: {
         method: test.method,
         path: test.path,
         requiredScopes: test.requiredScopes ?? [],
+        baseUrlKey: (test as Record<string, unknown>).base_url_key ?? (test as Record<string, unknown>).baseUrlKey ?? null,
         responseStatus: result.structuredContent.status,
       });
     } catch (e: any) {
@@ -341,6 +360,7 @@ export async function callGenericCheckConnection(args: {
         method: test.method,
         path: test.path,
         requiredScopes: test.requiredScopes ?? [],
+        baseUrlKey: (test as Record<string, unknown>).base_url_key ?? (test as Record<string, unknown>).baseUrlKey ?? null,
         missingScopes,
         error: message.slice(0, 1200),
       });
@@ -357,6 +377,7 @@ export async function callGenericCheckConnection(args: {
         method,
         path,
         query: { limit: 1 },
+        baseUrlKey: (op as Record<string, unknown>).base_url_key ?? (op as Record<string, unknown>).baseUrlKey,
         logTool: `${args.provider.key}/check_connection`,
       });
       results.push({
@@ -406,6 +427,7 @@ export async function callGenericListCapabilities(args: {
       genericRequest: {
         enabled: true,
         defaultMethods: manifest.defaultMethods,
+        baseUrlKeys: Object.keys(manifest.baseUrls ?? {}),
         allowedPathPrefixes: manifest.allowedPathPrefixes,
         blockedPathPrefixes: manifest.blockedPathPrefixes ?? [],
       },

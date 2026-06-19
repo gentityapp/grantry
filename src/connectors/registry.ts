@@ -47,6 +47,7 @@ export type ProviderDef = {
   /** Safe generic provider API request manifest. Phase 1 is read-only. */
   genericRequest?: {
     baseUrl: string;
+    baseUrls?: Record<string, string>;
     defaultMethods: string[];
     allowedPathPrefixes: string[];
     blockedPathPrefixes?: string[];
@@ -57,6 +58,8 @@ export type ProviderDef = {
       method: "GET";
       path: string;
       query?: Record<string, string | number | boolean>;
+      baseUrlKey?: string;
+      base_url_key?: string;
       requiredScopes?: string[];
     }>;
     operations?: Array<{
@@ -65,6 +68,8 @@ export type ProviderDef = {
       method: string;
       path: string;
       description: string;
+      baseUrlKey?: string;
+      base_url_key?: string;
       requiredScopes?: string[];
       risk: "read" | "write" | "destructive";
     }>;
@@ -1061,8 +1066,26 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
   },
   google_analytics: {
     baseUrl: "https://analyticsdata.googleapis.com",
+    baseUrls: {
+      data: "https://analyticsdata.googleapis.com",
+      admin: "https://analyticsadmin.googleapis.com/v1beta",
+    },
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
+    smokeTests: [
+      { id: "admin_account_summaries", method: "GET", path: "/accountSummaries", baseUrlKey: "admin", requiredScopes: ["https://www.googleapis.com/auth/analytics.readonly"] },
+    ],
+    operations: [
+      {
+        id: "admin_data_streams",
+        method: "GET",
+        path: "/properties/{propertyId}/dataStreams",
+        description: "List GA4 data streams on a property through the Analytics Admin API. Use base_url_key=admin.",
+        baseUrlKey: "admin",
+        requiredScopes: ["https://www.googleapis.com/auth/analytics.readonly"],
+        risk: "read",
+      },
+    ],
   },
   meta_ads: {
     baseUrl: "https://graph.facebook.com",

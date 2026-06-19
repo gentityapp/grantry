@@ -651,6 +651,7 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
     return {
       path: { type: "string", description: "Provider API path relative to the provider base URL. Full URLs are rejected." },
       method: { type: "string", enum: ["GET"], description: "HTTP method. Phase 1 generic requests are read-only and allow GET only." },
+      base_url_key: { type: "string", description: "Optional manifest-defined base URL key for providers with multiple API hosts, e.g. google_analytics admin." },
       query: { type: "object", description: "Optional query parameters. Array values are repeated." },
     };
   }
