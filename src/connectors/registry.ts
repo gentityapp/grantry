@@ -228,7 +228,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     oauthTokenUrl: "https://oauth2.googleapis.com/token",
-    tools: ["google_analytics/list_properties", "google_analytics/run_report"],
+    tools: ["google_analytics/list_properties", "google_analytics/run_report", "google_analytics/list_data_streams"],
     implemented: true,
   },
   google_ads: {

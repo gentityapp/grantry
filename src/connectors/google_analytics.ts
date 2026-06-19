@@ -144,5 +144,34 @@ export async function callGoogleAnalyticsTool(tool: string, args: GaArgs, token:
     };
   }
 
+  if (tool === "google_analytics/list_data_streams") {
+    const property = propertyPath(args.property_id ?? args.propertyId ?? args.property);
+    if (!property) throw new Error("property_id is required");
+    const pageSize = Math.min(Math.max(Number(args.page_size ?? args.pageSize ?? 200) || 200, 1), 200);
+    const pageToken = String(args.page_token ?? args.pageToken ?? "").trim();
+    const url = new URL(`${GA_ADMIN_API}/${property}/dataStreams`);
+    url.searchParams.set("pageSize", String(pageSize));
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+
+    const r = await fetchGoogleAnalytics(url.toString(), { headers }, { tool, property });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Google Analytics list_data_streams failed: ${r.status} ${JSON.stringify(j).slice(0, 500)}`);
+    return {
+      structuredContent: {
+        property,
+        data_streams: (j.dataStreams ?? []).map((s: any) => ({
+          name: s.name,
+          display_name: s.displayName,
+          type: s.type,
+          // For WEB_DATA_STREAM, webStreamData.measurementId is the "G-XXXX" tag id.
+          measurement_id: s.webStreamData?.measurementId ?? null,
+          default_uri: s.webStreamData?.defaultUri ?? null,
+          firebase_app_id: s.androidAppStreamData?.firebaseAppId ?? s.iosAppStreamData?.firebaseAppId ?? null,
+        })),
+        next_page_token: j.nextPageToken ?? null,
+      },
+    };
+  }
+
   throw new Error(`Unknown Google Analytics tool: ${tool}`);
 }

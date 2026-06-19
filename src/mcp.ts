@@ -482,6 +482,13 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       keep_empty_rows: { type: "boolean", description: "Whether to return rows with all metrics equal to zero." },
     };
   }
+  if (toolName === "google_analytics/list_data_streams") {
+    return {
+      property_id: { type: "string", description: "GA4 property id, either 123456 or properties/123456." },
+      page_size: { type: "number", minimum: 1, maximum: 200, description: "Page size, max 200." },
+      page_token: { type: "string", description: "Optional pagination token." },
+    };
+  }
   if (toolName === "google_ads/list_accessible_customers") {
     return {
       login_customer_id: { type: "string", description: "Optional Google Ads manager customer id, no dashes." },
@@ -2111,6 +2118,7 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "google_drive/get_file") return ["file_id"];
   if (toolName === "google_gsc/search_analytics") return ["site_url", "start_date", "end_date"];
   if (toolName === "google_analytics/run_report") return ["property_id", "start_date", "end_date"];
+  if (toolName === "google_analytics/list_data_streams") return ["property_id"];
   if (toolName === "google_ads/search") return ["customer_id", "query"];
   if (toolName === "google_ads/mutate") return ["customer_id", "operations"];
   if (toolName === "yahoo_ads/get") return ["base_account_id", "service"];
