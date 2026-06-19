@@ -828,7 +828,8 @@ async function resolveOAuthWorkspaceId(c: any, userId: string, providerKey: stri
 }
 
 async function resolveOAuthClientConfig(providerKey: string, providerDef: any, workspaceId: string | null, credentialId?: string | null) {
-  if (workspaceId) {
+  const shouldUseWorkspaceCredential = !!credentialId || providerRequiresWorkspaceOAuthApp(providerKey, providerDef);
+  if (workspaceId && shouldUseWorkspaceCredential) {
     const credential = credentialId
       ? await prisma.providerCredential.findFirst({
           where: { id: credentialId, workspaceId, provider: providerKey, authType: "oauth_app", enabled: true },

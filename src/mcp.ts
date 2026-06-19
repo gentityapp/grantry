@@ -3155,7 +3155,7 @@ function oauthEnvClientConfig(provider: string) {
 }
 
 async function oauthClientConfigForRefresh(provider: string, workspaceId: string | null | undefined) {
-  if (workspaceId) {
+  if (workspaceId && providerRequiresWorkspaceOAuthApp(provider)) {
     const credential = await prisma.providerCredential.findFirst({
       where: { workspaceId, provider, authType: "oauth_app", enabled: true },
       orderBy: { updatedAt: "desc" },
