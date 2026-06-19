@@ -3165,6 +3165,7 @@ async function oauthClientConfigForRefresh(provider: string, workspaceId: string
       const clientId = typeof meta.oauthClientId === "string" ? meta.oauthClientId.trim() : "";
       if (clientId) {
         return {
+          source: "workspace" as const,
           clientId,
           clientSecret: decrypt(credential.encryptedCredential),
           clientAuthMethod: typeof meta.oauthClientAuthMethod === "string" ? meta.oauthClientAuthMethod : "CLIENT_SECRET_BASIC",
@@ -3173,9 +3174,9 @@ async function oauthClientConfigForRefresh(provider: string, workspaceId: string
     }
   }
   if (providerRequiresWorkspaceOAuthApp(provider)) {
-    return { clientId: "", clientSecret: "", clientAuthMethod: PROVIDERS[provider]?.oauthClientAuthMethod || "CLIENT_SECRET_POST" };
+    return { source: "workspace_missing" as const, clientId: "", clientSecret: "", clientAuthMethod: PROVIDERS[provider]?.oauthClientAuthMethod || "CLIENT_SECRET_POST" };
   }
-  return oauthEnvClientConfig(provider);
+  return { source: "env" as const, ...oauthEnvClientConfig(provider) };
 }
 
 async function refreshOAuthToken(provider: string, refreshToken: string, workspaceId?: string | null) {
@@ -3183,13 +3184,22 @@ async function refreshOAuthToken(provider: string, refreshToken: string, workspa
   if (!providerDef?.oauthTokenUrl) throw new Error(`OAuth refresh is not configured for provider: ${provider}`);
 
   const envPrefix = provider.toUpperCase();
-  const { clientId, clientSecret, clientAuthMethod } = await oauthClientConfigForRefresh(provider, workspaceId);
+  const { clientId, clientSecret, clientAuthMethod, source } = await oauthClientConfigForRefresh(provider, workspaceId);
   if (!clientId || !clientSecret) {
     if (providerRequiresWorkspaceOAuthApp(provider)) {
       throw new Error(`${provider} OAuth refresh credentials missing: configure this workspace's OAuth app credential`);
     }
     throw new Error(`${provider} OAuth refresh credentials missing: set ${envPrefix}_CLIENT_ID and ${envPrefix}_CLIENT_SECRET`);
   }
+  // Observability: surface which OAuth client (and its source: workspace-DB vs env)
+  // actually performs the refresh. A wrong/stale client here was otherwise invisible —
+  // this is the blind spot that hid the "workspace credential shadows env" bug
+  // (2026-06-20). The /oauth/start path already logs the same; this covers refresh.
+  console.log("[oauth] refresh client resolved", {
+    provider,
+    source,
+    clientId: clientId.length > 14 ? `${clientId.slice(0, 8)}...${clientId.slice(-10)}` : clientId,
+  });
 
   // Some OAuth providers require HTTP Basic auth at the token endpoint rather
   // than client credentials in the body.
