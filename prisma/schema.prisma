@@ -27,6 +27,7 @@ model User {
   agents        Agent[]
   tenants       Tenant[]
   connections   Connection[]
+  workspaceProviders WorkspaceProvider[]
   providerCredentials ProviderCredential[]
   customProviders   CustomProvider[]
   connectionGrants AgentConnectionGrant[]
@@ -455,6 +456,7 @@ model Workspace {
   tenants     Tenant[]
   roles       Role[]
   connections Connection[]
+  workspaceProviders WorkspaceProvider[]
   providerCredentials ProviderCredential[]
   customProviders CustomProvider[]
   @@map("workspace")
@@ -505,4 +507,24 @@ model AgentAssignment {
   @@id([agentId, userId])
   @@index([userId])
   @@map("agent_assignment")
+}
+
+// Workspace-level provider catalog selection. This controls whether a provider
+// appears as a candidate when creating new scope connections. Runtime access is
+// still decided by Connection rows and AgentConnectionGrant.
+model WorkspaceProvider {
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  providerKey String
+  enabled     Boolean  @default(true)
+  pinned      Boolean  @default(false)
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@id([workspaceId, providerKey])
+  @@index([workspaceId, enabled])
+  @@index([createdById])
+  @@map("workspace_provider")
 }

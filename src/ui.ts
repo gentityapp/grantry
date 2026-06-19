@@ -507,6 +507,7 @@ const NAV = (current: string, email?: string) => `
   <div class="nav-links">
     <a href="/dashboard" class="${current === "dashboard" ? "active" : ""}">Dashboard</a>
     <a href="/tenants" class="${current === "tenants" ? "active" : ""}">Scopes</a>
+    <a href="/providers" class="${current === "providers" ? "active" : ""}">Providers</a>
     <a href="/agents" class="${current === "agents" ? "active" : ""}">Agents</a>
     <a href="/workspaces" class="${current === "workspaces" ? "active" : ""}">Workspace</a>
     <a href="/audit" class="${current === "audit" ? "active" : ""}">Audit</a>
@@ -544,6 +545,116 @@ function safeJsonObject(s: string | null | undefined): Record<string, any> {
   } catch {
     return {};
   }
+}
+
+async function listWorkspaceProviderCatalog(workspaceId: string | null | undefined) {
+  const providers = await listProvidersForWorkspace(workspaceId);
+  if (!workspaceId) {
+    return providers.map((provider) => ({ provider, enabled: true, pinned: false, explicit: false }));
+  }
+  const rows = await prisma.workspaceProvider.findMany({ where: { workspaceId } });
+  const state = new Map(rows.map((row) => [row.providerKey, row]));
+  return providers.map((provider) => {
+    const row = state.get(provider.key);
+    return {
+      provider,
+      enabled: row ? row.enabled : true,
+      pinned: row ? row.pinned : false,
+      explicit: !!row,
+    };
+  });
+}
+
+async function listConnectionCandidateProviders(workspaceId: string | null | undefined) {
+  const catalog = await listWorkspaceProviderCatalog(workspaceId);
+  return catalog
+    .filter((item) => item.enabled)
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || a.provider.label.localeCompare(b.provider.label))
+    .map((item) => item.provider);
+}
+
+async function workspaceProviderEnabled(workspaceId: string | null | undefined, providerKey: string) {
+  if (!workspaceId) return true;
+  const item = (await listWorkspaceProviderCatalog(workspaceId)).find((entry) => entry.provider.key === providerKey);
+  return !!item?.enabled;
+}
+
+function customProviderForm(action: string, prefix: string) {
+  return `
+    <form method="post" action="${escapeHtml(action)}">
+      <div class="field"><label for="${prefix}_key">Provider key</label><input type="text" name="key" id="${prefix}_key" pattern="[a-z0-9_-]+" placeholder="one_stream" required></div>
+      <div class="field"><label for="${prefix}_label">Label</label><input type="text" name="label" id="${prefix}_label" placeholder="OneStream" required></div>
+      <div class="field"><label for="${prefix}_base_url">API base URL</label><input type="url" name="base_url" id="${prefix}_base_url" placeholder="https://example.com/api" required></div>
+      <div class="field"><label for="${prefix}_auth_scheme">Auth style</label><select name="auth_scheme" id="${prefix}_auth_scheme"><option value="bearer">Authorization: Bearer token</option><option value="api_key">API key header</option></select></div>
+      <div class="field"><label for="${prefix}_api_key_header">API key header</label><input type="text" name="api_key_header" id="${prefix}_api_key_header" placeholder="X-API-Key"></div>
+      <div class="field"><label for="${prefix}_allowed_path_prefixes">Allowed path prefixes</label><textarea name="allowed_path_prefixes" id="${prefix}_allowed_path_prefixes" rows="3">/</textarea></div>
+      <div class="field"><label for="${prefix}_smoke_path">Connection check path <span style="color:#687385;">(optional)</span></label><input type="text" name="smoke_path" id="${prefix}_smoke_path" placeholder="/v1/me"></div>
+      <div class="field"><label for="${prefix}_token_url">Token settings URL <span style="color:#687385;">(optional)</span></label><input type="url" name="token_url" id="${prefix}_token_url" placeholder="https://example.com/settings/api"></div>
+      <button type="submit" class="secondary">Add custom provider</button>
+    </form>
+  `;
+}
+
+async function createWorkspaceCustomProvider(c: any, workspaceId: string, ownerId: string, body: any, backHref: string) {
+  const key = String(body.key ?? "").trim().toLowerCase();
+  const label = String(body.label ?? "").trim();
+  const baseUrl = String(body.base_url ?? "").trim();
+  const authScheme = String(body.auth_scheme ?? "").trim() === "api_key" ? "api_key" : "bearer";
+  const apiKeyHeader = String(body.api_key_header ?? "").trim();
+  const allowedPathPrefixes = normalizePathPrefixes(String(body.allowed_path_prefixes ?? "/"));
+  const smokePath = String(body.smoke_path ?? "").trim();
+  const tokenUrl = String(body.token_url ?? "").trim();
+
+  const keyErr = validateCustomProviderKey(key);
+  if (keyErr) return c.html(`<h1>Invalid provider key</h1><p>${escapeHtml(keyErr)}</p><p><a href="${escapeHtml(backHref)}">Back</a></p>`, 400);
+  if (!label) return c.html(`<h1>label required</h1><p><a href="${escapeHtml(backHref)}">Back</a></p>`, 400);
+  try {
+    const parsed = new URL(baseUrl);
+    if (!/^https?:$/.test(parsed.protocol)) throw new Error("API base URL must be http or https");
+  } catch (e: any) {
+    return c.html(`<h1>Invalid API base URL</h1><p>${escapeHtml(String(e?.message ?? e))}</p><p><a href="${escapeHtml(backHref)}">Back</a></p>`, 400);
+  }
+  if (authScheme === "api_key" && !apiKeyHeader) return c.html(`<h1>API key header required</h1><p><a href="${escapeHtml(backHref)}">Back</a></p>`, 400);
+  if (tokenUrl) {
+    try { new URL(tokenUrl); } catch {
+      return c.html(`<h1>Invalid token settings URL</h1><p><a href="${escapeHtml(backHref)}">Back</a></p>`, 400);
+    }
+  }
+
+  const smokeTests = smokePath ? [{ name: "default", method: "GET", path: smokePath.startsWith("/") ? smokePath : `/${smokePath}` }] : [];
+  try {
+    await prisma.$transaction([
+      prisma.customProvider.create({
+        data: {
+          workspaceId,
+          ownerId,
+          key,
+          label,
+          helpText: `Paste your ${label} API key or access token.`,
+          tokenUrl: tokenUrl || null,
+          baseUrl: baseUrl.replace(/\/+$/, ""),
+          authScheme,
+          apiKeyHeader: authScheme === "api_key" ? apiKeyHeader : null,
+          allowedPathPrefixes: JSON.stringify(allowedPathPrefixes),
+          defaultMethods: JSON.stringify(["GET", "POST", "PUT", "PATCH", "DELETE"]),
+          smokeTests: JSON.stringify(smokeTests),
+          operations: JSON.stringify([]),
+          enabled: true,
+        },
+      }),
+      prisma.workspaceProvider.upsert({
+        where: { workspaceId_providerKey: { workspaceId, providerKey: key } },
+        create: { workspaceId, providerKey: key, enabled: true, pinned: true, createdById: ownerId },
+        update: { enabled: true },
+      }),
+    ]);
+  } catch (e: any) {
+    if (e?.code === "P2002") {
+      return c.html(`<h1>custom provider already exists</h1><p><code>${escapeHtml(key)}</code> is already registered in this workspace.</p><p><a href="${escapeHtml(backHref)}">Back</a></p>`, 409);
+    }
+    throw e;
+  }
+  return null;
 }
 
 async function credentialMetadataForProviderDef(providerDef: any, authType: string, token: string) {
@@ -1428,6 +1539,150 @@ dashboardApp.get("/invite/:token", async (c) => {
     prisma.workspaceInvite.update({ where: { id: invite.id }, data: { acceptedAt: new Date() } }),
   ]);
   return c.redirect(`/workspaces?ok=${encodeURIComponent(`Joined ${invite.workspace.displayName}`)}`);
+});
+
+// --- /providers — workspace-level provider catalog selection ---
+dashboardApp.get("/providers", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+  const wsId = await getActiveWorkspaceId(c);
+  if (!wsId) return c.html("<h1>workspace required</h1>", 400);
+  const admin = await requireWsAdmin(c, wsId);
+  const catalog = await listWorkspaceProviderCatalog(wsId);
+  const connectionCounts = await prisma.connection.groupBy({
+    by: ["provider"],
+    where: { workspaceId: wsId },
+    _count: { _all: true },
+  });
+  const countByProvider = new Map(connectionCounts.map((row) => [row.provider, row._count._all]));
+  const customProviders = await prisma.customProvider.findMany({
+    where: { workspaceId: wsId },
+    orderBy: [{ enabled: "desc" }, { label: "asc" }],
+  });
+  const customKeys = new Set(customProviders.map((p) => p.key));
+  const enabledCount = catalog.filter((item) => item.enabled).length;
+  const disabledCount = catalog.length - enabledCount;
+
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Providers — grantry</title>
+    ${FAVICON}<style>${CSS}</style></head><body>
+    ${NAV("providers", user?.email)}
+    <main>
+      <h1>Providers</h1>
+      <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
+        Choose which providers this workspace can add to scopes. Existing connections keep working; disabled providers are hidden from new scope connection pickers.
+      </p>
+
+      <div class="row" style="gap:16px;flex-wrap:wrap;margin-bottom:24px;">
+        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">Catalog</div><div style="font-size:24px;font-weight:700;">${catalog.length}</div></div>
+        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">Enabled</div><div style="font-size:24px;font-weight:700;">${enabledCount}</div></div>
+        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">Hidden</div><div style="font-size:24px;font-weight:700;">${disabledCount}</div></div>
+        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">Custom</div><div style="font-size:24px;font-weight:700;">${customProviders.length}</div></div>
+      </div>
+
+      <h2>Workspace provider catalog</h2>
+      <div class="card">
+        <input type="text" id="providerCatalogSearch" placeholder="Search providers..." autocomplete="off" style="margin-bottom:12px;">
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Provider</th><th>Type</th><th>Auth</th><th>Connections</th><th>Workspace</th><th>Action</th></tr></thead>
+            <tbody>
+              ${catalog.map(({ provider: p, enabled, pinned, explicit }) => {
+                const isCustom = customKeys.has(p.key);
+                return `
+                <tr class="provider-catalog-row" data-search="${escapeHtml((p.key + " " + p.label + " " + p.authTypes.join(" ")).toLowerCase())}">
+                  <td><span class="provider-cell">${providerIcon(p.key)}<code>${escapeHtml(p.key)}</code></span><br><span style="color:#687385;font-size:12px;">${escapeHtml(p.label)}</span></td>
+                  <td>${isCustom ? '<span class="badge scoped">custom</span>' : '<span class="badge unscoped">built-in</span>'} ${pinned ? '<span class="badge ok">pinned</span>' : ""}</td>
+                  <td>${p.authTypes.map((a) => `<span class="tool-pill">${escapeHtml(authTypeLabel(p.key, a))}</span>`).join(" ")}</td>
+                  <td>${countByProvider.get(p.key) ?? 0}</td>
+                  <td>${enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge unscoped">hidden from scopes</span>'}${explicit ? "" : '<br><span style="color:#687385;font-size:12px;">default</span>'}</td>
+                  <td>
+                    ${admin ? `<form method="post" action="/providers/${encodeURIComponent(p.key)}/toggle" style="display:inline;">
+                      <input type="hidden" name="enabled" value="${enabled ? "0" : "1"}">
+                      <button type="submit" class="${enabled ? "secondary" : ""}" style="font-size:12px;padding:4px 10px;">${enabled ? "Hide" : "Enable"}</button>
+                    </form>` : '<span style="color:#687385;">admin only</span>'}
+                  </td>
+                </tr>`;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <h2>Custom providers</h2>
+      <div class="card">
+        <p class="field-hint" style="margin-top:0;">Custom providers are workspace-level definitions. Once enabled here, they appear in each scope's Add service picker.</p>
+        ${customProviders.length ? `<div class="table-wrap" style="margin-bottom:18px;"><table><thead><tr><th>Provider</th><th>Base URL</th><th>Auth</th><th>Status</th><th>Action</th></tr></thead><tbody>${customProviders.map((p) => `<tr><td><code>${escapeHtml(p.key)}</code><br><span style="color:#687385;font-size:12px;">${escapeHtml(p.label)}</span></td><td><code>${escapeHtml(p.baseUrl)}</code></td><td><code>${escapeHtml(p.authScheme)}</code>${p.apiKeyHeader ? `<br><code>${escapeHtml(p.apiKeyHeader)}</code>` : ""}</td><td>${p.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</td><td>${admin ? `<form method="post" action="/providers/custom/${p.id}/delete" onsubmit="return confirm(${jsString(`Delete custom provider ${p.key}? Existing connections keep their provider key but the catalog definition will be removed.`)});"><button type="submit" class="danger" style="font-size:12px;padding:4px 10px;">Delete</button></form>` : '<span style="color:#687385;">admin only</span>'}</td></tr>`).join("")}</tbody></table></div>` : '<div class="empty" style="margin-bottom:14px;">No custom providers in this workspace yet.</div>'}
+        ${admin ? customProviderForm("/providers/custom/new", "providers_custom") : '<p class="field-hint">Workspace admin required to add custom providers.</p>'}
+      </div>
+    </main>
+    <script>
+      (function () {
+        var search = document.getElementById('providerCatalogSearch');
+        var rows = Array.from(document.querySelectorAll('.provider-catalog-row'));
+        if (!search) return;
+        search.addEventListener('input', function () {
+          var terms = search.value.toLowerCase().split(/\\s+/).filter(Boolean);
+          rows.forEach(function (row) {
+            var haystack = row.getAttribute('data-search') || '';
+            row.style.display = terms.every(function (term) { return haystack.indexOf(term) !== -1; }) ? '' : 'none';
+          });
+        });
+      })();
+    </script>
+    </body></html>
+  `);
+});
+
+dashboardApp.post("/providers/:providerKey/toggle", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ error: "not authenticated" }, 401);
+  const wsId = await getActiveWorkspaceId(c);
+  if (!wsId) return c.html("<h1>workspace required</h1>", 400);
+  const admin = await requireWsAdmin(c, wsId);
+  if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
+  const providerKey = c.req.param("providerKey");
+  const providerDef = await getProviderForWorkspace(providerKey, wsId);
+  if (!providerDef) return c.html(`<h1>unknown provider: ${escapeHtml(providerKey)}</h1>`, 404);
+  const body = await c.req.parseBody();
+  const enabled = String(body.enabled ?? "") === "1";
+  await prisma.workspaceProvider.upsert({
+    where: { workspaceId_providerKey: { workspaceId: wsId, providerKey } },
+    create: { workspaceId: wsId, providerKey, enabled, createdById: user.id },
+    update: { enabled },
+  });
+  return c.redirect("/providers");
+});
+
+dashboardApp.post("/providers/custom/new", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ error: "not authenticated" }, 401);
+  const wsId = await getActiveWorkspaceId(c);
+  if (!wsId) return c.html("<h1>workspace required</h1>", 400);
+  const admin = await requireWsAdmin(c, wsId);
+  if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
+  const body = await c.req.parseBody();
+  const errorResponse = await createWorkspaceCustomProvider(c, wsId, user.id, body, "/providers");
+  if (errorResponse) return errorResponse;
+  return c.redirect("/providers");
+});
+
+dashboardApp.post("/providers/custom/:providerId/delete", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ error: "not authenticated" }, 401);
+  const wsId = await getActiveWorkspaceId(c);
+  if (!wsId) return c.html("<h1>workspace required</h1>", 400);
+  const admin = await requireWsAdmin(c, wsId);
+  if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
+  const providerId = c.req.param("providerId");
+  const row = await prisma.customProvider.findFirst({ where: { id: providerId, workspaceId: wsId } });
+  if (row) {
+    await prisma.$transaction([
+      prisma.customProvider.delete({ where: { id: row.id } }),
+      prisma.workspaceProvider.deleteMany({ where: { workspaceId: wsId, providerKey: row.key } }),
+    ]);
+  }
+  return c.redirect("/providers");
 });
 
 async function signOutAndRedirect(c: any) {
@@ -2413,9 +2668,8 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
     },
     orderBy: { createdAt: "asc" },
   });
-  const providers = await listProvidersForWorkspace(wsId);
+  const providers = await listConnectionCandidateProviders(wsId);
   const knownProviders = Object.values(PROVIDERS);
-  const customProviders = wsId ? await prisma.customProvider.findMany({ where: { workspaceId: wsId }, orderBy: [{ enabled: "desc" }, { label: "asc" }] }) : [];
 
   const usedProviders = new Set(connections.map((c) => c.provider));
   const usedProviderAuthTypes = new Set(connections.map((c) => `${c.provider}:${c.authType}`));
@@ -2607,27 +2861,11 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         </form>
       </div>
 
-      <h2>Custom providers</h2>
-      <div class="card">
-        <p class="field-hint" style="margin-top:0;">Register a minor SaaS API that is not included yet. This stores the API shape for this workspace; the actual API key is saved below as a normal provider connection.</p>
-        ${customProviders.length ? `<div class="table-wrap" style="margin-bottom:18px;"><table><thead><tr><th>Provider</th><th>Base URL</th><th>Auth</th><th>Status</th><th>Action</th></tr></thead><tbody>${customProviders.map((p) => `<tr><td><code>${escapeHtml(p.key)}</code><br><span style="color:#687385;font-size:12px;">${escapeHtml(p.label)}</span></td><td><code>${escapeHtml(p.baseUrl)}</code></td><td><code>${escapeHtml(p.authScheme)}</code>${p.apiKeyHeader ? `<br><code>${escapeHtml(p.apiKeyHeader)}</code>` : ""}</td><td>${p.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</td><td><form method="post" action="/tenants/${scope}/custom-providers/${p.id}/delete" onsubmit="return confirm(${jsString(`Delete custom provider ${p.key}?`)});"><button type="submit" class="danger" style="font-size:12px;padding:4px 10px;">Delete</button></form></td></tr>`).join("")}</tbody></table></div>` : '<div class="empty" style="margin-bottom:14px;">No custom providers in this workspace yet.</div>'}
-        <form method="post" action="/tenants/${scope}/custom-providers/new">
-          <div class="field"><label for="custom_key">Provider key</label><input type="text" name="key" id="custom_key" pattern="[a-z0-9_-]+" placeholder="one_stream" required></div>
-          <div class="field"><label for="custom_label">Label</label><input type="text" name="label" id="custom_label" placeholder="OneStream" required></div>
-          <div class="field"><label for="custom_base_url">API base URL</label><input type="url" name="base_url" id="custom_base_url" placeholder="https://example.com/api" required></div>
-          <div class="field"><label for="custom_auth_scheme">Auth style</label><select name="auth_scheme" id="custom_auth_scheme"><option value="bearer">Authorization: Bearer token</option><option value="api_key">API key header</option></select></div>
-          <div class="field"><label for="custom_api_key_header">API key header</label><input type="text" name="api_key_header" id="custom_api_key_header" placeholder="X-API-Key"></div>
-          <div class="field"><label for="custom_allowed_path_prefixes">Allowed path prefixes</label><textarea name="allowed_path_prefixes" id="custom_allowed_path_prefixes" rows="3">/</textarea></div>
-          <div class="field"><label for="custom_smoke_path">Connection check path <span style="color:#687385;">(optional)</span></label><input type="text" name="smoke_path" id="custom_smoke_path" placeholder="/v1/me"></div>
-          <div class="field"><label for="custom_token_url">Token settings URL <span style="color:#687385;">(optional)</span></label><input type="url" name="token_url" id="custom_token_url" placeholder="https://example.com/settings/api"></div>
-          <button type="submit" class="secondary">Add custom provider</button>
-        </form>
-      </div>
-
       <h2>Add a service</h2>
       ${availableToAdd.length === 0 ? `
       <div class="card">
-        <div class="empty">All currently supported provider/auth combinations are already connected for this scope.</div>
+        <div class="empty">All enabled provider/auth combinations are already connected for this scope.</div>
+        <p class="field-hint" style="text-align:center;margin-top:14px;">Enable or add providers from <a href="/providers">Providers</a>.</p>
         ${comingSoonProviders.length > 0 ? `
           <p class="field-hint" style="text-align:center;margin-top:14px;">
             Coming soon: ${comingSoonProviders.map((p) => `<code>${p.key}</code>`).join(", ")}
@@ -2661,7 +2899,6 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             <textarea name="credential" id="credential" rows="3"></textarea>
             <div class="field-hint" id="credHint"></div>
             <div class="field-hint" id="reuseHint"></div>
-            <div class="field-hint" id="serverCredentialHint"></div>
             <div id="patLinkRow" style="margin-top:6px;display:none;">
               <a id="patLink" href="#" target="_blank" rel="noopener" style="font-size:13px;">🔗 Get a new token here →</a>
             </div>
@@ -2698,6 +2935,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
               <a id="oauthAppSetupLink" href="#" target="_blank" rel="noopener" style="font-size:13px;">🔗 Register/manage OAuth app here →</a>
             </div>
           </div>
+          <div class="field-hint" id="serverCredentialHint"></div>
           <div class="field" id="subjectFieldRow" style="display:none;">
             <label for="subject">Impersonate admin email (subject)</label>
             <input type="text" name="subject" id="subject" autocomplete="off" placeholder="admin@customer-domain.com">
@@ -3097,23 +3335,9 @@ dashboardApp.post("/tenants/:scope/custom-providers/new", async (c) => {
   if (!wsId) return c.html("<h1>workspace required</h1>", 400);
   const admin = await requireWsAdmin(c, wsId);
   if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
-  const key = String(body.key ?? "").trim().toLowerCase();
-  const label = String(body.label ?? "").trim();
-  const baseUrl = String(body.base_url ?? "").trim();
-  const authScheme = String(body.auth_scheme ?? "").trim() === "api_key" ? "api_key" : "bearer";
-  const apiKeyHeader = String(body.api_key_header ?? "").trim();
-  const allowedPathPrefixes = normalizePathPrefixes(String(body.allowed_path_prefixes ?? "/"));
-  const smokePath = String(body.smoke_path ?? "").trim();
-  const tokenUrl = String(body.token_url ?? "").trim();
-  const keyErr = validateCustomProviderKey(key);
-  if (keyErr) return c.html(`<h1>Invalid provider key</h1><p>${escapeHtml(keyErr)}</p><p><a href="/tenants/${scope}/edit">Back</a></p>`, 400);
-  if (!label) return c.html(`<h1>label required</h1><p><a href="/tenants/${scope}/edit">Back</a></p>`, 400);
-  try { const parsed = new URL(baseUrl); if (!/^https?:$/.test(parsed.protocol)) throw new Error("API base URL must be http or https"); } catch (e: any) { return c.html(`<h1>Invalid API base URL</h1><p>${escapeHtml(String(e?.message ?? e))}</p><p><a href="/tenants/${scope}/edit">Back</a></p>`, 400); }
-  if (authScheme === "api_key" && !apiKeyHeader) return c.html(`<h1>API key header required</h1><p><a href="/tenants/${scope}/edit">Back</a></p>`, 400);
-  if (tokenUrl) { try { new URL(tokenUrl); } catch { return c.html(`<h1>Invalid token settings URL</h1><p><a href="/tenants/${scope}/edit">Back</a></p>`, 400); } }
-  const smokeTests = smokePath ? [{ name: "default", method: "GET", path: smokePath.startsWith("/") ? smokePath : `/${smokePath}` }] : [];
-  try { await prisma.customProvider.create({ data: { workspaceId: wsId, ownerId: user.id, key, label, helpText: `Paste your ${label} API key or access token.`, tokenUrl: tokenUrl || null, baseUrl: baseUrl.replace(/\/+$/, ""), authScheme, apiKeyHeader: authScheme === "api_key" ? apiKeyHeader : null, allowedPathPrefixes: JSON.stringify(allowedPathPrefixes), defaultMethods: JSON.stringify(["GET", "POST", "PUT", "PATCH", "DELETE"]), smokeTests: JSON.stringify(smokeTests), operations: JSON.stringify([]), enabled: true } }); } catch (e: any) { if (e?.code === "P2002") return c.html(`<h1>custom provider already exists</h1><p><code>${escapeHtml(key)}</code> is already registered in this workspace.</p><p><a href="/tenants/${scope}/edit">Back</a></p>`, 409); throw e; }
-  return c.redirect(`/tenants/${scope}/edit`);
+  const errorResponse = await createWorkspaceCustomProvider(c, wsId, user.id, body, `/tenants/${scope}/edit`);
+  if (errorResponse) return errorResponse;
+  return c.redirect("/providers");
 });
 
 dashboardApp.post("/tenants/:scope/custom-providers/:providerId/delete", async (c) => {
@@ -3126,8 +3350,14 @@ dashboardApp.post("/tenants/:scope/custom-providers/:providerId/delete", async (
   if (!wsId) return c.html("<h1>workspace required</h1>", 400);
   const admin = await requireWsAdmin(c, wsId);
   if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
-  await prisma.customProvider.deleteMany({ where: { id: providerId, workspaceId: wsId } });
-  return c.redirect(`/tenants/${scope}/edit`);
+  const row = await prisma.customProvider.findFirst({ where: { id: providerId, workspaceId: wsId } });
+  if (row) {
+    await prisma.$transaction([
+      prisma.customProvider.delete({ where: { id: row.id } }),
+      prisma.workspaceProvider.deleteMany({ where: { workspaceId: wsId, providerKey: row.key } }),
+    ]);
+  }
+  return c.redirect("/providers");
 });
 
 dashboardApp.post("/tenants/:scope/edit", async (c) => {
@@ -3218,6 +3448,9 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
 
     const providerDef = await getProviderForWorkspace(provider, wsId);
     if (!providerDef) return c.html("<h1>unknown provider</h1>", 400);
+    if (!(await workspaceProviderEnabled(wsId, provider))) {
+      return c.html(`<h1>provider disabled for this workspace</h1><p>Enable <code>${escapeHtml(provider)}</code> from <a href="/providers">Providers</a> before adding it to a scope.</p>`, 400);
+    }
     if (providerDef.implemented === false) return c.html("<h1>provider not implemented</h1>", 400);
     // Explicit auth_method from the form is authoritative; the includes()-based
     // inference is only a fallback for providers with a single auth method.
@@ -3522,43 +3755,9 @@ dashboardApp.post("/tenants/new/custom-providers", async (c) => {
   if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
 
   const body = await c.req.parseBody();
-  const key = String(body.key ?? "").trim().toLowerCase();
-  const label = String(body.label ?? "").trim();
-  const baseUrl = String(body.base_url ?? "").trim();
-  const authScheme = String(body.auth_scheme ?? "").trim() === "api_key" ? "api_key" : "bearer";
-  const apiKeyHeader = String(body.api_key_header ?? "").trim();
-  const allowedPathPrefixes = normalizePathPrefixes(String(body.allowed_path_prefixes ?? "/"));
-  const smokePath = String(body.smoke_path ?? "").trim();
-  const tokenUrl = String(body.token_url ?? "").trim();
-
-  const keyErr = validateCustomProviderKey(key);
-  if (keyErr) return c.html(`<h1>Invalid provider key</h1><p>${escapeHtml(keyErr)}</p><p><a href="/tenants/new">Back</a></p>`, 400);
-  if (!label) return c.html(`<h1>label required</h1><p><a href="/tenants/new">Back</a></p>`, 400);
-  try {
-    const parsed = new URL(baseUrl);
-    if (!/^https?:$/.test(parsed.protocol)) throw new Error("API base URL must be http or https");
-  } catch (e: any) {
-    return c.html(`<h1>Invalid API base URL</h1><p>${escapeHtml(String(e?.message ?? e))}</p><p><a href="/tenants/new">Back</a></p>`, 400);
-  }
-  if (authScheme === "api_key" && !apiKeyHeader) return c.html(`<h1>API key header required</h1><p><a href="/tenants/new">Back</a></p>`, 400);
-  if (tokenUrl) { try { new URL(tokenUrl); } catch { return c.html(`<h1>Invalid token settings URL</h1><p><a href="/tenants/new">Back</a></p>`, 400); } }
-
-  const smokeTests = smokePath ? [{ name: "default", method: "GET", path: smokePath.startsWith("/") ? smokePath : `/${smokePath}` }] : [];
-  try {
-    await prisma.customProvider.create({ data: {
-      workspaceId: wsId, ownerId: user.id, key, label,
-      helpText: `Paste your ${label} API key or access token.`, tokenUrl: tokenUrl || null,
-      baseUrl: baseUrl.replace(/\/+$/, ""), authScheme,
-      apiKeyHeader: authScheme === "api_key" ? apiKeyHeader : null,
-      allowedPathPrefixes: JSON.stringify(allowedPathPrefixes),
-      defaultMethods: JSON.stringify(["GET", "POST", "PUT", "PATCH", "DELETE"]),
-      smokeTests: JSON.stringify(smokeTests), operations: JSON.stringify([]), enabled: true,
-    } });
-  } catch (e: any) {
-    if (e?.code === "P2002") return c.html(`<h1>custom provider already exists</h1><p><code>${escapeHtml(key)}</code> is already registered in this workspace.</p><p><a href="/tenants/new">Back</a></p>`, 409);
-    throw e;
-  }
-  return c.redirect("/tenants/new");
+  const errorResponse = await createWorkspaceCustomProvider(c, wsId, user.id, body, "/providers");
+  if (errorResponse) return errorResponse;
+  return c.redirect("/providers");
 });
 
 // --- /tenants/new ---
@@ -3567,9 +3766,8 @@ dashboardApp.get("/tenants/new", async (c) => {
   if (!user) return c.redirect("/login");
 
   const wsId = await getActiveWorkspaceId(c);
-  const providers = await listProvidersForWorkspace(wsId);
+  const providers = await listConnectionCandidateProviders(wsId);
   const knownProviders = providers;
-  const customProviders = wsId ? await prisma.customProvider.findMany({ where: { workspaceId: wsId }, orderBy: [{ enabled: "desc" }, { label: "asc" }] }) : [];
   // service_account (DWD) needs a JSON-key paste + subject email, which the
   // multi-provider new-tenant wizard isn't set up to collect. Add it from the
   // tenant edit page (/tenants/:scope/edit) instead.
@@ -3608,23 +3806,6 @@ dashboardApp.get("/tenants/new", async (c) => {
       <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
         Step 1 creates a scope and its provider connections. Step 2 assigns or creates the agent that can use this scope.
       </p>
-      <h2>Custom providers</h2>
-      <div class="card">
-        <p class="field-hint" style="margin-top:0;">Register a provider before creating the scope. After saving, it appears in Step 2 below.</p>
-        ${customProviders.length ? `<div class="table-wrap" style="margin-bottom:14px;"><table><thead><tr><th>Provider</th><th>Base URL</th><th>Auth</th><th>Status</th></tr></thead><tbody>${customProviders.map((p) => `<tr><td><code>${escapeHtml(p.key)}</code><br><span style="color:#687385;font-size:12px;">${escapeHtml(p.label)}</span></td><td><code>${escapeHtml(p.baseUrl)}</code></td><td><code>${escapeHtml(p.authScheme)}</code>${p.apiKeyHeader ? `<br><code>${escapeHtml(p.apiKeyHeader)}</code>` : ""}</td><td>${p.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</td></tr>`).join("")}</tbody></table></div>` : '<div class="empty" style="margin-bottom:14px;">No custom providers in this workspace yet.</div>'}
-        <form method="post" action="/tenants/new/custom-providers">
-          <div class="field"><label for="new_custom_key">Provider key</label><input type="text" name="key" id="new_custom_key" pattern="[a-z0-9_-]+" placeholder="one_stream" required></div>
-          <div class="field"><label for="new_custom_label">Label</label><input type="text" name="label" id="new_custom_label" placeholder="OneStream" required></div>
-          <div class="field"><label for="new_custom_base_url">API base URL</label><input type="url" name="base_url" id="new_custom_base_url" placeholder="https://example.com/api" required></div>
-          <div class="field"><label for="new_custom_auth_scheme">Auth style</label><select name="auth_scheme" id="new_custom_auth_scheme"><option value="bearer">Authorization: Bearer token</option><option value="api_key">API key header</option></select></div>
-          <div class="field"><label for="new_custom_api_key_header">API key header</label><input type="text" name="api_key_header" id="new_custom_api_key_header" placeholder="X-API-Key"></div>
-          <div class="field"><label for="new_custom_allowed_path_prefixes">Allowed path prefixes</label><textarea name="allowed_path_prefixes" id="new_custom_allowed_path_prefixes" rows="3">/</textarea></div>
-          <div class="field"><label for="new_custom_smoke_path">Connection check path <span style="color:#687385;">(optional)</span></label><input type="text" name="smoke_path" id="new_custom_smoke_path" placeholder="/v1/me"></div>
-          <div class="field"><label for="new_custom_token_url">Token settings URL <span style="color:#687385;">(optional)</span></label><input type="url" name="token_url" id="new_custom_token_url" placeholder="https://example.com/settings/api"></div>
-          <button type="submit" class="secondary">Add custom provider</button>
-        </form>
-      </div>
-
       <form method="post" action="/tenants/new" id="wizForm">
         <div class="step-card">
           <h2><span class="num">1</span> Scope</h2>
@@ -3644,6 +3825,7 @@ dashboardApp.get("/tenants/new", async (c) => {
         <div class="step-card">
           <h2><span class="num">2</span> Connections</h2>
           <p class="field-hint" style="margin-top:0;">Pick one or more services to wire into this scope. If this workspace already has a matching connection, leaving the credential blank reuses that existing provider credential for the new scope.</p>
+          <p class="field-hint" style="margin-top:-4px;">Only providers enabled in <a href="/providers">Providers</a> are shown here.</p>
           <input type="text" id="providerSearch" placeholder="Search providers… (e.g. notion, github, oauth)" autocomplete="off" style="margin-bottom:12px;">
           <p class="field-hint" id="providerSearchEmpty" style="display:none;margin-top:0;">No providers match your search.</p>
           ${providerAuthOptions.map(({ provider: p, authType }) => {
@@ -4029,6 +4211,9 @@ dashboardApp.post("/tenants/new", async (c) => {
   for (const item of providerAuths) {
     const providerDef = await getProviderForWorkspace(item.provider, wsId);
     if (!providerDef) return c.html(`<h1>unknown provider: ${escapeHtml(item.provider)}</h1>`, 400);
+    if (!(await workspaceProviderEnabled(wsId, item.provider))) {
+      return c.html(`<h1>provider disabled for this workspace</h1><p>Enable <code>${escapeHtml(item.provider)}</code> from <a href="/providers">Providers</a> before adding it to a scope.</p>`, 400);
+    }
     if (providerDef.implemented === false) return c.html(`<h1>provider not implemented: ${escapeHtml(providerDef.label)}</h1>`, 400);
     if (!providerDef.authTypes.includes(item.authType as any)) {
       return c.html(`<h1>auth type not supported: ${escapeHtml(item.provider)} / ${escapeHtml(item.authType)}</h1>`, 400);
