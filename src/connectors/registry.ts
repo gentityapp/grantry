@@ -182,18 +182,24 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "google_drive",
     label: "Google Drive",
     authTypes: ["oauth", "service_account"],
-    helpText: "Connect your Google account. We'll request read-only access to Drive files you choose to share with the integration.",
+    helpText: "Connect your Google account for read-only Drive access. (Temporarily disabled: every useful Drive read scope — drive.readonly and drive.metadata.readonly — is a *restricted* scope that forces the annual CASA security assessment. Disabled for launch to stay CASA-free. Sheets data is still available via the Google Sheets connector.)",
     /** Where to register/manage an OAuth client (callback URL setup) */
     oauthSetupUrl: "https://console.cloud.google.com/apis/credentials",
+    // Drive read scopes (drive, drive.readonly, drive.metadata.readonly) are ALL
+    // *restricted* (Google's current classification) → would force CASA. Disabled for
+    // launch via implemented:false. drive.file below is the only non-restricted Drive
+    // scope (app-created/picked files only) — the safe default if this is ever re-enabled
+    // without taking on CASA. To restore full read access, switch to drive.readonly and
+    // budget for restricted-scope verification + CASA.
     oauthScopes: [
-      "https://www.googleapis.com/auth/drive.readonly",
+      "https://www.googleapis.com/auth/drive.file",
       "https://www.googleapis.com/auth/userinfo.email",
     ],
-    dwdScopes: ["https://www.googleapis.com/auth/drive.readonly"],
+    dwdScopes: ["https://www.googleapis.com/auth/drive.file"],
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     oauthTokenUrl: "https://oauth2.googleapis.com/token",
     tools: ["google_drive/list_files", "google_drive/get_file", "google_drive/search"],
-    implemented: true,
+    implemented: false,
   },
   google_gsc: {
     key: "google_gsc",
@@ -294,13 +300,16 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authTypes: ["oauth", "service_account"],
     helpText: "Connect Gmail to list, read, and send messages through the Gmail API.",
     oauthSetupUrl: "https://console.cloud.google.com/apis/credentials",
+    // Send-only, CASA-free: gmail.send is a *sensitive* scope (verification, no CASA).
+    // gmail.readonly AND gmail.metadata are both *restricted* scopes (Google's current
+    // classification — confirmed in the Data Access console) that would force the annual
+    // CASA security assessment, so both are omitted. Effect: send works; the list/get
+    // tools below have no read scope and return 403.
     oauthScopes: [
-      "https://www.googleapis.com/auth/gmail.readonly",
       "https://www.googleapis.com/auth/gmail.send",
       "https://www.googleapis.com/auth/userinfo.email",
     ],
     dwdScopes: [
-      "https://www.googleapis.com/auth/gmail.readonly",
       "https://www.googleapis.com/auth/gmail.send",
     ],
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
