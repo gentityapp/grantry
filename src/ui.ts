@@ -345,6 +345,15 @@ const CSS = `
   .conn-auth { flex-shrink: 0; min-width: 66px; text-align: center; }
   .conn-label { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .conn-meta { display: flex; align-items: center; gap: 10px; margin-left: auto; white-space: nowrap; }
+  .scope-card { padding: 16px 18px; }
+  .scope-row { display: flex; align-items: center; gap: 14px; min-width: 0; white-space: nowrap; }
+  .scope-title { display: inline-flex; align-items: center; gap: 8px; min-width: 240px; flex-shrink: 0; }
+  .scope-actions { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .scope-actions .btn { font-size: 12px; padding: 4px 10px; }
+  .scope-services { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; overflow: hidden; }
+  .scope-service-pill { display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 3px 8px; background: var(--bg); border-radius: 6px; color: var(--ink-2); }
+  .scope-service-pill code { white-space: nowrap; overflow-wrap: normal; }
+  .scope-meta { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
   .badge.scoped { background: var(--accent-soft); color: var(--accent); }
   .badge.unscoped { background: rgba(135,146,162,0.16); color: var(--muted); }
   .badge.denied { background: var(--danger-soft); color: var(--danger); }
@@ -2255,30 +2264,39 @@ dashboardApp.get("/tenants", async (c) => {
           <label style="font-size:13px;color:#3c4257;cursor:pointer;"><input type="checkbox" id="selectAll"> select all</label>
           <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;" id="bulkDelBtn" disabled>🗑 Delete selected (0)</button>
         </div>
-        ${Array.from(byScope.entries()).map(([scope, conns]) => `
-        <div class="card">
-          <h2>${scope === "(unscoped)" ? '<span class="badge unscoped">unscoped</span> Legacy connections' : (() => {
-            const t = tenantBySlug.get(scope);
-            const showName = t && t.displayName && t.displayName !== t.slug;
-            return `<input type="checkbox" name="scopes" value="${scope}" class="rowCheck" style="margin-right:8px;transform:scale(1.2);">${showName ? `${escapeHtml(t!.displayName)} ` : ""}<span class="badge scoped">${scope}</span>`;
-          })()} ${scope !== "(unscoped)" ? `<a href="/tenants/${scope}/edit" class="btn secondary" style="margin-left:8px;font-size:12px;padding:4px 10px;">+ Add service</a> <a href="/tenants/${scope}/edit" class="btn secondary" style="margin-left:4px;font-size:12px;padding:4px 10px;">✎ Edit</a>` : ""}</h2>
-          ${conns.length === 0 ? `<div class="empty">No connections yet. <a href="/tenants/${scope}/edit">+ Add service</a></div>` : `
-          <ul class="conn-list">
-            ${conns.map((c) => `
-              <li class="conn-item">
-                <span class="provider-cell">${providerIcon(c.provider)}<code>${c.provider}</code></span>
-                <code class="conn-auth">${c.authType}</code>
-                <span class="conn-label">${c.label}</span>
-                <span class="conn-meta">
-                  ${c.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}
-                  ${isOrphan(c) ? `<span class="badge denied" title="Enabled, but no enabled agent has a grant to this connection. Grant it to an agent before MCP tools can use it.">no agent can use this</span>` : ""}
-                  <code>${c.createdAt.toISOString().slice(0, 10)}</code>
-                </span>
-              </li>
-            `).join("")}
-          </ul>`}
+        ${Array.from(byScope.entries()).map(([scope, conns]) => {
+          const t = tenantBySlug.get(scope);
+          const showName = t && t.displayName && t.displayName !== t.slug;
+          const orphanCount = conns.filter(isOrphan).length;
+          const enabledCount = conns.filter((cn) => cn.enabled).length;
+          const newest = conns.map((cn) => cn.createdAt).sort((a, b) => b.getTime() - a.getTime())[0];
+          return `
+        <div class="card scope-card">
+          <div class="scope-row">
+            <span class="scope-title">
+              ${scope === "(unscoped)"
+                ? '<span class="badge unscoped">unscoped</span> <span>Legacy connections</span>'
+                : `<input type="checkbox" name="scopes" value="${escapeHtml(scope)}" class="rowCheck" style="margin:0;transform:scale(1.2);">${showName ? `<span>${escapeHtml(t!.displayName)}</span>` : ""}<span class="badge scoped">${escapeHtml(scope)}</span>`}
+            </span>
+            ${scope !== "(unscoped)" ? `<span class="scope-actions"><a href="/tenants/${encodeURIComponent(scope)}/edit" class="btn secondary">+ Add service</a><a href="/tenants/${encodeURIComponent(scope)}/edit" class="btn secondary">✎ Edit</a></span>` : ""}
+            <span class="scope-services">
+              ${conns.length === 0
+                ? `<span style="color:#687385;font-size:13px;">No connections yet</span>`
+                : conns.map((cn) => `
+                  <span class="scope-service-pill" title="${escapeHtml(cn.label)}">
+                    ${providerIcon(cn.provider)}<code>${escapeHtml(cn.provider)}</code><code>${escapeHtml(cn.authType)}</code>
+                  </span>
+                `).join("")}
+            </span>
+            <span class="scope-meta">
+              <span class="badge ${enabledCount === conns.length ? "ok" : "unscoped"}">${enabledCount}/${conns.length} enabled</span>
+              ${orphanCount ? `<span class="badge denied" title="Enabled, but no enabled agent has a grant to this connection.">no agent: ${orphanCount}</span>` : ""}
+              ${newest ? `<code>${newest.toISOString().slice(0, 10)}</code>` : ""}
+            </span>
+          </div>
         </div>
-      `).join("")}
+      `;
+        }).join("")}
         `}
       </form>
       <script>
