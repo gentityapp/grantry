@@ -715,6 +715,13 @@ function defaultOAuthClientAuthMethodsByProvider() {
   );
 }
 
+function clientIdPreview(clientId: string | null | undefined) {
+  const id = String(clientId || "").trim();
+  if (!id) return "";
+  if (id.length <= 14) return id;
+  return `${id.slice(0, 8)}...${id.slice(-10)}`;
+}
+
 function oauthCallbackUrl(c: any, providerKey: string) {
   const origin = String(process.env.BETTER_AUTH_URL || publicOrigin(c)).replace(/\/+$/, "");
   return `${origin}/oauth/${providerKey}/callback`;
@@ -1889,6 +1896,11 @@ dashboardApp.get("/_ops", async (c) => {
   const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
   const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
   const pruned = c.req.query("pruned");
+  const disabledPlatformOauthApps = c.req.query("disabled_platform_oauth_apps");
+  const providerDefs = Object.values(PROVIDERS);
+  const platformOAuthProviderKeys = providerDefs
+    .filter((p) => p.authTypes.includes("oauth") && !providerUsesWorkspaceOAuthApp(p))
+    .map((p) => p.key);
 
   const [
     userCount,
@@ -1910,6 +1922,7 @@ dashboardApp.get("/_ops", async (c) => {
     connectionIssues,
     expiredOAuthConnections,
     agentsWithoutGrants,
+    platformOAuthAppCredentials,
   ] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({ where: { role: "admin" } }),
@@ -1959,9 +1972,14 @@ dashboardApp.get("/_ops", async (c) => {
       orderBy: { createdAt: "desc" },
       include: { owner: true },
     }),
+    prisma.providerCredential.findMany({
+      where: { authType: "oauth_app", provider: { in: platformOAuthProviderKeys }, enabled: true },
+      take: 50,
+      orderBy: { updatedAt: "desc" },
+      select: { id: true, workspaceId: true, provider: true, label: true, updatedAt: true, credentialMetadata: true },
+    }),
   ]);
 
-  const providerDefs = Object.values(PROVIDERS);
   const oauthProviders = providerDefs.filter((p) => p.authTypes.includes("oauth") && !providerUsesWorkspaceOAuthApp(p));
   const totalToolCount = new Set(providerDefs.flatMap((p) => p.tools)).size;
   const envRows = oauthProviders.map((p) => {
@@ -2002,6 +2020,7 @@ dashboardApp.get("/_ops", async (c) => {
       </div>` : ""}
 
       ${pruned ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">Pruned <b>${escapeHtml(pruned)}</b> expired OAuth state row(s).</div>` : ""}
+      ${disabledPlatformOauthApps ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">Disabled <b>${escapeHtml(disabledPlatformOauthApps)}</b> stale platform OAuth app credential row(s).</div>` : ""}
 
       <div class="row" style="gap:16px;flex-wrap:wrap;margin-bottom:24px;">
         ${card("Users", userCount, `${adminUserCount} admin`)}
@@ -2048,6 +2067,35 @@ dashboardApp.get("/_ops", async (c) => {
             </tbody>
           </table>
         </div>`}
+      </div>
+
+      <h2>Stale Platform OAuth App Credentials</h2>
+      <div class="card">
+        <p class="field-hint" style="margin-top:0;">Platform providers use environment variables. Enabled workspace <code>oauth_app</code> credentials for these providers are ignored by the runtime and should be disabled to avoid confusing diagnostics.</p>
+        ${platformOAuthAppCredentials.length === 0 ? '<div class="empty">No enabled stale platform OAuth app credentials.</div>' : `
+          <form method="post" action="/_ops/platform-oauth-apps/disable" onsubmit="return confirm('Disable stale platform OAuth app credentials? Runtime platform OAuth uses env vars.');">
+            <button type="submit" class="danger" style="margin-bottom:12px;">Disable stale rows</button>
+          </form>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Provider</th><th>Workspace</th><th>Label</th><th>Saved client ID</th><th>Updated</th></tr></thead>
+              <tbody>
+                ${platformOAuthAppCredentials.map((row) => {
+                  const meta = safeJsonObject(row.credentialMetadata);
+                  return `
+                    <tr>
+                      <td><code>${escapeHtml(row.provider)}</code></td>
+                      <td><code>${escapeHtml(row.workspaceId || "-")}</code></td>
+                      <td>${escapeHtml(row.label)}</td>
+                      <td><code>${escapeHtml(clientIdPreview(typeof meta.oauthClientId === "string" ? meta.oauthClientId : ""))}</code></td>
+                      <td><code>${row.updatedAt.toISOString().slice(0, 19).replace("T", " ")}</code></td>
+                    </tr>
+                  `;
+                }).join("")}
+              </tbody>
+            </table>
+          </div>
+        `}
       </div>
 
       <h2>Provider Catalog</h2>
@@ -2209,6 +2257,22 @@ dashboardApp.post("/_ops/oauth-states/prune", async (c) => {
   if (dbUser.role !== "admin" && adminCount > 0) return c.html("<h1>admin required</h1>", 403);
   const result = await prisma.oAuthState.deleteMany({ where: { expiresAt: { lt: new Date() } } });
   return c.redirect(`/_ops?pruned=${result.count}`);
+});
+
+dashboardApp.post("/_ops/platform-oauth-apps/disable", async (c) => {
+  const dbUser = await getDbSessionUser(c);
+  if (!dbUser) return c.redirect("/login");
+  if (!isOpsDomain(dbUser.email)) return c.html(`<h1>restricted to ${escapeHtml(OPS_DOMAIN)}</h1>`, 403);
+  const adminCount = await prisma.user.count({ where: { role: "admin" } });
+  if (dbUser.role !== "admin" && adminCount > 0) return c.html("<h1>admin required</h1>", 403);
+  const platformOAuthProviderKeys = Object.values(PROVIDERS)
+    .filter((p) => p.authTypes.includes("oauth") && !providerUsesWorkspaceOAuthApp(p))
+    .map((p) => p.key);
+  const result = await prisma.providerCredential.updateMany({
+    where: { authType: "oauth_app", provider: { in: platformOAuthProviderKeys }, enabled: true },
+    data: { enabled: false },
+  });
+  return c.redirect(`/_ops?disabled_platform_oauth_apps=${result.count}`);
 });
 
 // --- /login ---
@@ -5087,6 +5151,13 @@ oauthApp.get("/:provider/start", async (c) => {
   });
 
   const redirectUri = `${publicUrl.replace(/\/+$/, "")}/oauth/${providerKey}/callback`;
+  console.log("[oauth-start]", {
+    provider: providerKey,
+    source: oauthCfg.source,
+    credentialId: oauthCfg.credentialId || null,
+    clientId: clientIdPreview(oauthCfg.clientId),
+    redirectUri,
+  });
   // Per-provider authorize URL param tweaks
   let extraParams = "";
   if (providerKey === "github") {

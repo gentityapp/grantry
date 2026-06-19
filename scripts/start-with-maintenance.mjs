@@ -43,6 +43,7 @@ await run("node", ["scripts/dedupe-connections.mjs"], { timeoutMs: 20_000 });
 await run("node", ["scripts/backfill-tenants.mjs"], { timeoutMs: 20_000 });
 await run("node", ["scripts/backfill-workspaces.mjs"], { timeoutMs: 30_000 });
 await run("node", ["scripts/backfill-provider-credentials.mjs"], { timeoutMs: 30_000 });
+await run("node", ["scripts/disable-platform-oauth-app-credentials.mjs"], { timeoutMs: 20_000 });
 await run("node", ["scripts/backfill-agent-connection-grants.mjs"], { timeoutMs: 30_000 });
 
 await run("node", ["--import", "tsx/esm", "src/server.ts"], { required: true, timeoutMs: null });
