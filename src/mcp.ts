@@ -30,6 +30,7 @@ import { callRailwayTool } from "./connectors/railway.js";
 import { callResendTool } from "./connectors/resend.js";
 import { callSlackTool } from "./connectors/slack.js";
 import { callFreeeTool } from "./connectors/freee.js";
+import { callMoneyForwardTool } from "./connectors/moneyforward.js";
 import { callRedditTool } from "./connectors/reddit.js";
 import { callZoomTool } from "./connectors/zoom.js";
 import { callXTool } from "./connectors/x.js";
@@ -1407,6 +1408,42 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       breakdown_display_type: { type: "string", enum: ["partner", "item", "section", "account_item"], description: "Breakdown axis." },
     };
   }
+  if (toolName === "moneyforward/accounting_request") {
+    return {
+      path: { type: "string", description: "Relative Cloud Accounting API path, e.g. /accounts. Required." },
+      method: { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE"], description: "HTTP method. Defaults to GET." },
+      query: { type: "object", description: "Query parameters." },
+      body: { type: "object", description: "JSON request body for write requests." },
+    };
+  }
+  if (toolName === "moneyforward/accounting_get_journal") {
+    return {
+      journal_id: { type: "string", description: "Journal id. Required." },
+    };
+  }
+  if (toolName === "moneyforward/accounting_list_journals") {
+    return {
+      query: {
+        type: "object",
+        description: "Query parameters such as start_date, end_date, account_id, is_realized, page, per_page. start_date or end_date is required by Money Forward.",
+      },
+    };
+  }
+  if (
+    toolName === "moneyforward/accounting_trial_balance_bs"
+    || toolName === "moneyforward/accounting_trial_balance_pl"
+    || toolName === "moneyforward/accounting_transition_bs"
+    || toolName === "moneyforward/accounting_transition_pl"
+  ) {
+    return {
+      query: { type: "object", description: "Report query parameters supported by Money Forward, such as fiscal_year, start_month, end_month, start_date, end_date." },
+    };
+  }
+  if (toolName.startsWith("moneyforward/accounting_")) {
+    return {
+      query: { type: "object", description: "Query parameters supported by the Money Forward Cloud Accounting endpoint." },
+    };
+  }
   if (toolName === "reddit/get_me") {
     return {};
   }
@@ -2165,6 +2202,8 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "freee/create_partner") return ["company_id", "name"];
   if (toolName === "freee/trial_pl") return ["company_id"];
   if (toolName === "freee/trial_bs") return ["company_id"];
+  if (toolName === "moneyforward/accounting_request") return ["path"];
+  if (toolName === "moneyforward/accounting_get_journal") return ["journal_id"];
   if (toolName === "reddit/get_subreddit") return ["subreddit"];
   if (toolName === "reddit/list_posts") return ["subreddit"];
   if (toolName === "reddit/search") return ["query"];
@@ -2417,6 +2456,7 @@ async function dispatchProviderTool(
   if (provider === "resend") return callResendTool(toolName, args, token);
   if (provider === "slack") return callSlackTool(toolName, args, token);
   if (provider === "freee") return callFreeeTool(toolName, args, token);
+  if (provider === "moneyforward") return callMoneyForwardTool(toolName, args, token);
   if (provider === "reddit") return callRedditTool(toolName, args, token);
   if (provider === "zoom") return callZoomTool(toolName, args, token);
   if (provider === "x") return callXTool(toolName, args, token);
@@ -3046,7 +3086,7 @@ async function assertProviderScopesBeforeDispatch(args: {
 }
 
 function providerRequiresWorkspaceOAuthApp(provider: string) {
-  return false;
+  return provider === "moneyforward";
 }
 
 function oauthEnvClientConfig(provider: string) {
@@ -3119,9 +3159,11 @@ async function refreshOAuthToken(provider: string, refreshToken: string, workspa
 
   // Some OAuth providers require HTTP Basic auth at the token endpoint rather
   // than client credentials in the body.
+  const clientAuthMethodNormalized = String(clientAuthMethod || "CLIENT_SECRET_BASIC").toUpperCase();
   const usesBasicAuth = provider === "reddit"
     || provider === "x"
-    || provider === "zoom";
+    || provider === "zoom"
+    || (provider === "moneyforward" && clientAuthMethodNormalized !== "CLIENT_SECRET_POST");
   const refreshBody = new URLSearchParams({
     client_id: clientId,
     refresh_token: refreshToken,

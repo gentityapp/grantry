@@ -102,6 +102,7 @@ function tokenLinkLabel(providerKey: string, providerLabel: string): string {
   if (providerKey === "resend") return "🔗 Open Resend API keys →";
   if (providerKey === "slack") return "🔗 Open Slack apps (create app / get Bot token) →";
   if (providerKey === "google_maps") return "🔗 Open Google Maps Platform credentials →";
+  if (providerKey === "moneyforward") return "🔗 Open Money Forward App Portal →";
   if (providerKey === "discord") return "🔗 Open Discord Developer Portal (create app / get Bot token) →";
   if (providerKey === "line") return "🔗 Open LINE Developers console (Messaging API channel) →";
   if (providerKey === "github") return "🔗 Manage GitHub PAT repository access here →";
@@ -552,7 +553,7 @@ function parseScopeList(raw: string | null | undefined): string[] {
 }
 
 function providerRequiresWorkspaceOAuthApp(providerKey: string) {
-  return false;
+  return providerKey === "moneyforward";
 }
 
 function parseOAuthAppCredentialInput(raw: string, providerDef: any) {
@@ -4514,9 +4515,6 @@ dashboardApp.get("/audit", async (c) => {
 // Stores the wizard data in OAuthState.payload keyed by the `state` param.
 oauthApp.get("/:provider/start", async (c) => {
   const providerKey = c.req.param("provider");
-  if (providerKey === "moneyforward") {
-    return c.html("<h1>Money Forward integration removed</h1><p>This provider is no longer available in Grantry. <a href=\"/tenants\">Back</a></p>", 410);
-  }
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
 
@@ -4623,9 +4621,6 @@ oauthApp.get("/:provider/start", async (c) => {
 oauthApp.get("/:provider/callback", async (c) => {
  const providerKeyForError = c.req.param("provider");
  try {
-  if (providerKeyForError === "moneyforward") {
-    return c.html("<h1>Money Forward integration removed</h1><p>This provider is no longer available in Grantry. <a href=\"/tenants\">Back</a></p>", 410);
-  }
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login?error=oauth_session_expired");
 
@@ -4676,9 +4671,11 @@ oauthApp.get("/:provider/callback", async (c) => {
 
   // Some OAuth providers require HTTP Basic auth at the token endpoint rather
   // than client credentials in the body.
+  const moneyForwardClientAuthMethod = String(oauthCfg.oauthClientAuthMethod || "CLIENT_SECRET_BASIC").toUpperCase();
   const usesBasicAuth = providerKey === "reddit"
     || providerKey === "x"
-    || providerKey === "zoom";
+    || providerKey === "zoom"
+    || (providerKey === "moneyforward" && moneyForwardClientAuthMethod !== "CLIENT_SECRET_POST");
   const tokenBody = new URLSearchParams({
     client_id: clientId,
     code,
@@ -4773,6 +4770,10 @@ oauthApp.get("/:provider/callback", async (c) => {
     } else if (providerKey === "freee") {
       const u: any = await (await fetch("https://api.freee.co.jp/api/1/users/me", { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } })).json();
       if (u?.user?.email) userLogin = u.user.email;
+    } else if (providerKey === "moneyforward") {
+      const u: any = await (await fetch("https://api-accounting.moneyforward.com/api/v3/offices", { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } })).json();
+      if (u?.name) userLogin = u.name;
+      else userLogin = "moneyforward-accounting";
     } else if (providerKey === "meta_ads") {
       const metaVersion = process.env.META_ADS_API_VERSION || "v21.0";
       const u: any = await (await fetch(`https://graph.facebook.com/${metaVersion}/me?fields=id,name`, { headers: { Authorization: `Bearer ${accessToken}` } })).json();

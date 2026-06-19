@@ -252,6 +252,31 @@ model ProviderCredential {
   @@map("provider_credential")
 }
 
+model CustomProvider {
+  id                  String   @id @default(cuid())
+  workspaceId         String
+  workspace           Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  key                 String
+  label               String
+  helpText            String?
+  tokenUrl            String?
+  baseUrl             String
+  defaultMethods      String   @default("[\"GET\"]")
+  allowedPathPrefixes String   @default("[\"/\"]")
+  blockedPathPrefixes String   @default("[]")
+  smokeTests          String   @default("[]")
+  operations          String   @default("[]")
+  authScheme          String   @default("bearer")
+  apiKeyHeader        String?
+  enabled             Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([workspaceId, key])
+  @@index([workspaceId, enabled])
+  @@map("custom_provider")
+}
+
 // ---------- OAuth state (CSRF protection during OAuth callback) ----------
 
 model OAuthState {
@@ -427,6 +452,7 @@ model Workspace {
   roles       Role[]
   connections Connection[]
   providerCredentials ProviderCredential[]
+  customProviders CustomProvider[]
 
   @@map("workspace")
 }

@@ -544,6 +544,50 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "moneyforward") {
+      if (authType !== "oauth") {
+        return {
+          provider,
+          authType,
+          status: "error",
+          checkedAt,
+          error: "Money Forward Cloud Accounting is configured for OAuth only. API key authentication is intentionally disabled.",
+        };
+      }
+
+      const resp = await fetchWithTimeout("https://api-accounting.moneyforward.com/api/v3/offices", {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) {
+        return { provider, authType, status: "error", checkedAt, error: `Money Forward Cloud Accounting token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: { code: body.code, name: body.name, type: body.type },
+        scopes: [
+          "mfc/accounting/offices.read",
+          "mfc/accounting/accounts.read",
+          "mfc/accounting/departments.read",
+          "mfc/accounting/taxes.read",
+          "mfc/accounting/journal.read",
+          "mfc/accounting/report.read",
+          "mfc/accounting/trade_partners.read",
+          "mfc/accounting/connected_account.read",
+        ],
+        resources: Array.isArray(body.accounting_periods)
+          ? body.accounting_periods.map((period: any) => ({ type: "accounting_period", ...period }))
+          : undefined,
+        notes: [
+          "Money Forward Cloud Accounting API uses OAuth 2.0; API key authentication is not supported for this provider.",
+          "Grantry uses the workspace's OAuth app credential instead of a global Money Forward app.",
+        ],
+        checkedAt,
+      };
+    }
+
     if (provider === "reddit") {
       const resp = await fetchWithTimeout("https://oauth.reddit.com/api/v1/me", {
         headers: {
