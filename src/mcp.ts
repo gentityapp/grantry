@@ -2932,8 +2932,10 @@ function safeJsonObject(s: string | null | undefined): Record<string, any> {
 }
 
 function requiredScopesForTool(provider: string, toolName: string): string[] {
-  const operations = PROVIDERS[provider]?.genericRequest?.operations ?? [];
+  const providerDef = PROVIDERS[provider];
+  const operations = providerDef?.genericRequest?.operations ?? [];
   const required = new Set<string>();
+  for (const scope of providerDef?.toolScopeRequirements?.[toolName] ?? []) required.add(scope);
   for (const op of operations) {
     if ((op.tools ?? []).includes(toolName)) {
       for (const scope of op.requiredScopes ?? []) required.add(scope);

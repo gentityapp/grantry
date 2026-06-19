@@ -42,6 +42,8 @@ export type ProviderDef = {
   oauthTokenUrl?: string;
   /** Tools this provider exposes, by name */
   tools: string[];
+  /** Provider permission scopes required for specific tools before dispatch. */
+  toolScopeRequirements?: Record<string, string[]>;
   /** Safe generic provider API request manifest. Phase 1 is read-only. */
   genericRequest?: {
     baseUrl: string;
@@ -119,6 +121,9 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "zoom/create_meeting",
       "zoom/get_meeting_participants",
     ],
+    toolScopeRequirements: {
+      "zoom/create_meeting": ["meeting:write:meeting"],
+    },
     implemented: true,
   },
   github: {
@@ -135,6 +140,11 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authorizeUrl: "https://github.com/login/oauth/authorize",
     oauthTokenUrl: "https://github.com/login/oauth/access_token",
     tools: ["github/list_repos", "github/get_repo", "github/get_file_contents", "github/list_issues", "github/create_issue", "github/git_push_repo", "github/create_repo"],
+    toolScopeRequirements: {
+      "github/create_issue": ["repo"],
+      "github/git_push_repo": ["repo"],
+      "github/create_repo": ["repo"],
+    },
     implemented: true,
   },
   cloudflare: {
@@ -227,6 +237,9 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     oauthTokenUrl: "https://oauth2.googleapis.com/token",
     tools: ["google_ads/list_accessible_customers", "google_ads/search", "google_ads/mutate", "google_ads/generate_keyword_ideas"],
+    toolScopeRequirements: {
+      "google_ads/mutate": ["https://www.googleapis.com/auth/adwords"],
+    },
     implemented: true,
   },
   yahoo_ads: {
@@ -239,6 +252,9 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authorizeUrl: "https://biz-oauth.yahoo.co.jp/oauth/v1/authorize",
     oauthTokenUrl: "https://biz-oauth.yahoo.co.jp/oauth/v1/token",
     tools: ["yahoo_ads/list_base_accounts", "yahoo_ads/get", "yahoo_ads/mutate"],
+    toolScopeRequirements: {
+      "yahoo_ads/mutate": ["yahooads"],
+    },
     implemented: true,
   },
   meta_ads: {
@@ -261,6 +277,10 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "meta_ads/create_campaign",
       "meta_ads/update_campaign",
     ],
+    toolScopeRequirements: {
+      "meta_ads/create_campaign": ["ads_management"],
+      "meta_ads/update_campaign": ["ads_management"],
+    },
     implemented: true,
   },
   gmail: {
@@ -281,6 +301,9 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     oauthTokenUrl: "https://oauth2.googleapis.com/token",
     tools: ["gmail/list_messages", "gmail/get_message", "gmail/send_message"],
+    toolScopeRequirements: {
+      "gmail/send_message": ["https://www.googleapis.com/auth/gmail.send"],
+    },
     implemented: true,
   },
   youtube: {
@@ -308,6 +331,14 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "youtube/add_playlist_item",
       "youtube/delete_playlist_item",
     ],
+    toolScopeRequirements: {
+      "youtube/update_video": ["https://www.googleapis.com/auth/youtube.force-ssl"],
+      "youtube/create_playlist": ["https://www.googleapis.com/auth/youtube.force-ssl"],
+      "youtube/update_playlist": ["https://www.googleapis.com/auth/youtube.force-ssl"],
+      "youtube/delete_playlist": ["https://www.googleapis.com/auth/youtube.force-ssl"],
+      "youtube/add_playlist_item": ["https://www.googleapis.com/auth/youtube.force-ssl"],
+      "youtube/delete_playlist_item": ["https://www.googleapis.com/auth/youtube.force-ssl"],
+    },
     implemented: true,
   },
   hubspot: {
@@ -331,6 +362,9 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "hubspot/update_marketing_email",
       "hubspot/publish_marketing_email",
     ],
+    toolScopeRequirements: {
+      "hubspot/create_deal": ["crm.objects.deals.write"],
+    },
     implemented: true,
   },
   attio: {
@@ -462,6 +496,10 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "freee/trial_pl",
       "freee/trial_bs",
     ],
+    toolScopeRequirements: {
+      "freee/create_deal": ["write"],
+      "freee/create_partner": ["write"],
+    },
     implemented: true,
   },
   moneyforward: {
@@ -563,6 +601,14 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "slack/list_users",
       "slack/get_user",
     ],
+    toolScopeRequirements: {
+      "slack/post_message": ["chat:write"],
+      "slack/update_message": ["chat:write"],
+      "slack/create_channel": ["channels:manage"],
+      "slack/invite_members": ["channels:write.invites"],
+      "slack/open_group_dm": ["mpim:write"],
+      "slack/invite_shared": ["conversations.connect:manage"],
+    },
     implemented: true,
   },
   reddit: {
@@ -585,6 +631,11 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "reddit/submit_comment",
       "reddit/vote",
     ],
+    toolScopeRequirements: {
+      "reddit/submit_post": ["submit"],
+      "reddit/submit_comment": ["submit"],
+      "reddit/vote": ["vote"],
+    },
     implemented: true,
   },
   x: {
@@ -606,6 +657,10 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "x/post_tweet",
       "x/delete_tweet",
     ],
+    toolScopeRequirements: {
+      "x/post_tweet": ["tweet.write"],
+      "x/delete_tweet": ["tweet.write"],
+    },
     implemented: true,
   },
   discord: {
@@ -850,6 +905,11 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     oauthTokenUrl: "https://oauth2.googleapis.com/token",
     tools: ["google_calendar/list_calendars", "google_calendar/list_events", "google_calendar/get_event", "google_calendar/create_event", "google_calendar/update_event", "google_calendar/delete_event"],
+    toolScopeRequirements: {
+      "google_calendar/create_event": ["https://www.googleapis.com/auth/calendar"],
+      "google_calendar/update_event": ["https://www.googleapis.com/auth/calendar"],
+      "google_calendar/delete_event": ["https://www.googleapis.com/auth/calendar"],
+    },
     implemented: true,
   },
   google_sheets: {
@@ -863,6 +923,11 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     oauthTokenUrl: "https://oauth2.googleapis.com/token",
     tools: ["google_sheets/get_spreadsheet", "google_sheets/get_values", "google_sheets/batch_get_values", "google_sheets/update_values", "google_sheets/append_values", "google_sheets/create_spreadsheet"],
+    toolScopeRequirements: {
+      "google_sheets/update_values": ["https://www.googleapis.com/auth/spreadsheets"],
+      "google_sheets/append_values": ["https://www.googleapis.com/auth/spreadsheets"],
+      "google_sheets/create_spreadsheet": ["https://www.googleapis.com/auth/spreadsheets"],
+    },
     implemented: true,
   },
   google_tag_manager: {
@@ -942,6 +1007,20 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "google_admin/list_members", "google_admin/add_member", "google_admin/update_member", "google_admin/remove_member",
       "google_admin/list_org_units", "google_admin/get_org_unit", "google_admin/create_org_unit", "google_admin/update_org_unit", "google_admin/delete_org_unit",
     ],
+    toolScopeRequirements: {
+      "google_admin/create_user": ["https://www.googleapis.com/auth/admin.directory.user"],
+      "google_admin/update_user": ["https://www.googleapis.com/auth/admin.directory.user"],
+      "google_admin/delete_user": ["https://www.googleapis.com/auth/admin.directory.user"],
+      "google_admin/create_group": ["https://www.googleapis.com/auth/admin.directory.group"],
+      "google_admin/update_group": ["https://www.googleapis.com/auth/admin.directory.group"],
+      "google_admin/delete_group": ["https://www.googleapis.com/auth/admin.directory.group"],
+      "google_admin/add_member": ["https://www.googleapis.com/auth/admin.directory.group.member"],
+      "google_admin/update_member": ["https://www.googleapis.com/auth/admin.directory.group.member"],
+      "google_admin/remove_member": ["https://www.googleapis.com/auth/admin.directory.group.member"],
+      "google_admin/create_org_unit": ["https://www.googleapis.com/auth/admin.directory.orgunit"],
+      "google_admin/update_org_unit": ["https://www.googleapis.com/auth/admin.directory.orgunit"],
+      "google_admin/delete_org_unit": ["https://www.googleapis.com/auth/admin.directory.orgunit"],
+    },
     implemented: true,
   },
   bigquery: {
