@@ -30,7 +30,7 @@ import { callRailwayTool } from "./connectors/railway.js";
 import { callResendTool } from "./connectors/resend.js";
 import { callSlackTool } from "./connectors/slack.js";
 import { callFreeeTool } from "./connectors/freee.js";
-import { callMoneyForwardTool } from "./connectors/moneyforward.js";
+import { callMoneyForwardTool, exchangeMoneyForwardApiKey } from "./connectors/moneyforward.js";
 import { callRedditTool } from "./connectors/reddit.js";
 import { callZoomTool } from "./connectors/zoom.js";
 import { callXTool } from "./connectors/x.js";
@@ -2909,10 +2909,21 @@ function prepareMcpSession(c: any, agent: { id: string } | null) {
   return { ok: true as const };
 }
 
-async function refreshOAuthToken(provider: string, refreshToken: string) {
-  const providerDef = PROVIDERS[provider];
-  if (!providerDef?.oauthTokenUrl) throw new Error(`OAuth refresh is not configured for provider: ${provider}`);
+function safeJsonObject(s: string | null | undefined): Record<string, any> {
+  if (!s) return {};
+  try {
+    const v = JSON.parse(s);
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
+}
 
+function providerRequiresWorkspaceOAuthApp(provider: string) {
+  return provider === "moneyforward";
+}
+
+function oauthEnvClientConfig(provider: string) {
   const envPrefix = provider.toUpperCase();
   const legacyAliases: Record<string, string[]> = {
     github: ["GH_CLIENT_ID", "GRANTRY_GITHUB_CLIENT_ID"],
@@ -2934,17 +2945,60 @@ async function refreshOAuthToken(provider: string, refreshToken: string) {
     youtube: ["GOOGLE_CLIENT_SECRET"],
     yahoo_ads: ["YAHOO_CLIENT_SECRET"],
   };
-  const clientId = process.env[`${envPrefix}_CLIENT_ID`]
-    || (legacyAliases[provider] || []).map((k) => process.env[k]).find(Boolean);
-  const clientSecret = process.env[`${envPrefix}_CLIENT_SECRET`]
-    || (legacySecretAliases[provider] || []).map((k) => process.env[k]).find(Boolean);
+  return {
+    clientId: process.env[`${envPrefix}_CLIENT_ID`]
+      || (legacyAliases[provider] || []).map((k) => process.env[k]).find(Boolean),
+    clientSecret: process.env[`${envPrefix}_CLIENT_SECRET`]
+      || (legacySecretAliases[provider] || []).map((k) => process.env[k]).find(Boolean),
+    clientAuthMethod: process.env[`${envPrefix}_CLIENT_AUTH_METHOD`] || "CLIENT_SECRET_POST",
+  };
+}
+
+async function oauthClientConfigForRefresh(provider: string, workspaceId: string | null | undefined) {
+  if (workspaceId) {
+    const credential = await prisma.providerCredential.findFirst({
+      where: { workspaceId, provider, authType: "oauth_app", enabled: true },
+      orderBy: { updatedAt: "desc" },
+    });
+    if (credential) {
+      const meta = safeJsonObject(credential.credentialMetadata);
+      const clientId = typeof meta.oauthClientId === "string" ? meta.oauthClientId.trim() : "";
+      if (clientId) {
+        return {
+          clientId,
+          clientSecret: decrypt(credential.encryptedCredential),
+          clientAuthMethod: typeof meta.oauthClientAuthMethod === "string" ? meta.oauthClientAuthMethod : "CLIENT_SECRET_BASIC",
+        };
+      }
+    }
+  }
+  if (providerRequiresWorkspaceOAuthApp(provider)) {
+    return { clientId: "", clientSecret: "", clientAuthMethod: "CLIENT_SECRET_BASIC" };
+  }
+  return oauthEnvClientConfig(provider);
+}
+
+async function refreshOAuthToken(provider: string, refreshToken: string, workspaceId?: string | null) {
+  const providerDef = PROVIDERS[provider];
+  if (!providerDef?.oauthTokenUrl) throw new Error(`OAuth refresh is not configured for provider: ${provider}`);
+
+  const envPrefix = provider.toUpperCase();
+  const { clientId, clientSecret, clientAuthMethod } = await oauthClientConfigForRefresh(provider, workspaceId);
   if (!clientId || !clientSecret) {
+    if (providerRequiresWorkspaceOAuthApp(provider)) {
+      throw new Error(`${provider} OAuth refresh credentials missing: configure this workspace's OAuth app credential`);
+    }
     throw new Error(`${provider} OAuth refresh credentials missing: set ${envPrefix}_CLIENT_ID and ${envPrefix}_CLIENT_SECRET`);
   }
 
-  // Reddit, X, and Zoom authenticate the confidential client with HTTP Basic
-  // auth at the token endpoint rather than client credentials in the body.
-  const usesBasicAuth = provider === "reddit" || provider === "x" || provider === "zoom";
+  // Some OAuth providers require HTTP Basic auth at the token endpoint rather
+  // than client credentials in the body. Money Forward exposes this as an app
+  // portal setting; default to Basic because that is the safer/current setting.
+  const moneyForwardClientAuthMethod = String(clientAuthMethod || "CLIENT_SECRET_BASIC").toUpperCase();
+  const usesBasicAuth = provider === "reddit"
+    || provider === "x"
+    || provider === "zoom"
+    || (provider === "moneyforward" && moneyForwardClientAuthMethod !== "CLIENT_SECRET_POST");
   const refreshBody = new URLSearchParams({
     client_id: clientId,
     refresh_token: refreshToken,
@@ -2992,10 +3046,12 @@ async function credentialForConnection(conn: {
   id: string;
   provider: string;
   encryptedCredential: string;
+  encryptedServerCredential: string | null;
   credentialId: string | null;
   authType: string;
   refreshToken: string | null;
   accessTokenExpiresAt: Date | null;
+  workspaceId?: string | null;
 }) {
   const shared = conn.credentialId
     ? await prisma.providerCredential.findUnique({ where: { id: conn.credentialId } })
@@ -3011,6 +3067,29 @@ async function credentialForConnection(conn: {
     return mintDwdAccessToken(conn.id, cred, scopes);
   }
 
+  if (conn.provider === "moneyforward" && conn.authType === "pat") {
+    const encryptedCachedJwt = shared?.encryptedServerCredential ?? conn.encryptedServerCredential;
+    const accessTokenExpiresAt = shared?.accessTokenExpiresAt ?? conn.accessTokenExpiresAt;
+    if (encryptedCachedJwt && accessTokenExpiresAt && accessTokenExpiresAt.getTime() > Date.now() + TOKEN_REFRESH_SKEW_MS) {
+      return decrypt(encryptedCachedJwt);
+    }
+    console.log("[moneyforward] exchanging API key for JWT", { connectionId: conn.id });
+    const exchanged = await exchangeMoneyForwardApiKey(decrypt(encryptedCredential));
+    const data = {
+      encryptedServerCredential: encrypt(exchanged.access_token),
+      accessTokenExpiresAt: new Date(Date.now() + exchanged.expires_in * 1000),
+    };
+    if (conn.credentialId) {
+      await prisma.$transaction([
+        prisma.providerCredential.update({ where: { id: conn.credentialId }, data }),
+        prisma.connection.updateMany({ where: { credentialId: conn.credentialId }, data }),
+      ]);
+    } else {
+      await prisma.connection.update({ where: { id: conn.id }, data });
+    }
+    return exchanged.access_token;
+  }
+
   const refreshToken = shared?.refreshToken ?? conn.refreshToken;
   const accessTokenExpiresAt = shared?.accessTokenExpiresAt ?? conn.accessTokenExpiresAt;
   const currentToken = decrypt(encryptedCredential);
@@ -3022,7 +3101,7 @@ async function credentialForConnection(conn: {
     connectionId: conn.id,
     expiresAt: accessTokenExpiresAt.toISOString(),
   });
-  const refreshed = await refreshOAuthToken(conn.provider, decrypt(refreshToken));
+  const refreshed = await refreshOAuthToken(conn.provider, decrypt(refreshToken), conn.workspaceId);
   const data = {
     encryptedCredential: encrypt(refreshed.access_token),
     accessTokenExpiresAt: refreshed.expires_in ? new Date(Date.now() + refreshed.expires_in * 1000) : null,

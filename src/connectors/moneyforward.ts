@@ -3,6 +3,7 @@
 // Access tokens expire; grantry stores the refresh token and refreshes
 // automatically. The token is scoped to a single office (取得先事業者).
 const MF_API = "https://invoice.moneyforward.com/api/v3";
+const MF_AUTH_EXCHANGE = "https://api.biz.moneyforward.com/auth/exchange";
 const MF_TIMEOUT_MS = 12_000;
 
 type MoneyForwardArgs = Record<string, unknown>;
@@ -56,6 +57,50 @@ async function requestJson(token: string, method: string, path: string, body: un
   const j: any = await readJsonResponse(r);
   if (!r.ok) throw new Error(`Money Forward ${tool} failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
   return j;
+}
+
+export async function exchangeMoneyForwardApiKey(apiKey: string) {
+  const key = String(apiKey ?? "").trim();
+  if (!key) throw new Error("Money Forward API key is required");
+  const response = await fetchMoneyForwardAuthExchange(key);
+  const json: any = await readJsonResponse(response);
+  if (!response.ok || !json.access_token) {
+    throw new Error(`Money Forward API key exchange failed: ${response.status} ${JSON.stringify(json).slice(0, 500)}`);
+  }
+  return {
+    access_token: String(json.access_token),
+    token_type: String(json.token_type ?? "Bearer"),
+    expires_in: Number(json.expires_in) || 3600,
+  };
+}
+
+async function fetchMoneyForwardAuthExchange(apiKey: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), MF_TIMEOUT_MS);
+  const started = Date.now();
+  try {
+    console.log("[moneyforward] api_key_exchange request");
+    const response = await fetch(MF_AUTH_EXCHANGE, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+      },
+      signal: controller.signal,
+    });
+    console.log("[moneyforward] api_key_exchange response", { status: response.status, durationMs: Date.now() - started });
+    return response;
+  } catch (e: any) {
+    const aborted = e?.name === "AbortError";
+    console.error("[moneyforward] api_key_exchange failed", {
+      durationMs: Date.now() - started,
+      error: aborted ? `timeout after ${MF_TIMEOUT_MS}ms` : String(e?.message ?? e),
+    });
+    if (aborted) throw new Error(`Money Forward API key exchange timed out after ${MF_TIMEOUT_MS}ms`);
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function stringArg(args: MoneyForwardArgs, snake: string, aliases: string[] = []) {

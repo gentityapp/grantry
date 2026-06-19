@@ -1,4 +1,5 @@
 import { callGenericCheckConnection, callGenericListCapabilities } from "./generic_request.js";
+import { exchangeMoneyForwardApiKey } from "./moneyforward.js";
 import { getProvider } from "./registry.js";
 
 const META_TIMEOUT_MS = 8_000;
@@ -545,8 +546,11 @@ export async function inspectCredential(provider: string, authType: string, toke
     }
 
     if (provider === "moneyforward") {
+      const bearerToken = authType === "pat"
+        ? (await exchangeMoneyForwardApiKey(token)).access_token
+        : token;
       const resp = await fetchWithTimeout("https://invoice.moneyforward.com/api/v3/office", {
-        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+        headers: { Authorization: `Bearer ${bearerToken}`, Accept: "application/json" },
       });
       const body: any = await readJson(resp);
       if (!resp.ok) {
@@ -559,8 +563,12 @@ export async function inspectCredential(provider: string, authType: string, toke
         status: "ok",
         subject: { id: office.id, name: office.name ?? office.office_name },
         notes: [
-          "Money Forward Cloud Invoice API v3 tokens are scoped to one office.",
-          "Scopes (mfc/invoice/data.read / .write) are configured in the Money Forward app portal and are not enumerated by this check.",
+          authType === "pat"
+            ? "Money Forward API keys are exchanged for one-hour JWTs via /auth/exchange before API calls."
+            : "Money Forward Cloud Invoice API v3 tokens are scoped to one office.",
+          authType === "pat"
+            ? "API key access follows the issuing user's Money Forward permissions and selected services."
+            : "Scopes (mfc/invoice/data.read / .write) are configured in the Money Forward app portal and are not enumerated by this check.",
         ],
         checkedAt,
       };

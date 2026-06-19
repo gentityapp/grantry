@@ -457,9 +457,10 @@ export const PROVIDERS: Record<string, ProviderDef> = {
   moneyforward: {
     key: "moneyforward",
     label: "マネーフォワード クラウド請求書",
-    authTypes: ["oauth"],
-    helpText: "Connect your Money Forward Cloud account. grantry implements the Cloud Invoice API v3 (partners, billings, quotes, items). Access tokens expire; grantry refreshes them with the stored refresh token. The token is scoped to one office.",
-    oauthSetupUrl: "https://developers.biz.moneyforward.com/",
+    authTypes: ["pat", "oauth"],
+    helpText: "Connect Money Forward Cloud Invoice with either a workspace-owned OAuth app or a Money Forward API key. API keys are exchanged for short-lived JWTs via /auth/exchange and execute with the issuing user's Money Forward permissions.",
+    tokenUrl: "https://app-portal.moneyforward.com/",
+    oauthSetupUrl: "https://app-portal.moneyforward.com/",
     oauthScopes: ["mfc/invoice/data.read", "mfc/invoice/data.write"],
     authorizeUrl: "https://api.biz.moneyforward.com/authorize",
     oauthTokenUrl: "https://api.biz.moneyforward.com/token",

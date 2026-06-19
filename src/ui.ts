@@ -48,6 +48,7 @@ function authTypeLabel(providerKey: string, authType: string): string {
   if (providerKey === "resend") return "API key";
   if (providerKey === "slack") return "Bot token";
   if (providerKey === "google_maps") return "API key";
+  if (providerKey === "moneyforward") return "API key";
   if (providerKey === "discord") return "Bot token";
   if (providerKey === "line") return "Channel access token";
   if (["airtable", "linear", "sendgrid", "vercel", "stripe", "webflow", "intercom", "customerio", "mailchimp"].includes(providerKey)) return "API key";
@@ -68,6 +69,7 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
   if (providerKey === "resend") return "Paste your Resend API key";
   if (providerKey === "slack") return "Paste your Slack Bot User OAuth Token (starts with xoxb-)";
   if (providerKey === "google_maps") return "Paste your Google Maps Platform API key";
+  if (providerKey === "moneyforward") return "Paste your Money Forward API key (starts with mf_api_prd_)";
   if (providerKey === "discord") return "Paste your Discord Bot Token from the Developer Portal > Bot";
   if (providerKey === "line") return "Paste your LINE Channel Access Token (Messaging API > Channel access token)";
   if (providerKey === "airtable") return "Paste your Airtable Personal Access Token (patXXXX...)";
@@ -102,6 +104,7 @@ function tokenLinkLabel(providerKey: string, providerLabel: string): string {
   if (providerKey === "resend") return "🔗 Open Resend API keys →";
   if (providerKey === "slack") return "🔗 Open Slack apps (create app / get Bot token) →";
   if (providerKey === "google_maps") return "🔗 Open Google Maps Platform credentials →";
+  if (providerKey === "moneyforward") return "🔗 Open Money Forward App Portal →";
   if (providerKey === "discord") return "🔗 Open Discord Developer Portal (create app / get Bot token) →";
   if (providerKey === "line") return "🔗 Open LINE Developers console (Messaging API channel) →";
   if (providerKey === "github") return "🔗 Manage GitHub PAT repository access here →";
@@ -524,6 +527,197 @@ function safeJsonObject(s: string | null | undefined): Record<string, any> {
   } catch {
     return {};
   }
+}
+
+function parseScopeList(raw: string | null | undefined): string[] {
+  const seen = new Set<string>();
+  const scopes: string[] = [];
+  for (const scope of String(raw ?? "").split(/[\s,]+/).map((s) => s.trim()).filter(Boolean)) {
+    if (!seen.has(scope)) {
+      seen.add(scope);
+      scopes.push(scope);
+    }
+  }
+  return scopes;
+}
+
+function providerRequiresWorkspaceOAuthApp(providerKey: string) {
+  return providerKey === "moneyforward";
+}
+
+function parseOAuthAppCredentialInput(raw: string, providerDef: any) {
+  const text = String(raw ?? "").trim();
+  if (!text) return null;
+  let parsed: any = {};
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    for (const line of lines) {
+      const match = line.match(/^([A-Za-z0-9_.-]+)\s*[:=]\s*(.+)$/);
+      if (match) parsed[match[1]] = match[2].trim();
+    }
+  }
+  const clientId = String(parsed.client_id ?? parsed.clientId ?? parsed.oauthClientId ?? "").trim();
+  const clientSecret = String(parsed.client_secret ?? parsed.clientSecret ?? parsed.oauthClientSecret ?? "").trim();
+  if (!clientId || !clientSecret) {
+    throw new Error('OAuth app credential must include client_id and client_secret, for example {"client_id":"...","client_secret":"..."}');
+  }
+  const parsedScopes = parseScopeList(String(parsed.oauth_scopes ?? parsed.scopes ?? ""));
+  const parsedOptionalScopes = parseScopeList(String(parsed.oauth_optional_scopes ?? parsed.optional_scopes ?? ""));
+  const oauthScopes = Array.isArray(parsed.oauthScopes)
+    ? parsed.oauthScopes.map(String).filter(Boolean)
+    : (parsedScopes.length ? parsedScopes : (providerDef.oauthScopes || []));
+  const oauthOptionalScopes = Array.isArray(parsed.oauthOptionalScopes)
+    ? parsed.oauthOptionalScopes.map(String).filter(Boolean)
+    : (parsedOptionalScopes.length ? parsedOptionalScopes : (providerDef.oauthOptionalScopes || []));
+  const oauthClientAuthMethod = String(
+    parsed.client_auth_method
+      ?? parsed.clientAuthMethod
+      ?? parsed.oauthClientAuthMethod
+      ?? "CLIENT_SECRET_BASIC",
+  ).trim().toUpperCase();
+  return { clientId, clientSecret, oauthScopes, oauthOptionalScopes, oauthClientAuthMethod };
+}
+
+async function upsertWorkspaceOAuthAppCredential(args: {
+  workspaceId: string | null;
+  ownerId: string;
+  providerKey: string;
+  providerDef: any;
+  rawCredential: string;
+}) {
+  if (!args.workspaceId) throw new Error("workspace is required to store an OAuth app credential");
+  const parsed = parseOAuthAppCredentialInput(args.rawCredential, args.providerDef);
+  if (!parsed) return null;
+  const existing = await prisma.providerCredential.findFirst({
+    where: { workspaceId: args.workspaceId, provider: args.providerKey, authType: "oauth_app" },
+    orderBy: { updatedAt: "desc" },
+  });
+  const data = {
+    workspaceId: args.workspaceId,
+    ownerId: args.ownerId,
+    provider: args.providerKey,
+    authType: "oauth_app",
+    label: `${args.providerKey} OAuth app`,
+    encryptedCredential: encrypt(parsed.clientSecret),
+    credentialMetadata: JSON.stringify({
+      kind: "oauth_app",
+      oauthClientId: parsed.clientId,
+      oauthScopes: parsed.oauthScopes,
+      oauthOptionalScopes: parsed.oauthOptionalScopes,
+      oauthClientAuthMethod: parsed.oauthClientAuthMethod,
+    }),
+    credentialValidatedAt: null,
+    refreshToken: null,
+    accessTokenExpiresAt: null,
+    enabled: true,
+    createdById: args.ownerId,
+  };
+  return existing
+    ? prisma.providerCredential.update({ where: { id: existing.id }, data })
+    : prisma.providerCredential.create({ data });
+}
+
+async function resolveOAuthWorkspaceId(c: any, userId: string, providerKey: string, payload: Record<string, any>) {
+  const requestedConnectionId = String(payload.connection_id || "");
+  if (requestedConnectionId) {
+    const conn = await prisma.connection.findFirst({
+      where: { id: requestedConnectionId, ownerId: userId, provider: providerKey, authType: "oauth" },
+      select: { workspaceId: true },
+    });
+    if (conn?.workspaceId) return conn.workspaceId;
+  }
+  const tenant = String(payload.tenant || payload.tenant_select || "");
+  if (tenant) {
+    const row = await prisma.tenant.findFirst({
+      where: { ownerId: userId, slug: tenant },
+      select: { workspaceId: true },
+    });
+    if (row?.workspaceId) return row.workspaceId;
+  }
+  return getActiveWorkspaceId(c);
+}
+
+async function resolveOAuthClientConfig(providerKey: string, providerDef: any, workspaceId: string | null, credentialId?: string | null) {
+  if (workspaceId) {
+    const credential = credentialId
+      ? await prisma.providerCredential.findFirst({
+          where: { id: credentialId, workspaceId, provider: providerKey, authType: "oauth_app", enabled: true },
+        })
+      : await prisma.providerCredential.findFirst({
+          where: { workspaceId, provider: providerKey, authType: "oauth_app", enabled: true },
+          orderBy: { updatedAt: "desc" },
+        });
+    if (credential) {
+      const meta = safeJsonObject(credential.credentialMetadata);
+      const clientId = typeof meta.oauthClientId === "string" ? meta.oauthClientId.trim() : "";
+      if (clientId) {
+        return {
+          source: "workspace" as const,
+          credentialId: credential.id,
+          clientId,
+          clientSecret: decrypt(credential.encryptedCredential),
+          oauthScopes: Array.isArray(meta.oauthScopes) ? meta.oauthScopes.map(String).filter(Boolean) : [],
+          oauthOptionalScopes: Array.isArray(meta.oauthOptionalScopes) ? meta.oauthOptionalScopes.map(String).filter(Boolean) : [],
+          oauthClientAuthMethod: typeof meta.oauthClientAuthMethod === "string" ? meta.oauthClientAuthMethod : "CLIENT_SECRET_BASIC",
+        };
+      }
+    }
+  }
+  if (providerRequiresWorkspaceOAuthApp(providerKey)) {
+    return {
+      source: "workspace_missing" as const,
+      credentialId: null,
+      clientId: "",
+      clientSecret: "",
+      oauthScopes: providerDef.oauthScopes || [],
+      oauthOptionalScopes: providerDef.oauthOptionalScopes || [],
+      oauthClientAuthMethod: "CLIENT_SECRET_BASIC",
+    };
+  }
+  const envPrefix = providerKey.toUpperCase();
+  const legacyAliases: Record<string, string[]> = {
+    github: ["GH_CLIENT_ID", "GRANTRY_GITHUB_CLIENT_ID"],
+    google_gsc: ["GOOGLE_CLIENT_ID"],
+    google_analytics: ["GOOGLE_CLIENT_ID"],
+    google_ads: ["GOOGLE_CLIENT_ID"],
+    google_drive: ["GOOGLE_CLIENT_ID"],
+    gmail: ["GOOGLE_CLIENT_ID"],
+    youtube: ["GOOGLE_CLIENT_ID"],
+    google_calendar: ["GOOGLE_CLIENT_ID"],
+    google_sheets: ["GOOGLE_CLIENT_ID"],
+    google_tag_manager: ["GOOGLE_CLIENT_ID"],
+    google_cloud: ["GOOGLE_CLIENT_ID"],
+    bigquery: ["GOOGLE_CLIENT_ID"],
+    google_admin: ["GOOGLE_CLIENT_ID"],
+    yahoo_ads: ["YAHOO_CLIENT_ID"],
+  };
+  const legacySecretAliases: Record<string, string[]> = {
+    github: ["GH_CLIENT_SECRET", "GRANTRY_GITHUB_CLIENT_SECRET"],
+    google_gsc: ["GOOGLE_CLIENT_SECRET"],
+    google_analytics: ["GOOGLE_CLIENT_SECRET"],
+    google_ads: ["GOOGLE_CLIENT_SECRET"],
+    google_drive: ["GOOGLE_CLIENT_SECRET"],
+    gmail: ["GOOGLE_CLIENT_SECRET"],
+    youtube: ["GOOGLE_CLIENT_SECRET"],
+    google_calendar: ["GOOGLE_CLIENT_SECRET"],
+    google_sheets: ["GOOGLE_CLIENT_SECRET"],
+    google_tag_manager: ["GOOGLE_CLIENT_SECRET"],
+    google_cloud: ["GOOGLE_CLIENT_SECRET"],
+    bigquery: ["GOOGLE_CLIENT_SECRET"],
+    google_admin: ["GOOGLE_CLIENT_SECRET"],
+    yahoo_ads: ["YAHOO_CLIENT_SECRET"],
+  };
+  return {
+    source: "env" as const,
+    credentialId: null,
+    clientId: process.env[`${envPrefix}_CLIENT_ID`] || (legacyAliases[providerKey] || []).map(k => process.env[k]).find(Boolean) || "",
+    clientSecret: process.env[`${envPrefix}_CLIENT_SECRET`] || (legacySecretAliases[providerKey] || []).map(k => process.env[k]).find(Boolean) || "",
+    oauthScopes: providerDef.oauthScopes || [],
+    oauthOptionalScopes: providerDef.oauthOptionalScopes || [],
+    oauthClientAuthMethod: process.env[`${envPrefix}_CLIENT_AUTH_METHOD`] || "CLIENT_SECRET_POST",
+  };
 }
 
 function renderCredentialSummary(cn: {
@@ -2447,12 +2641,14 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                       : (sel.value === "google_maps" ? "Google Maps Platform API key" : p.label + " token"))))));
           credField.placeholder = useSa
             ? "Paste the full service account JSON key file ({ \\"type\\": \\"service_account\\", ... })"
-            : (usePat ? "Paste your " + tokenLabel + (sel.value === "hubspot" ? " here (starts with pat-)" : " here") : "OAuth flow will start after submit");
-          credField.disabled = !usePat && !useSa;
+            : (usePat
+              ? "Paste your " + tokenLabel + (sel.value === "hubspot" ? " here (starts with pat-)" : " here")
+              : 'Optional: paste this workspace OAuth app JSON {"client_id":"...","client_secret":"..."} before connecting');
+          credField.disabled = false;
           credField.required = (usePat && reusable.length === 0) || useSa;
-          credFieldRow.style.opacity = (usePat || useSa) ? "1" : "0.55";
+          credFieldRow.style.opacity = "1";
           addServiceButton.textContent = useOauth ? "Connect with OAuth" : "Add service";
-          if (!usePat && !useSa) credField.value = "";
+          if (!usePat && !useSa && !useOauth) credField.value = "";
           if (subjectFieldRow) subjectFieldRow.style.display = useSa ? "" : "none";
           if (subjectField) { subjectField.required = useSa; if (!useSa) subjectField.value = ""; }
           if (useSa) credHint.textContent = "Domain-Wide Delegation: the customer's Workspace admin authorizes this service account's client ID + scopes once in their Admin console. No per-user OAuth, no 7-day token expiry.";
@@ -2871,12 +3067,29 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
       `);
     }
 
-    if (!wantsPat && !wantsSa && credential) {
+    if (!wantsPat && !wantsSa && !wantsOauth && credential) {
       return c.html("<h1>pasted credentials are not accepted for this OAuth-only provider</h1>", 400);
     }
     if (wantsOauth) {
       if (!providerDef.authTypes.includes("oauth")) return c.html("<h1>OAuth is not supported for this provider</h1>", 400);
-      return c.redirect(`/oauth/${provider}/start?tenant=${encodeURIComponent(scope)}&reauth=1`);
+      let oauthAppCredentialId = "";
+      if (credential) {
+        try {
+          const oauthAppCredential = await upsertWorkspaceOAuthAppCredential({
+            workspaceId: wsId,
+            ownerId: user.id,
+            providerKey: provider,
+            providerDef,
+            rawCredential: credential,
+          });
+          oauthAppCredentialId = oauthAppCredential?.id || "";
+        } catch (e: any) {
+          return c.html(`<h1>Invalid OAuth app credential</h1><p>${escapeHtml(String(e?.message ?? e))}</p><p><a href="/tenants/${scope}/edit">← Back</a></p>`, 400);
+        }
+      }
+      const params = new URLSearchParams({ tenant: scope, reauth: "1" });
+      if (oauthAppCredentialId) params.set("oauth_app_credential_id", oauthAppCredentialId);
+      return c.redirect(`/oauth/${provider}/start?${params.toString()}`);
     }
     if (!wantsPat || !providerDef.authTypes.includes("pat")) return c.html("<h1>paste token is not supported for this provider</h1>", 400);
 
@@ -3198,6 +3411,9 @@ dashboardApp.get("/tenants/new", async (c) => {
               ${authType === "oauth" ? `
               <div class="field oauth-row">
                 <div class="field-hint" style="margin-top:0;">${escapeHtml(p.helpText)} You'll be redirected to authorize after clicking <b>Create scope</b>.</div>
+                <label>Workspace OAuth app <span style="color:#687385;">(optional if already saved)</span></label>
+                <textarea name="credential_${p.key}_${authType}" class="cred-input" rows="2" placeholder='{"client_id":"...","client_secret":"..."}'></textarea>
+                <div class="field-hint">Stored on this workspace and used for this provider's OAuth redirects and token refreshes. Each customer workspace should use its own OAuth app.</div>
                 ${serverCredentialHint(p.key)}
                 ${p.oauthSetupUrl ? `<div style="margin-top:4px;"><a href="${p.oauthSetupUrl}" target="_blank" rel="noopener" style="font-size:13px;">${p.key === "google_ads" ? "🔗 Register/manage Google OAuth client here →" : p.key === "yahoo_ads" ? "🔗 Register/manage LINE Yahoo Ads application here →" : `🔗 Register/manage your ${p.label} OAuth app here →`}</a></div>` : ""}
               </div>` : ""}
@@ -3571,10 +3787,10 @@ dashboardApp.post("/tenants/new", async (c) => {
   //    of that chain. (MUST filter connection lookups by ownerId — otherwise
   //    user B could inherit user A's credential.)
   const connections: Array<{ label: string; scope: string; provider: string }> = [];
-  const oauthQueue: string[] = [];
+  const oauthQueue: Array<{ provider: string; oauthAppCredentialId?: string }> = [];
   for (const { provider, authType } of providerAuths) {
     const providerDef = getProvider(provider)!; // validated above
-    const credential = authType === "pat" ? credentialFor(provider, authType) : "";
+    const credential = (authType === "pat" || authType === "oauth") ? credentialFor(provider, authType) : "";
     const requestedReuseConnectionId = authType === "pat" && !credential ? reuseConnectionIdFor(provider, authType) : "";
 
     const existingConn = await prisma.connection.findFirst({
@@ -3611,7 +3827,24 @@ dashboardApp.post("/tenants/new", async (c) => {
     //   - existing connection, no cred -> reuse as-is
     //   - supports OAuth, no cred      -> queue for OAuth authorization
     //   - PAT-only, no cred, no conn   -> error
-    if (credential) {
+    if (authType === "oauth" && providerDef.authTypes.includes("oauth")) {
+      let oauthAppCredentialId = "";
+      if (credential) {
+        try {
+          const oauthAppCredential = await upsertWorkspaceOAuthAppCredential({
+            workspaceId: tenantRow.workspaceId ?? wsId,
+            ownerId: user.id,
+            providerKey: provider,
+            providerDef,
+            rawCredential: credential,
+          });
+          oauthAppCredentialId = oauthAppCredential?.id || "";
+        } catch (e: any) {
+          return c.html(`<h1>Invalid OAuth app credential for ${escapeHtml(providerDef.label)}</h1><p>${escapeHtml(String(e?.message ?? e))}</p><p><a href="/tenants/new">Back</a></p>`, 400);
+        }
+      }
+      oauthQueue.push({ provider, oauthAppCredentialId });
+    } else if (credential) {
       const credentialMeta = await credentialMetadataForStorage(provider, "pat", credential);
       const conn = existingConn
         ? await prisma.connection.update({
@@ -3655,8 +3888,6 @@ dashboardApp.post("/tenants/new", async (c) => {
       connections.push(conn);
     } else if (reusableConnsForProvider.length > 1) {
       return c.html(`<h1>multiple existing ${escapeHtml(providerDef.label)} connections</h1><p>Paste a new credential for now, or delete/disable the extra existing connection so Grantry can safely infer which one to reuse.</p><p><a href="/tenants/new">Back</a></p>`, 400);
-    } else if (authType === "oauth" && providerDef.authTypes.includes("oauth")) {
-      oauthQueue.push(provider);
     } else {
       return c.html(`<h1>credential required for ${escapeHtml(providerDef.label)}</h1>`, 400);
     }
@@ -3672,9 +3903,10 @@ dashboardApp.post("/tenants/new", async (c) => {
       tenant_select: tenantSelect,
       agent,
       agent_desc: agentDesc,
-      oauth_queue: rest.join(","),
+      oauth_queue: rest.map((item) => item.provider).join(","),
     });
-    return c.redirect(`/oauth/${first}/start?${params.toString()}`);
+    if (first.oauthAppCredentialId) params.set("oauth_app_credential_id", first.oauthAppCredentialId);
+    return c.redirect(`/oauth/${first.provider}/start?${params.toString()}`);
   }
 
   // 3) Create agent + grant tenant connections + mint token
@@ -4307,8 +4539,10 @@ dashboardApp.get("/audit", async (c) => {
 });
 
 // --- /oauth/:provider/start (GET) — initiate OAuth flow for any provider ---
-// Generic. Reads the provider's authorizeUrl + scopes from the registry,
-// reads client_id/secret from env (`<PROVIDER>_CLIENT_ID` / `<PROVIDER>_CLIENT_SECRET`).
+// Generic. Reads the provider's authorizeUrl + scopes from the registry, then
+// resolves client_id/secret from the current workspace's OAuth app credential
+// when configured. Env fallback is only for providers that allow a Grantry-owned
+// OAuth app.
 // Stores the wizard data in OAuthState.payload keyed by the `state` param.
 oauthApp.get("/:provider/start", async (c) => {
   const user = await getSessionUser(c);
@@ -4323,31 +4557,6 @@ oauthApp.get("/:provider/start", async (c) => {
     return c.html(`<h1>${escapeHtml(providerDef.label)} OAuth not configured</h1><p>Missing <code>authorizeUrl</code> in registry. <a href="/tenants/new">← Back</a></p>`, 500);
   }
 
-  // Per-provider env var names: GITHUB_CLIENT_ID / GOOGLE_GSC_CLIENT_ID / HUBSPOT_CLIENT_ID
-  // (Simple uppercase-with-underscores convention.)
-  const envPrefix = providerKey.toUpperCase();
-  // Backwards compat: also accept GH_CLIENT_ID (legacy) and GRANTRY_GITHUB_CLIENT_ID
-  const legacyAliases: Record<string, string[]> = {
-    github: ["GH_CLIENT_ID", "GRANTRY_GITHUB_CLIENT_ID"],
-    google_gsc: ["GOOGLE_CLIENT_ID"],
-    google_analytics: ["GOOGLE_CLIENT_ID"],
-    google_ads: ["GOOGLE_CLIENT_ID"],
-    google_drive: ["GOOGLE_CLIENT_ID"],
-    gmail: ["GOOGLE_CLIENT_ID"],
-    youtube: ["GOOGLE_CLIENT_ID"],
-    google_calendar: ["GOOGLE_CLIENT_ID"],
-    google_sheets: ["GOOGLE_CLIENT_ID"],
-    google_tag_manager: ["GOOGLE_CLIENT_ID"],
-    google_cloud: ["GOOGLE_CLIENT_ID"],
-    bigquery: ["GOOGLE_CLIENT_ID"],
-    google_admin: ["GOOGLE_CLIENT_ID"],
-    yahoo_ads: ["YAHOO_CLIENT_ID"],
-  };
-  const clientId = process.env[`${envPrefix}_CLIENT_ID`]
-    || (legacyAliases[providerKey] || []).map(k => process.env[k]).find(Boolean);
-  if (!clientId) {
-    return c.html(`<h1>${escapeHtml(providerDef.label)} OAuth not configured</h1><p>Set <code>${envPrefix}_CLIENT_ID</code> env var. <a href="/tenants/new">← Back</a></p>`, 500);
-  }
   const publicUrl = process.env.BETTER_AUTH_URL || `${publicOrigin(c)}`;
 
   // `reauth=1` means we're refreshing the tokens of an existing connection
@@ -4364,6 +4573,8 @@ oauthApp.get("/:provider/start", async (c) => {
     agent_desc: c.req.query("agent_desc") || "",
     oauth_queue: c.req.query("oauth_queue") || "",
     connection_id: c.req.query("connection_id") || "",
+    oauth_app_credential_id: c.req.query("oauth_app_credential_id") || "",
+    optional_scopes: c.req.query("optional_scopes") || "",
     reauth,
     userId: user.id,
   };
@@ -4376,6 +4587,17 @@ oauthApp.get("/:provider/start", async (c) => {
   if (!/^[a-z0-9_-]+$/.test(payload.tenant)) {
     return c.html(`<h1>invalid scope</h1><p>Scope must match <code>[a-z0-9_-]+</code>. <a href="/tenants/new">← Back</a></p>`, 400);
   }
+  const workspaceId = await resolveOAuthWorkspaceId(c, user.id, providerKey, payload);
+  const oauthCfg = await resolveOAuthClientConfig(providerKey, providerDef, workspaceId, String(payload.oauth_app_credential_id || ""));
+  if (!oauthCfg.clientId) {
+    const envPrefix = providerKey.toUpperCase();
+    const setupLink = payload.tenant ? `/tenants/${encodeURIComponent(payload.tenant)}/edit` : "/tenants/new";
+    const hint = providerRequiresWorkspaceOAuthApp(providerKey)
+      ? `Configure this workspace's ${escapeHtml(providerDef.label)} OAuth app first. Paste its <code>client_id</code> and <code>client_secret</code> on the scope edit page; do not use Grantry-wide environment variables.`
+      : `Set <code>${envPrefix}_CLIENT_ID</code> env var.`;
+    return c.html(`<h1>${escapeHtml(providerDef.label)} OAuth not configured</h1><p>${hint} <a href="${setupLink}">← Back</a></p>`, 500);
+  }
+  if (oauthCfg.credentialId) payload.oauth_app_credential_id = oauthCfg.credentialId;
 
   // CSRF state
   const state = crypto.randomUUID().replace(/-/g, "");
@@ -4402,11 +4624,14 @@ oauthApp.get("/:provider/start", async (c) => {
   // Slack's OAuth v2 authorize endpoint expects a comma-separated scope list
   // (bot scopes in `scope`); most other providers use space-separated scopes.
   const scopeSeparator = providerKey === "slack" ? "," : " ";
-  const scopeStr = (providerDef.oauthScopes || []).join(scopeSeparator);
-  const optionalScopeStr = (providerDef.oauthOptionalScopes || []).join(scopeSeparator);
+  const scopeStr = (oauthCfg.oauthScopes || []).join(scopeSeparator);
+  const optionalScopes = providerKey === "hubspot"
+    ? parseScopeList(String(payload.optional_scopes || ""))
+    : (oauthCfg.oauthOptionalScopes || []);
+  const optionalScopeStr = optionalScopes.join(scopeSeparator);
   const params = new URLSearchParams({
     response_type: "code",
-    client_id: clientId,
+    client_id: oauthCfg.clientId,
     redirect_uri: redirectUri,
     scope: scopeStr,
     state,
@@ -4458,53 +4683,31 @@ oauthApp.get("/:provider/callback", async (c) => {
     return c.html(`<h1>OAuth state user mismatch</h1>`, 403);
   }
 
-  // Exchange code for token
-  const envPrefix = providerKey.toUpperCase();
-  const legacyAliases: Record<string, string[]> = {
-    github: ["GH_CLIENT_ID", "GRANTRY_GITHUB_CLIENT_ID"],
-    google_gsc: ["GOOGLE_CLIENT_ID"],
-    google_analytics: ["GOOGLE_CLIENT_ID"],
-    google_ads: ["GOOGLE_CLIENT_ID"],
-    google_drive: ["GOOGLE_CLIENT_ID"],
-    gmail: ["GOOGLE_CLIENT_ID"],
-    youtube: ["GOOGLE_CLIENT_ID"],
-    google_calendar: ["GOOGLE_CLIENT_ID"],
-    google_sheets: ["GOOGLE_CLIENT_ID"],
-    google_tag_manager: ["GOOGLE_CLIENT_ID"],
-    google_cloud: ["GOOGLE_CLIENT_ID"],
-    bigquery: ["GOOGLE_CLIENT_ID"],
-    google_admin: ["GOOGLE_CLIENT_ID"],
-    yahoo_ads: ["YAHOO_CLIENT_ID"],
-  };
-  const legacySecretAliases: Record<string, string[]> = {
-    github: ["GH_CLIENT_SECRET", "GRANTRY_GITHUB_CLIENT_SECRET"],
-    google_gsc: ["GOOGLE_CLIENT_SECRET"],
-    google_analytics: ["GOOGLE_CLIENT_SECRET"],
-    google_ads: ["GOOGLE_CLIENT_SECRET"],
-    google_drive: ["GOOGLE_CLIENT_SECRET"],
-    gmail: ["GOOGLE_CLIENT_SECRET"],
-    youtube: ["GOOGLE_CLIENT_SECRET"],
-    google_calendar: ["GOOGLE_CLIENT_SECRET"],
-    google_sheets: ["GOOGLE_CLIENT_SECRET"],
-    google_tag_manager: ["GOOGLE_CLIENT_SECRET"],
-    google_cloud: ["GOOGLE_CLIENT_SECRET"],
-    bigquery: ["GOOGLE_CLIENT_SECRET"],
-    google_admin: ["GOOGLE_CLIENT_SECRET"],
-    yahoo_ads: ["YAHOO_CLIENT_SECRET"],
-  };
-  const clientId = process.env[`${envPrefix}_CLIENT_ID`]
-    || (legacyAliases[providerKey] || []).map(k => process.env[k]).find(Boolean);
-  const clientSecret = process.env[`${envPrefix}_CLIENT_SECRET`]
-    || (legacySecretAliases[providerKey] || []).map(k => process.env[k]).find(Boolean);
+  // Exchange code for token. Providers can use a customer/workspace-owned
+  // OAuth app, so callback must use the same client that generated authorize.
+  const workspaceIdForOAuth = await resolveOAuthWorkspaceId(c, user.id, providerKey, payload);
+  const oauthCfg = await resolveOAuthClientConfig(providerKey, providerDef, workspaceIdForOAuth, String(payload.oauth_app_credential_id || ""));
+  const clientId = oauthCfg.clientId;
+  const clientSecret = oauthCfg.clientSecret;
   const publicUrl = process.env.BETTER_AUTH_URL || `${publicOrigin(c)}`;
   if (!clientId || !clientSecret) {
-    return c.html(`<h1>${escapeHtml(providerDef.label)} OAuth credentials missing</h1><p>Set <code>${envPrefix}_CLIENT_ID</code> and <code>${envPrefix}_CLIENT_SECRET</code> env vars.</p>`, 500);
+    const envPrefix = providerKey.toUpperCase();
+    const setupLink = payload.tenant ? `/tenants/${encodeURIComponent(payload.tenant)}/edit` : "/tenants/new";
+    const hint = providerRequiresWorkspaceOAuthApp(providerKey)
+      ? `Configure this workspace's ${escapeHtml(providerDef.label)} OAuth app first. Paste its <code>client_id</code> and <code>client_secret</code> on the scope edit page; do not use Grantry-wide environment variables.`
+      : `Set <code>${envPrefix}_CLIENT_ID</code> and <code>${envPrefix}_CLIENT_SECRET</code> env vars.`;
+    return c.html(`<h1>${escapeHtml(providerDef.label)} OAuth credentials missing</h1><p>${hint} <a href="${setupLink}">← Back</a></p>`, 500);
   }
   const redirectUri = `${publicUrl.replace(/\/+$/, "")}/oauth/${providerKey}/callback`;
 
-  // Reddit, X, and Zoom authenticate the confidential client with HTTP Basic
-  // auth at the token endpoint rather than client credentials in the body.
-  const usesBasicAuth = providerKey === "reddit" || providerKey === "x" || providerKey === "zoom";
+  // Some OAuth providers require HTTP Basic auth at the token endpoint rather
+  // than client credentials in the body. Money Forward exposes this as an app
+  // portal setting; default to Basic because that is the safer/current setting.
+  const moneyForwardClientAuthMethod = String(oauthCfg.oauthClientAuthMethod || "CLIENT_SECRET_BASIC").toUpperCase();
+  const usesBasicAuth = providerKey === "reddit"
+    || providerKey === "x"
+    || providerKey === "zoom"
+    || (providerKey === "moneyforward" && moneyForwardClientAuthMethod !== "CLIENT_SECRET_POST");
   const tokenBody = new URLSearchParams({
     client_id: clientId,
     code,
