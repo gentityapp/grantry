@@ -1982,6 +1982,12 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "google_cloud/get_project") { return { project_id: { type: "string", description: "GCP project id." } }; }
   if (toolName === "google_cloud/list_services") { return { project_id: { type: "string", description: "GCP project id." }, page_size: { type: "number", description: "Results per page." }, page_token: { type: "string", description: "Pagination token." } }; }
   if (toolName === "google_cloud/list_log_entries") { return { project_id: { type: "string", description: "GCP project id." }, filter: { type: "string", description: "Cloud Logging filter expression." }, order_by: { type: "string", description: "timestamp asc or timestamp desc." }, page_size: { type: "number", description: "Max entries (default 50)." } }; }
+  if (toolName === "google_cloud/list_billing_accounts") { return { filter: { type: "string", description: "Billing account list filter." }, page_size: { type: "number", description: "Results per page." }, page_token: { type: "string", description: "Pagination token." } }; }
+  if (toolName === "google_cloud/get_billing_account") { return { billing_account_id: { type: "string", description: "Billing account id, e.g. 012345-567890-ABCDEF or billingAccounts/012345-567890-ABCDEF." } }; }
+  if (toolName === "google_cloud/list_billing_account_projects") { return { billing_account_id: { type: "string", description: "Billing account id (012345-567890-ABCDEF)." }, page_size: { type: "number", description: "Results per page." }, page_token: { type: "string", description: "Pagination token." } }; }
+  if (toolName === "google_cloud/get_project_billing_info") { return { project_id: { type: "string", description: "GCP project id whose billing info to read (billing account, billing enabled)." } }; }
+  if (toolName === "google_cloud/list_billing_services") { return { page_size: { type: "number", description: "Results per page." }, page_token: { type: "string", description: "Pagination token." } }; }
+  if (toolName === "google_cloud/list_skus") { return { service_id: { type: "string", description: "Catalog service id (from list_billing_services), e.g. 6F81-5844-456A for Compute Engine." }, currency_code: { type: "string", description: "ISO currency code for prices, e.g. USD or JPY." }, start_time: { type: "string", description: "RFC3339 start of the price window." }, end_time: { type: "string", description: "RFC3339 end of the price window." }, page_size: { type: "number", description: "Results per page." }, page_token: { type: "string", description: "Pagination token." } }; }
   // --- bigquery ---
   if (toolName === "bigquery/list_datasets") { return { project_id: { type: "string", description: "GCP project id." }, max_results: { type: "number", description: "Max datasets." }, all: { type: "boolean", description: "Include hidden datasets." } }; }
   if (toolName === "bigquery/list_tables") { return { project_id: { type: "string", description: "GCP project id." }, dataset_id: { type: "string", description: "Dataset id." }, max_results: { type: "number", description: "Max tables." } }; }
@@ -2314,6 +2320,10 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "google_cloud/get_project") return ["project_id"];
   if (toolName === "google_cloud/list_services") return ["project_id"];
   if (toolName === "google_cloud/list_log_entries") return ["project_id"];
+  if (toolName === "google_cloud/get_billing_account") return ["billing_account_id"];
+  if (toolName === "google_cloud/list_billing_account_projects") return ["billing_account_id"];
+  if (toolName === "google_cloud/get_project_billing_info") return ["project_id"];
+  if (toolName === "google_cloud/list_skus") return ["service_id"];
   if (toolName === "bigquery/list_datasets") return ["project_id"];
   if (toolName === "bigquery/list_tables") return ["project_id", "dataset_id"];
   if (toolName === "bigquery/get_table") return ["project_id", "dataset_id", "table_id"];
