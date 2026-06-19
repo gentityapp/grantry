@@ -4343,6 +4343,27 @@ dashboardApp.get("/agents/:id", async (c) => {
     scopeSet.add(conn.scope);
   }
   const scopes = Array.from(scopeSet).sort();
+  const grantableConnectionWhere: any = {
+    ownerId: user.id,
+    enabled: true,
+    scope: { not: "" },
+  };
+  if (agent.workspaceId) grantableConnectionWhere.workspaceId = agent.workspaceId;
+  const grantableConnections = await prisma.connection.findMany({
+    where: grantableConnectionWhere,
+    select: { id: true, provider: true, scope: true },
+    orderBy: [{ scope: "asc" }, { provider: "asc" }],
+  });
+  const addableScopes = Array.from(
+    grantableConnections.reduce((acc, conn) => {
+      if (scopeSet.has(conn.scope)) return acc;
+      const item = acc.get(conn.scope) ?? { scope: conn.scope, providers: new Set<string>(), count: 0 };
+      item.providers.add(conn.provider);
+      item.count += 1;
+      acc.set(conn.scope, item);
+      return acc;
+    }, new Map<string, { scope: string; providers: Set<string>; count: number }>())
+  ).map(([, item]) => item);
   const tokenPlaceholder = `${agent.tokenPrefix}...ROTATE_TO_VIEW_FULL_TOKEN`;
 
   return c.html(`
@@ -4361,6 +4382,22 @@ dashboardApp.get("/agents/:id", async (c) => {
         <p>Accessible scopes: ${scopeSet.size
           ? Array.from(scopeSet).sort().map((s) => `<span class="badge scoped">${escapeHtml(s)}</span>`).join(" ")
           : '<span class="badge denied">none</span>'}</p>
+      </div>
+      <div class="card">
+        <h2>Add existing scopes</h2>
+        ${addableScopes.length === 0 ? '<div class="empty">No ungranted scopes with enabled connections are available for this agent.</div>' : `
+        <form method="post" action="/agents/${escapeHtml(agent.id)}/scopes/grant">
+          ${addableScopes.map((item) => `
+            <label style="display:flex;align-items:flex-start;gap:10px;margin:10px 0;cursor:pointer;">
+              <input type="checkbox" name="scopes" value="${escapeHtml(item.scope)}" style="margin-top:3px;transform:scale(1.15);">
+              <span>
+                <span class="badge scoped">${escapeHtml(item.scope)}</span>
+                <span style="color:#687385;font-size:13px;">${item.count} connection(s): ${Array.from(item.providers).sort().map(escapeHtml).join(", ")}</span>
+              </span>
+            </label>
+          `).join("")}
+          <button type="submit" class="secondary" style="margin-top:8px;">Add selected scopes</button>
+        </form>`}
       </div>
       <div class="card">
         <h2>Charter</h2>
@@ -4407,6 +4444,44 @@ dashboardApp.get("/agents/:id", async (c) => {
       <p><a href="/agents">← Back to agents</a></p>
     </main></body></html>
   `);
+});
+
+// --- /agents/:id/scopes/grant POST (grant existing scopes to an existing agent) ---
+dashboardApp.post("/agents/:id/scopes/grant", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+  const id = c.req.param("id");
+  const agent = await prisma.agent.findUnique({
+    where: { id },
+    select: { id: true, ownerId: true, workspaceId: true },
+  });
+  if (!agent) return c.html("<h1>agent not found</h1>", 404);
+  if (agent.ownerId !== user.id) return c.html("<h1>not your agent</h1>", 403);
+
+  const body = await c.req.parseBody();
+  const rawScopes = (body as any).scopes;
+  const selectedScopes = (Array.isArray(rawScopes) ? rawScopes : [rawScopes])
+    .map((scope) => String(scope ?? "").trim())
+    .filter((scope) => /^[a-z0-9_-]+$/.test(scope));
+  const scopes = Array.from(new Set(selectedScopes));
+  if (scopes.length === 0) return c.html("<h1>select at least one scope</h1>", 400);
+
+  const where: any = {
+    ownerId: user.id,
+    enabled: true,
+    scope: { in: scopes },
+  };
+  if (agent.workspaceId) where.workspaceId = agent.workspaceId;
+  const connections = await prisma.connection.findMany({
+    where,
+    select: { id: true },
+  });
+  if (connections.length === 0) {
+    return c.html("<h1>no enabled connections found for selected scopes</h1>", 400);
+  }
+
+  await grantConnectionsToAgent(agent.id, connections.map((conn) => conn.id), user.id);
+  return c.redirect(`/agents/${agent.id}`);
 });
 
 // --- /agents/:id/charter POST (edit the agent's charter / description) ---
