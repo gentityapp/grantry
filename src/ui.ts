@@ -226,8 +226,8 @@ ${scope ? `X-Grantry-Scope = "${scope}"` : ""}`;
         <h2>MCP config</h2>
         <p style="font-size:13px;color:#687385;margin-top:0;">
           ${scope
-            ? `Use one MCP server entry per tenant. Tool names stay stable; the token and <code>X-Grantry-Scope</code> lock this entry to the selected tenant.`
-            : `This entry is <b>not</b> scope-locked: the token decides what it can reach, and each call picks its tenant via the <code>scope</code> argument.`}
+            ? `Use one MCP server entry per scope. Tool names stay stable; the token and <code>X-Grantry-Scope</code> lock this entry to the selected scope.`
+            : `This entry is <b>not</b> scope-locked: the token decides what it can reach, and each call picks its scope via the <code>scope</code> argument.`}
         </p>
         <p style="font-size:13px;color:#3c4257;margin:0 0 4px;">MCP endpoint: <code>${escapeHtml(origin)}/mcp</code> — authenticate with <code>Authorization: Bearer &lt;token&gt;</code>.</p>
 
@@ -491,7 +491,7 @@ const NAV = (current: string, email?: string) => `
   </script>
   <div class="nav-links">
     <a href="/dashboard" class="${current === "dashboard" ? "active" : ""}">Dashboard</a>
-    <a href="/tenants" class="${current === "tenants" ? "active" : ""}">Tenants</a>
+    <a href="/tenants" class="${current === "tenants" ? "active" : ""}">Scopes</a>
     <a href="/agents" class="${current === "agents" ? "active" : ""}">Agents</a>
     <a href="/workspaces" class="${current === "workspaces" ? "active" : ""}">Workspace</a>
     <a href="/audit" class="${current === "audit" ? "active" : ""}">Audit</a>
@@ -1309,7 +1309,7 @@ dashboardApp.get("/dashboard", async (c) => {
       </div>
       <h2>Recent activity</h2>
       <div class="card">
-        ${recentAudits.length === 0 ? '<div class="empty">No activity yet. Create your first tenant → <a href="/tenants/new">+ New tenant</a></div>' : `
+        ${recentAudits.length === 0 ? '<div class="empty">No activity yet. Create your first scope → <a href="/tenants/new">+ New scope</a></div>' : `
         <table>
           <thead><tr><th>When</th><th>Agent</th><th>Tool</th><th>Scope</th><th>Status</th><th>Duration</th></tr></thead>
           <tbody>
@@ -1565,7 +1565,7 @@ dashboardApp.get("/_ops", async (c) => {
         </div>
       </div>
 
-      <h2>Tenant Scopes</h2>
+      <h2>Scopes</h2>
       <div class="card">
         <div class="table-wrap">
           <table>
@@ -1576,7 +1576,7 @@ dashboardApp.get("/_ops", async (c) => {
                   <td>${g.scope ? `<code>${escapeHtml(g.scope)}</code>` : '<span class="badge unscoped">unscoped</span>'}</td>
                   <td>${g._count._all}</td>
                 </tr>
-              `).join("") || '<tr><td colspan="2">No tenant scopes.</td></tr>'}
+              `).join("") || '<tr><td colspan="2">No scopes.</td></tr>'}
             </tbody>
           </table>
         </div>
@@ -1936,14 +1936,14 @@ dashboardApp.get("/account", async (c) => {
           </tbody>
         </table>
         <p class="field-hint" style="margin-bottom:0;">
-          Everything below is owned by this account. If a tenant or agent you expect is missing,
+          Everything below is owned by this account. If a scope or agent you expect is missing,
           it probably belongs to a different account — sign out and back in with that one.
         </p>
       </div>
       <div class="card">
         <h2>Owned by this account</h2>
         <p>
-          <a href="/tenants">${tenantCount} tenant${tenantCount === 1 ? "" : "s"}</a> ·
+          <a href="/tenants">${tenantCount} scope${tenantCount === 1 ? "" : "s"}</a> ·
           ${connectionCount} connection${connectionCount === 1 ? "" : "s"} ·
           <a href="/agents">${agentCount} agent${agentCount === 1 ? "" : "s"}</a> ·
           ${grantCount} connection grant${grantCount === 1 ? "" : "s"}
@@ -2046,18 +2046,18 @@ dashboardApp.get("/tenants", async (c) => {
   const tenantBySlug = new Map(tenants.map((t) => [t.slug, t]));
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Tenants — grantry</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Scopes — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
       <div class="row spread" style="margin-bottom:16px;">
-        <h1 style="margin:0;">Tenants</h1>
-        <a href="/tenants/new" class="btn">+ New tenant</a>
+        <h1 style="margin:0;">Scopes</h1>
+        <a href="/tenants/new" class="btn">+ New scope</a>
       </div>
       <p style="color:#687385;margin-top:-8px;">API: <code>GET /api/scopes</code> returns your full wiring as JSON.</p>
       <form method="post" action="/tenants/bulk-delete" id="bulkForm">
         <input type="hidden" name="scopes_csv" id="scopesCsv" value="">
-        ${byScope.size === 0 ? '<div class="card"><div class="empty">No tenants yet. <a href="/tenants/new">Create your first one</a>.</div></div>' : `
+        ${byScope.size === 0 ? '<div class="card"><div class="empty">No scopes yet. <a href="/tenants/new">Create your first one</a>.</div></div>' : `
         <div class="row spread" style="margin-bottom:8px;">
           <label style="font-size:13px;color:#3c4257;cursor:pointer;"><input type="checkbox" id="selectAll"> select all</label>
           <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;" id="bulkDelBtn" disabled>🗑 Delete selected (0)</button>
@@ -2167,24 +2167,24 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
-      <h1>Edit tenant ${tenantRow && tenantRow.displayName !== tenantRow.slug ? `${escapeHtml(tenantRow.displayName)} ` : ""}<code>${scope}</code></h1>
+      <h1>Edit scope ${tenantRow && tenantRow.displayName !== tenantRow.slug ? `${escapeHtml(tenantRow.displayName)} ` : ""}<code>${scope}</code></h1>
       <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
-        Edit the tenant's display labels and provider connections. To add a new service, scroll down.
+        Edit the scope's display labels and provider connections. To add a new service, scroll down.
       </p>
       ${reauthBanner}
 
       <h2 id="codex-mcp">Codex MCP</h2>
       <div class="card">
         <p style="font-size:13px;color:#687385;margin-top:0;">
-          Connect this tenant to Codex as one MCP server. The generated config is locked to <code>${scope}</code>, so Codex cannot cross into another tenant through this entry.
+          Connect this scope to Codex as one MCP server. The generated config is locked to <code>${scope}</code>, so Codex cannot cross into another scope through this entry.
         </p>
         ${codexAgents.length === 0 ? `
-          <p>No Codex MCP token exists for this tenant yet.</p>
+          <p>No Codex MCP token exists for this scope yet.</p>
           <form method="post" action="/tenants/${scope}/codex-mcp/create">
             <button type="submit">Create Codex MCP config</button>
           </form>
         ` : `
-          <p>${codexAgents.length} token${codexAgents.length === 1 ? "" : "s"} can access this tenant. Use the first one for the default Codex config.</p>
+          <p>${codexAgents.length} token${codexAgents.length === 1 ? "" : "s"} can access this scope. Use the first one for the default Codex config.</p>
           ${mcpConfigBlock(mcpOrigin(c), codexAgents[0].name, `${codexAgents[0].tokenPrefix}...ROTATE_TO_VIEW_FULL_TOKEN`, false, scope)}
           <div class="table-wrap">
             <table>
@@ -2212,7 +2212,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
       <form method="post" action="/tenants/${scope}/edit" id="settingsForm">
         <input type="hidden" name="_action" value="save_settings">
 
-        <h2>Tenant</h2>
+        <h2>Scope</h2>
         <div class="card">
           <p class="field-hint" style="margin-top:0;">
             The slug <code>${scope}</code> is the wire key agents send as <code>scope</code> / <code>X-Grantry-Scope</code> — it cannot be changed.
@@ -2221,7 +2221,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           <label for="tenant_display_name">Display name</label>
           <input type="text" name="tenant_display_name" id="tenant_display_name" value="${escapeHtml(tenantRow?.displayName ?? scope)}" placeholder="${scope}">
           <label for="tenant_description" style="margin-top:8px;">Description</label>
-          <input type="text" name="tenant_description" id="tenant_description" value="${escapeHtml(tenantRow?.description ?? "")}" placeholder="What this tenant is for">
+          <input type="text" name="tenant_description" id="tenant_description" value="${escapeHtml(tenantRow?.description ?? "")}" placeholder="What this scope is for">
         </div>
 
         <h2>Connections (${connections.length})</h2>
@@ -2280,7 +2280,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         <h2>Connection grants</h2>
         <div class="card">
           <p class="field-hint" style="margin-top:0;">Agents use explicit connection grants. Provider permissions come from each credential itself; Grantry does not maintain separate per-tool switches here.</p>
-          ${connections.length === 0 ? '<div class="empty">No provider connections yet.</div>' : `<p>${connections.length} connection(s) available for this tenant.</p>`}
+          ${connections.length === 0 ? '<div class="empty">No provider connections yet.</div>' : `<p>${connections.length} connection(s) available for this scope.</p>`}
         </div>
 
         <div style="display:flex;gap:8px;margin-bottom:32px;">
@@ -2295,7 +2295,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
 
       <h2>Advanced: additional agent token</h2>
       <div class="card">
-        <p class="field-hint" style="margin-top:0;">Most users should use <b>Codex MCP</b> above. This creates an extra internal agent token with grants to this tenant's enabled connections.</p>
+        <p class="field-hint" style="margin-top:0;">Most users should use <b>Codex MCP</b> above. This creates an extra internal agent token with grants to this scope's enabled connections.</p>
         <form method="post" action="/tenants/${scope}/agents/new" id="addAgentForm">
           <div class="field">
             <label for="agent">Agent name</label>
@@ -2306,7 +2306,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             <label for="agent_desc">Description <span style="color:#687385;">(optional)</span></label>
             <input type="text" name="agent_desc" id="agent_desc" placeholder="What this agent is for">
           </div>
-          <p class="field-hint">Tool visibility is derived from this tenant's granted connections. Provider credentials may still reject calls if their own permissions are narrower.</p>
+          <p class="field-hint">Tool visibility is derived from this scope's granted connections. Provider credentials may still reject calls if their own permissions are narrower.</p>
           <div style="display:flex;gap:8px;">
             <button type="submit" class="secondary">Create additional token</button>
           </div>
@@ -2315,16 +2315,16 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
 
       <h2 style="color:#df1b41;">Danger zone</h2>
       <div class="card" style="border-color:#df1b41;">
-        <p>Delete this tenant entirely. This removes <b>all your connections</b> for scope <code>${scope}</code>; related agent connection grants are removed automatically.</p>
-        <form method="post" action="/tenants/${scope}/delete" onsubmit="return confirm('Delete tenant ${scope}?\\n\\nThis removes all YOUR connections for this scope and related grants. This action cannot be undone.');">
-          <button type="submit" style="background:#df1b41;color:#ffffff;">🗑 Delete tenant ${scope}</button>
+        <p>Delete this scope entirely. This removes <b>all your connections</b> for scope <code>${scope}</code>; related agent connection grants are removed automatically.</p>
+        <form method="post" action="/tenants/${scope}/delete" onsubmit="return confirm('Delete scope ${scope}?\\n\\nThis removes all YOUR connections for this scope and related grants. This action cannot be undone.');">
+          <button type="submit" style="background:#df1b41;color:#ffffff;">🗑 Delete scope ${scope}</button>
         </form>
       </div>
 
       <h2>Add a service</h2>
       ${availableToAdd.length === 0 ? `
       <div class="card">
-        <div class="empty">All currently supported provider/auth combinations are already connected for this tenant.</div>
+        <div class="empty">All currently supported provider/auth combinations are already connected for this scope.</div>
         ${comingSoonProviders.length > 0 ? `
           <p class="field-hint" style="text-align:center;margin-top:14px;">
             Coming soon: ${comingSoonProviders.map((p) => `<code>${p.key}</code>`).join(", ")}
@@ -2646,7 +2646,7 @@ dashboardApp.post("/tenants/:scope/codex-mcp/create", async (c) => {
   const agent = await prisma.agent.create({
     data: {
       name: agentName,
-      description: `Codex MCP token for tenant ${scope}`,
+      description: `Codex MCP token for scope ${scope}`,
       hashedToken: tokenHash,
       tokenPrefix: token.slice(0, 16),
       ownerId: user.id,
@@ -2788,7 +2788,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
           <ul>${connUpdates.map((u) => `<li><code>${escapeHtml(u.label)}</code> · ${u.enabled ? "enabled" : "DISABLED"}</li>`).join("")}</ul>
           `}
         </div>
-        <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a> · <a href="/tenants">All tenants</a></p>
+        <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a> · <a href="/tenants">All scopes</a></p>
       </main></body></html>
     `);
   }
@@ -2866,7 +2866,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
             <p><strong>OAuth scopes</strong> (comma-separated):</p>
             <textarea rows="4" readonly style="width:100%;font-family:monospace;font-size:12px;">${escapeHtml(scopes.join(","))}</textarea>
           </div>
-          <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a> · <a href="/tenants">All tenants</a></p>
+          <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a> · <a href="/tenants">All scopes</a></p>
         </main></body></html>
       `);
     }
@@ -2951,7 +2951,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
           <h2>New connection</h2>
           <p><code>${conn.label}</code> · scope=<code>${conn.scope}</code></p>
         </div>
-        <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a> · <a href="/tenants">All tenants</a></p>
+        <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a> · <a href="/tenants">All scopes</a></p>
       </main></body></html>
     `);
   }
@@ -3112,43 +3112,42 @@ dashboardApp.get("/tenants/new", async (c) => {
   }
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>New tenant — grantry</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>New scope — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
-      <h1>+ New tenant</h1>
+      <h1>+ New scope</h1>
       <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
-        Create an isolated tenant in one step. This sets up: a <b>connection</b> with scope=&lt;tenant&gt;,
-        connection grants for that tenant, an <b>agent</b>, and a fresh <b>token</b>.
+        Create an isolated scope in one step. This sets up: a <b>connection</b>, connection grants for that scope, an <b>agent</b>, and a fresh <b>token</b>.
       </p>
       <form method="post" action="/tenants/new" id="wizForm">
         <div class="step-card">
-          <h2><span class="num">1</span> Tenant</h2>
+          <h2><span class="num">1</span> Scope</h2>
           <div class="field field-primary">
-            <label for="tenant">New tenant name</label>
-            <input type="text" name="tenant" id="tenant" pattern="[a-z0-9_-]+" placeholder="my-new-tenant" title="Lowercase letters, numbers, hyphens and underscores only (a-z 0-9 - _). Use the Display name field below for Japanese or other names." autofocus required>
+            <label for="tenant">New scope name</label>
+            <input type="text" name="tenant" id="tenant" pattern="[a-z0-9_-]+" placeholder="my-new-scope" title="Lowercase letters, numbers, hyphens and underscores only (a-z 0-9 - _). Use the Display name field below for Japanese or other names." autofocus required>
             <div class="field-hint">lowercase, alphanumeric, hyphens, underscores. This is the <b>scope</b> for all your API calls — it cannot be changed later, so pick carefully.</div>
             <div class="field-hint" id="tenantWarn" style="display:none;color:#df1b41;"></div>
           </div>
           <div class="field">
             <label for="display_name">Display name (optional)</label>
             <input type="text" name="display_name" id="display_name" placeholder="e.g. Grantry 開発環境">
-            <div class="field-hint">Human-facing label shown in dashboards. Unlike the tenant name, you can rename this anytime.</div>
+            <div class="field-hint">Human-facing label shown in dashboards. Unlike the scope name, you can rename this anytime.</div>
           </div>
           ${existingScopes.length > 0 ? `
           <details class="field-secondary">
-            <summary>Or pick an existing tenant (${existingScopes.length})</summary>
+            <summary>Or pick an existing scope (${existingScopes.length})</summary>
             <select name="tenant_select" id="tenant_select">
               <option value="">-- (leave empty to use the text field above) --</option>
               ${existingScopes.map((s) => `<option value="${s}">${s} (existing — will reuse its connections)</option>`).join("")}
             </select>
-            <div class="field-hint">If you pick one, it overrides the text field. Useful when you've already set up the tenant and just want a new agent bound to it.</div>
+            <div class="field-hint">If you pick one, it overrides the text field. Useful when you've already set up the scope and just want a new agent bound to it.</div>
           </details>
           ` : ''}
           <div class="field" style="margin-top:16px;">
             <label for="agent">Agent name</label>
-            <input type="text" name="agent" id="agent" placeholder="auto-suggested when you type a tenant name">
-            <div class="field-hint">Globally unique. Auto-suggested from tenant name. Override if you want.</div>
+            <input type="text" name="agent" id="agent" placeholder="auto-suggested when you type a scope name">
+            <div class="field-hint">Globally unique. Auto-suggested from scope name. Override if you want.</div>
           </div>
           <div class="field">
             <label for="agent_desc">Agent description <span style="color:#687385;">(optional)</span></label>
@@ -3158,7 +3157,7 @@ dashboardApp.get("/tenants/new", async (c) => {
 
         <div class="step-card">
           <h2><span class="num">2</span> Providers</h2>
-          <p class="field-hint" style="margin-top:0;">Pick one or more services to wire into this tenant. If this workspace already has a matching connection, leaving the credential blank reuses that existing provider credential for the new tenant.</p>
+          <p class="field-hint" style="margin-top:0;">Pick one or more services to wire into this scope. If this workspace already has a matching connection, leaving the credential blank reuses that existing provider credential for the new scope.</p>
           <input type="text" id="providerSearch" placeholder="Search providers… (e.g. notion, github, oauth)" autocomplete="off" style="margin-bottom:12px;">
           <p class="field-hint" id="providerSearchEmpty" style="display:none;margin-top:0;">No providers match your search.</p>
           ${providerAuthOptions.map(({ provider: p, authType }) => {
@@ -3186,7 +3185,7 @@ dashboardApp.get("/tenants/new", async (c) => {
                   ${reusableOptions.map((cn) => `<option value="${escapeHtml(cn.id)}">Use existing: ${escapeHtml(cn.label)} (${escapeHtml(cn.scope)})</option>`).join("")}
                   <option value="">Paste a new credential instead</option>
                 </select>
-                <div class="field-hint">Creates a new tenant-scoped connection that uses the selected workspace credential.</div>
+                <div class="field-hint">Creates a new scope connection that uses the selected workspace credential.</div>
                 ` : ""}
                 <label>Credential</label>
                 <textarea name="credential_${p.key}_${authType}" class="cred-input" rows="2" placeholder="${escapeHtml(credentialPlaceholder(p.key, p.label, authType))}"></textarea>
@@ -3198,7 +3197,7 @@ dashboardApp.get("/tenants/new", async (c) => {
               </div>` : ""}
               ${authType === "oauth" ? `
               <div class="field oauth-row">
-                <div class="field-hint" style="margin-top:0;">${escapeHtml(p.helpText)} You'll be redirected to authorize after clicking <b>Create tenant</b>.</div>
+                <div class="field-hint" style="margin-top:0;">${escapeHtml(p.helpText)} You'll be redirected to authorize after clicking <b>Create scope</b>.</div>
                 ${serverCredentialHint(p.key)}
                 ${p.oauthSetupUrl ? `<div style="margin-top:4px;"><a href="${p.oauthSetupUrl}" target="_blank" rel="noopener" style="font-size:13px;">${p.key === "google_ads" ? "🔗 Register/manage Google OAuth client here →" : p.key === "yahoo_ads" ? "🔗 Register/manage LINE Yahoo Ads application here →" : `🔗 Register/manage your ${p.label} OAuth app here →`}</a></div>` : ""}
               </div>` : ""}
@@ -3214,7 +3213,7 @@ dashboardApp.get("/tenants/new", async (c) => {
         </div>
 
         <div style="display:flex;gap:8px;">
-          <button type="submit">Create tenant</button>
+          <button type="submit">Create scope</button>
           <a href="/tenants" class="btn secondary">Cancel</a>
         </div>
       </form>
@@ -3375,8 +3374,8 @@ dashboardApp.get("/tenants/new", async (c) => {
           const v = tenantInput.value;
           if (v && /[^a-z0-9_-]/.test(v)) {
             const slug = v.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40);
-            tenantWarn.innerHTML = 'Tenant names allow only <code>a-z 0-9 - _</code>. Japanese and other characters aren\\'t allowed here — put them in <b>Display name</b> below.'
-              + (slug ? ' Suggested tenant name: <code>' + slug + '</code>' : '')
+            tenantWarn.innerHTML = 'Scope names allow only <code>a-z 0-9 - _</code>. Japanese and other characters aren\\'t allowed here — put them in <b>Display name</b> below.'
+              + (slug ? ' Suggested scope name: <code>' + slug + '</code>' : '')
               + ' <a href="#" id="moveToDisplay">move this to Display name →</a>';
             tenantWarn.style.display = '';
             const mv = document.getElementById('moveToDisplay');
@@ -3507,15 +3506,15 @@ dashboardApp.post("/tenants/new", async (c) => {
     const suggestion = slugifyWorkspace(tenant);
     const hasSuggestion = !!tenant && suggestion !== "workspace";
     return c.html(`
-      <!doctype html><html><head><meta charset="utf-8"><title>Invalid tenant name — grantry</title>
+      <!doctype html><html><head><meta charset="utf-8"><title>Invalid scope name — grantry</title>
       ${FAVICON}<style>${CSS}</style></head><body>
       ${NAV("tenants", user?.email)}
       <main>
-        <h1>⚠️  Tenant name ${tenant ? `<code>${escapeHtml(tenant)}</code> ` : ""}can't be used</h1>
+        <h1>⚠️  Scope name ${tenant ? `<code>${escapeHtml(tenant)}</code> ` : ""}can't be used</h1>
         <div class="card" style="border-color:#df1b41;">
-          <p>The <b>tenant name</b> is the immutable <b>scope</b> key your agents send with every API call, so it's restricted to <b>lowercase letters, numbers, hyphens, and underscores</b> (<code>a-z 0-9 - _</code>). Japanese and other non-ASCII characters aren't allowed here.</p>
+          <p>The <b>scope name</b> is the immutable <b>scope</b> key your agents send with every API call, so it's restricted to <b>lowercase letters, numbers, hyphens, and underscores</b> (<code>a-z 0-9 - _</code>). Japanese and other non-ASCII characters aren't allowed here.</p>
           <p>👉 Put the Japanese (or any human-friendly) name in the <b>Display name</b> field instead — that's shown in dashboards and can be renamed anytime.</p>
-          ${hasSuggestion ? `<p>Suggested tenant name based on what you typed: <code>${escapeHtml(suggestion)}</code></p>` : `<p>Example: tenant name <code>kaihatsu</code> · display name <code>${escapeHtml(tenant || "開発環境")}</code></p>`}
+          ${hasSuggestion ? `<p>Suggested scope name based on what you typed: <code>${escapeHtml(suggestion)}</code></p>` : `<p>Example: scope name <code>kaihatsu</code> · display name <code>${escapeHtml(tenant || "開発環境")}</code></p>`}
           <p><a href="/tenants/new">← Back to the wizard</a></p>
         </div>
       </main></body></html>
@@ -3694,11 +3693,11 @@ dashboardApp.post("/tenants/new", async (c) => {
   const granted = await grantTenantConnectionsToAgent(user.id, agentRow.id, tenant);
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Tenant created — grantry</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>Scope created — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
-      <h1>✓ Tenant <code>${tenant}</code> created</h1>
+      <h1>✓ Scope <code>${tenant}</code> created</h1>
       <div class="card">
         <h2>Connections (${connections.length})</h2>
         ${connections.map((cn) => `<p><code>${escapeHtml(cn.label)}</code> · scope=<code>${escapeHtml(cn.scope)}</code></p>`).join("")}
@@ -3722,7 +3721,7 @@ dashboardApp.post("/tenants/new", async (c) => {
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"notion/list_dbs","arguments":{"scope":"${tenant}"}}}'</pre>
         ` : ""}
       </div>
-      <p><a href="/tenants">← Back to tenants</a> · <a href="/agents">Manage agents</a></p>
+      <p><a href="/tenants">← Back to scopes</a> · <a href="/agents">Manage agents</a></p>
     </main></body></html>
   `);
 });
@@ -3761,7 +3760,7 @@ dashboardApp.get("/agents", async (c) => {
           <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;" id="bulkAgentBtn" disabled>🗑 Delete selected (0)</button>
         </div>
       </form>
-      ${agents.length === 0 ? '<div class="card"><div class="empty">No agents yet. <a href="/tenants/new">Create one via the tenant wizard</a>.</div></div>' : `
+      ${agents.length === 0 ? '<div class="card"><div class="empty">No agents yet. <a href="/tenants/new">Create one via the scope wizard</a>.</div></div>' : `
       <div class="card">
         <table>
           <thead><tr><th></th><th>Name</th><th>Token prefix</th><th>Granted connections</th><th>Accessible scopes</th><th>Status</th><th>Last used</th><th>Created</th><th>Actions</th></tr></thead>
@@ -3862,10 +3861,10 @@ dashboardApp.get("/agents/new", async (c) => {
     <main>
       <h1>+ New agent</h1>
       <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
-        Create an agent that spans <b>existing</b> tenants — e.g. a manager that reads several business areas with one token.
-        To create a new tenant, use the <a href="/tenants/new">tenant wizard</a> instead.
+        Create an agent that spans <b>existing</b> scopes — e.g. a manager that reads several business areas with one token.
+        To create a new scope, use the <a href="/tenants/new">scope wizard</a> instead.
       </p>
-      ${tenants.length === 0 ? `<div class="card"><div class="empty">No tenants yet. <a href="/tenants/new">Create one first</a>.</div></div>` : `
+      ${tenants.length === 0 ? `<div class="card"><div class="empty">No scopes yet. <a href="/tenants/new">Create one first</a>.</div></div>` : `
       <form method="post" action="/agents/new" id="agentForm">
         <input type="hidden" name="scopes_json" id="scopesJson" value="[]">
         <input type="hidden" name="manager_mode" id="managerModeInput" value="0">
@@ -3882,19 +3881,19 @@ dashboardApp.get("/agents/new", async (c) => {
           <label style="cursor:pointer;display:flex;align-items:flex-start;gap:10px;font-weight:600;">
             <input type="checkbox" id="managerToggle" style="transform:scale(1.3);margin-top:3px;">
             <span>
-              Full-tenant manager
+              Full-scope manager
               <div class="field-hint" style="margin-top:4px;font-weight:normal;">
-                Reach <b>all</b> your tenants with one token — including tenants you create later.
-                Grants every enabled tenant connection you own. Owner-bounded: only ever your own connections.
+                Reach <b>all</b> your scopes with one token — including scopes you create later.
+                Grants every enabled scope connection you own. Owner-bounded: only ever your own connections.
               </div>
             </span>
           </label>
         </div>
 
         <div id="tenantSection">
-          <h2>Tenant access</h2>
+          <h2>Scope access</h2>
           <p class="field-hint" style="margin-top:-8px;">
-            Check the tenants this agent may reach. The agent receives grants to each enabled connection in the selected tenants. Provider permissions still come from the credential itself.
+            Check the scopes this agent may reach. The agent receives grants to each enabled connection in the selected scopes. Provider permissions still come from the credential itself.
           </p>
           ${tenants.map((t) => {
             const providers = providersByScope.get(t.slug) ?? [];
@@ -3907,7 +3906,7 @@ dashboardApp.get("/agents/new", async (c) => {
                 ${showName ? `${escapeHtml(t.displayName)} ` : ""}<span class="badge scoped">${t.slug}</span>
               </label>
             </h2>
-            ${providers.length === 0 ? `<div class="empty" style="padding:8px 0;">No enabled connections — selecting this tenant grants nothing.</div>` : providers.map((p) => `
+            ${providers.length === 0 ? `<div class="empty" style="padding:8px 0;">No enabled connections — selecting this scope grants nothing.</div>` : providers.map((p) => `
             <div style="margin:10px 0 0 28px;">
               <code>${p}</code>
             </div>`).join("")}
@@ -3917,25 +3916,25 @@ dashboardApp.get("/agents/new", async (c) => {
 
         <div id="managerSection" style="display:none;">
           <div class="card" style="background:rgba(229,83,75,0.10);border:1px solid rgba(229,83,75,0.5);">
-            <h2 style="color:#e5534b;margin-top:0;">⚠ Full-tenant access</h2>
+            <h2 style="color:#e5534b;margin-top:0;">⚠ Full-scope access</h2>
             <p style="margin-top:0;">
-              This token can use <b>every enabled tenant connection you own right now</b>.
+              This token can use <b>every enabled scope connection you own right now</b>.
               If it leaks, your granted footprint is exposed at once.
             </p>
             <label style="cursor:pointer;display:flex;align-items:center;gap:8px;font-weight:600;">
               <input type="checkbox" id="managerConfirm" name="manager_confirm" style="transform:scale(1.2);">
-              I understand this agent reaches all my tenants, present and future.
+              I understand this agent reaches all my scopes, present and future.
             </label>
           </div>
           <div class="card">
             <h2>Connections</h2>
-            ${allProviders.length === 0 ? '<div class="empty">No enabled connections in any tenant.</div>' : `<p>${connections.length} enabled connection(s) across ${providersByScope.size} tenant(s) will be granted.</p>`}
+            ${allProviders.length === 0 ? '<div class="empty">No enabled connections in any scope.</div>' : `<p>${connections.length} enabled connection(s) across ${providersByScope.size} scope(s) will be granted.</p>`}
           </div>
         </div>
 
         <div class="card" style="background:rgba(99,91,255,0.08);">
           <h2>👁 What this agent will be able to do</h2>
-          <p id="previewText" style="margin-bottom:0;color:#687385;">Select at least one tenant above.</p>
+          <p id="previewText" style="margin-bottom:0;color:#687385;">Select at least one scope above.</p>
         </div>
 
         <button type="submit" id="createBtn" disabled>🔑 Create agent &amp; mint token</button>
@@ -3958,12 +3957,12 @@ dashboardApp.get("/agents/new", async (c) => {
           managerSection.style.display = manager ? '' : 'none';
           if (manager) {
             scopesJson.value = '[]';
-            createBtn.textContent = '🔑 Create full-tenant manager & mint token';
+            createBtn.textContent = '🔑 Create full-scope manager & mint token';
             if (!managerConfirm.checked) {
               previewText.textContent = 'Tick the confirmation above to enable creation.';
               createBtn.disabled = true;
             } else {
-              previewText.innerHTML = '<b>Full-tenant manager</b> — all current enabled tenant connections. The MCP config has no scope lock; pass <code>scope</code> per call.';
+              previewText.innerHTML = '<b>Full-scope manager</b> — all current enabled scope connections. The MCP config has no scope lock; pass <code>scope</code> per call.';
               createBtn.disabled = false;
             }
             return;
@@ -3972,7 +3971,7 @@ dashboardApp.get("/agents/new", async (c) => {
           const scopes = tenantChecks.filter(c => c.checked).map(c => c.value);
           scopesJson.value = JSON.stringify(scopes);
           if (scopes.length === 0) {
-            previewText.textContent = 'Select at least one tenant above.';
+            previewText.textContent = 'Select at least one scope above.';
             createBtn.disabled = true;
           } else {
             previewText.innerHTML = 'Scopes: ' + scopes.join(' · ') + '. The MCP config has no scope lock; pass <code>scope</code> per call.';
@@ -4007,7 +4006,7 @@ dashboardApp.post("/agents/new", async (c) => {
   let grantableConnectionCount = 0;
   if (managerMode) {
     if (String(body.manager_confirm ?? "") !== "on") {
-      return c.html("<h1>confirm full-tenant access to create a manager</h1>", 400);
+      return c.html("<h1>confirm full-scope access to create a manager</h1>", 400);
     }
     scopes = []; // any scope
     const conns = await prisma.connection.findMany({
@@ -4016,7 +4015,7 @@ dashboardApp.post("/agents/new", async (c) => {
     });
     grantableConnectionCount = conns.length;
   } else {
-    if (scopes.length === 0) return c.html("<h1>select at least one tenant</h1>", 400);
+    if (scopes.length === 0) return c.html("<h1>select at least one scope</h1>", 400);
 
     // Every requested scope must be one of the caller's own tenants.
     const ownTenants = await prisma.tenant.findMany({
@@ -4026,7 +4025,7 @@ dashboardApp.post("/agents/new", async (c) => {
     if (ownTenants.length !== scopes.length) {
       const owned = new Set(ownTenants.map((t) => t.slug));
       const missing = scopes.filter((s) => !owned.has(s));
-      return c.html(`<h1>unknown tenant(s): ${escapeHtml(missing.join(", "))}</h1>`, 400);
+      return c.html(`<h1>unknown scope(s): ${escapeHtml(missing.join(", "))}</h1>`, 400);
     }
 
     const conns = await prisma.connection.findMany({
@@ -4035,7 +4034,7 @@ dashboardApp.post("/agents/new", async (c) => {
     });
     grantableConnectionCount = conns.length;
   }
-  if (grantableConnectionCount === 0) return c.html("<h1>select at least one tenant with an enabled connection</h1>", 400);
+  if (grantableConnectionCount === 0) return c.html("<h1>select at least one scope with an enabled connection</h1>", 400);
 
   const existingAgent = await prisma.agent.findUnique({ where: { name: agent } });
   if (existingAgent) {
@@ -4078,13 +4077,13 @@ dashboardApp.post("/agents/new", async (c) => {
       <h1>✓ Agent <code>${escapeHtml(agentRow.name)}</code> created</h1>
       <div class="card">
         <h2>Access</h2>
-        <p>${managerMode ? `<span class="badge denied">all current tenant connections</span>` : `Scopes: ${scopes.map((s) => `<span class="badge scoped">${s}</span>`).join(" ")}`} · granted ${granted} connection(s)</p>
+        <p>${managerMode ? `<span class="badge denied">all current scope connections</span>` : `Scopes: ${scopes.map((s) => `<span class="badge scoped">${s}</span>`).join(" ")}`} · granted ${granted} connection(s)</p>
       </div>
       ${agentTokenCard(token)}
       ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true)}
       <div class="card">
-        <h2>Cross-tenant calls</h2>
-        <p class="field-hint" style="margin-top:0;">This config has <b>no</b> <code>X-Grantry-Scope</code> lock. Pass the target tenant per call:</p>
+        <h2>Cross-scope calls</h2>
+        <p class="field-hint" style="margin-top:0;">This config has <b>no</b> <code>X-Grantry-Scope</code> lock. Pass the target scope per call:</p>
         <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
   -H "Authorization: Bearer ${token}" \\
   -H "Content-Type: application/json" \\
@@ -4129,7 +4128,7 @@ dashboardApp.get("/agents/:id", async (c) => {
         <p>Granted connections: ${connections.length
           ? `<span class="badge ok">${connections.length}</span>`
           : '<span class="badge denied">none</span>'}</p>
-        <p>Accessible tenants: ${scopeSet.size
+        <p>Accessible scopes: ${scopeSet.size
           ? Array.from(scopeSet).sort().map((s) => `<span class="badge scoped">${escapeHtml(s)}</span>`).join(" ")
           : '<span class="badge denied">none</span>'}</p>
       </div>
@@ -4146,7 +4145,7 @@ dashboardApp.get("/agents/:id", async (c) => {
         ${connections.length === 0 ? '<div class="empty">No enabled connection is callable by this agent. Grant at least one connection to enable provider tools.</div>' : `
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Tenant</th><th>Provider</th><th>Auth</th><th>Label</th><th>Tools</th></tr></thead>
+            <thead><tr><th>Scope</th><th>Provider</th><th>Auth</th><th>Label</th><th>Tools</th></tr></thead>
             <tbody>
               ${connections.map((conn) => `
                 <tr>
@@ -4375,7 +4374,7 @@ oauthApp.get("/:provider/start", async (c) => {
     payload.pkce_code_verifier = pkceVerifier;
   }
   if (!/^[a-z0-9_-]+$/.test(payload.tenant)) {
-    return c.html(`<h1>invalid tenant</h1><p>Tenant must match <code>[a-z0-9_-]+</code>. <a href="/tenants/new">← Back</a></p>`, 400);
+    return c.html(`<h1>invalid scope</h1><p>Scope must match <code>[a-z0-9_-]+</code>. <a href="/tenants/new">← Back</a></p>`, 400);
   }
 
   // CSRF state
@@ -4446,7 +4445,7 @@ oauthApp.get("/:provider/callback", async (c) => {
   // Look up + consume state
   const oauthState = await prisma.oAuthState.findUnique({ where: { state } });
   if (!oauthState || oauthState.expiresAt < new Date()) {
-    return c.html(`<h1>OAuth state expired or invalid</h1><p>Try <a href="/tenants/new">creating the tenant</a> again.</p>`, 400);
+    return c.html(`<h1>OAuth state expired or invalid</h1><p>Try <a href="/tenants/new">creating the scope</a> again.</p>`, 400);
   }
   await prisma.oAuthState.delete({ where: { state } });
   if (oauthState.provider !== providerKey) {
@@ -4628,7 +4627,7 @@ oauthApp.get("/:provider/callback", async (c) => {
   const agent = payload.agent;
   const agentDesc = payload.agent_desc || "";
   if (!/^[a-z0-9_-]+$/.test(effectiveTenant)) {
-    return c.html(`<h1>invalid tenant in saved payload</h1>`, 400);
+    return c.html(`<h1>invalid scope in saved payload</h1>`, 400);
   }
   // The wizard already created the Tenant row (with its display name); this
   // upsert only covers direct /oauth/:provider/start?tenant=… entry points.
@@ -4654,7 +4653,7 @@ oauthApp.get("/:provider/callback", async (c) => {
           orderBy: { createdAt: "desc" },
         });
     if (requestedConnectionId && !conn) {
-      return c.html(`<h1>connection not found for reconnect</h1><p>The requested connection does not belong to this tenant/provider. <a href="/tenants/${effectiveTenant}/edit">Back</a></p>`, 404);
+      return c.html(`<h1>connection not found for reconnect</h1><p>The requested connection does not belong to this scope/provider. <a href="/tenants/${effectiveTenant}/edit">Back</a></p>`, 404);
     }
     const data = {
       encryptedCredential: encrypt(accessToken),
@@ -4761,7 +4760,7 @@ oauthApp.get("/:provider/callback", async (c) => {
         <div class="card" style="border-color:#df1b41;">
           <p>${escapeHtml(providerDef.label)} connection was created, but the agent name is taken. <a href="/agents/${existingAgent.id}">Reuse the existing agent</a> or pick a different name.</p>
         </div>
-        <p><a href="/tenants">← Back to tenants</a></p>
+        <p><a href="/tenants">← Back to scopes</a></p>
       </main></body></html>
     `, 409);
   }
@@ -4794,13 +4793,13 @@ oauthApp.get("/:provider/callback", async (c) => {
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
-      <h1>✓ ${escapeHtml(providerDef.label)} connected · tenant <code>${effectiveTenant}</code> created</h1>
+      <h1>✓ ${escapeHtml(providerDef.label)} connected · scope <code>${effectiveTenant}</code> created</h1>
       ${googleAdsConnectionNeedsDeveloperToken ? `
       <div class="card" style="border-color:#f0b429;background:rgba(240,180,41,0.08);">
         <h2>Google Ads API token still required</h2>
         <p>OAuth は完了しましたが、Google Ads API を呼ぶには Google Ads API Center の <b>Developer token</b> も必要です。</p>
         <p>次の画面で <code>google_ads</code> connection の <b>Developer token</b> 欄に貼って保存してください。</p>
-        <p><a href="/tenants/${effectiveTenant}/edit">Open tenant settings →</a> · <a href="https://ads.google.com/aw/apicenter" target="_blank" rel="noopener">Open Google Ads API Center →</a></p>
+        <p><a href="/tenants/${effectiveTenant}/edit">Open scope settings →</a> · <a href="https://ads.google.com/aw/apicenter" target="_blank" rel="noopener">Open Google Ads API Center →</a></p>
       </div>` : ""}
       <div class="card">
         <h2>Connections (${allConns.length})</h2>
@@ -4812,7 +4811,7 @@ oauthApp.get("/:provider/callback", async (c) => {
       </div>
       ${agentTokenCard(token, "")}
       ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true, effectiveTenant)}
-      <p><a href="/tenants">← Back to tenants</a> · <a href="/agents">Manage agents</a></p>
+      <p><a href="/tenants">← Back to scopes</a> · <a href="/agents">Manage agents</a></p>
     </main></body></html>
   `);
  } catch (err) {
@@ -4956,7 +4955,7 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
     where: { slug: scope, ownerId: user.id },
     select: { workspaceId: true },
   });
-  if (!tenant) return c.html(`<h1>tenant '${escapeHtml(scope)}' not found</h1>`, 404);
+  if (!tenant) return c.html(`<h1>scope '${escapeHtml(scope)}' not found</h1>`, 404);
 
   // Check for agent name conflict up front
   const existingAgent = await prisma.agent.findUnique({ where: { name: agent } });
@@ -5043,7 +5042,7 @@ dashboardApp.post("/tenants/:scope/delete", async (c) => {
     }),
   ]);
   if (conns.length === 0 && !tenantRow) {
-    return c.html(`<h1>No tenant or connections found for scope '${scope}' (yours)</h1>`, 404);
+    return c.html(`<h1>No scope or connections found for scope '${scope}' (yours)</h1>`, 404);
   }
 
   // 2) Find legacy role rows for this scope so deleting the tenant also cleans
@@ -5073,12 +5072,12 @@ dashboardApp.post("/tenants/:scope/delete", async (c) => {
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
-      <h1>✓ Deleted tenant <code>${scope}</code></h1>
+      <h1>✓ Deleted scope <code>${scope}</code></h1>
       <div class="card">
         <p>Removed <b>${connDelete.count}</b> connection(s). Related connection grants were removed automatically.</p>
         ${roleDelete.count ? `<p class="field-hint">Also removed ${roleDelete.count} legacy role row(s).</p>` : ""}
       </div>
-      <p><a href="/tenants">← Back to all tenants</a></p>
+      <p><a href="/tenants">← Back to all scopes</a></p>
     </main></body></html>
   `);
 });
@@ -5118,13 +5117,13 @@ dashboardApp.post("/tenants/bulk-delete", async (c) => {
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
-      <h1>✓ Bulk deleted ${scopes.length} tenant(s)</h1>
+      <h1>✓ Bulk deleted ${scopes.length} scope(s)</h1>
       <div class="card">
         <p>Total: <b>${conns}</b> connection(s) removed. Related connection grants were removed automatically.</p>
         ${legacyRoles ? `<p class="field-hint">Also removed ${legacyRoles} legacy role row(s).</p>` : ""}
         <ul>${detail.join("")}</ul>
       </div>
-      <p><a href="/tenants">← Back to all tenants</a></p>
+      <p><a href="/tenants">← Back to all scopes</a></p>
     </main></body></html>
   `);
 });

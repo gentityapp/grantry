@@ -31,12 +31,12 @@ description: |
   uses a **better-auth email+password session** (NOT the agent token). There is
   **no `/admin` HTTP API** and **no `X-Admin-Token`** — tokens are minted through
   the UI only.
-- **Tenant model**: a `Tenant` is a real entity with an **immutable `slug`**
+- **Scope model**: a scope is backed by the `Tenant` table and has an **immutable `slug`**
   (the wire key, e.g. `grantry-dev` — this is what callers pass as `scope`) and a
   freely **renameable `displayName`** (dashboard label only). Each `Connection`
-  belongs to a tenant; `scope` always equals the tenant slug. Agents receive
+  belongs to a scope; `scope` always equals the scope slug. Agents receive
   explicit `AgentConnectionGrant(agentId, connectionId)` rows. Tool calls pass
-  `scope` in `arguments` to pick the credential. Renaming a tenant's display
+  `scope` in `arguments` to pick the credential. Renaming a scope's display
   name never breaks agents.
 - Format: `<provider>/<tool>` (e.g. `github/git_push_repo`).
 
@@ -49,7 +49,7 @@ A tool call is allowed only if **all** of these hold (`src/policy.ts`):
    for legacy workspace-less rows.
 
 Therefore: the `scope` you pass in `arguments` must **exactly equal** the scope the
-connection was registered under (its tenant name). Passing no scope, or a scope
+connection was registered under (its scope name). Passing no scope, or a scope
 that has no granted connection, returns `-32010 policy denied (no granted enabled
 connection …)`. A connection registered at `scope=""` only matches calls that
 send no scope at all.
@@ -87,7 +87,7 @@ That single round-trip *is* the connectivity check — report the result.
 
 **Only stop to ask the user when** `connections/list` returns an empty list (the
 agent has no usable enabled connection): point them to `/ui/tenants` to add one,
-or ask which tenant — never brute-force scope names against `tools/call`.
+or ask which scope — never brute-force scope names against `tools/call`.
 
 ### 1. Discover tools (optional)
 `connections/list` already tells you the callable tools per connection. If you
@@ -115,14 +115,14 @@ Authorization: Bearer gn_agt_<token>
 
 ### 4. Issue / rotate an agent token (UI only)
 1. Log in at `/login` (register at `/register`; forgot password → `/forgot-password`).
-2. Tokens are minted by the **tenant wizard** (`/tenants/new`) when you create a
-   tenant + agent, by **`/agents/new`** for a cross-tenant agent (check multiple
-   tenants to grant their connections), and can be
+2. Tokens are minted by the **scope wizard** (`/tenants/new`) when you create a
+   scope + agent, by **`/agents/new`** for a cross-scope agent (check multiple
+   scopes to grant their connections), and can be
    rotated from `/agents` (`POST /agents/:id/rotate`).
    The plaintext `gn_agt_…` is shown **once** — copy it then.
 
 ### 5. Add a new connection (credential)
-Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing tenant):
+Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing scope):
 - **GitHub**: paste a **PAT** (`github.com/settings/personal-access-tokens`) *or*
   click Connect → OAuth (`/oauth/github/start`). OAuth needs `GITHUB_CLIENT_ID` /
   secret set as Railway env vars; the OAuth callback is
@@ -178,7 +178,7 @@ Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing tenant):
 - **Google OAuth (via `/oauth/<provider>/start`, reuse `GOOGLE_CLIENT_ID/SECRET`)**:
   **google_calendar**, **google_sheets**, **google_tag_manager**, **google_cloud**,
   **bigquery** — enable the matching API in the Google Cloud project.
-Set the connection's **scope to the tenant name**; that's the scope callers must pass.
+Set the connection's **scope to the scope name**; that's the scope callers must pass.
 
 ### 5a. Google Workspace via Service Account + Domain-Wide Delegation (DWD)
 For Workspace **domain data** (`google_admin`, `gmail`, `google_drive`,
@@ -226,7 +226,7 @@ the same provider+scope; disambiguate with `auth_type` (`service_account` vs
 ### 6. Grant an agent access to a scope
 1. Ensure a connection exists at that scope (step 5).
 2. Grant the connection to the agent. The dashboard does this automatically
-   when creating an agent via `/agents/new` or the tenant wizard.
+   when creating an agent via `/agents/new` or the scope wizard.
 3. Use `connections/list` with the agent token to verify the exact
    `connection_id`, provider, and scope the agent can use.
 
@@ -334,9 +334,9 @@ the same provider+scope; disambiguate with `auth_type` (`service_account` vs
   `docs/skill.md` content plus metadata (`updated_at`, `commit_sha`, version).
 - `get_providers` (read): optional `include_tools` boolean. Returns implemented
   provider metadata, auth types, links, and tool names. When called **with an
-  agent token**, `metadata.scopes` also lists the tenant scopes that token can
+  agent token**, `metadata.scopes` also lists the scopes that token can
   reach (the full per-scope detail is in `list_scopes`).
-- `list_scopes` (read, token required): no arguments. Returns the tenant
+- `list_scopes` (read, token required): no arguments. Returns the
   **scopes** this agent token can access, each with its connected `providers`
   and the exact `connections` (`provider`, `auth_type`, `connection_id`, `label`,
   callable `tools`). This is the authoritative answer to *"which scopes do I
@@ -735,7 +735,7 @@ When asked to act via grantry:
 
 ## Examples
 
-**1 — list repos (read) for tenant `grantry-dev`:**
+**1 — list repos (read) for scope `grantry-dev`:**
 ```json
 POST /mcp   Authorization: Bearer gn_agt_<token>
 { "jsonrpc":"2.0","id":1,"method":"tools/call",
@@ -764,10 +764,10 @@ POST /mcp   Authorization: Bearer gn_agt_<token>
 - `/login`, `/register`, `/forgot-password`, `/reset-password` — auth
   (better-auth email+password; reset links are emailed via Resend, 1h expiry)
 - `/dashboard` — overview (requires login)
-- `/tenants`, `/tenants/new`, `/tenants/:scope/edit` — tenant + connection wizard;
-  the edit page also renames the tenant's display name (slug is immutable)
-- `/agents`, `/agents/new` — agents; `/agents/new` creates a **cross-tenant**
-  agent by granting selected tenant connections
+- `/tenants`, `/tenants/new`, `/tenants/:scope/edit` — scope + connection wizard;
+  the edit page also renames the scope's display name (slug is immutable)
+- `/agents`, `/agents/new` — agents; `/agents/new` creates a **cross-scope**
+  agent by granting selected scope connections
 - `/account` — signed-in identity (email shown in every page's nav), owned
   resource counts, change password
 - `/audit` — audit log (per-call scope, status, duration; request args are
