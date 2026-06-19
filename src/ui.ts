@@ -574,12 +574,34 @@ function parseScopeList(raw: string | null | undefined): string[] {
   return scopes;
 }
 
-function providerRequiresWorkspaceOAuthApp(providerKey: string) {
-  return providerKey === "moneyforward";
+function providerUsesWorkspaceOAuthApp(providerDef: any) {
+  return Array.isArray(providerDef?.authTypes)
+    && providerDef.authTypes.includes("oauth")
+    && providerDef.oauthAppOwner !== "platform";
+}
+
+function providerRequiresWorkspaceOAuthApp(providerKey: string, providerDef?: any) {
+  return providerUsesWorkspaceOAuthApp(providerDef ?? PROVIDERS[providerKey]);
+}
+
+function defaultOAuthClientAuthMethod(providerKey: string, providerDef?: any) {
+  const configured = String((providerDef ?? PROVIDERS[providerKey])?.oauthClientAuthMethod ?? "").trim().toUpperCase();
+  if (configured === "CLIENT_SECRET_BASIC" || configured === "CLIENT_SECRET_POST") return configured;
+  return "CLIENT_SECRET_POST";
 }
 
 function workspaceOAuthAppProviderKeys() {
-  return ["moneyforward"];
+  return Object.values(PROVIDERS)
+    .filter((providerDef) => providerUsesWorkspaceOAuthApp(providerDef))
+    .map((providerDef) => providerDef.key);
+}
+
+function defaultOAuthClientAuthMethodsByProvider() {
+  return Object.fromEntries(
+    Object.values(PROVIDERS)
+      .filter((providerDef) => providerUsesWorkspaceOAuthApp(providerDef))
+      .map((providerDef) => [providerDef.key, defaultOAuthClientAuthMethod(providerDef.key, providerDef)]),
+  );
 }
 
 function oauthCallbackUrl(c: any, providerKey: string) {
@@ -587,12 +609,12 @@ function oauthCallbackUrl(c: any, providerKey: string) {
   return `${origin}/oauth/${providerKey}/callback`;
 }
 
-function oauthAppCredentialFromStructuredFields(body: any, suffix = "") {
+function oauthAppCredentialFromStructuredFields(body: any, suffix = "", defaultClientAuthMethod = "CLIENT_SECRET_POST") {
   const field = (name: string) => suffix ? `${name}_${suffix}` : name;
   const clientId = String(body[field("oauth_client_id")] ?? "").trim();
   const clientSecret = String(body[field("oauth_client_secret")] ?? "").trim();
   if (!clientId && !clientSecret) return "";
-  const clientAuthMethod = String(body[field("oauth_client_auth_method")] ?? "CLIENT_SECRET_BASIC").trim().toUpperCase() || "CLIENT_SECRET_BASIC";
+  const clientAuthMethod = String(body[field("oauth_client_auth_method")] ?? defaultClientAuthMethod).trim().toUpperCase() || defaultClientAuthMethod;
   return JSON.stringify({
     client_id: clientId,
     client_secret: clientSecret,
@@ -720,7 +742,7 @@ async function resolveOAuthClientConfig(providerKey: string, providerDef: any, w
       }
     }
   }
-  if (providerRequiresWorkspaceOAuthApp(providerKey)) {
+  if (providerRequiresWorkspaceOAuthApp(providerKey, providerDef)) {
     return {
       source: "workspace_missing" as const,
       credentialId: null,
@@ -1684,7 +1706,7 @@ dashboardApp.get("/_ops", async (c) => {
   ]);
 
   const providerDefs = Object.values(PROVIDERS);
-  const oauthProviders = providerDefs.filter((p) => p.authTypes.includes("oauth"));
+  const oauthProviders = providerDefs.filter((p) => p.authTypes.includes("oauth") && !providerUsesWorkspaceOAuthApp(p));
   const totalToolCount = new Set(providerDefs.flatMap((p) => p.tools)).size;
   const envRows = oauthProviders.map((p) => {
     const id = envStatus(oauthEnvCandidates(p.key, "CLIENT_ID"));
@@ -1753,9 +1775,9 @@ dashboardApp.get("/_ops", async (c) => {
         </table>
       </div>
 
-      <h2>OAuth Environment</h2>
+      <h2>Platform OAuth Environment</h2>
       <div class="card">
-        <div class="table-wrap">
+        ${envRows.length === 0 ? '<div class="empty">No platform-owned OAuth apps. OAuth client credentials are stored per workspace connection.</div>' : `<div class="table-wrap">
           <table>
             <thead><tr><th>Provider</th><th>Client ID</th><th>Client Secret</th><th>Callback</th></tr></thead>
             <tbody>
@@ -1769,7 +1791,7 @@ dashboardApp.get("/_ops", async (c) => {
               `).join("")}
             </tbody>
           </table>
-        </div>
+        </div>`}
       </div>
 
       <h2>Provider Catalog</h2>
@@ -2692,6 +2714,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         const PROVIDER_ICONS = ${JSON.stringify(providerIconMap(24))};
         const REUSABLE_BY_PROVIDER_AUTH = ${JSON.stringify(reusableByProviderAuth)};
         const WORKSPACE_OAUTH_APP_PROVIDERS = new Set(${JSON.stringify(workspaceOAuthAppProviderKeys())});
+        const DEFAULT_OAUTH_CLIENT_AUTH_METHOD_BY_PROVIDER = ${JSON.stringify(defaultOAuthClientAuthMethodsByProvider())};
         const OAUTH_REDIRECT_ORIGIN = ${JSON.stringify(String(process.env.BETTER_AUTH_URL || publicOrigin(c)).replace(/\/+$/, ""))};
         const providerIconBox = document.getElementById('providerIconBox');
         const sel = document.getElementById('provider');
@@ -2717,6 +2740,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         const oauthRedirectUri = document.getElementById('oauthRedirectUri');
         const oauthClientId = document.getElementById('oauthClientId');
         const oauthClientSecret = document.getElementById('oauthClientSecret');
+        const oauthClientAuthMethod = document.getElementById('oauthClientAuthMethod');
         const oauthAppSetupLinkRow = document.getElementById('oauthAppSetupLinkRow');
         const oauthAppSetupLink = document.getElementById('oauthAppSetupLink');
         const addServiceButton = document.getElementById('addServiceButton');
@@ -2778,6 +2802,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             if (oauthRedirectUri) oauthRedirectUri.value = OAUTH_REDIRECT_ORIGIN + "/oauth/" + sel.value + "/callback";
             if (oauthClientId) oauthClientId.required = needsWorkspaceOAuthApp;
             if (oauthClientSecret) oauthClientSecret.required = needsWorkspaceOAuthApp;
+            if (oauthClientAuthMethod && needsWorkspaceOAuthApp) oauthClientAuthMethod.value = DEFAULT_OAUTH_CLIENT_AUTH_METHOD_BY_PROVIDER[sel.value] || "CLIENT_SECRET_POST";
           }
           addServiceButton.textContent = useOauth ? "Connect with OAuth" : "Add service";
           if (!usePat && !useSa && !useOauth) credField.value = "";
@@ -3199,8 +3224,8 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     const wantsSa = authMethod === "service_account";
     const wantsOauth = authMethod === "oauth" || (!authMethod && providerDef.authTypes.includes("oauth") && !providerDef.authTypes.includes("pat") && !providerDef.authTypes.includes("service_account"));
     const wantsPat = authMethod === "pat" || (!authMethod && providerDef.authTypes.includes("pat") && !providerDef.authTypes.includes("oauth"));
-    if (wantsOauth && providerRequiresWorkspaceOAuthApp(provider)) {
-      const structuredOAuthAppCredential = oauthAppCredentialFromStructuredFields(body);
+    if (wantsOauth && providerRequiresWorkspaceOAuthApp(provider, providerDef)) {
+      const structuredOAuthAppCredential = oauthAppCredentialFromStructuredFields(body, "", defaultOAuthClientAuthMethod(provider, providerDef));
       if (structuredOAuthAppCredential) credential = structuredOAuthAppCredential;
     }
 
@@ -3628,8 +3653,9 @@ dashboardApp.get("/tenants/new", async (c) => {
             const isImplemented = p.implemented !== false;
             const optionKey = `${p.key}:${authType}`;
             const reusableOptions = reusableByProviderAuth[optionKey] || [];
-            const requiresWorkspaceOAuthApp = authType === "oauth" && providerRequiresWorkspaceOAuthApp(p.key);
+            const requiresWorkspaceOAuthApp = authType === "oauth" && providerRequiresWorkspaceOAuthApp(p.key, p);
             const redirectUri = authType === "oauth" ? oauthCallbackUrl(c, p.key) : "";
+            const defaultClientAuthMethod = authType === "oauth" ? defaultOAuthClientAuthMethod(p.key, p) : "CLIENT_SECRET_POST";
             return `
           <div class="provider-block" data-provider="${p.key}" data-auth-type="${authType}" data-haspat="${hasPat}" data-hasoauth="${hasOauth}" data-implemented="${isImplemented}" style="border:1px solid #e3e8ee;border-radius:8px;padding:12px 16px;margin-bottom:12px;${isImplemented ? "" : "opacity:.62;"}">
             <label style="font-weight:600;display:flex;align-items:center;gap:8px;cursor:${isImplemented ? "pointer" : "not-allowed"};margin:0;">
@@ -3682,8 +3708,8 @@ dashboardApp.get("/tenants/new", async (c) => {
                 <div class="field" style="margin-bottom:0;">
                   <label for="oauth_client_auth_method_${p.key}_${authType}">Client authentication method</label>
                   <select name="oauth_client_auth_method_${p.key}_${authType}" id="oauth_client_auth_method_${p.key}_${authType}">
-                    <option value="CLIENT_SECRET_BASIC">CLIENT_SECRET_BASIC</option>
-                    <option value="CLIENT_SECRET_POST">CLIENT_SECRET_POST</option>
+                    <option value="CLIENT_SECRET_BASIC" ${defaultClientAuthMethod === "CLIENT_SECRET_BASIC" ? "selected" : ""}>CLIENT_SECRET_BASIC</option>
+                    <option value="CLIENT_SECRET_POST" ${defaultClientAuthMethod === "CLIENT_SECRET_POST" ? "selected" : ""}>CLIENT_SECRET_POST</option>
                   </select>
                 </div>
                 <div class="field-hint">Stored on this workspace and used for this provider's OAuth redirects and token refreshes.</div>
@@ -3959,9 +3985,9 @@ dashboardApp.post("/tenants/new", async (c) => {
 
   // Resolve the credential for a given provider (per-provider field first,
   // falling back to the legacy single `credential` field when there's one provider).
-  const credentialFor = (p: string, authType = "pat") => {
-    if (authType === "oauth" && providerRequiresWorkspaceOAuthApp(p)) {
-      const structuredOAuthAppCredential = oauthAppCredentialFromStructuredFields(body, `${p}_${authType}`);
+  const credentialFor = (p: string, authType = "pat", providerDef?: any) => {
+    if (authType === "oauth" && providerRequiresWorkspaceOAuthApp(p, providerDef)) {
+      const structuredOAuthAppCredential = oauthAppCredentialFromStructuredFields(body, `${p}_${authType}`, defaultOAuthClientAuthMethod(p, providerDef));
       if (structuredOAuthAppCredential) return structuredOAuthAppCredential;
     }
     const specificAuth = String((body as any)[`credential_${p}_${authType}`] ?? "").trim();
@@ -4025,7 +4051,7 @@ dashboardApp.post("/tenants/new", async (c) => {
   const oauthQueue: Array<{ provider: string; oauthAppCredentialId?: string }> = [];
   for (const { provider, authType } of providerAuths) {
     const providerDef = (await getProviderForWorkspace(provider, wsId))!; // validated above
-    const credential = (authType === "pat" || authType === "oauth") ? credentialFor(provider, authType) : "";
+    const credential = (authType === "pat" || authType === "oauth") ? credentialFor(provider, authType, providerDef) : "";
     const requestedReuseConnectionId = authType === "pat" && !credential ? reuseConnectionIdFor(provider, authType) : "";
 
     const existingConn = await prisma.connection.findFirst({
@@ -4855,7 +4881,7 @@ oauthApp.get("/:provider/start", async (c) => {
   if (!oauthCfg.clientId) {
     const envPrefix = providerKey.toUpperCase();
     const setupLink = payload.tenant ? `/tenants/${encodeURIComponent(payload.tenant)}/edit` : "/tenants/new";
-    const hint = providerRequiresWorkspaceOAuthApp(providerKey)
+    const hint = providerRequiresWorkspaceOAuthApp(providerKey, providerDef)
       ? `Configure this workspace's ${escapeHtml(providerDef.label)} OAuth app first. Paste its <code>client_id</code> and <code>client_secret</code> on the scope edit page; do not use Grantry-wide environment variables.`
       : `Set <code>${envPrefix}_CLIENT_ID</code> env var.`;
     return c.html(`<h1>${escapeHtml(providerDef.label)} OAuth not configured</h1><p>${hint} <a href="${setupLink}">← Back</a></p>`, 500);
@@ -4956,7 +4982,7 @@ oauthApp.get("/:provider/callback", async (c) => {
   if (!clientId || !clientSecret) {
     const envPrefix = providerKey.toUpperCase();
     const setupLink = payload.tenant ? `/tenants/${encodeURIComponent(payload.tenant)}/edit` : "/tenants/new";
-    const hint = providerRequiresWorkspaceOAuthApp(providerKey)
+    const hint = providerRequiresWorkspaceOAuthApp(providerKey, providerDef)
       ? `Configure this workspace's ${escapeHtml(providerDef.label)} OAuth app first. Paste its <code>client_id</code> and <code>client_secret</code> on the scope edit page; do not use Grantry-wide environment variables.`
       : `Set <code>${envPrefix}_CLIENT_ID</code> and <code>${envPrefix}_CLIENT_SECRET</code> env vars.`;
     return c.html(`<h1>${escapeHtml(providerDef.label)} OAuth credentials missing</h1><p>${hint} <a href="${setupLink}">← Back</a></p>`, 500);
@@ -4965,11 +4991,8 @@ oauthApp.get("/:provider/callback", async (c) => {
 
   // Some OAuth providers require HTTP Basic auth at the token endpoint rather
   // than client credentials in the body.
-  const moneyForwardClientAuthMethod = String(oauthCfg.oauthClientAuthMethod || "CLIENT_SECRET_BASIC").toUpperCase();
-  const usesBasicAuth = providerKey === "reddit"
-    || providerKey === "x"
-    || providerKey === "zoom"
-    || (providerKey === "moneyforward" && moneyForwardClientAuthMethod !== "CLIENT_SECRET_POST");
+  const clientAuthMethodNormalized = String(oauthCfg.oauthClientAuthMethod || defaultOAuthClientAuthMethod(providerKey, providerDef)).toUpperCase();
+  const usesBasicAuth = clientAuthMethodNormalized === "CLIENT_SECRET_BASIC";
   const tokenBody = new URLSearchParams({
     client_id: clientId,
     code,

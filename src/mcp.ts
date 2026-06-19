@@ -2383,6 +2383,8 @@ function getProviderMetadata(includeTools = true) {
       help_text: p.helpText,
       token_url: p.tokenUrl ?? null,
       oauth_setup_url: p.oauthSetupUrl ?? null,
+      oauth_app_owner: p.authTypes.includes("oauth") ? (p.oauthAppOwner ?? "workspace") : null,
+      oauth_client_auth_method: p.authTypes.includes("oauth") ? (p.oauthClientAuthMethod ?? "CLIENT_SECRET_POST") : null,
       oauth_scopes: p.oauthScopes ?? [],
       oauth_optional_scopes: p.oauthOptionalScopes ?? [],
       server_credential: p.serverCredentialEnv
@@ -3086,7 +3088,10 @@ async function assertProviderScopesBeforeDispatch(args: {
 }
 
 function providerRequiresWorkspaceOAuthApp(provider: string) {
-  return provider === "moneyforward";
+  const providerDef = PROVIDERS[provider];
+  return Array.isArray(providerDef?.authTypes)
+    && providerDef.authTypes.includes("oauth")
+    && providerDef.oauthAppOwner !== "platform";
 }
 
 function oauthEnvClientConfig(provider: string) {
@@ -3139,7 +3144,7 @@ async function oauthClientConfigForRefresh(provider: string, workspaceId: string
     }
   }
   if (providerRequiresWorkspaceOAuthApp(provider)) {
-    return { clientId: "", clientSecret: "", clientAuthMethod: "CLIENT_SECRET_BASIC" };
+    return { clientId: "", clientSecret: "", clientAuthMethod: PROVIDERS[provider]?.oauthClientAuthMethod || "CLIENT_SECRET_POST" };
   }
   return oauthEnvClientConfig(provider);
 }
@@ -3159,11 +3164,8 @@ async function refreshOAuthToken(provider: string, refreshToken: string, workspa
 
   // Some OAuth providers require HTTP Basic auth at the token endpoint rather
   // than client credentials in the body.
-  const clientAuthMethodNormalized = String(clientAuthMethod || "CLIENT_SECRET_BASIC").toUpperCase();
-  const usesBasicAuth = provider === "reddit"
-    || provider === "x"
-    || provider === "zoom"
-    || (provider === "moneyforward" && clientAuthMethodNormalized !== "CLIENT_SECRET_POST");
+  const clientAuthMethodNormalized = String(clientAuthMethod || providerDef.oauthClientAuthMethod || "CLIENT_SECRET_POST").toUpperCase();
+  const usesBasicAuth = clientAuthMethodNormalized === "CLIENT_SECRET_BASIC";
   const refreshBody = new URLSearchParams({
     client_id: clientId,
     refresh_token: refreshToken,

@@ -19,6 +19,10 @@ export type ProviderDef = {
   tokenUrl?: string;
   /** Where to register/manage an OAuth App (shown in the wizard for oauth flow) */
   oauthSetupUrl?: string;
+  /** Who owns the OAuth app client credentials. Defaults to workspace for OAuth providers. */
+  oauthAppOwner?: "workspace" | "platform";
+  /** Default OAuth client authentication method for token exchange. */
+  oauthClientAuthMethod?: "CLIENT_SECRET_BASIC" | "CLIENT_SECRET_POST";
   /** Optional server-side credential required in addition to user auth. */
   serverCredentialLabel?: string;
   serverCredentialEnv?: string;
@@ -90,8 +94,9 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "zoom",
     label: "Zoom",
     authTypes: ["oauth"],
-    helpText: "Connect your Zoom account via OAuth. Register a user-managed OAuth app at marketplace.zoom.us, set its redirect URL to this server's /oauth/zoom/callback, and enable the recording/meeting/user/report scopes listed below (adjust to match your app). Then set ZOOM_CLIENT_ID and ZOOM_CLIENT_SECRET env vars.",
+    helpText: "Connect your Zoom account via OAuth. Register a user-managed OAuth app at marketplace.zoom.us, set its redirect URL to this server's /oauth/zoom/callback, then paste the app's Client ID and Client Secret in Grantry.",
     oauthSetupUrl: "https://marketplace.zoom.us/develop/create",
+    oauthClientAuthMethod: "CLIENT_SECRET_BASIC",
     oauthScopes: [
       "user:read:user",
       "user:read:list_users:admin",
@@ -463,6 +468,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authTypes: ["oauth"],
     helpText: "Connect Money Forward Cloud Accounting via a workspace-owned OAuth app. Cloud Accounting API uses OAuth 2.0; API key authentication is not supported for this provider.",
     oauthSetupUrl: "https://app-portal.moneyforward.com/",
+    oauthClientAuthMethod: "CLIENT_SECRET_BASIC",
     oauthScopes: [
       "mfc/accounting/offices.read",
       "mfc/accounting/accounts.read",
@@ -562,6 +568,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authTypes: ["oauth"],
     helpText: "Register a 'web app' at reddit.com/prefs/apps with the redirect URI set to this app's /oauth/reddit/callback. Connect grants read access plus posting, commenting, and voting as the authorized account.",
     oauthSetupUrl: "https://www.reddit.com/prefs/apps",
+    oauthClientAuthMethod: "CLIENT_SECRET_BASIC",
     oauthScopes: ["identity", "read", "mysubreddits", "history", "submit", "edit", "vote"],
     authorizeUrl: "https://www.reddit.com/api/v1/authorize",
     oauthTokenUrl: "https://www.reddit.com/api/v1/access_token",
@@ -583,6 +590,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authTypes: ["oauth"],
     helpText: "Create an OAuth 2.0 app in the X developer portal (Confidential client, type Web App) with the callback URL set to this app's /oauth/x/callback. Connect grants read access plus posting and deleting tweets as the authorized account.",
     oauthSetupUrl: "https://developer.x.com/en/portal/dashboard",
+    oauthClientAuthMethod: "CLIENT_SECRET_BASIC",
     oauthScopes: ["tweet.read", "tweet.write", "users.read", "offline.access"],
     authorizeUrl: "https://x.com/i/oauth2/authorize",
     oauthTokenUrl: "https://api.x.com/2/oauth2/token",
