@@ -4513,10 +4513,13 @@ dashboardApp.get("/audit", async (c) => {
 // OAuth app.
 // Stores the wizard data in OAuthState.payload keyed by the `state` param.
 oauthApp.get("/:provider/start", async (c) => {
+  const providerKey = c.req.param("provider");
+  if (providerKey === "moneyforward") {
+    return c.html("<h1>Money Forward integration removed</h1><p>This provider is no longer available in Grantry. <a href=\"/tenants\">Back</a></p>", 410);
+  }
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
 
-  const providerKey = c.req.param("provider");
   const providerDef = getProvider(providerKey);
   if (!providerDef || providerDef.implemented === false || !providerDef.authTypes.includes("oauth")) {
     return c.html(`<h1>unknown or non-OAuth provider: ${escapeHtml(providerKey)}</h1>`, 400);
@@ -4620,6 +4623,9 @@ oauthApp.get("/:provider/start", async (c) => {
 oauthApp.get("/:provider/callback", async (c) => {
  const providerKeyForError = c.req.param("provider");
  try {
+  if (providerKeyForError === "moneyforward") {
+    return c.html("<h1>Money Forward integration removed</h1><p>This provider is no longer available in Grantry. <a href=\"/tenants\">Back</a></p>", 410);
+  }
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login?error=oauth_session_expired");
 
