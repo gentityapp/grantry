@@ -4149,7 +4149,7 @@ dashboardApp.get("/agents/new", async (c) => {
           <div class="card" style="background:rgba(229,83,75,0.10);border:1px solid rgba(229,83,75,0.5);">
             <h2 style="color:#e5534b;margin-top:0;">⚠ Full-scope access</h2>
             <p style="margin-top:0;">
-              This token can use <b>every enabled scope connection you own right now</b>.
+              This token can use <b>every enabled scope connection you own</b>, including scopes created later.
               If it leaks, your granted footprint is exposed at once.
             </p>
             <label style="cursor:pointer;display:flex;align-items:center;gap:8px;font-weight:600;">
@@ -4193,7 +4193,7 @@ dashboardApp.get("/agents/new", async (c) => {
               previewText.textContent = 'Tick the confirmation above to enable creation.';
               createBtn.disabled = true;
             } else {
-              previewText.innerHTML = '<b>Full-scope manager</b> — all current enabled scope connections. The MCP config has no scope lock; pass <code>scope</code> per call.';
+              previewText.innerHTML = '<b>Full-scope manager</b> — all enabled scope connections, including scopes created later. The MCP config has no scope lock; pass <code>scope</code> per call.';
               createBtn.disabled = false;
             }
             return;
@@ -4283,6 +4283,7 @@ dashboardApp.post("/agents/new", async (c) => {
       tokenPrefix: token.slice(0, 16),
       ownerId: user.id,
       workspaceId: wsId,
+      fullScopeManager: managerMode,
     },
   });
   let granted = 0;
@@ -4308,7 +4309,7 @@ dashboardApp.post("/agents/new", async (c) => {
       <h1>✓ Agent <code>${escapeHtml(agentRow.name)}</code> created</h1>
       <div class="card">
         <h2>Access</h2>
-        <p>${managerMode ? `<span class="badge denied">all current scope connections</span>` : `Scopes: ${scopes.map((s) => `<span class="badge scoped">${s}</span>`).join(" ")}`} · granted ${granted} connection(s)</p>
+        <p>${managerMode ? `<span class="badge denied">all present and future scope connections</span>` : `Scopes: ${scopes.map((s) => `<span class="badge scoped">${s}</span>`).join(" ")}`} · granted ${granted} current connection(s)</p>
       </div>
       ${agentTokenCard(token)}
       ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true)}
@@ -4377,6 +4378,7 @@ dashboardApp.get("/agents/:id", async (c) => {
         <h2>Connection grants</h2>
         <p>Status: ${agent.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</p>
         <p>Token prefix: <code>${escapeHtml(agent.tokenPrefix)}...</code></p>
+        <p>Mode: ${agent.fullScopeManager ? '<span class="badge denied">full-scope manager</span>' : '<span class="badge scoped">selected scopes</span>'}</p>
         <p>Granted connections: ${connections.length
           ? `<span class="badge ok">${connections.length}</span>`
           : '<span class="badge denied">none</span>'}</p>

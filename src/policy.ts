@@ -1,4 +1,6 @@
 // Policy enforcement: Agent -> Connection grants are Grantry's source of truth.
+// Full-scope managers are explicit owner/workspace-bounded exceptions that
+// resolve against every enabled tenant connection in their boundary.
 import { prisma } from "./db.js";
 import { getProvider, PROVIDERS } from "./connectors/registry.js";
 
@@ -46,7 +48,8 @@ function toolImplemented(provider: string, tool: string): boolean {
  *   - provider tool is implemented
  *   - connection exists, is enabled, and matches provider/scope/authType/id
  *   - agent and connection share owner/workspace boundary
- *   - AgentConnectionGrant(agentId, connectionId) exists
+ *   - AgentConnectionGrant(agentId, connectionId) exists, unless the agent is
+ *     an explicit full-scope manager
  *
  * Provider-side ACLs are intentionally not pre-modeled here. A 401/403 from
  * the provider is surfaced as a provider error by the caller, not as policy.
@@ -72,7 +75,7 @@ export async function checkPolicy(args: {
 
   const agent = await prisma.agent.findUnique({
     where: { id: agentId },
-    select: { id: true, ownerId: true, workspaceId: true, enabled: true, expiresAt: true },
+    select: { id: true, ownerId: true, workspaceId: true, enabled: true, fullScopeManager: true, expiresAt: true },
   });
   if (!agent || !agent.enabled) return { allowed: false, reason: "agent not found or disabled", provider, tool, scope };
   if (agent.expiresAt && agent.expiresAt < new Date()) return { allowed: false, reason: "agent token expired", provider, tool, scope };
@@ -81,10 +84,10 @@ export async function checkPolicy(args: {
     provider,
     scope,
     enabled: true,
-    agentGrants: { some: { agentId } },
     ...(requestedConnectionId ? { id: requestedConnectionId } : {}),
     ...(authType ? { authType } : {}),
   };
+  if (!agent.fullScopeManager) where.agentGrants = { some: { agentId } };
   if (agent.workspaceId) where.workspaceId = agent.workspaceId;
   else where.ownerId = agent.ownerId;
 
@@ -97,7 +100,7 @@ export async function checkPolicy(args: {
   if (!connections.length) {
     return {
       allowed: false,
-      reason: `no granted enabled connection for this agent (provider=${provider}, scope=${scope || "<empty>"}${authType ? `, authType=${authType}` : ""}${requestedConnectionId ? `, connectionId=${requestedConnectionId}` : ""})`,
+      reason: `no ${agent.fullScopeManager ? "enabled" : "granted enabled"} connection for this agent (provider=${provider}, scope=${scope || "<empty>"}${authType ? `, authType=${authType}` : ""}${requestedConnectionId ? `, connectionId=${requestedConnectionId}` : ""})`,
       provider, tool, scope,
     };
   }
@@ -111,7 +114,7 @@ export async function checkPolicy(args: {
   const connection = connections[0];
   return {
     allowed: true,
-    reason: `grant=agent_connection, connection=${connection.id.slice(0, 8)}, authType=${connection.authType}`,
+    reason: `grant=${agent.fullScopeManager ? "full_scope_manager" : "agent_connection"}, connection=${connection.id.slice(0, 8)}, authType=${connection.authType}`,
     connectionId: connection.id,
     authType: connection.authType,
     provider, tool, scope,
@@ -129,14 +132,14 @@ export async function allowedToolsForAgent(agentId: string): Promise<Set<string>
 export async function connectionsForAgent(agentId: string): Promise<AgentConnection[]> {
   const agent = await prisma.agent.findUnique({
     where: { id: agentId },
-    select: { id: true, ownerId: true, workspaceId: true, enabled: true, expiresAt: true },
+    select: { id: true, ownerId: true, workspaceId: true, enabled: true, fullScopeManager: true, expiresAt: true },
   });
   if (!agent || !agent.enabled) return [];
   if (agent.expiresAt && agent.expiresAt < new Date()) return [];
 
   const where: any = {
     enabled: true,
-    agentGrants: { some: { agentId } },
+    ...(agent.fullScopeManager ? { scope: { not: "" } } : { agentGrants: { some: { agentId } } }),
   };
   if (agent.workspaceId) where.workspaceId = agent.workspaceId;
   else where.ownerId = agent.ownerId;
@@ -260,6 +263,7 @@ export async function findCapableAgents(args: {
       id: true,
       name: true,
       description: true,
+      fullScopeManager: true,
       connectionGrants: {
         where: { connection: { provider, enabled: true, ...(scope !== undefined ? { scope } : {}) } },
         select: {
@@ -282,9 +286,28 @@ export async function findCapableAgents(args: {
   const FRESH_MS = 30 * 24 * 60 * 60 * 1000;
   const out: CapableAgentMatch[] = [];
   for (const a of agents) {
-    const usable = a.connectionGrants
-      .map((g) => g.connection)
-      .filter((cn) => args.workspaceId ? cn.workspaceId === args.workspaceId : cn.ownerId === args.ownerId);
+    const usable = a.fullScopeManager
+      ? await prisma.connection.findMany({
+          where: {
+            provider,
+            enabled: true,
+            scope: { not: "" },
+            ...(scope !== undefined ? { scope } : {}),
+            ...(args.workspaceId ? { workspaceId: args.workspaceId } : { ownerId: args.ownerId }),
+          },
+          select: {
+            ownerId: true,
+            workspaceId: true,
+            scope: true,
+            authType: true,
+            label: true,
+            enabled: true,
+            credentialValidatedAt: true,
+          },
+        })
+      : a.connectionGrants
+          .map((g) => g.connection)
+          .filter((cn) => args.workspaceId ? cn.workspaceId === args.workspaceId : cn.ownerId === args.ownerId);
     if (!usable.length) continue;
     usable.sort((x, y) => (y.credentialValidatedAt?.getTime() ?? 0) - (x.credentialValidatedAt?.getTime() ?? 0));
     const best = usable[0];
@@ -298,7 +321,7 @@ export async function findCapableAgents(args: {
       agentId: a.id,
       name: a.name,
       charter: a.description ?? null,
-      grants: ["agent-connection"],
+      grants: [a.fullScopeManager ? "full-scope-manager" : "agent-connection"],
       scopes: Array.from(new Set(usable.map((cn) => cn.scope))).sort(),
       provider,
       tool,

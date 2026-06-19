@@ -119,6 +119,7 @@ model Agent {
   ownerId       String
   owner         User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   enabled       Boolean  @default(true)
+  fullScopeManager Boolean @default(false)
   expiresAt     DateTime?
   lastUsedAt    DateTime?
   createdAt     DateTime @default(now())
