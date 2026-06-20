@@ -1049,6 +1049,23 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     tools: ["bigquery/list_datasets", "bigquery/list_tables", "bigquery/get_table", "bigquery/query", "bigquery/get_job"],
     implemented: true,
   },
+  godaddy: {
+    key: "godaddy",
+    label: "GoDaddy",
+    authTypes: ["pat"],
+    helpText: "Create a Production API key at developer.godaddy.com/keys and paste it as KEY:SECRET (the key and secret joined with a colon). It is sent as Authorization: sso-key KEY:SECRET. Note: GoDaddy restricts the production Domains API to accounts that meet its eligibility rules (historically 10+ domains or reseller).",
+    tokenUrl: "https://developer.godaddy.com/keys",
+    tools: [
+      "godaddy/list_domains",
+      "godaddy/get_domain",
+      "godaddy/check_availability",
+      "godaddy/list_dns_records",
+      "godaddy/add_dns_records",
+      "godaddy/replace_dns_records",
+      "godaddy/delete_dns_record",
+    ],
+    implemented: true,
+  },
 };
 
 const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]>> = {
@@ -1062,6 +1079,14 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     baseUrl: "https://api.cloudflare.com/client/v4",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
+  },
+  godaddy: {
+    baseUrl: "https://api.godaddy.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/v1"],
+    smokeTests: [
+      { id: "domains_available", method: "GET", path: "/v1/domains/available", query: { domain: "grantry-availability-check.com" } },
+    ],
   },
   google_drive: {
     baseUrl: "https://www.googleapis.com/drive/v3",

@@ -875,6 +875,26 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "godaddy") {
+      const cred = token.trim();
+      if (!cred.includes(":")) return { provider, authType, status: "error", checkedAt, error: "GoDaddy credential must be in KEY:SECRET format" };
+      const resp = await fetchWithTimeout("https://api.godaddy.com/v1/domains/available?domain=grantry-availability-check.com", {
+        headers: { Authorization: `sso-key ${cred}`, Accept: "application/json" },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `GoDaddy API key check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      return {
+        provider,
+        authType,
+        status: "ok",
+        notes: [
+          "GoDaddy API keys are sent as Authorization: sso-key KEY:SECRET against the Production API (api.godaddy.com).",
+          "GoDaddy restricts the production Domains API by account eligibility (historically 10+ domains or reseller); some endpoints may return 403 for small accounts even with a valid key.",
+        ],
+        checkedAt,
+      };
+    }
+
     return {
       provider,
       authType,

@@ -11,6 +11,7 @@ import { PROVIDERS, getProviderForWorkspace, listProvidersForWorkspace } from ".
 import { callNotionTool } from "./connectors/notion.js";
 import { callGitHubTool } from "./connectors/github.js";
 import { callCloudflareTool } from "./connectors/cloudflare.js";
+import { callGodaddyTool } from "./connectors/godaddy.js";
 import { callClarityTool } from "./connectors/clarity.js";
 import { callGoogleDriveTool } from "./connectors/google_drive.js";
 import { callGoogleGscTool } from "./connectors/google_gsc.js";
@@ -354,6 +355,70 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       tags: { type: "array", items: { type: "string" }, description: "Cache tags to purge." },
       hosts: { type: "array", items: { type: "string" }, description: "Hosts to purge." },
       prefixes: { type: "array", items: { type: "string" }, description: "URL prefixes to purge." },
+    };
+  }
+  if (toolName === "godaddy/list_domains") {
+    return {
+      statuses: { type: "string", description: "Optional comma-separated domain statuses to filter, e.g. ACTIVE,CANCELLED." },
+      marker: { type: "string", description: "Pagination marker: the last domain name from the previous page." },
+      limit: { type: "number", minimum: 1, maximum: 1000, description: "Maximum domains to return (default 100)." },
+    };
+  }
+  if (toolName === "godaddy/get_domain") {
+    return {
+      domain: { type: "string", description: "Domain name, e.g. example.com." },
+    };
+  }
+  if (toolName === "godaddy/check_availability") {
+    return {
+      domain: { type: "string", description: "Domain name to check, e.g. example.com." },
+      check_type: { type: "string", enum: ["FAST", "FULL"], description: "FAST (cached) or FULL (authoritative). Defaults to GoDaddy's default." },
+    };
+  }
+  if (toolName === "godaddy/list_dns_records") {
+    return {
+      domain: { type: "string", description: "Domain name, e.g. example.com." },
+      type: { type: "string", description: "Optional DNS record type filter, e.g. A, CNAME, MX, TXT." },
+      name: { type: "string", description: "Optional DNS record name filter, e.g. www. Requires type when set." },
+      offset: { type: "number", minimum: 1, description: "Pagination offset (1-based)." },
+      limit: { type: "number", minimum: 1, maximum: 500, description: "Maximum records to return (default 100)." },
+    };
+  }
+  if (toolName === "godaddy/add_dns_records") {
+    return {
+      domain: { type: "string", description: "Domain name, e.g. example.com." },
+      type: { type: "string", description: "DNS record type for a single record, e.g. A, CNAME, MX, TXT." },
+      name: { type: "string", description: "DNS record name for a single record, e.g. www or @." },
+      data: { type: "string", description: "DNS record value for a single record, e.g. an IP, hostname, or text." },
+      ttl: { type: "number", description: "TTL in seconds (minimum 600)." },
+      priority: { type: "number", description: "Priority for MX/SRV records." },
+      records: {
+        type: "array",
+        items: { type: "object" },
+        description: "Optional array of record objects ({type,name,data,ttl,...}) to add in one call. Overrides the single-record fields.",
+      },
+    };
+  }
+  if (toolName === "godaddy/replace_dns_records") {
+    return {
+      domain: { type: "string", description: "Domain name, e.g. example.com." },
+      type: { type: "string", description: "DNS record type to replace, e.g. A, CNAME, MX, TXT." },
+      name: { type: "string", description: "DNS record name to replace, e.g. www or @." },
+      data: { type: "string", description: "New record value for the single replacement record." },
+      ttl: { type: "number", description: "TTL in seconds (minimum 600)." },
+      priority: { type: "number", description: "Priority for MX/SRV records." },
+      records: {
+        type: "array",
+        items: { type: "object" },
+        description: "Optional array of record objects ({data,ttl,...}) to set for this type+name. Overrides the single-record fields.",
+      },
+    };
+  }
+  if (toolName === "godaddy/delete_dns_record") {
+    return {
+      domain: { type: "string", description: "Domain name, e.g. example.com." },
+      type: { type: "string", description: "DNS record type to delete, e.g. A, CNAME, MX, TXT." },
+      name: { type: "string", description: "DNS record name to delete, e.g. www or @." },
     };
   }
   if (toolName === "clarity/get_live_insights") {
@@ -2115,6 +2180,12 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "cloudflare/update_dns_record") return ["zone_id", "record_id"];
   if (toolName === "cloudflare/delete_dns_record") return ["zone_id", "record_id"];
   if (toolName === "cloudflare/purge_cache") return ["zone_id"];
+  if (toolName === "godaddy/get_domain") return ["domain"];
+  if (toolName === "godaddy/check_availability") return ["domain"];
+  if (toolName === "godaddy/list_dns_records") return ["domain"];
+  if (toolName === "godaddy/add_dns_records") return ["domain"];
+  if (toolName === "godaddy/replace_dns_records") return ["domain", "type", "name"];
+  if (toolName === "godaddy/delete_dns_record") return ["domain", "type", "name"];
   if (toolName === "google_drive/get_file") return ["file_id"];
   if (toolName === "google_gsc/search_analytics") return ["site_url", "start_date", "end_date"];
   if (toolName === "google_analytics/run_report") return ["property_id", "start_date", "end_date"];
@@ -2454,6 +2525,7 @@ async function dispatchProviderTool(
   if (provider === "notion") return callNotionTool(toolName, args, token);
   if (provider === "github") return callGitHubTool(toolName, args, token);
   if (provider === "cloudflare") return callCloudflareTool(toolName, args, token);
+  if (provider === "godaddy") return callGodaddyTool(toolName, args, token);
   if (provider === "clarity") return callClarityTool(toolName, args, token);
   if (provider === "google_drive") return callGoogleDriveTool(toolName, args, token);
   if (provider === "google_gsc") return callGoogleGscTool(toolName, args, token);

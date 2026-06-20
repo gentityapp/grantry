@@ -248,6 +248,7 @@ async function executeGenericRequest(args: {
   } else {
     headers.Authorization = `Bearer ${token}`;
   }
+  if (args.provider.key === "godaddy") headers.Authorization = `sso-key ${token}`;
   if (args.provider.key === "github") headers["User-Agent"] = "grantry";
   if (args.provider.key === "reddit") headers["User-Agent"] = "grantry/1.0 (MCP connector)";
 
