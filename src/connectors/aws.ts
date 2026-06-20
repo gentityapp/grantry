@@ -86,9 +86,12 @@ function signRequest(params: SigV4Params): Record<string, string> {
   }
 
   // Canonical headers: lowercase key, trim value, sort by key
-  const sortedHeaderKeys = Object.keys(allHeaders).map((k) => k.toLowerCase()).sort();
+  const canonicalHeaderMap = Object.fromEntries(
+    Object.entries(allHeaders).map(([key, value]) => [key.toLowerCase(), String(value).trim()]),
+  );
+  const sortedHeaderKeys = Object.keys(canonicalHeaderMap).sort();
   const canonicalHeaders = sortedHeaderKeys
-    .map((k) => `${k}:${allHeaders[k].trim()}`)
+    .map((k) => `${k}:${canonicalHeaderMap[k]}`)
     .join("\n") + "\n";
   const signedHeaders = sortedHeaderKeys.join(";");
 

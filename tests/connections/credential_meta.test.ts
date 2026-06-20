@@ -36,6 +36,32 @@ function oauthProviderKeys() {
     .sort();
 }
 
+function patProviderKeys() {
+  return listProviders()
+    .filter((provider) => provider.authTypes.includes("pat"))
+    .map((provider) => provider.key)
+    .sort();
+}
+
+function patTokenForProvider(providerKey: string) {
+  const jsonTokens: Record<string, string> = {
+    aws: JSON.stringify({ accessKeyId: "AKIATEST", secretAccessKey: "secret", region: "us-east-1" }),
+    customerio: JSON.stringify({ token: "cio-test-token", region: "us" }),
+    jira: JSON.stringify({ site: "https://acme.atlassian.net", email: "ops@example.com", token: "jira-test-token" }),
+    microsoft_ads: JSON.stringify({ developer_token: "dev-token", access_token: "msads-token", customer_id: "customer", account_id: "account" }),
+    railway: JSON.stringify({ token: "railway-test-token", token_type: "project" }),
+    salesforce: JSON.stringify({ instance_url: "https://acme.my.salesforce.com", token: "sf-test-token" }),
+    shopify: JSON.stringify({ shop: "acme.myshopify.com", token: "shopify-test-token" }),
+    snowflake: JSON.stringify({ account: "acme-test", token: "snowflake-test-token" }),
+    wordpress: JSON.stringify({ site: "https://blog.example.com", username: "admin", app_password: "wp-test-token" }),
+    zendesk: JSON.stringify({ subdomain: "acme", email: "ops@example.com", token: "zendesk-test-token" }),
+  };
+  if (jsonTokens[providerKey]) return jsonTokens[providerKey];
+  if (providerKey === "mailchimp") return "mailchimp-test-us1";
+  if (providerKey === "google_maps") return "google-maps-test-key";
+  return "pat-test-token";
+}
+
 function oauthSuccessResponse({ url }: FetchCall) {
   if (url === "https://api.github.com/user") {
     return jsonResponse(
@@ -127,6 +153,98 @@ function oauthSuccessResponse({ url }: FetchCall) {
   throw new Error(`unexpected fetch ${url}`);
 }
 
+function patSuccessResponse(call: FetchCall) {
+  const { url } = call;
+  if (url === "https://api.cloudflare.com/client/v4/user/tokens/verify") {
+    return jsonResponse({ success: true, result: { id: "cf-token", status: "active" } });
+  }
+  if (url.startsWith("https://maps.googleapis.com/maps/api/geocode/json")) {
+    return jsonResponse({ status: "OK", results: [] });
+  }
+  if (url === "https://graph.facebook.com/v21.0/me?fields=id,name,category") {
+    return jsonResponse({ id: "page-id", name: "Page", category: "Business" });
+  }
+  if (url === "https://api.notion.com/v1/users/me") {
+    return jsonResponse({ id: "notion-bot", type: "bot", name: "Grantry", bot: { workspace_name: "Root" } });
+  }
+  if (url === "https://api.hubapi.com/crm/v3/objects/contacts?limit=1") {
+    return jsonResponse({ total: 1, results: [{ id: "contact-id" }] });
+  }
+  if (url === "https://app.attio.com/oauth/introspect") {
+    return jsonResponse({ active: true, scope: "record:read-write object:read", workspace_id: "attio-ws", workspace_name: "Root" });
+  }
+  if (url === "https://api.heyreach.io/api/public/auth/CheckApiKey") {
+    return jsonResponse({ workspaceId: "heyreach-ws" });
+  }
+  if (url === "https://api.chatwork.com/v2/me") {
+    return jsonResponse({ account_id: 1, name: "Ops", chatwork_id: "ops", organization_id: 2, organization_name: "Root" });
+  }
+  if (url === "https://backboard.railway.app/graphql/v2") {
+    return jsonResponse({ data: { projectToken: { projectId: "project", environmentId: "env" } } });
+  }
+  if (url === "https://discord.com/api/v10/users/@me") {
+    return jsonResponse({ id: "bot-id", username: "grantry", global_name: "Grantry", bot: true });
+  }
+  if (url === "https://api.line.me/v2/bot/info") {
+    return jsonResponse({ userId: "line-user", basicId: "@root", displayName: "Root", chatMode: "chat", markAsReadMode: "manual" });
+  }
+  if (url === "https://api.airtable.com/v0/meta/whoami") {
+    return jsonResponse({ id: "airtable-user", scopes: ["data.records:read", "schema.bases:read"] });
+  }
+  if (url === "https://api.linear.app/graphql") {
+    return jsonResponse({ data: { viewer: { id: "linear-user", name: "Ops", email: "ops@example.com" } } });
+  }
+  if (url === "https://api.sendgrid.com/v3/scopes") {
+    return jsonResponse({ scopes: ["mail.send"] });
+  }
+  if (url === "https://api.vercel.com/v2/user") {
+    return jsonResponse({ user: { uid: "vercel-user", username: "ops", email: "ops@example.com" } });
+  }
+  if (url === "https://api.stripe.com/v1/balance") {
+    return jsonResponse({ object: "balance", available: [] });
+  }
+  if (url === "https://api.webflow.com/v2/sites") {
+    return jsonResponse({ sites: [{ id: "site-id", displayName: "Root" }] });
+  }
+  if (url === "https://api.intercom.io/me") {
+    return jsonResponse({ type: "admin", email: "ops@example.com", name: "Ops", app: { name: "Root" } });
+  }
+  if (url === "https://api.customer.io/v1/campaigns") {
+    return jsonResponse({ campaigns: [] });
+  }
+  if (url === "https://us1.api.mailchimp.com/3.0/") {
+    return jsonResponse({ account_name: "Root", email: "ops@example.com" });
+  }
+  if (url === "https://acme.zendesk.com/api/v2/users/me.json") {
+    return jsonResponse({ user: { name: "Ops", role: "admin" } });
+  }
+  if (url === "https://blog.example.com/wp-json/wp/v2/users/me?context=edit") {
+    return jsonResponse({ id: 1, name: "Ops" });
+  }
+  if (url === "https://acme.myshopify.com/admin/api/2024-10/shop.json") {
+    return jsonResponse({ shop: { name: "Root", domain: "acme.myshopify.com", plan_name: "basic" } });
+  }
+  if (url === "https://acme.atlassian.net/rest/api/3/myself") {
+    return jsonResponse({ accountId: "jira-user", displayName: "Ops", emailAddress: "ops@example.com" });
+  }
+  if (url === "https://acme.my.salesforce.com/services/oauth2/userinfo") {
+    return jsonResponse({ user_id: "sf-user", name: "Ops", email: "ops@example.com", organization_id: "sf-org" });
+  }
+  if (url === "https://api.linkedin.com/v2/userinfo") {
+    return jsonResponse({ sub: "linkedin-user", name: "Ops", email: "ops@example.com" });
+  }
+  if (url === "https://business-api.tiktok.com/open_api/v1.3/user/info/") {
+    return jsonResponse({ code: 0, message: "OK", data: { display_name: "Ops", email: "ops@example.com" } });
+  }
+  if (url === "https://sts.us-east-1.amazonaws.com/") {
+    return new Response(
+      "<GetCallerIdentityResponse><GetCallerIdentityResult><Account>123456789012</Account><Arn>arn:aws:iam::123456789012:user/Ops</Arn><UserId>AIDATEST</UserId></GetCallerIdentityResult></GetCallerIdentityResponse>",
+      { status: 200, headers: { "content-type": "application/xml" } },
+    );
+  }
+  return oauthSuccessResponse(call);
+}
+
 function restoreFetch() {
   globalThis.fetch = originalFetch;
 }
@@ -157,6 +275,27 @@ test("all OAuth providers can build successful credential metadata with mocked p
 
       assert.equal(metadata.provider, providerKey);
       assert.equal(metadata.authType, "oauth");
+      assert.equal(metadata.status, "ok");
+      assert.ok(metadata.checkedAt);
+      assert.ok(result.credentialValidatedAt instanceof Date);
+      if (metadata.capabilities) {
+        assert.notEqual(metadata.capabilities.status, "error");
+      }
+    });
+  }
+});
+
+test("all PAT providers can build successful credential metadata with mocked provider APIs", async (t) => {
+  installFetchMock(patSuccessResponse);
+  t.after(restoreFetch);
+
+  for (const providerKey of patProviderKeys()) {
+    await t.test(providerKey, async () => {
+      const result = await credentialMetadataForStorage(providerKey, "pat", patTokenForProvider(providerKey));
+      const metadata = JSON.parse(result.credentialMetadata);
+
+      assert.equal(metadata.provider, providerKey);
+      assert.equal(metadata.authType, "pat");
       assert.equal(metadata.status, "ok");
       assert.ok(metadata.checkedAt);
       assert.ok(result.credentialValidatedAt instanceof Date);
