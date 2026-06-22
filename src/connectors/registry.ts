@@ -477,13 +477,25 @@ export const PROVIDERS: Record<string, ProviderDef> = {
   },
   railway: {
     key: "railway",
-    label: "Railway",
+    label: "Railway Project Token",
     authTypes: ["pat"],
-    helpText: "Paste a Railway Project Token from Project Settings > Tokens. Plain tokens are treated as project tokens. For account/workspace tokens, paste JSON like {\"token\":\"...\",\"token_type\":\"account\"}.",
+    helpText: "Paste a Railway Project Token from Project Settings > Tokens. Project tokens are scoped to one project environment.",
     tokenUrl: "https://railway.com",
     tools: [
       "railway/graphql",
       "railway/project_token_info",
+      "railway/introspect_schema",
+    ],
+    implemented: true,
+  },
+  railway_api: {
+    key: "railway_api",
+    label: "Railway API Token",
+    authTypes: ["pat"],
+    helpText: "Paste a Railway Account or Workspace API Token from Account Settings > Tokens. It is sent as Authorization: Bearer and can call Railway GraphQL APIs allowed by that token.",
+    tokenUrl: "https://railway.com/account/tokens",
+    tools: [
+      "railway/graphql",
       "railway/introspect_schema",
     ],
     implemented: true,

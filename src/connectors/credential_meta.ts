@@ -444,9 +444,9 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
-    if (provider === "railway") {
+    if (provider === "railway" || provider === "railway_api") {
       let rawToken = token.trim();
-      let tokenType = "project";
+      let tokenType = provider === "railway_api" ? "workspace" : "project";
       if (rawToken.startsWith("{")) {
         const parsed = JSON.parse(rawToken);
         rawToken = String(parsed.token ?? parsed.api_token ?? parsed.apiToken ?? "").trim();
@@ -454,6 +454,12 @@ export async function inspectCredential(provider: string, authType: string, toke
       }
       if (!rawToken) {
         return { provider, authType, status: "error", checkedAt, error: "Railway token is required" };
+      }
+      if (provider === "railway" && tokenType !== "project") {
+        return { provider, authType, status: "error", checkedAt, error: "Railway Project Token provider only accepts project tokens. Use Railway API Token for account/workspace tokens." };
+      }
+      if (provider === "railway_api" && tokenType === "project") {
+        tokenType = "workspace";
       }
       if (!["project", "account", "workspace", "oauth"].includes(tokenType)) {
         return { provider, authType, status: "error", checkedAt, error: "Railway token_type must be project, account, workspace, or oauth" };

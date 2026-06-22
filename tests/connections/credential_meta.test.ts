@@ -51,6 +51,7 @@ function patTokenForProvider(providerKey: string) {
     jira: JSON.stringify({ site: "https://acme.atlassian.net", email: "ops@example.com", token: "jira-test-token" }),
     microsoft_ads: JSON.stringify({ developer_token: "dev-token", access_token: "msads-token", customer_id: "customer", account_id: "account" }),
     railway: JSON.stringify({ token: "railway-test-token", token_type: "project" }),
+    railway_api: "railway-api-test-token",
     salesforce: JSON.stringify({ instance_url: "https://acme.my.salesforce.com", token: "sf-test-token" }),
     shopify: JSON.stringify({ shop: "acme.myshopify.com", token: "shopify-test-token" }),
     snowflake: JSON.stringify({ account: "acme-test", token: "snowflake-test-token" }),
@@ -184,7 +185,11 @@ function patSuccessResponse(call: FetchCall) {
     return jsonResponse({ account_id: 1, name: "Ops", chatwork_id: "ops", organization_id: 2, organization_name: "Root" });
   }
   if (url === "https://backboard.railway.app/graphql/v2") {
-    return jsonResponse({ data: { projectToken: { projectId: "project", environmentId: "env" } } });
+    const body = JSON.parse(String(call.init?.body ?? "{}"));
+    if (String(body.query ?? "").includes("projectToken")) {
+      return jsonResponse({ data: { projectToken: { projectId: "project", environmentId: "env" } } });
+    }
+    return jsonResponse({ data: { __schema: { queryType: { name: "Query" }, mutationType: { name: "Mutation" } } } });
   }
   if (url === "https://discord.com/api/v10/users/@me") {
     return jsonResponse({ id: "bot-id", username: "grantry", global_name: "Grantry", bot: true });
@@ -339,6 +344,28 @@ test("GitHub PAT metadata records subject, scopes, and generic smoke-test capabi
   assert.ok(result.credentialValidatedAt instanceof Date);
   assert.equal(calls.length, 2);
   restoreFetch();
+});
+
+test("Railway provider variants use distinct token headers", async (t) => {
+  const calls = installFetchMock((call) => {
+    assert.equal(call.url, "https://backboard.railway.app/graphql/v2");
+    const body = JSON.parse(String(call.init?.body ?? "{}"));
+    if (String(body.query ?? "").includes("projectToken")) {
+      return jsonResponse({ data: { projectToken: { projectId: "project", environmentId: "env" } } });
+    }
+    return jsonResponse({ data: { __schema: { queryType: { name: "Query" }, mutationType: { name: "Mutation" } } } });
+  });
+  t.after(restoreFetch);
+
+  const project = await credentialMetadataForStorage("railway", "pat", "project-token");
+  const api = await credentialMetadataForStorage("railway_api", "pat", "api-token");
+
+  assert.equal(JSON.parse(project.credentialMetadata).status, "ok");
+  assert.equal(JSON.parse(api.credentialMetadata).status, "ok");
+  assert.equal((calls[0].init?.headers as Record<string, string>)["Project-Access-Token"], "project-token");
+  assert.equal((calls[0].init?.headers as Record<string, string>).Authorization, undefined);
+  assert.equal((calls[1].init?.headers as Record<string, string>).Authorization, "Bearer api-token");
+  assert.equal((calls[1].init?.headers as Record<string, string>)["Project-Access-Token"], undefined);
 });
 
 test("Google OAuth tokeninfo failure is captured without a real provider token", async () => {

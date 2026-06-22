@@ -2505,7 +2505,7 @@ async function dispatchProviderTool(
   toolName: string,
   args: Record<string, unknown>,
   token: string,
-  conn: { encryptedServerCredential: string | null },
+  conn: { provider?: string; encryptedServerCredential: string | null },
 ): Promise<any> {
   if (toolName === `${provider}/request`) {
     const providerDef = PROVIDERS[provider];
@@ -2540,7 +2540,12 @@ async function dispatchProviderTool(
   if (provider === "clay") return callClayTool(toolName, args, token);
   if (provider === "heyreach") return callHeyReachTool(toolName, args, token);
   if (provider === "chatwork") return callChatworkTool(toolName, args, token);
-  if (provider === "railway") return callRailwayTool(toolName, args, token);
+  if (provider === "railway") {
+    const railwayToken = conn.provider === "railway_api" && !token.trim().startsWith("{")
+      ? JSON.stringify({ token, token_type: "workspace" })
+      : token;
+    return callRailwayTool(toolName, args, railwayToken);
+  }
   if (provider === "google_maps") return callGoogleMapsTool(toolName, args, token);
   if (provider === "resend") return callResendTool(toolName, args, token);
   if (provider === "slack") return callSlackTool(toolName, args, token);
@@ -2854,20 +2859,25 @@ function buildToolList(
   const scopesByTool = new Map<string, Set<string>>();
   const authTypesByTool = new Map<string, Set<string>>();
   const connectionIdsByTool = new Map<string, Set<string>>();
+  const providerLabelsByTool = new Map<string, Set<string>>();
   for (const conn of connections) {
     for (const tool of conn.tools) {
       if (!scopesByTool.has(tool)) scopesByTool.set(tool, new Set());
       if (!authTypesByTool.has(tool)) authTypesByTool.set(tool, new Set());
       if (!connectionIdsByTool.has(tool)) connectionIdsByTool.set(tool, new Set());
+      if (!providerLabelsByTool.has(tool)) providerLabelsByTool.set(tool, new Set());
       scopesByTool.get(tool)!.add(conn.scope);
       authTypesByTool.get(tool)!.add(conn.authType);
       connectionIdsByTool.get(tool)!.add(conn.id);
+      providerLabelsByTool.get(tool)!.add(PROVIDERS[conn.provider]?.label ?? conn.provider);
     }
   }
 
+  const advertisedToolNames = new Set<string>();
   for (const p of Object.values(PROVIDERS)) {
     if (p.implemented === false) continue;
     for (const toolName of p.tools) {
+      if (advertisedToolNames.has(toolName)) continue;
       const directScopes = scopesByTool.get(toolName) ?? new Set<string>();
       // Scopes only reachable by delegation (drop any the agent can call directly).
       const delegScopes = new Set<string>();
@@ -2879,12 +2889,14 @@ function buildToolList(
       const authTypes = Array.from(authTypesByTool.get(toolName) ?? []).sort();
       const connectionIds = Array.from(connectionIdsByTool.get(toolName) ?? []).sort();
       const action = toolName.split("/")[1]?.replace(/_/g, " ");
+      const providerLabel = Array.from(providerLabelsByTool.get(toolName) ?? [p.label]).sort().join(" / ");
       // Flag tools that are *only* reachable by delegation, so the model knows a
       // grant_token is required rather than a direct call.
       const delegationOnly = directScopes.size === 0;
       const description = delegationOnly
-        ? `${p.label}: ${action} (delegated — mint a grant_token via grantry_delegate, then call with that grant_token + scope)`
-        : `${p.label}: ${action}`;
+        ? `${providerLabel}: ${action} (delegated — mint a grant_token via grantry_delegate, then call with that grant_token + scope)`
+        : `${providerLabel}: ${action}`;
+      advertisedToolNames.add(toolName);
       tools.push({
         name: publicToolName(toolName),
         description,

@@ -138,9 +138,10 @@ Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing scope):
 - **Clay**: paste the API key from Clay Settings > Account > API key.
 - **HeyReach**: paste a Public API key.
 - **Chatwork**: paste a Chatwork API token.
-- **Railway**: paste a Project Token from Project Settings > Tokens. Plain tokens
-  are treated as project tokens. For account/workspace tokens, paste JSON like
-  `{"token":"...","token_type":"account"}`.
+- **Railway Project Token**: paste a Project Token from Project Settings >
+  Tokens. These are scoped to one project environment.
+- **Railway API Token**: paste an Account or Workspace API Token from Account
+  Settings > Tokens. These are sent as Bearer tokens.
 - **Resend**: paste a Resend API key. Sending requires `sending_access` or
   `full_access` and a verified sending domain.
 - **Slack**: paste a **Bot User OAuth Token** (`xoxb-…`) from the app's OAuth &
@@ -268,8 +269,9 @@ the same provider+scope; disambiguate with `auth_type` (`service_account` vs
   `list_room_members`, `list_messages`, `get_message`, `send_message`,
   `list_my_tasks`, `list_room_tasks`, `get_room_task`, `create_room_task`,
   `list_room_files`, `get_room_file`
-- **railway** (Project token / API token): `graphql`, `project_token_info`,
+- **railway** (Project token): `graphql`, `project_token_info`,
   `introspect_schema`
+- **railway_api** (Account/Workspace API token): `graphql`, `introspect_schema`
 - **resend** (API key): `send_email`, `list_emails`, `get_email`,
   `list_domains`, `get_domain`, `list_api_keys`
 - **slack** (Bot token or OAuth; scopes `channels:read`, `groups:read`,

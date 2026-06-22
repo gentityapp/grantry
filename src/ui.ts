@@ -86,6 +86,7 @@ function authTypeLabel(providerKey: string, authType: string): string {
   if (providerKey === "heyreach") return "API key";
   if (providerKey === "chatwork") return "API token";
   if (providerKey === "railway") return "Project token";
+  if (providerKey === "railway_api") return "API token";
   if (providerKey === "resend") return "API key";
   if (providerKey === "slack") return "Bot token";
   if (providerKey === "google_maps") return "API key";
@@ -110,6 +111,7 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
   if (providerKey === "heyreach") return "Paste your HeyReach Public API key";
   if (providerKey === "chatwork") return "Paste your Chatwork API token";
   if (providerKey === "railway") return "Paste your Railway Project Token from Project Settings > Tokens";
+  if (providerKey === "railway_api") return "Paste your Railway Account or Workspace API Token from Account Settings > Tokens";
   if (providerKey === "resend") return "Paste your Resend API key";
   if (providerKey === "slack") return "Paste your Slack Bot User OAuth Token (starts with xoxb-)";
   if (providerKey === "google_maps") return "Paste your Google Maps Platform API key";
@@ -143,7 +145,8 @@ function tokenLinkLabel(providerKey: string, providerLabel: string): string {
   if (providerKey === "clay") return "🔗 Open Clay API key settings →";
   if (providerKey === "heyreach") return "🔗 Open HeyReach app →";
   if (providerKey === "chatwork") return "🔗 Open Chatwork API token settings →";
-  if (providerKey === "railway") return "🔗 Open Railway →";
+  if (providerKey === "railway") return "🔗 Open Railway project tokens →";
+  if (providerKey === "railway_api") return "🔗 Open Railway API tokens →";
   if (providerKey === "resend") return "🔗 Open Resend API keys →";
   if (providerKey === "slack") return "🔗 Open Slack apps (create app / get Bot token) →";
   if (providerKey === "google_maps") return "🔗 Open Google Maps Platform credentials →";
@@ -3183,9 +3186,11 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                   ? "HeyReach Public API key"
                   : (sel.value === "railway"
                     ? "Railway Project Token"
-                    : (sel.value === "resend"
-                      ? "Resend API key"
-                      : (sel.value === "google_maps" ? "Google Maps Platform API key" : p.label + " token"))))));
+                    : (sel.value === "railway_api"
+                      ? "Railway Account or Workspace API Token"
+                      : (sel.value === "resend"
+                        ? "Resend API key"
+                        : (sel.value === "google_maps" ? "Google Maps Platform API key" : p.label + " token")))))));
           credField.placeholder = useSa
             ? "Paste the full service account JSON key file ({ \\"type\\": \\"service_account\\", ... })"
             : "Paste your " + tokenLabel + (sel.value === "hubspot" ? " here (starts with pat-)" : " here");
@@ -3220,12 +3225,14 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                   : (sel.value === "heyreach"
                     ? "🔗 Open HeyReach app →"
                     : (sel.value === "railway"
-                      ? "🔗 Open Railway →"
-                      : (sel.value === "resend"
-                        ? "🔗 Open Resend API keys →"
-                        : (sel.value === "google_maps"
-                          ? "🔗 Open Google Maps Platform credentials →"
-                          : (sel.value === "github" ? "🔗 Manage GitHub PAT repository access here →" : "🔗 Get a new " + p.label + " token here →")))))));
+                      ? "🔗 Open Railway project tokens →"
+                      : (sel.value === "railway_api"
+                        ? "🔗 Open Railway API tokens →"
+                        : (sel.value === "resend"
+                          ? "🔗 Open Resend API keys →"
+                          : (sel.value === "google_maps"
+                            ? "🔗 Open Google Maps Platform credentials →"
+                            : (sel.value === "github" ? "🔗 Manage GitHub PAT repository access here →" : "🔗 Get a new " + p.label + " token here →"))))))));
             patLinkRow.style.display = "";
           } else {
             patLinkRow.style.display = "none";
@@ -4073,9 +4080,11 @@ dashboardApp.get("/tenants/new", async (c) => {
                         ? "Paste a new HeyReach Public API key here (rotates credential)"
                         : (key === "railway"
                           ? "Paste a new Railway Project Token here (rotates credential)"
-                          : (key === "resend"
-                            ? "Paste a new Resend API key here (rotates credential)"
-                            : "Paste a new " + (PROVIDERS[key] ? PROVIDERS[key].label : key) + " token here (rotates credential)")))));
+                          : (key === "railway_api"
+                            ? "Paste a new Railway Account or Workspace API Token here (rotates credential)"
+                            : (key === "resend"
+                              ? "Paste a new Resend API key here (rotates credential)"
+                              : "Paste a new " + (PROVIDERS[key] ? PROVIDERS[key].label : key) + " token here (rotates credential)"))))));
                 credInput.focus();
                 notice.style.display = "none";
               };

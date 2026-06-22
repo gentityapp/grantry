@@ -30,6 +30,11 @@ function toolProvider(tool: string): string {
   return tool.includes("/") ? tool.split("/", 2)[0] : "";
 }
 
+function compatibleProviderKeys(provider: string): string[] {
+  if (provider === "railway") return ["railway", "railway_api"];
+  return [provider];
+}
+
 function providerTools(provider: string): string[] {
   const providerDef = getProvider(provider);
   if (!providerDef || providerDef.implemented === false) return [];
@@ -80,8 +85,9 @@ export async function checkPolicy(args: {
   if (!agent || !agent.enabled) return { allowed: false, reason: "agent not found or disabled", provider, tool, scope };
   if (agent.expiresAt && agent.expiresAt < new Date()) return { allowed: false, reason: "agent token expired", provider, tool, scope };
 
+  const providerKeys = compatibleProviderKeys(provider);
   const where: any = {
-    provider,
+    provider: { in: providerKeys },
     scope,
     enabled: true,
     ...(requestedConnectionId ? { id: requestedConnectionId } : {}),
@@ -100,14 +106,14 @@ export async function checkPolicy(args: {
   if (!connections.length) {
     return {
       allowed: false,
-      reason: `no ${agent.fullScopeManager ? "enabled" : "granted enabled"} connection for this agent (provider=${provider}, scope=${scope || "<empty>"}${authType ? `, authType=${authType}` : ""}${requestedConnectionId ? `, connectionId=${requestedConnectionId}` : ""})`,
+      reason: `no ${agent.fullScopeManager ? "enabled" : "granted enabled"} connection for this agent (provider=${providerKeys.join("|")}, scope=${scope || "<empty>"}${authType ? `, authType=${authType}` : ""}${requestedConnectionId ? `, connectionId=${requestedConnectionId}` : ""})`,
       provider, tool, scope,
     };
   }
   if (!authType && !requestedConnectionId && connections.length > 1) {
     return {
       allowed: false,
-      reason: `ambiguous granted connections for (provider=${provider}, scope=${scope || "<empty>"}); pass auth_type or connection_id`,
+      reason: `ambiguous granted connections for (provider=${providerKeys.join("|")}, scope=${scope || "<empty>"}); pass auth_type or connection_id`,
       provider, tool, scope,
     };
   }
@@ -265,7 +271,7 @@ export async function findCapableAgents(args: {
       description: true,
       fullScopeManager: true,
       connectionGrants: {
-        where: { connection: { provider, enabled: true, ...(scope !== undefined ? { scope } : {}) } },
+        where: { connection: { provider: { in: compatibleProviderKeys(provider) }, enabled: true, ...(scope !== undefined ? { scope } : {}) } },
         select: {
           connection: {
             select: {
@@ -289,7 +295,7 @@ export async function findCapableAgents(args: {
     const usable = a.fullScopeManager
       ? await prisma.connection.findMany({
           where: {
-            provider,
+            provider: { in: compatibleProviderKeys(provider) },
             enabled: true,
             scope: { not: "" },
             ...(scope !== undefined ? { scope } : {}),
