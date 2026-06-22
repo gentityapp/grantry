@@ -2857,7 +2857,10 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                           ? '<span class="badge ok">set</span>'
                           : '<span class="badge denied">missing</span>'}
                       </div>
-                      <input type="password" name="conn_server_credential_${cn.id}" placeholder="Paste Developer token from Google Ads API Center" style="font-size:13px;margin-bottom:6px;">
+                      <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
+                        <input type="password" name="conn_server_credential_${cn.id}" placeholder="Paste Developer token from Google Ads API Center" style="font-size:13px;margin-bottom:0;">
+                        <button type="submit" style="font-size:13px;white-space:nowrap;">Save token</button>
+                      </div>
                       <div class="field-hint">
                         OAuth user tokenとは別です。Google Ads API Center の Developer token をここに保存します。
                         <a href="https://ads.google.com/aw/apicenter" target="_blank" rel="noopener">Open API Center →</a>
