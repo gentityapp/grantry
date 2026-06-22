@@ -1222,16 +1222,21 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     baseUrl: "https://api.attio.com",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/v2/"],
+    smokeTests: [{ id: "objects", method: "GET", path: "/v2/objects" }],
   },
   clay: {
     baseUrl: "https://api.clay.com",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/v1/"],
+    smokeTests: [{ id: "tables", method: "GET", path: "/v1/tables", query: { limit: 1 } }],
   },
   heyreach: {
     baseUrl: "https://api.heyreach.io",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
+    authScheme: "api_key",
+    apiKeyHeader: "X-API-KEY",
+    smokeTests: [{ id: "api_key", method: "GET", path: "/api/public/auth/CheckApiKey" }],
   },
   chatwork: {
     baseUrl: "https://api.chatwork.com/v2",
@@ -1239,6 +1244,7 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     allowedPathPrefixes: ["/"],
     authScheme: "api_key",
     apiKeyHeader: "X-ChatWorkToken",
+    smokeTests: [{ id: "me", method: "GET", path: "/me" }],
   },
   freee: {
     baseUrl: "https://api.freee.co.jp",
@@ -1261,6 +1267,7 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     baseUrl: "https://api.resend.com",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "domains", method: "GET", path: "/domains" }],
   },
   slack: {
     baseUrl: "https://slack.com/api",
@@ -1317,6 +1324,7 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     baseUrl: "https://api.stripe.com/v1",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "balance", method: "GET", path: "/balance" }],
   },
   webflow: {
     baseUrl: "https://api.webflow.com/v2",

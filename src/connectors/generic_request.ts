@@ -251,6 +251,7 @@ async function executeGenericRequest(args: {
   if (args.provider.key === "godaddy") headers.Authorization = `sso-key ${token}`;
   if (args.provider.key === "github") headers["User-Agent"] = "grantry";
   if (args.provider.key === "reddit") headers["User-Agent"] = "grantry/1.0 (MCP connector)";
+  if (args.provider.key === "stripe") headers["Stripe-Version"] = "2024-06-20";
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), GENERIC_TIMEOUT_MS);

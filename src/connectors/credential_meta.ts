@@ -729,7 +729,7 @@ export async function inspectCredential(provider: string, authType: string, toke
     }
 
     if (provider === "stripe") {
-      const resp = await fetchWithTimeout("https://api.stripe.com/v1/balance", { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+      const resp = await fetchWithTimeout("https://api.stripe.com/v1/balance", { headers: { Authorization: `Bearer ${token}`, Accept: "application/json", "Stripe-Version": "2024-06-20" } });
       const body: any = await readJson(resp);
       if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `Stripe key check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
       return { provider, authType, status: "ok", notes: ["Stripe secret keys are sent as Authorization: Bearer. Use a restricted key to limit access."], checkedAt };

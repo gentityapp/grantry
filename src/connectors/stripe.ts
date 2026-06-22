@@ -19,6 +19,7 @@ function headers(secretKey: string, form = false) {
   return {
     Authorization: `Bearer ${secretKey}`,
     Accept: "application/json",
+    "Stripe-Version": "2024-06-20",
     ...(form ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
   };
 }

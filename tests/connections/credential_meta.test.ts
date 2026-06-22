@@ -178,6 +178,12 @@ function patSuccessResponse(call: FetchCall) {
   if (url === "https://app.attio.com/oauth/introspect") {
     return jsonResponse({ active: true, scope: "record:read-write object:read", workspace_id: "attio-ws", workspace_name: "Root" });
   }
+  if (url === "https://api.attio.com/v2/objects") {
+    return jsonResponse({ data: [] });
+  }
+  if (url === "https://api.clay.com/v1/tables?limit=1") {
+    return jsonResponse({ data: [] });
+  }
   if (url === "https://api.heyreach.io/api/public/auth/CheckApiKey") {
     return jsonResponse({ workspaceId: "heyreach-ws" });
   }
@@ -211,6 +217,9 @@ function patSuccessResponse(call: FetchCall) {
   }
   if (url === "https://api.stripe.com/v1/balance") {
     return jsonResponse({ object: "balance", available: [] });
+  }
+  if (url === "https://api.resend.com/domains") {
+    return jsonResponse({ data: [] });
   }
   if (url === "https://api.webflow.com/v2/sites") {
     return jsonResponse({ sites: [{ id: "site-id", displayName: "Root" }] });
@@ -313,6 +322,25 @@ test("all PAT providers can build successful credential metadata with mocked pro
       }
     });
   }
+});
+
+test("PAT providers with safe read probes report concrete capability status", async () => {
+  const providers = ["attio", "chatwork", "clay", "heyreach", "resend", "stripe"];
+  const calls = installFetchMock(patSuccessResponse);
+
+  for (const providerKey of providers) {
+    const provider = getProvider(providerKey);
+    assert.ok(provider?.genericRequest?.smokeTests?.length, `${providerKey} is missing a read-only smoke test`);
+
+    const result = await credentialMetadataForStorage(providerKey, "pat", patTokenForProvider(providerKey));
+    const metadata = JSON.parse(result.credentialMetadata);
+    assert.equal(metadata.capabilities?.status, "ok", `${providerKey} capability check should be concrete`);
+  }
+
+  const stripeBalanceCalls = calls.filter((call) => call.url === "https://api.stripe.com/v1/balance");
+  assert.ok(stripeBalanceCalls.length >= 2);
+  assert.ok(stripeBalanceCalls.every((call) => call.init?.headers && "Stripe-Version" in (call.init.headers as Record<string, string>)));
+  restoreFetch();
 });
 
 test("GitHub PAT metadata records subject, scopes, and generic smoke-test capability", async () => {
