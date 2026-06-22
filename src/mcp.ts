@@ -67,6 +67,7 @@ import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 import { mintDwdAccessToken, type ServiceAccountCredential } from "./google_dwd.js";
 import { callGenericCheckConnection, callGenericListCapabilities, callGenericProviderRequest } from "./connectors/generic_request.js";
 import { userMayUseAgent } from "./workspaces.js";
+import { connectionCredentialData, providerCredentialData } from "./provider_credentials.js";
 
 export const mcpApp = new Hono();
 
@@ -3119,18 +3120,12 @@ async function assertProviderScopesBeforeDispatch(args: {
       missing = missingRequiredScopes(requiredScopes, grantedScopes);
       await prisma.connection.update({
         where: { id: args.conn.id },
-        data: {
-          credentialMetadata: meta.credentialMetadata,
-          credentialValidatedAt: meta.credentialValidatedAt,
-        },
+        data: connectionCredentialData(meta),
       });
       if (args.conn.credentialId) {
         await prisma.providerCredential.update({
           where: { id: args.conn.credentialId },
-          data: {
-            credentialMetadata: meta.credentialMetadata,
-            credentialValidatedAt: meta.credentialValidatedAt,
-          },
+          data: providerCredentialData(meta),
         }).catch(() => {});
       }
     }
@@ -3156,18 +3151,12 @@ async function assertProviderScopesBeforeDispatch(args: {
       missing = probeMissingScopesFromMetadata(meta.credentialMetadata, requiredScopes);
       await prisma.connection.update({
         where: { id: args.conn.id },
-        data: {
-          credentialMetadata: meta.credentialMetadata,
-          credentialValidatedAt: meta.credentialValidatedAt,
-        },
+        data: connectionCredentialData(meta),
       });
       if (args.conn.credentialId) {
         await prisma.providerCredential.update({
           where: { id: args.conn.credentialId },
-          data: {
-            credentialMetadata: meta.credentialMetadata,
-            credentialValidatedAt: meta.credentialValidatedAt,
-          },
+          data: providerCredentialData(meta),
         }).catch(() => {});
       }
     }
@@ -3377,11 +3366,11 @@ async function credentialForConnection(conn: {
   };
   if (conn.credentialId) {
     await prisma.$transaction([
-      prisma.providerCredential.update({ where: { id: conn.credentialId }, data }),
-      prisma.connection.updateMany({ where: { credentialId: conn.credentialId }, data }),
+      prisma.providerCredential.update({ where: { id: conn.credentialId }, data: providerCredentialData(data) }),
+      prisma.connection.updateMany({ where: { credentialId: conn.credentialId }, data: connectionCredentialData(data) }),
     ]);
   } else {
-    await prisma.connection.update({ where: { id: conn.id }, data });
+    await prisma.connection.update({ where: { id: conn.id }, data: connectionCredentialData(data) });
   }
   return refreshed.access_token;
 }

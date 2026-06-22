@@ -6,17 +6,18 @@ import { prisma } from "./db.js";
 import { decrypt, encrypt } from "./crypto.js";
 import { PROVIDERS, getProvider, getProviderForWorkspace, listProvidersForWorkspace, normalizePathPrefixes, toolsForProviderForWorkspace, validateCustomProviderKey } from "./connectors/registry.js";
 import { providerIcon, providerIconMap } from "./connectors/icons.js";
-import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
+import { credentialMetadataForStorage, deriveCredentialHealth } from "./connectors/credential_meta.js";
 import { callGenericCheckConnection, callGenericListCapabilities } from "./connectors/generic_request.js";
 import { parseServiceAccountInput, serviceAccountPublicMeta, invalidateDwdToken, mintDwdAccessToken, type ServiceAccountCredential } from "./google_dwd.js";
 import { connectionsForAgent, findCapableAgents, normalizeToolName } from "./policy.js";
 import { ensureTenant } from "./tenants.js";
-import { createTenantConnectionFromCredential, ensureProviderCredentialForConnection, rotateSharedCredential, syncProviderCredentialFromConnection } from "./provider_credentials.js";
+import { connectionCredentialData, createTenantConnectionFromCredential, ensureProviderCredentialForConnection, rotateSharedCredential, syncProviderCredentialFromConnection } from "./provider_credentials.js";
 import { sendSystemEmail } from "./email.js";
 import { connectableAgentsFor, userMayUseAgent } from "./workspaces.js";
 import nodeCrypto from "node:crypto";
 
 export const dashboardApp = new Hono();
+const CREDENTIAL_RECHECK_MIN_INTERVAL_MS = 15_000;
 
 // Separate Hono app for OAuth flows (mounted at /oauth in server.ts).
 // Not under the dashboard routes because GitHub's OAuth callback URL needs to be a stable
@@ -715,7 +716,12 @@ async function credentialMetadataForProviderDef(providerDef: any, authType: stri
     metadata.status = checkContent.status === "ok" ? "ok" : checkContent.status === "error" ? "error" : "unknown";
     metadata.capabilities = { status: metadata.status, smokeTests, operations, missingScopes: Array.from(new Set(smokeTests.flatMap((test: any) => Array.isArray(test.missingScopes) ? test.missingScopes.map(String) : []))), checkedAt };
   } catch (e: any) { metadata.status = "unknown"; metadata.capabilities = { status: "unknown", checkedAt, error: String(e?.message ?? e).slice(0, 500) }; }
-  return { credentialMetadata: JSON.stringify(metadata).slice(0, 16000), credentialValidatedAt: new Date() };
+  const credentialValidatedAt = new Date();
+  return {
+    credentialMetadata: JSON.stringify(metadata).slice(0, 16000),
+    credentialValidatedAt,
+    ...deriveCredentialHealth({ credentialMetadata: metadata, credentialValidatedAt }),
+  };
 }
 
 function parseScopeList(raw: string | null | undefined): string[] {
@@ -1060,6 +1066,47 @@ function oauthTokenStatus(cn: { authType: string; accessTokenExpiresAt?: Date | 
     return `<span class="badge unscoped" title="Access token expired at ${cn.accessTokenExpiresAt.toISOString()}, but calls will refresh it automatically.">refreshable</span>`;
   }
   return `<span class="badge denied" title="Access token expired at ${cn.accessTokenExpiresAt.toISOString()} and no refresh token is stored.">token expired</span>`;
+}
+
+function healthStatusFromConnection(cn: {
+  credentialMetadata?: string | null;
+  credentialValidatedAt?: Date | null;
+  accessTokenExpiresAt?: Date | null;
+  healthStatusSnapshot?: string | null;
+  healthCheckedAtSnapshot?: Date | null;
+}) {
+  if (cn.healthStatusSnapshot) {
+    return {
+      status: cn.healthStatusSnapshot,
+      checkedAt: cn.healthCheckedAtSnapshot ?? null,
+      derived: false,
+    };
+  }
+  if (!cn.credentialMetadata || cn.credentialMetadata === "{}") {
+    return { status: "unchecked", checkedAt: null, derived: false };
+  }
+  const health = deriveCredentialHealth({
+    credentialMetadata: cn.credentialMetadata,
+    credentialValidatedAt: cn.credentialValidatedAt,
+    accessTokenExpiresAt: cn.accessTokenExpiresAt,
+  });
+  return { status: health.healthStatus, checkedAt: health.healthCheckedAt, derived: true };
+}
+
+function renderCredentialHealthBadge(cn: {
+  credentialMetadata?: string | null;
+  credentialValidatedAt?: Date | null;
+  accessTokenExpiresAt?: Date | null;
+  healthStatusSnapshot?: string | null;
+  healthCheckedAtSnapshot?: Date | null;
+}) {
+  const health = healthStatusFromConnection(cn);
+  const title = health.checkedAt ? ` title="Health checked ${health.checkedAt.toISOString()}${health.derived ? " (derived from metadata)" : ""}"` : "";
+  if (health.status === "ok") return `<span class="badge ok"${title}>active</span>`;
+  if (health.status === "warn") return `<span class="badge unscoped"${title}>partial</span>`;
+  if (health.status === "error") return `<span class="badge denied"${title}>broken</span>`;
+  if (health.status === "unknown") return `<span class="badge unscoped"${title}>check unavailable</span>`;
+  return '<span class="badge unscoped">not checked</span>';
 }
 
 async function getSessionUser(c: any) {
@@ -2893,6 +2940,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                 <td><code>${cn.authType}</code></td>
                 <td><code>${cn.scope}</code></td>
                 <td>
+                  ${renderCredentialHealthBadge(cn)}
                   ${oauthTokenStatus(cn)}
                   ${renderCredentialSummary(cn)}
                   ${renderDwdInfo(cn)}
@@ -3702,7 +3750,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
               encryptedCredential: encrypt(credential),
               refreshToken: null,
               accessTokenExpiresAt: null,
-              ...credentialMeta,
+              ...connectionCredentialData(credentialMeta),
             },
           })
         : await prisma.connection.create({
@@ -3715,7 +3763,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
               ownerId: user.id,
               workspaceId: tenantRow.workspaceId ?? wsId,
               encryptedCredential: encrypt(credential),
-              ...credentialMeta,
+              ...connectionCredentialData(credentialMeta),
             },
           });
       await ensureProviderCredentialForConnection(conn, user.id);
@@ -3768,6 +3816,21 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/recheck", async (c)
   if (!conn) {
     return c.html(`<h1>connection not found</h1><p><a href="/tenants/${scope}/edit">← Back</a></p>`, 404);
   }
+  const credentialHealth = conn.credentialId
+    ? await prisma.providerCredential.findUnique({
+        where: { id: conn.credentialId },
+        select: { healthCheckedAt: true },
+      })
+    : null;
+  const lastCheckedAt = credentialHealth?.healthCheckedAt ?? conn.healthCheckedAtSnapshot;
+  if (lastCheckedAt && Date.now() - lastCheckedAt.getTime() < CREDENTIAL_RECHECK_MIN_INTERVAL_MS) {
+    return c.redirect(tenantEditUrl(
+      scope,
+      `Recheck skipped for ${conn.label}; wait a few seconds before checking this credential again.`,
+      "error",
+      "#connections",
+    ));
+  }
   if (conn.authType === "oauth") {
     return c.html(`<h1>OAuth connection uses Reconnect</h1><p>Use the Reconnect button to refresh this credential.</p><p><a href="/tenants/${scope}/edit">← Back</a></p>`, 400);
   }
@@ -3790,10 +3853,15 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/recheck", async (c)
     }
     const meta = safeJsonObject(conn.credentialMetadata);
     const newMeta = JSON.stringify({ ...meta, status: ok ? "ok" : "error", ...(ok ? {} : { error: errorMsg.slice(0, 300) }) });
+    const checkedAt = new Date();
     await rotateSharedCredential({
       credentialId: conn.credentialId,
       connectionId: conn.id,
-      data: { credentialMetadata: newMeta, credentialValidatedAt: ok ? new Date() : null },
+      data: {
+        credentialMetadata: newMeta,
+        credentialValidatedAt: checkedAt,
+        ...deriveCredentialHealth({ credentialMetadata: newMeta, credentialValidatedAt: checkedAt }),
+      },
     });
     return c.redirect(tenantEditUrl(
       scope,
@@ -4387,7 +4455,7 @@ dashboardApp.post("/tenants/new", async (c) => {
       const conn = existingConn
         ? await prisma.connection.update({
             where: { id: existingConn.id },
-            data: { encryptedCredential: encrypt(credential), refreshToken: null, accessTokenExpiresAt: null, ...credentialMeta },
+            data: { encryptedCredential: encrypt(credential), refreshToken: null, accessTokenExpiresAt: null, ...connectionCredentialData(credentialMeta) },
           })
         : await prisma.connection.create({
             data: {
@@ -4399,7 +4467,7 @@ dashboardApp.post("/tenants/new", async (c) => {
               ownerId: user.id,
               workspaceId: tenantRow.workspaceId ?? wsId,
               encryptedCredential: encrypt(credential),
-              ...credentialMeta,
+              ...connectionCredentialData(credentialMeta),
             },
           });
       await ensureProviderCredentialForConnection(conn, user.id);
@@ -5454,7 +5522,7 @@ oauthApp.get("/:provider/callback", async (c) => {
           tenantId: tenantRow.id,
           ownerId: user.id,
           workspaceId: wsId,
-          ...data,
+          ...connectionCredentialData(data),
         },
       });
       await ensureProviderCredentialForConnection(created, user.id);
@@ -5487,7 +5555,7 @@ oauthApp.get("/:provider/callback", async (c) => {
       encryptedCredential: encrypt(accessToken),
       accessTokenExpiresAt: tokenJson.expires_in ? new Date(Date.now() + tokenJson.expires_in * 1000) : null,
       refreshToken: refreshToken ? encrypt(refreshToken) : undefined,
-      ...(await credentialMetadataForStorage(providerKey, "oauth", accessToken)),
+      ...connectionCredentialData(await credentialMetadataForStorage(providerKey, "oauth", accessToken)),
     },
   });
   // If the connection already existed, update the credential (token may have rotated)

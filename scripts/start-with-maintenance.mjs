@@ -39,10 +39,11 @@ await run("npx", ["prisma", "generate"], { required: true, timeoutMs: 45_000 });
 await run("npx", ["prisma", "db", "push", "--accept-data-loss"], { timeoutMs: 30_000 });
 await run("node", ["scripts/backfill-auth-types.mjs"], { timeoutMs: 20_000 });
 await run("node", ["--import", "tsx/esm", "scripts/backfill-credential-metadata.mjs"], { timeoutMs: 30_000 });
+await run("node", ["--import", "tsx/esm", "scripts/backfill-credential-health.mjs"], { timeoutMs: 30_000 });
 await run("node", ["scripts/dedupe-connections.mjs"], { timeoutMs: 20_000 });
 await run("node", ["scripts/backfill-tenants.mjs"], { timeoutMs: 20_000 });
 await run("node", ["scripts/backfill-workspaces.mjs"], { timeoutMs: 30_000 });
-await run("node", ["scripts/backfill-provider-credentials.mjs"], { timeoutMs: 30_000 });
+await run("node", ["--import", "tsx/esm", "scripts/backfill-provider-credentials.mjs"], { timeoutMs: 30_000 });
 await run("node", ["scripts/disable-platform-oauth-app-credentials.mjs"], { timeoutMs: 20_000 });
 await run("node", ["scripts/backfill-agent-connection-grants.mjs"], { timeoutMs: 30_000 });
 

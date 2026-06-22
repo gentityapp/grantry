@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { decrypt } from "../src/crypto.js";
 import { credentialMetadataForStorage } from "../src/connectors/credential_meta.js";
+import { connectionCredentialData } from "../src/provider_credentials.js";
 
 const prisma = new PrismaClient();
 
@@ -22,7 +23,7 @@ try {
     try {
       const token = decrypt(conn.encryptedCredential);
       const data = await credentialMetadataForStorage(conn.provider, conn.authType, token);
-      await prisma.connection.update({ where: { id: conn.id }, data });
+      await prisma.connection.update({ where: { id: conn.id }, data: connectionCredentialData(data) });
       updated += 1;
       console.log("[backfill-credential-metadata] updated", {
         id: conn.id,

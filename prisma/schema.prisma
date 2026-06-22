@@ -202,6 +202,8 @@ model Connection {
   encryptedServerCredential String? // encrypted provider-level secret, e.g. Google Ads developer token
   credentialMetadata  String   @default("{}") // JSON: observed provider scopes/capabilities, never raw token
   credentialValidatedAt DateTime?
+  healthStatusSnapshot String?
+  healthCheckedAtSnapshot DateTime?
   // OAuth-specific (null for PAT-only providers like notion)
   refreshToken        String?  // also Fernet-encrypted
   accessTokenExpiresAt DateTime?
@@ -240,6 +242,12 @@ model ProviderCredential {
   encryptedServerCredential String?
   credentialMetadata  String   @default("{}")
   credentialValidatedAt DateTime?
+  healthStatus        String?
+  healthCheckedAt     DateTime?
+  healthLastOkAt      DateTime?
+  healthErrorCode     String?
+  healthErrorMessage  String?
+  healthMissingScopes String   @default("[]")
   refreshToken        String?
   accessTokenExpiresAt DateTime?
   enabled             Boolean  @default(true)

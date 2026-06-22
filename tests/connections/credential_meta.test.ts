@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { credentialMetadataForStorage } from "../../src/connectors/credential_meta.js";
+import { credentialMetadataForStorage, deriveCredentialHealth } from "../../src/connectors/credential_meta.js";
 import { getProvider, listProviders } from "../../src/connectors/registry.js";
 
 type FetchCall = {
@@ -293,8 +293,19 @@ test("all OAuth providers can build successful credential metadata with mocked p
       assert.equal(metadata.status, "ok");
       assert.ok(metadata.checkedAt);
       assert.ok(result.credentialValidatedAt instanceof Date);
+      assert.ok(result.healthCheckedAt instanceof Date);
+      assert.equal(result.healthMissingScopes, "[]");
       if (metadata.capabilities) {
         assert.notEqual(metadata.capabilities.status, "error");
+      }
+      if (!metadata.capabilities || metadata.capabilities.status === "ok") {
+        assert.equal(result.healthStatus, "ok");
+        assert.ok(result.healthLastOkAt instanceof Date);
+        assert.equal(result.healthErrorCode, null);
+        assert.equal(result.healthErrorMessage, null);
+      } else {
+        assert.equal(result.healthStatus, "unknown");
+        assert.equal(result.healthErrorCode, "check_unavailable");
       }
     });
   }
@@ -314,8 +325,19 @@ test("all PAT providers can build successful credential metadata with mocked pro
       assert.equal(metadata.status, "ok");
       assert.ok(metadata.checkedAt);
       assert.ok(result.credentialValidatedAt instanceof Date);
+      assert.ok(result.healthCheckedAt instanceof Date);
+      assert.equal(result.healthMissingScopes, "[]");
       if (metadata.capabilities) {
         assert.notEqual(metadata.capabilities.status, "error");
+      }
+      if (!metadata.capabilities || metadata.capabilities.status === "ok") {
+        assert.equal(result.healthStatus, "ok");
+        assert.ok(result.healthLastOkAt instanceof Date);
+        assert.equal(result.healthErrorCode, null);
+        assert.equal(result.healthErrorMessage, null);
+      } else {
+        assert.equal(result.healthStatus, "unknown");
+        assert.equal(result.healthErrorCode, "check_unavailable");
       }
     });
   }
@@ -406,6 +428,9 @@ test("Google OAuth tokeninfo failure is captured without a real provider token",
   assert.equal(metadata.authType, "oauth");
   assert.equal(metadata.status, "error");
   assert.match(metadata.error, /Google tokeninfo failed: 400/);
+  assert.equal(result.healthStatus, "error");
+  assert.equal(result.healthErrorCode, "invalid_token");
+  assert.match(String(result.healthErrorMessage), /Google tokeninfo failed: 400/);
   restoreFetch();
 });
 
@@ -446,5 +471,37 @@ test("HubSpot manifest keeps content optional for OAuth and reports missing capa
   assert.ok(metadata.capabilities.missingScopes.includes("content"));
   assert.ok(metadata.capabilities.operations.some((op: any) => op.id === "marketing_emails"));
   assert.ok(metadata.capabilities.smokeTests.some((smoke: any) => smoke.id === "operation:marketing_emails" && smoke.status === "error"));
+  assert.equal(result.healthStatus, "warn");
+  assert.equal(result.healthErrorCode, "missing_scope");
+  assert.deepEqual(JSON.parse(result.healthMissingScopes), ["content"]);
   restoreFetch();
+});
+
+test("credential health treats broken probes as unknown instead of credential errors", () => {
+  const checkedAt = new Date("2026-06-22T01:00:00.000Z");
+  const result = deriveCredentialHealth({
+    credentialValidatedAt: checkedAt,
+    credentialMetadata: {
+      provider: "google_search_console",
+      authType: "oauth",
+      status: "ok",
+      checkedAt: checkedAt.toISOString(),
+      capabilities: {
+        status: "error",
+        checkedAt: checkedAt.toISOString(),
+        smokeTests: [
+          {
+            id: "sites",
+            status: "error",
+            error: "provider_request_failed: google_gsc GET /sites returned 400 {\"error\":\"Invalid limit query param\"}",
+          },
+        ],
+      },
+    },
+  });
+
+  assert.equal(result.healthStatus, "unknown");
+  assert.equal(result.healthErrorCode, "check_unavailable");
+  assert.match(String(result.healthErrorMessage), /Invalid limit query param/);
+  assert.equal(result.healthCheckedAt, checkedAt);
 });

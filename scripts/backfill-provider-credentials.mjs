@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { deriveCredentialHealth } from "../src/connectors/credential_meta.js";
 
 const prisma = new PrismaClient();
 
@@ -23,6 +24,11 @@ try {
         encryptedServerCredential: conn.encryptedServerCredential,
         credentialMetadata: conn.credentialMetadata,
         credentialValidatedAt: conn.credentialValidatedAt,
+        ...deriveCredentialHealth({
+          credentialMetadata: conn.credentialMetadata,
+          credentialValidatedAt: conn.credentialValidatedAt,
+          accessTokenExpiresAt: conn.accessTokenExpiresAt,
+        }),
         refreshToken: conn.refreshToken,
         accessTokenExpiresAt: conn.accessTokenExpiresAt,
       },

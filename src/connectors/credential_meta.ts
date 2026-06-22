@@ -1,4 +1,4 @@
-import { callGenericCheckConnection, callGenericListCapabilities } from "./generic_request.js";
+import { callGenericCheckConnection, callGenericListCapabilities, classifyProviderError } from "./generic_request.js";
 import { getProvider } from "./registry.js";
 
 const META_TIMEOUT_MS = 8_000;
@@ -22,6 +22,174 @@ export type CredentialMetadata = {
     error?: string;
   };
 };
+
+export type CredentialHealthStatus = "ok" | "warn" | "error" | "unknown";
+
+export type CredentialHealth = {
+  healthStatus: CredentialHealthStatus;
+  healthCheckedAt: Date;
+  healthLastOkAt?: Date;
+  healthErrorCode?: string | null;
+  healthErrorMessage?: string | null;
+  healthMissingScopes: string;
+};
+
+const AUTH_ERROR_PATTERNS = [
+  /invalid[_\s-]?token/i,
+  /access token is expired/i,
+  /token is expired/i,
+  /unauthorized/i,
+  /not active or it is invalid/i,
+  /invalid api token/i,
+  /project token not found/i,
+];
+
+const EXPIRED_ERROR_PATTERNS = [
+  /expired/i,
+  /access token is expired/i,
+];
+
+function safeString(value: unknown, max = 500) {
+  return String(value ?? "").replace(/[\r\n\t]+/g, " ").slice(0, max);
+}
+
+function parseProviderErrorCode(provider: string, message: string) {
+  const explicit = message.match(/"code"\s*:\s*"([^"]+)"/)?.[1];
+  if (explicit) return explicit;
+  const prefix = message.match(/\b(provider_[a-z_]+):/)?.[1];
+  if (prefix) return prefix;
+  const responseMatch = message.match(/\breturned\s+(\d{3})\s+(\{.*\})/);
+  if (responseMatch) {
+    const status = Number(responseMatch[1]);
+    try {
+      const parsed = JSON.parse(responseMatch[2]);
+      return classifyProviderError(provider, status, parsed?.body ?? parsed).code;
+    } catch {
+      return classifyProviderError(provider, status, message).code;
+    }
+  }
+  if (/missing.*scope|scope.*missing|MISSING_SCOPES/i.test(message)) return "provider_scope_missing";
+  if (/plan|subscription|not available/i.test(message)) return "provider_plan_or_api_unavailable";
+  if (AUTH_ERROR_PATTERNS.some((pattern) => pattern.test(message))) return "provider_auth_invalid";
+  if (/timeout|timed out|5\d\d|bad gateway|service unavailable/i.test(message)) return "provider_request_failed";
+  return "";
+}
+
+function healthErrorCodeFromAuthFailure(message: string, accessTokenExpiresAt?: Date | null) {
+  if (accessTokenExpiresAt && accessTokenExpiresAt.getTime() < Date.now()) return "expired_token";
+  if (EXPIRED_ERROR_PATTERNS.some((pattern) => pattern.test(message))) return "expired_token";
+  return "invalid_token";
+}
+
+function healthErrorCodeFromProviderCode(providerCode: string, message: string, accessTokenExpiresAt?: Date | null) {
+  if (providerCode === "provider_auth_invalid") return healthErrorCodeFromAuthFailure(message, accessTokenExpiresAt);
+  if (providerCode === "provider_scope_missing") return "missing_scope";
+  if (providerCode === "provider_plan_or_api_unavailable") return "provider_plan_or_api_unavailable";
+  return "check_unavailable";
+}
+
+function uniqueStrings(values: unknown[]) {
+  return Array.from(new Set(values.map((value) => String(value ?? "").trim()).filter(Boolean)));
+}
+
+function missingScopesFromCapabilities(capabilities: any) {
+  const direct = Array.isArray(capabilities?.missingScopes) ? capabilities.missingScopes : [];
+  const fromTests = Array.isArray(capabilities?.smokeTests)
+    ? capabilities.smokeTests.flatMap((test: any) => Array.isArray(test?.missingScopes) ? test.missingScopes : [])
+    : [];
+  return uniqueStrings([...direct, ...fromTests]);
+}
+
+function failedSmokeTests(capabilities: any) {
+  return Array.isArray(capabilities?.smokeTests)
+    ? capabilities.smokeTests.filter((test: any) => test?.status && test.status !== "ok")
+    : [];
+}
+
+function okSmokeTests(capabilities: any) {
+  return Array.isArray(capabilities?.smokeTests)
+    ? capabilities.smokeTests.filter((test: any) => test?.status === "ok")
+    : [];
+}
+
+export function deriveCredentialHealth(args: {
+  credentialMetadata: string | CredentialMetadata | Record<string, any>;
+  credentialValidatedAt?: Date | null;
+  accessTokenExpiresAt?: Date | null;
+}): CredentialHealth {
+  const checkedAt = args.credentialValidatedAt ?? new Date();
+  let metadata: any = args.credentialMetadata;
+  if (typeof metadata === "string") {
+    try { metadata = JSON.parse(metadata || "{}"); } catch { metadata = {}; }
+  }
+
+  const provider = String(metadata?.provider ?? "unknown");
+  const status = String(metadata?.status ?? "unknown");
+  const capabilities = metadata?.capabilities && typeof metadata.capabilities === "object" ? metadata.capabilities : null;
+  const capStatus = capabilities ? String(capabilities.status ?? "unknown") : null;
+  const missingScopes = capabilities ? missingScopesFromCapabilities(capabilities) : [];
+  const failedTests = capabilities ? failedSmokeTests(capabilities) : [];
+  const okTests = capabilities ? okSmokeTests(capabilities) : [];
+  const failureMessages: string[] = failedTests.map((test: any) => safeString(test?.error ?? test?.message ?? test?.id, 1200));
+  const capabilityError = safeString(capabilities?.error, 1200);
+  const metadataError = safeString(metadata?.error, 1200);
+  const combinedError = safeString([metadataError, capabilityError, ...failureMessages].filter(Boolean).join(" | "), 1000);
+  const providerCodes = uniqueStrings([
+    ...failureMessages.map((message) => parseProviderErrorCode(provider, message)),
+    parseProviderErrorCode(provider, capabilityError),
+    parseProviderErrorCode(provider, metadataError),
+  ]);
+
+  let healthStatus: CredentialHealthStatus = "unknown";
+  let healthErrorCode: string | null = null;
+  let healthErrorMessage: string | null = combinedError || null;
+
+  if (status === "error") {
+    const providerCode = parseProviderErrorCode(provider, metadataError);
+    healthErrorCode = healthErrorCodeFromProviderCode(providerCode || "provider_auth_invalid", metadataError, args.accessTokenExpiresAt);
+    healthStatus = healthErrorCode === "check_unavailable" ? "unknown" : "error";
+  } else if (capStatus === "ok") {
+    healthStatus = "ok";
+    healthErrorCode = null;
+    healthErrorMessage = null;
+  } else if (capStatus === "error") {
+    const hasScopeOrPlanFailure = missingScopes.length > 0
+      || providerCodes.includes("provider_scope_missing")
+      || providerCodes.includes("provider_plan_or_api_unavailable");
+    const hasAuthFailure = providerCodes.includes("provider_auth_invalid");
+    if (hasAuthFailure && okTests.length === 0) {
+      healthStatus = "error";
+      healthErrorCode = healthErrorCodeFromAuthFailure(combinedError, args.accessTokenExpiresAt);
+    } else if (hasScopeOrPlanFailure) {
+      healthStatus = "warn";
+      healthErrorCode = providerCodes.includes("provider_plan_or_api_unavailable")
+        ? "provider_plan_or_api_unavailable"
+        : "missing_scope";
+    } else {
+      healthStatus = "unknown";
+      healthErrorCode = "check_unavailable";
+    }
+  } else if (status === "ok" && !capabilities) {
+    healthStatus = "ok";
+    healthErrorCode = null;
+    healthErrorMessage = null;
+  } else if (status === "ok" && capStatus === "unknown") {
+    healthStatus = "unknown";
+    healthErrorCode = "check_unavailable";
+  } else {
+    healthStatus = "unknown";
+    healthErrorCode = "check_unavailable";
+  }
+
+  return {
+    healthStatus,
+    healthCheckedAt: checkedAt,
+    ...(healthStatus === "ok" ? { healthLastOkAt: checkedAt } : {}),
+    healthErrorCode,
+    healthErrorMessage: healthStatus === "ok" ? null : healthErrorMessage,
+    healthMissingScopes: JSON.stringify(missingScopes),
+  };
+}
 
 async function fetchWithTimeout(url: string, init: RequestInit = {}) {
   const controller = new AbortController();
@@ -951,8 +1119,10 @@ export async function credentialMetadataForStorage(provider: string, authType: s
       };
     }
   }
+  const credentialValidatedAt = new Date();
   return {
     credentialMetadata: JSON.stringify(metadata).slice(0, 16000),
-    credentialValidatedAt: new Date(),
+    credentialValidatedAt,
+    ...deriveCredentialHealth({ credentialMetadata: metadata, credentialValidatedAt }),
   };
 }

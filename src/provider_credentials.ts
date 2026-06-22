@@ -1,4 +1,5 @@
 import type { Connection, ProviderCredential, Tenant } from "@prisma/client";
+import { deriveCredentialHealth } from "./connectors/credential_meta.js";
 import { prisma } from "./db.js";
 
 type ConnectionSecretFields = Pick<
@@ -17,6 +18,43 @@ type ConnectionSecretFields = Pick<
   | "accessTokenExpiresAt"
   | "credentialId"
 >;
+
+type CredentialMetadataWrite = {
+  encryptedCredential?: string;
+  encryptedServerCredential?: string | null;
+  credentialMetadata?: string;
+  credentialValidatedAt?: Date | null;
+  healthStatus?: string | null;
+  healthCheckedAt?: Date | null;
+  healthLastOkAt?: Date | null;
+  healthErrorCode?: string | null;
+  healthErrorMessage?: string | null;
+  healthMissingScopes?: string;
+  refreshToken?: string | null;
+  accessTokenExpiresAt?: Date | null;
+};
+
+export function connectionCredentialData<T extends CredentialMetadataWrite>(data: T) {
+  const { healthStatus, healthCheckedAt, healthLastOkAt, healthErrorCode, healthErrorMessage, healthMissingScopes, ...rest } = data;
+  return {
+    ...rest,
+    ...(healthStatus !== undefined ? { healthStatusSnapshot: healthStatus } : {}),
+    ...(healthCheckedAt !== undefined ? { healthCheckedAtSnapshot: healthCheckedAt } : {}),
+  };
+}
+
+export function providerCredentialData<T extends CredentialMetadataWrite>(data: T) {
+  const { ...rest } = data;
+  return rest;
+}
+
+function healthFromConnection(conn: ConnectionSecretFields) {
+  return deriveCredentialHealth({
+    credentialMetadata: conn.credentialMetadata,
+    credentialValidatedAt: conn.credentialValidatedAt,
+    accessTokenExpiresAt: conn.accessTokenExpiresAt,
+  });
+}
 
 function requireWorkspaceId(workspaceId: string | null, connectionId?: string): string {
   if (!workspaceId) {
@@ -45,6 +83,7 @@ export async function ensureProviderCredentialForConnection(
       encryptedServerCredential: conn.encryptedServerCredential,
       credentialMetadata: conn.credentialMetadata,
       credentialValidatedAt: conn.credentialValidatedAt,
+      ...healthFromConnection(conn),
       refreshToken: conn.refreshToken,
       accessTokenExpiresAt: conn.accessTokenExpiresAt,
       createdById,
@@ -98,6 +137,8 @@ export async function createTenantConnectionFromCredential(args: {
       encryptedServerCredential: credential.encryptedServerCredential,
       credentialMetadata: credential.credentialMetadata,
       credentialValidatedAt: credential.credentialValidatedAt,
+      healthStatusSnapshot: credential.healthStatus,
+      healthCheckedAtSnapshot: credential.healthCheckedAt,
       refreshToken: credential.refreshToken,
       accessTokenExpiresAt: credential.accessTokenExpiresAt,
       enabled: credential.enabled,
@@ -112,6 +153,7 @@ export async function syncProviderCredentialFromConnection(conn: ConnectionSecre
     encryptedServerCredential: conn.encryptedServerCredential,
     credentialMetadata: conn.credentialMetadata,
     credentialValidatedAt: conn.credentialValidatedAt,
+    ...healthFromConnection(conn),
     refreshToken: conn.refreshToken,
     accessTokenExpiresAt: conn.accessTokenExpiresAt,
   };
@@ -122,7 +164,7 @@ export async function syncProviderCredentialFromConnection(conn: ConnectionSecre
     }),
     prisma.connection.updateMany({
       where: { credentialId: conn.credentialId },
-      data,
+      data: connectionCredentialData(data),
     }),
   ]);
 }
@@ -130,21 +172,14 @@ export async function syncProviderCredentialFromConnection(conn: ConnectionSecre
 export async function rotateSharedCredential(args: {
   credentialId: string | null;
   connectionId: string;
-  data: {
-    encryptedCredential?: string;
-    encryptedServerCredential?: string | null;
-    credentialMetadata?: string;
-    credentialValidatedAt?: Date | null;
-    refreshToken?: string | null;
-    accessTokenExpiresAt?: Date | null;
-  };
+  data: CredentialMetadataWrite;
 }) {
   if (!args.credentialId) {
-    await prisma.connection.update({ where: { id: args.connectionId }, data: args.data });
+    await prisma.connection.update({ where: { id: args.connectionId }, data: connectionCredentialData(args.data) });
     return;
   }
   await prisma.$transaction([
-    prisma.providerCredential.update({ where: { id: args.credentialId }, data: args.data }),
-    prisma.connection.updateMany({ where: { credentialId: args.credentialId }, data: args.data }),
+    prisma.providerCredential.update({ where: { id: args.credentialId }, data: providerCredentialData(args.data) }),
+    prisma.connection.updateMany({ where: { credentialId: args.credentialId }, data: connectionCredentialData(args.data) }),
   ]);
 }

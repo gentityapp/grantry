@@ -90,7 +90,7 @@ function assertAllowed(provider: string, manifest: GenericManifest, method: stri
   }
 }
 
-function classifyProviderError(provider: string, status: number, body: unknown) {
+export function classifyProviderError(provider: string, status: number, body: unknown) {
   const text = JSON.stringify(body).slice(0, 4000);
   const missingScopes = new Set<string>();
   for (const match of text.matchAll(/\b(?:missing|Missing|MISSING)[^"']*(?:scope|scopes|auth)[^"']*[: ]+([a-zA-Z0-9_.:-]+)/g)) {
