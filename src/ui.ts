@@ -463,14 +463,12 @@ const CSS = `
   .connection-table th:nth-child(2), .connection-table td:nth-child(2) { width: 78px; }
   .connection-table th:nth-child(3), .connection-table td:nth-child(3) { width: 120px; }
   .connection-table th:nth-child(4), .connection-table td:nth-child(4) { width: auto; }
-  .connection-table th:nth-child(5), .connection-table td:nth-child(5) { width: 110px; }
-  .connection-table th:nth-child(6), .connection-table td:nth-child(6) { width: 90px; }
-  .connection-table th:nth-child(7), .connection-table td:nth-child(7) { width: 104px; }
-  .connection-table th:nth-child(8), .connection-table td:nth-child(8) { width: 124px; }
+  .connection-table th:nth-child(5), .connection-table td:nth-child(5) { width: 90px; }
+  .connection-table th:nth-child(6), .connection-table td:nth-child(6) { width: 104px; }
+  .connection-table th:nth-child(7), .connection-table td:nth-child(7) { width: 124px; }
   .connection-table td:nth-child(4) { line-height: 1.7; }
-  .connection-table td:nth-child(5) input { min-width: 0; }
-  .connection-table td:nth-child(6) label { display: inline-flex; align-items: center; gap: 6px; margin: 0; white-space: nowrap; }
-  .connection-table td:nth-child(7) code { white-space: nowrap; }
+  .connection-table td:nth-child(5) label { display: inline-flex; align-items: center; gap: 6px; margin: 0; white-space: nowrap; }
+  .connection-table td:nth-child(6) code { white-space: nowrap; }
   .credential-summary { max-width: 100%; }
   .credential-summary code { display: inline-block; max-width: 100%; white-space: normal; word-break: break-all; }
   .stacked-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -2879,10 +2877,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         <h2 id="connections">Connections (${connections.length})</h2>
         ${connections.length === 0 ? '<div class="card"><div class="empty">No connections yet. Add one below.</div></div>' : `
         <div class="card">
-          <p class="field-hint" style="margin-top:0;">Edit the display label for each connection. This is what you see in dashboards, audit logs, and tooltips.</p>
           <div class="table-wrap">
           <table class="connection-table">
-            <thead><tr><th>Provider</th><th>Auth</th><th>Scope</th><th>Credential</th><th>Label</th><th>Enabled</th><th>Created</th><th>Action</th></tr></thead>
+            <thead><tr><th>Provider</th><th>Auth</th><th>Scope</th><th>Credential</th><th>Enabled</th><th>Created</th><th>Action</th></tr></thead>
             <tbody>
             ${connections.map((cn) => {
               const canReconnect = cn.authType === "oauth";
@@ -2916,7 +2913,6 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                     </div>
                   ` : ""}
                 </td>
-                <td><input type="text" name="conn_label_${cn.id}" value="${escapeHtml(cn.label)}" style="font-size:13px;"></td>
                 <td><label style="font-weight:normal;font-size:13px;"><input type="checkbox" name="conn_enabled_${cn.id}" ${cn.enabled ? "checked" : ""}> on</label></td>
                 <td><code>${cn.createdAt.toISOString().slice(0, 10)}</code></td>
                 <td><span class="stacked-actions">${canReconnect
@@ -3561,33 +3557,28 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
       where: { scope, ownerId: user.id },
     });
 
-    // Update each connection's label + enabled
-    const connUpdates: Array<{ id: string; label: string; enabled: boolean }> = [];
+    // Update each connection's enabled state and provider-specific settings.
+    const connUpdates: Array<{ id: string; enabled: boolean }> = [];
     for (const cn of connections) {
-      const labelField = `conn_label_${cn.id}`;
       const enabledField = `conn_enabled_${cn.id}`;
       const serverCredentialField = `conn_server_credential_${cn.id}`;
       const clearServerCredentialField = `conn_clear_server_credential_${cn.id}`;
-      if (body[labelField] !== undefined) {
-        const newLabel = String(body[labelField]).trim() || cn.label;
-        const newEnabled = body[enabledField] !== undefined; // checkbox present = on
-        const serverCredential = String(body[serverCredentialField] ?? "").trim();
-        const clearServerCredential = body[clearServerCredentialField] !== undefined;
-        const updateData: Record<string, unknown> = {};
-        if (newLabel !== cn.label) updateData.label = newLabel;
-        if (newEnabled !== cn.enabled) updateData.enabled = newEnabled;
-        if (cn.provider === "google_ads" && serverCredential) {
-          updateData.encryptedServerCredential = encrypt(serverCredential);
-        }
-        if (cn.provider === "google_ads" && clearServerCredential) updateData.encryptedServerCredential = null;
-        if (Object.keys(updateData).length > 0) {
-          const updated = await prisma.connection.update({
-            where: { id: cn.id },
-            data: updateData,
-          });
-          if (serverCredential || clearServerCredential) await syncProviderCredentialFromConnection(updated);
-          connUpdates.push({ id: cn.id, label: newLabel, enabled: newEnabled });
-        }
+      const newEnabled = body[enabledField] !== undefined; // checkbox present = on
+      const serverCredential = String(body[serverCredentialField] ?? "").trim();
+      const clearServerCredential = body[clearServerCredentialField] !== undefined;
+      const updateData: Record<string, unknown> = {};
+      if (newEnabled !== cn.enabled) updateData.enabled = newEnabled;
+      if (cn.provider === "google_ads" && serverCredential) {
+        updateData.encryptedServerCredential = encrypt(serverCredential);
+      }
+      if (cn.provider === "google_ads" && clearServerCredential) updateData.encryptedServerCredential = null;
+      if (Object.keys(updateData).length > 0) {
+        const updated = await prisma.connection.update({
+          where: { id: cn.id },
+          data: updateData,
+        });
+        if (serverCredential || clearServerCredential) await syncProviderCredentialFromConnection(updated);
+        connUpdates.push({ id: cn.id, enabled: newEnabled });
       }
     }
 
