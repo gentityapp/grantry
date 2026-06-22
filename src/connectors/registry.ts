@@ -72,6 +72,13 @@ export type ProviderDef = {
       base_url_key?: string;
       requiredScopes?: string[];
       risk: "read" | "write" | "destructive";
+      /**
+       * Query params to send when this operation is exercised as a connection
+       * smoke test. Defaults to `{ limit: 1 }`. Set to `{}` for APIs that
+       * reject unknown query params (e.g. the Search Console Webmasters API,
+       * which returns 400 on an unexpected `limit`).
+       */
+      probeQuery?: Record<string, string | number | boolean>;
     }>;
   };
   /** Whether this provider has an MCP dispatcher implemented in this service. */
@@ -1122,6 +1129,8 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
         baseUrlKey: "webmasters",
         requiredScopes: ["https://www.googleapis.com/auth/webmasters.readonly"],
         risk: "read",
+        // Webmasters API /sites takes no query params and 400s on an unknown `limit`.
+        probeQuery: {},
       },
     ],
   },

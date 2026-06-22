@@ -372,13 +372,18 @@ export async function callGenericCheckConnection(args: {
     const method = String(op.method ?? "").toUpperCase();
     const path = String(op.path ?? "");
     if (method !== "GET" || path.includes("{")) continue;
+    // Default to a cheap `limit: 1` probe, but let operations override it —
+    // some APIs (e.g. the Search Console Webmasters API) 400 on an unknown `limit`.
+    const probeQuery = (op as Record<string, unknown>).probeQuery as
+      | Record<string, string | number | boolean>
+      | undefined;
     try {
       const result = await executeGenericRequest({
         provider: args.provider,
         credential: args.credential,
         method,
         path,
-        query: { limit: 1 },
+        query: probeQuery ?? { limit: 1 },
         baseUrlKey: (op as Record<string, unknown>).base_url_key ?? (op as Record<string, unknown>).baseUrlKey,
         logTool: `${args.provider.key}/check_connection`,
       });
