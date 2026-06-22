@@ -11,7 +11,7 @@ import { callGenericCheckConnection, callGenericListCapabilities } from "./conne
 import { parseServiceAccountInput, serviceAccountPublicMeta, invalidateDwdToken, mintDwdAccessToken, type ServiceAccountCredential } from "./google_dwd.js";
 import { connectionsForAgent, findCapableAgents, normalizeToolName } from "./policy.js";
 import { ensureTenant } from "./tenants.js";
-import { connectionCredentialData, createTenantConnectionFromCredential, ensureProviderCredentialForConnection, rotateSharedCredential, syncProviderCredentialFromConnection } from "./provider_credentials.js";
+import { connectionCredentialData, createTenantConnectionFromCredential, ensureProviderCredentialForConnection, providerCredentialData, rotateSharedCredential, syncProviderCredentialFromConnection } from "./provider_credentials.js";
 import { sendSystemEmail } from "./email.js";
 import { connectableAgentsFor, userMayUseAgent } from "./workspaces.js";
 import nodeCrypto from "node:crypto";
@@ -1109,6 +1109,27 @@ function renderCredentialHealthBadge(cn: {
   return '<span class="badge unscoped">not checked</span>';
 }
 
+function renderProviderCredentialHealthBadge(credential: {
+  credentialMetadata?: string | null;
+  credentialValidatedAt?: Date | null;
+  accessTokenExpiresAt?: Date | null;
+  healthStatus?: string | null;
+  healthCheckedAt?: Date | null;
+}) {
+  if (credential.healthStatus) {
+    const title = credential.healthCheckedAt ? ` title="Health checked ${credential.healthCheckedAt.toISOString()}"` : "";
+    if (credential.healthStatus === "ok") return `<span class="badge ok"${title}>active</span>`;
+    if (credential.healthStatus === "warn") return `<span class="badge unscoped"${title}>partial</span>`;
+    if (credential.healthStatus === "error") return `<span class="badge denied"${title}>broken</span>`;
+    if (credential.healthStatus === "unknown") return `<span class="badge unscoped"${title}>check unavailable</span>`;
+  }
+  return renderCredentialHealthBadge({
+    credentialMetadata: credential.credentialMetadata,
+    credentialValidatedAt: credential.credentialValidatedAt,
+    accessTokenExpiresAt: credential.accessTokenExpiresAt,
+  });
+}
+
 async function getSessionUser(c: any) {
   const sess = await auth.api.getSession({ headers: c.req.raw.headers });
   return sess?.user ?? null;
@@ -1655,6 +1676,21 @@ dashboardApp.get("/providers", async (c) => {
     _count: { _all: true },
   });
   const countByProvider = new Map(connectionCounts.map((row) => [row.provider, row._count._all]));
+  const oauthCredentials = await prisma.providerCredential.findMany({
+    where: { workspaceId: wsId, authType: "oauth" },
+    orderBy: [{ provider: "asc" }, { updatedAt: "desc" }],
+  });
+  const oauthAppCredentials = await prisma.providerCredential.findMany({
+    where: { workspaceId: wsId, authType: "oauth_app", enabled: true },
+    orderBy: [{ provider: "asc" }, { updatedAt: "desc" }],
+  });
+  const oauthCredentialsByProvider = new Map<string, typeof oauthCredentials>();
+  for (const credential of oauthCredentials) {
+    const list = oauthCredentialsByProvider.get(credential.provider) ?? [];
+    list.push(credential);
+    oauthCredentialsByProvider.set(credential.provider, list);
+  }
+  const oauthAppByProvider = new Map(oauthAppCredentials.map((credential) => [credential.provider, credential]));
   const customProviders = await prisma.customProvider.findMany({
     where: { workspaceId: wsId },
     orderBy: [{ enabled: "desc" }, { label: "asc" }],
@@ -1662,6 +1698,8 @@ dashboardApp.get("/providers", async (c) => {
   const customKeys = new Set(customProviders.map((p) => p.key));
   const enabledCount = catalog.filter((item) => item.enabled).length;
   const disabledCount = catalog.length - enabledCount;
+  const notice = String(c.req.query("ok") ?? "");
+  const oauthCatalog = catalog.filter(({ provider }) => provider.authTypes.includes("oauth") && provider.implemented !== false);
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Providers — grantry</title>
@@ -1672,12 +1710,69 @@ dashboardApp.get("/providers", async (c) => {
       <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
         Choose which providers this workspace can add to scopes. Existing connections keep working; disabled providers are hidden from new scope connection pickers.
       </p>
+      ${notice ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">${escapeHtml(notice)}</div>` : ""}
 
       <div class="row" style="gap:16px;flex-wrap:wrap;margin-bottom:24px;">
         <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">Catalog</div><div style="font-size:24px;font-weight:700;">${catalog.length}</div></div>
         <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">Enabled</div><div style="font-size:24px;font-weight:700;">${enabledCount}</div></div>
         <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">Hidden</div><div style="font-size:24px;font-weight:700;">${disabledCount}</div></div>
         <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">Custom</div><div style="font-size:24px;font-weight:700;">${customProviders.length}</div></div>
+        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">OAuth credentials</div><div style="font-size:24px;font-weight:700;">${oauthCredentials.length}</div></div>
+      </div>
+
+      <h2>Workspace OAuth credentials</h2>
+      <div class="card">
+        <p class="field-hint" style="margin-top:0;">Connect a provider once at the workspace level, then reuse that credential from scopes without starting from a scope first.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Provider</th><th>OAuth app</th><th>Credentials</th><th>Action</th></tr></thead>
+            <tbody>
+              ${oauthCatalog.map(({ provider: p }) => {
+                const credentials = oauthCredentialsByProvider.get(p.key) ?? [];
+                const requiresWorkspaceOAuthApp = providerRequiresWorkspaceOAuthApp(p.key, p);
+                const appCredential = oauthAppByProvider.get(p.key);
+                const defaultClientAuthMethod = defaultOAuthClientAuthMethod(p.key, p);
+                return `
+                <tr>
+                  <td><span class="provider-cell">${providerIcon(p.key)}<span>${escapeHtml(p.label)}</span></span><br><code>${escapeHtml(p.key)}</code></td>
+                  <td>${requiresWorkspaceOAuthApp
+                    ? (appCredential
+                      ? `<span class="badge ok">configured</span><br><span style="color:#687385;font-size:12px;">${escapeHtml(clientIdPreview(String(safeJsonObject(appCredential.credentialMetadata).oauthClientId || "")))}</span>`
+                      : (admin ? `<form method="post" action="/providers/${encodeURIComponent(p.key)}/oauth-app" style="min-width:260px;">
+                          <div class="field" style="margin-bottom:8px;">
+                            <label>Redirect URI</label>
+                            <input type="text" readonly value="${escapeHtml(oauthCallbackUrl(c, p.key))}" style="font-family:monospace;font-size:12px;">
+                          </div>
+                          <div class="field" style="margin-bottom:8px;">
+                            <label>Client ID</label>
+                            <input type="text" name="oauth_client_id" autocomplete="off" required>
+                          </div>
+                          <div class="field" style="margin-bottom:8px;">
+                            <label>Client Secret</label>
+                            <input type="password" name="oauth_client_secret" autocomplete="off" required>
+                          </div>
+                          <input type="hidden" name="oauth_client_auth_method" value="${escapeHtml(defaultClientAuthMethod)}">
+                          <button type="submit" style="font-size:12px;padding:4px 10px;">Save OAuth app</button>
+                        </form>` : '<span style="color:#687385;">admin only</span>'))
+                    : '<span class="badge unscoped">platform app</span>'}</td>
+                  <td>${credentials.length ? credentials.map((credential) => `
+                    <div style="margin-bottom:8px;">
+                      ${renderProviderCredentialHealthBadge(credential)}
+                      <b>${escapeHtml(credential.label)}</b>
+                      ${oauthTokenStatus(credential)}
+                      <br><span style="color:#687385;font-size:12px;">Updated ${credential.updatedAt.toISOString().slice(0, 19).replace("T", " ")}</span>
+                      ${admin ? `<a class="btn secondary" href="/oauth/${encodeURIComponent(p.key)}/start?provider_credential=1&provider_credential_id=${encodeURIComponent(credential.id)}" style="font-size:12px;padding:4px 10px;margin-left:8px;">Reconnect</a>` : ""}
+                    </div>`).join("") : '<span class="badge unscoped">not connected</span>'}</td>
+                  <td>${admin
+                    ? (requiresWorkspaceOAuthApp && !appCredential
+                      ? '<span style="color:#687385;">save OAuth app first</span>'
+                      : `<a class="btn" href="/oauth/${encodeURIComponent(p.key)}/start?provider_credential=1" style="font-size:12px;padding:4px 10px;">Connect OAuth</a>`)
+                    : '<span style="color:#687385;">admin only</span>'}</td>
+                </tr>`;
+              }).join("") || '<tr><td colspan="4">No OAuth providers.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <h2>Workspace provider catalog</h2>
@@ -1752,6 +1847,32 @@ dashboardApp.post("/providers/:providerKey/toggle", async (c) => {
     update: { enabled },
   });
   return c.redirect("/providers");
+});
+
+dashboardApp.post("/providers/:providerKey/oauth-app", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ error: "not authenticated" }, 401);
+  const wsId = await getActiveWorkspaceId(c);
+  if (!wsId) return c.html("<h1>workspace required</h1>", 400);
+  const admin = await requireWsAdmin(c, wsId);
+  if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
+  const providerKey = c.req.param("providerKey");
+  const providerDef = await getProviderForWorkspace(providerKey, wsId);
+  if (!providerDef || !providerDef.authTypes.includes("oauth")) return c.html(`<h1>unknown OAuth provider: ${escapeHtml(providerKey)}</h1>`, 404);
+  const body = await c.req.parseBody();
+  const rawCredential = oauthAppCredentialFromStructuredFields(body, "", defaultOAuthClientAuthMethod(providerKey, providerDef));
+  try {
+    await upsertWorkspaceOAuthAppCredential({
+      workspaceId: wsId,
+      ownerId: user.id,
+      providerKey,
+      providerDef,
+      rawCredential,
+    });
+  } catch (e: any) {
+    return c.html(`<h1>Invalid OAuth app credential</h1><p>${escapeHtml(String(e?.message ?? e))}</p><p><a href="/providers">Back</a></p>`, 400);
+  }
+  return c.redirect(`/providers?ok=${encodeURIComponent(`Saved ${providerDef.label} OAuth app settings.`)}`);
 });
 
 dashboardApp.post("/providers/custom/new", async (c) => {
@@ -5198,6 +5319,7 @@ oauthApp.get("/:provider/start", async (c) => {
   // mode there is no wizard: no new agent is minted and we return to the edit
   // page once the new tokens are saved.
   const reauth = c.req.query("reauth") === "1";
+  const providerCredentialMode = c.req.query("provider_credential") === "1";
 
   // Collect wizard data from query string
   const payload: Record<string, any> = {
@@ -5207,9 +5329,11 @@ oauthApp.get("/:provider/start", async (c) => {
     agent_desc: c.req.query("agent_desc") || "",
     oauth_queue: c.req.query("oauth_queue") || "",
     connection_id: c.req.query("connection_id") || "",
+    provider_credential_id: c.req.query("provider_credential_id") || "",
     oauth_app_credential_id: c.req.query("oauth_app_credential_id") || "",
     optional_scopes: c.req.query("optional_scopes") || "",
     popup: c.req.query("popup") === "1",
+    provider_credential: providerCredentialMode,
     reauth,
     userId: user.id,
   };
@@ -5219,16 +5343,28 @@ oauthApp.get("/:provider/start", async (c) => {
   if (pkceVerifier) {
     payload.pkce_code_verifier = pkceVerifier;
   }
-  if (!/^[a-z0-9_-]+$/.test(payload.tenant)) {
+  if (!providerCredentialMode && !/^[a-z0-9_-]+$/.test(payload.tenant)) {
     return c.html(`<h1>invalid scope</h1><p>Scope must match <code>[a-z0-9_-]+</code>. <a href="/tenants/new">← Back</a></p>`, 400);
   }
   const workspaceId = await resolveOAuthWorkspaceId(c, user.id, providerKey, payload);
+  if (providerCredentialMode) {
+    if (!workspaceId) return c.html(`<h1>workspace required</h1><p><a href="/providers">Back</a></p>`, 400);
+    const admin = await requireWsAdmin(c, workspaceId);
+    if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
+    if (payload.provider_credential_id) {
+      const existing = await prisma.providerCredential.findFirst({
+        where: { id: String(payload.provider_credential_id), workspaceId, provider: providerKey, authType: "oauth" },
+        select: { id: true },
+      });
+      if (!existing) return c.html(`<h1>provider credential not found</h1><p><a href="/providers">Back</a></p>`, 404);
+    }
+  }
   const oauthCfg = await resolveOAuthClientConfig(providerKey, providerDef, workspaceId, String(payload.oauth_app_credential_id || ""));
   if (!oauthCfg.clientId) {
     const envPrefix = providerKey.toUpperCase();
-    const setupLink = payload.tenant ? `/tenants/${encodeURIComponent(payload.tenant)}/edit` : "/tenants/new";
+    const setupLink = providerCredentialMode ? "/providers" : (payload.tenant ? `/tenants/${encodeURIComponent(payload.tenant)}/edit` : "/tenants/new");
     const hint = providerRequiresWorkspaceOAuthApp(providerKey, providerDef)
-      ? `Configure this workspace's ${escapeHtml(providerDef.label)} OAuth app first. Paste its <code>client_id</code> and <code>client_secret</code> on the scope edit page; do not use Grantry-wide environment variables.`
+      ? `Configure this workspace's ${escapeHtml(providerDef.label)} OAuth app first. Paste its <code>client_id</code> and <code>client_secret</code> before connecting the provider credential; do not use Grantry-wide environment variables.`
       : `Set <code>${envPrefix}_CLIENT_ID</code> env var.`;
     return c.html(`<h1>${escapeHtml(providerDef.label)} OAuth not configured</h1><p>${hint} <a href="${setupLink}">← Back</a></p>`, 500);
   }
@@ -5241,7 +5377,7 @@ oauthApp.get("/:provider/start", async (c) => {
       state,
       provider: providerKey,
       payload: JSON.stringify(payload),
-      redirectTo: reauth ? `/tenants/${payload.tenant}/edit` : "/tenants/new",
+      redirectTo: providerCredentialMode ? "/providers" : (reauth ? `/tenants/${payload.tenant}/edit` : "/tenants/new"),
       expiresAt: new Date(Date.now() + 30 * 60 * 1000),
     },
   });
@@ -5460,6 +5596,52 @@ oauthApp.get("/:provider/callback", async (c) => {
       if (u?.email) userLogin = u.email;
     }
   } catch { /* non-fatal */ }
+
+  if (payload.provider_credential) {
+    if (!workspaceIdForOAuth) {
+      return c.html(`<h1>workspace required</h1><p><a href="/providers">Back</a></p>`, 400);
+    }
+    const admin = await requireWsAdmin(c, workspaceIdForOAuth);
+    if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
+
+    const credentialId = String(payload.provider_credential_id || "");
+    const credentialMeta = await credentialMetadataForStorage(providerKey, "oauth", accessToken);
+    const baseData = {
+      workspaceId: workspaceIdForOAuth,
+      ownerId: user.id,
+      provider: providerKey,
+      authType: "oauth",
+      label: `${providerDef.label} ${userLogin} OAuth`,
+      encryptedCredential: encrypt(accessToken),
+      accessTokenExpiresAt: tokenJson.expires_in ? new Date(Date.now() + tokenJson.expires_in * 1000) : null,
+      ...(refreshToken ? { refreshToken: encrypt(refreshToken) } : {}),
+      ...credentialMeta,
+      enabled: true,
+      createdById: user.id,
+    };
+    if (credentialId) {
+      const existing = await prisma.providerCredential.findFirst({
+        where: { id: credentialId, workspaceId: workspaceIdForOAuth, provider: providerKey, authType: "oauth" },
+        select: { id: true },
+      });
+      if (!existing) {
+        return c.html(`<h1>provider credential not found</h1><p><a href="/providers">Back</a></p>`, 404);
+      }
+      const { workspaceId, ownerId, provider, authType, createdById, ...updateData } = baseData;
+      await prisma.providerCredential.update({
+        where: { id: credentialId },
+        data: providerCredentialData(updateData),
+      });
+    } else {
+      await prisma.providerCredential.create({
+        data: providerCredentialData({
+          ...baseData,
+          refreshToken: refreshToken ? encrypt(refreshToken) : null,
+        }),
+      });
+    }
+    return c.redirect(`/providers?ok=${encodeURIComponent(`Connected ${providerDef.label} as a workspace OAuth credential.`)}`);
+  }
 
   // --- Complete the wizard using the saved payload ---
   const tenant = payload.tenant;
