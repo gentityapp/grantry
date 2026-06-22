@@ -47,6 +47,7 @@ function patTokenForProvider(providerKey: string) {
   const jsonTokens: Record<string, string> = {
     aws: JSON.stringify({ accessKeyId: "AKIATEST", secretAccessKey: "secret", region: "us-east-1" }),
     customerio: JSON.stringify({ token: "cio-test-token", region: "us" }),
+    godaddy: "godaddy-key:godaddy-secret",
     jira: JSON.stringify({ site: "https://acme.atlassian.net", email: "ops@example.com", token: "jira-test-token" }),
     microsoft_ads: JSON.stringify({ developer_token: "dev-token", access_token: "msads-token", customer_id: "customer", account_id: "account" }),
     railway: JSON.stringify({ token: "railway-test-token", token_type: "project" }),
@@ -157,6 +158,9 @@ function patSuccessResponse(call: FetchCall) {
   const { url } = call;
   if (url === "https://api.cloudflare.com/client/v4/user/tokens/verify") {
     return jsonResponse({ success: true, result: { id: "cf-token", status: "active" } });
+  }
+  if (url.startsWith("https://api.godaddy.com/v1/domains/available")) {
+    return jsonResponse({ available: true, domain: "grantry-availability-check.com" });
   }
   if (url.startsWith("https://maps.googleapis.com/maps/api/geocode/json")) {
     return jsonResponse({ status: "OK", results: [] });
