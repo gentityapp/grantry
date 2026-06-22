@@ -1228,7 +1228,6 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     baseUrl: "https://api.clay.com",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/v1/"],
-    smokeTests: [{ id: "tables", method: "GET", path: "/v1/tables", query: { limit: 1 } }],
   },
   heyreach: {
     baseUrl: "https://api.heyreach.io",

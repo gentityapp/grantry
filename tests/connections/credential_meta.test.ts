@@ -181,9 +181,6 @@ function patSuccessResponse(call: FetchCall) {
   if (url === "https://api.attio.com/v2/objects") {
     return jsonResponse({ data: [] });
   }
-  if (url === "https://api.clay.com/v1/tables?limit=1") {
-    return jsonResponse({ data: [] });
-  }
   if (url === "https://api.heyreach.io/api/public/auth/CheckApiKey") {
     return jsonResponse({ workspaceId: "heyreach-ws" });
   }
@@ -325,7 +322,7 @@ test("all PAT providers can build successful credential metadata with mocked pro
 });
 
 test("PAT providers with safe read probes report concrete capability status", async () => {
-  const providers = ["attio", "chatwork", "clay", "heyreach", "resend", "stripe"];
+  const providers = ["attio", "chatwork", "heyreach", "resend", "stripe"];
   const calls = installFetchMock(patSuccessResponse);
 
   for (const providerKey of providers) {
