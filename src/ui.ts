@@ -57,6 +57,10 @@ function authTypeLabel(providerKey: string, authType: string): string {
   return "paste token";
 }
 
+function providerDisplayName(providerKey: string): string {
+  return getProvider(providerKey)?.label ?? providerKey;
+}
+
 function credentialPlaceholder(providerKey: string, providerLabel: string, authType: string): string {
   if (authType === "oauth") return "OAuth flow will start after submit";
   if (authType === "service_account") return "Paste the full service account JSON key file";
@@ -2682,7 +2686,7 @@ dashboardApp.get("/tenants", async (c) => {
                 ? `<span style="color:#687385;font-size:13px;">No connections yet</span>`
                 : conns.map((cn) => `
                   <span class="scope-service-pill" title="${escapeHtml(cn.label)}">
-                    ${providerIcon(cn.provider)}<code>${escapeHtml(cn.provider)}</code><code>${escapeHtml(cn.authType)}</code>
+                    ${providerIcon(cn.provider)}<span>${escapeHtml(providerDisplayName(cn.provider))}</span><code>${escapeHtml(cn.authType)}</code>
                   </span>
                 `).join("")}
             </span>
@@ -2842,7 +2846,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
               const needsReconnect = cn.authType === "oauth" && cn.accessTokenExpiresAt && cn.accessTokenExpiresAt < new Date() && !cn.refreshToken;
               return `
               <tr>
-                <td><span class="provider-cell">${providerIcon(cn.provider)}<code>${cn.provider}</code></span></td>
+                <td><span class="provider-cell">${providerIcon(cn.provider)}<span>${escapeHtml(providerDisplayName(cn.provider))}</span></span></td>
                 <td><code>${cn.authType}</code></td>
                 <td><code>${cn.scope}</code></td>
                 <td>
@@ -5749,7 +5753,7 @@ dashboardApp.get("/tenants/:scope/agents/setup", async (c) => {
           <ul class="conn-list">
             ${connections.map((cn) => `
               <li class="conn-item">
-                <span class="provider-cell">${providerIcon(cn.provider)}<code>${escapeHtml(cn.provider)}</code></span>
+                <span class="provider-cell">${providerIcon(cn.provider)}<span>${escapeHtml(providerDisplayName(cn.provider))}</span></span>
                 <code class="conn-auth">${escapeHtml(cn.authType)}</code>
                 <span class="conn-label">${escapeHtml(cn.label)}</span>
               </li>
