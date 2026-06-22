@@ -37,6 +37,23 @@ function jsString(s: string): string {
   return JSON.stringify(s).replace(/</g, "\\u003c");
 }
 
+function tenantEditUrl(scope: string, notice?: string, kind: "ok" | "error" = "ok", anchor = ""): string {
+  const params = new URLSearchParams();
+  if (notice) {
+    params.set("notice", notice);
+    if (kind !== "ok") params.set("notice_kind", kind);
+  }
+  return `/tenants/${encodeURIComponent(scope)}/edit${params.toString() ? `?${params.toString()}` : ""}${anchor}`;
+}
+
+function noticeBanner(notice: string | undefined, kind: "ok" | "error" = "ok"): string {
+  if (!notice) return "";
+  const isError = kind === "error";
+  return `<div class="card" style="border-color:${isError ? "#df1b41" : "#3fb950"};background:${isError ? "rgba(223,27,65,0.08)" : "rgba(63,185,80,0.08)"};margin-bottom:20px;">
+    ${isError ? "✗" : "✓"} ${escapeHtml(notice)}
+  </div>`;
+}
+
 function authTypeLabel(providerKey: string, authType: string): string {
   if (authType === "oauth") return "OAuth";
   if (authType === "service_account") return "Service Account (DWD)";
@@ -2770,6 +2787,8 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
          ✓ Re-authorized <code>${escapeHtml(reauthed)}</code>. The connection's access token (and refresh token) have been refreshed.
        </div>`
     : "";
+  const notice = c.req.query("notice");
+  const noticeKind = c.req.query("notice_kind") === "error" ? "error" : "ok";
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Edit ${scope} — grantry</title>
@@ -2781,6 +2800,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         Edit the scope's display labels and provider connections. To add a new service, scroll down.
       </p>
       ${reauthBanner}
+      ${noticeBanner(notice, noticeKind)}
 
       <h2 id="codex-mcp">Codex MCP</h2>
       <div class="card">
@@ -2833,7 +2853,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           <input type="text" name="tenant_description" id="tenant_description" value="${escapeHtml(tenantRow?.description ?? "")}" placeholder="What this scope is for">
         </div>
 
-        <h2>Connections (${connections.length})</h2>
+        <h2 id="connections">Connections (${connections.length})</h2>
         ${connections.length === 0 ? '<div class="card"><div class="empty">No connections yet. Add one below.</div></div>' : `
         <div class="card">
           <p class="field-hint" style="margin-top:0;">Edit the display label for each connection. This is what you see in dashboards, audit logs, and tooltips.</p>
@@ -2933,7 +2953,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         </form>
       </div>
 
-      <h2>Add a service</h2>
+      <h2 id="add-service">Add a service</h2>
       ${availableToAdd.length === 0 ? `
       <div class="card">
         <div class="empty">All enabled provider/auth combinations are already connected for this scope.</div>
@@ -3499,21 +3519,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
       }
     }
 
-    return c.html(`
-      <!doctype html><html><head><meta charset="utf-8"><title>Saved — grantry</title>
-      ${FAVICON}<style>${CSS}</style></head><body>
-      ${NAV("tenants", user?.email)}
-      <main>
-        <h1>✓ Settings saved for <code>${scope}</code></h1>
-        <div class="card">
-          <h2>Connections updated (${connUpdates.length})</h2>
-          ${connUpdates.length === 0 ? '<p><em>No changes.</em></p>' : `
-          <ul>${connUpdates.map((u) => `<li><code>${escapeHtml(u.label)}</code> · ${u.enabled ? "enabled" : "DISABLED"}</li>`).join("")}</ul>
-          `}
-        </div>
-        <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a> · <a href="/tenants">All scopes</a></p>
-      </main></body></html>
-    `);
+    return c.redirect(tenantEditUrl(scope, connUpdates.length === 0 ? "No settings changes." : `Saved ${connUpdates.length} connection update${connUpdates.length === 1 ? "" : "s"}.`, "ok", "#connections"));
   }
 
   // --- add_service: add a new provider connection (existing behavior) ---
@@ -3581,24 +3587,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
       await syncProviderCredentialFromConnection(conn);
       await grantConnectionToTenantAgents(user.id, scope, conn.id);
 
-      const clientId = saCred.sa_key.client_id ?? "";
-      return c.html(`
-        <!doctype html><html><head><meta charset="utf-8"><title>Service account added — grantry</title>
-        ${FAVICON}<style>${CSS}</style></head><body>
-        ${NAV("tenants", user?.email)}
-        <main>
-          <h1>✓ Service account connected to <code>${escapeHtml(scope)}</code></h1>
-          <div class="card">
-            <h2>${escapeHtml(providerDef.label)} · Domain-Wide Delegation</h2>
-            <p>Connection <code>${escapeHtml(conn.label)}</code> · impersonating <code>${escapeHtml(saCred.subject)}</code></p>
-            <p>The customer's Workspace admin must authorize this in <strong>Admin console → Security → Access and data control → API controls → Domain-wide delegation</strong>:</p>
-            <p><strong>Client ID</strong>: <code>${escapeHtml(clientId)}</code></p>
-            <p><strong>OAuth scopes</strong> (comma-separated):</p>
-            <textarea rows="4" readonly style="width:100%;font-family:monospace;font-size:12px;">${escapeHtml(scopes.join(","))}</textarea>
-          </div>
-          <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a> · <a href="/tenants">All scopes</a></p>
-        </main></body></html>
-      `);
+      return c.redirect(tenantEditUrl(scope, `${providerDef.label} service account connected.`, "ok", "#connections"));
     }
 
     if (!wantsPat && !wantsSa && !wantsOauth && credential) {
@@ -3688,19 +3677,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     }
     await grantConnectionToTenantAgents(user.id, scope, conn.id);
 
-    return c.html(`
-      <!doctype html><html><head><meta charset="utf-8"><title>Service added — grantry</title>
-      ${FAVICON}<style>${CSS}</style></head><body>
-      ${NAV("tenants", user?.email)}
-      <main>
-        <h1>✓ Service added to <code>${scope}</code></h1>
-        <div class="card">
-          <h2>New connection</h2>
-          <p><code>${conn.label}</code> · scope=<code>${conn.scope}</code></p>
-        </div>
-        <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a> · <a href="/tenants">All scopes</a></p>
-      </main></body></html>
-    `);
+    return c.redirect(tenantEditUrl(scope, `Service ${conn.label} added.`, "ok", "#connections"));
   }
 
   return c.html("<h1>unknown action</h1>", 400);
@@ -3747,20 +3724,14 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/recheck", async (c)
       connectionId: conn.id,
       data: { credentialMetadata: newMeta, credentialValidatedAt: ok ? new Date() : null },
     });
-    return c.html(`
-      <!doctype html><html><head><meta charset="utf-8"><title>Connection rechecked — grantry</title>
-      ${FAVICON}<style>${CSS}</style></head><body>
-      ${NAV("tenants", user?.email)}
-      <main>
-        <h1>${ok ? "✓" : "✗"} Rechecked <code>${escapeHtml(conn.label)}</code></h1>
-        <div class="card">
-          ${ok
-            ? `<p>Successfully minted a Domain-Wide Delegation access token. The delegation is correctly configured.</p>`
-            : `<p>Could not mint a token:</p><pre style="white-space:pre-wrap;font-size:12px;">${escapeHtml(errorMsg)}</pre>`}
-        </div>
-        <p><a href="/tenants/${scope}/edit">← Back to ${escapeHtml(scope)}</a></p>
-      </main></body></html>
-    `);
+    return c.redirect(tenantEditUrl(
+      scope,
+      ok
+        ? `Rechecked ${conn.label}: Domain-Wide Delegation is configured.`
+        : `Rechecked ${conn.label}: ${errorMsg.slice(0, 180)}`,
+      ok ? "ok" : "error",
+      "#connections",
+    ));
   }
 
   const token = decrypt(conn.encryptedCredential);
@@ -3773,19 +3744,7 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/recheck", async (c)
     data: credentialMeta,
   });
 
-  return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Connection rechecked — grantry</title>
-    ${FAVICON}<style>${CSS}</style></head><body>
-    ${NAV("tenants", user?.email)}
-    <main>
-      <h1>✓ Rechecked <code>${escapeHtml(conn.label)}</code></h1>
-      <div class="card">
-        <p>${renderCredentialSummary({ ...conn, ...credentialMeta })}</p>
-        <p class="field-hint">The saved token remains hidden. Only the validation result is updated.</p>
-      </div>
-      <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a></p>
-    </main></body></html>
-  `);
+  return c.redirect(tenantEditUrl(scope, `Rechecked ${conn.label}.`, "ok", "#connections"));
 });
 
 // --- /tenants/:scope/connections/:connectionId/delete (POST) — delete one connection ---
@@ -3807,19 +3766,7 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/delete", async (c) 
   await prisma.connection.delete({ where: { id: conn.id } });
   invalidateDwdToken(conn.id);
 
-  return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Connection deleted — grantry</title>
-    ${FAVICON}<style>${CSS}</style></head><body>
-    ${NAV("tenants", user?.email)}
-    <main>
-      <h1>✓ Deleted connection <code>${escapeHtml(conn.label)}</code></h1>
-      <div class="card">
-        <p>Provider <code>${escapeHtml(conn.provider)}</code> was removed from scope <code>${escapeHtml(conn.scope)}</code>.</p>
-        <p>Agents were left unchanged. Calls to this provider will be denied until a new connection is added and granted.</p>
-      </div>
-      <p><a href="/tenants/${scope}/edit">← Back to ${scope}</a></p>
-    </main></body></html>
-  `);
+  return c.redirect(tenantEditUrl(scope, `${conn.provider} was removed from this scope. Agents were left unchanged.`, "ok", "#connections"));
 });
 
 dashboardApp.post("/tenants/new/custom-providers", async (c) => {
