@@ -25,6 +25,7 @@ import { callGmailTool } from "./connectors/gmail.js";
 import { callYouTubeTool } from "./connectors/youtube.js";
 import { callAttioTool } from "./connectors/attio.js";
 import { callClayTool } from "./connectors/clay.js";
+import { callApolloTool } from "./connectors/apollo.js";
 import { callHeyReachTool } from "./connectors/heyreach.js";
 import { callChatworkTool } from "./connectors/chatwork.js";
 import { callRailwayTool } from "./connectors/railway.js";
@@ -1051,6 +1052,113 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "clay/enrich_company") {
     return {
       data: { type: "object", description: "Clay company enrichment request body." },
+    };
+  }
+  // --- apollo ---
+  if (toolName === "apollo/health") { return {}; }
+  if (toolName === "apollo/search_people") {
+    return {
+      data: { type: "object", description: "Raw Apollo people-search body. Overrides the convenience params below." },
+      q_keywords: { type: "string", description: "Free-text keyword filter." },
+      person_titles: { type: "array", items: { type: "string" }, description: "Job titles to match, e.g. [\"VP of Sales\"]." },
+      person_seniorities: { type: "array", items: { type: "string" }, description: "Seniority levels, e.g. [\"vp\",\"director\"]." },
+      person_locations: { type: "array", items: { type: "string" }, description: "Person locations, e.g. [\"Tokyo, Japan\"]." },
+      organization_locations: { type: "array", items: { type: "string" }, description: "Company HQ locations." },
+      organization_domains: { type: "array", items: { type: "string" }, description: "Company domains to scope to." },
+      organization_num_employees_ranges: { type: "array", items: { type: "string" }, description: "Headcount ranges, e.g. [\"1,10\",\"11,50\"]." },
+      contact_email_status: { type: "array", items: { type: "string" }, description: "Email status filter, e.g. [\"verified\"]." },
+      page: { type: "number", description: "Page number (1-based)." },
+      per_page: { type: "number", description: "Results per page (max 100)." },
+    };
+  }
+  if (toolName === "apollo/enrich_person") {
+    return {
+      data: { type: "object", description: "Raw Apollo people/match body. Overrides the convenience params below." },
+      first_name: { type: "string", description: "First name." },
+      last_name: { type: "string", description: "Last name." },
+      name: { type: "string", description: "Full name (alternative to first/last)." },
+      email: { type: "string", description: "Known email to match on." },
+      organization_name: { type: "string", description: "Company name." },
+      domain: { type: "string", description: "Company domain." },
+      linkedin_url: { type: "string", description: "LinkedIn profile URL." },
+      reveal_personal_emails: { type: "boolean", description: "Reveal personal emails (consumes credits)." },
+      reveal_phone_number: { type: "boolean", description: "Reveal phone number (consumes credits)." },
+    };
+  }
+  if (toolName === "apollo/search_organizations") {
+    return {
+      data: { type: "object", description: "Raw Apollo organization-search body. Overrides the convenience params below." },
+      q_organization_name: { type: "string", description: "Organization name keyword." },
+      organization_locations: { type: "array", items: { type: "string" }, description: "Company locations." },
+      organization_num_employees_ranges: { type: "array", items: { type: "string" }, description: "Headcount ranges, e.g. [\"1,10\"]." },
+      organization_industry_tag_ids: { type: "array", items: { type: "string" }, description: "Apollo industry tag IDs." },
+      q_organization_keyword_tags: { type: "array", items: { type: "string" }, description: "Keyword tags." },
+      page: { type: "number", description: "Page number (1-based)." },
+      per_page: { type: "number", description: "Results per page (max 100)." },
+    };
+  }
+  if (toolName === "apollo/enrich_organization") {
+    return {
+      domain: { type: "string", description: "Company domain to enrich, e.g. apollo.io." },
+    };
+  }
+  if (toolName === "apollo/search_contacts") {
+    return {
+      data: { type: "object", description: "Raw Apollo contacts/search body. Overrides the convenience params below." },
+      q_keywords: { type: "string", description: "Free-text keyword filter." },
+      contact_stage_id: { type: "string", description: "Filter by contact stage id." },
+      sort_by_field: { type: "string", description: "Field to sort by." },
+      sort_ascending: { type: "boolean", description: "Sort ascending when true." },
+      page: { type: "number", description: "Page number (1-based)." },
+      per_page: { type: "number", description: "Results per page (max 100)." },
+    };
+  }
+  if (toolName === "apollo/create_contact") {
+    return {
+      data: { type: "object", description: "Raw Apollo contact body. Overrides the convenience fields below." },
+      first_name: { type: "string", description: "First name." },
+      last_name: { type: "string", description: "Last name." },
+      email: { type: "string", description: "Contact email." },
+      title: { type: "string", description: "Job title." },
+      organization_name: { type: "string", description: "Company name." },
+      website_url: { type: "string", description: "Company website." },
+      label_names: { type: "array", items: { type: "string" }, description: "List/label names to apply." },
+      present_raw_address: { type: "string", description: "Raw location string." },
+      direct_phone: { type: "string", description: "Direct phone number." },
+      mobile_phone: { type: "string", description: "Mobile phone number." },
+    };
+  }
+  if (toolName === "apollo/update_contact") {
+    return {
+      contact_id: { type: "string", description: "Apollo contact id to update." },
+      data: { type: "object", description: "Raw Apollo contact body. Overrides the convenience fields below." },
+      first_name: { type: "string", description: "First name." },
+      last_name: { type: "string", description: "Last name." },
+      email: { type: "string", description: "Contact email." },
+      title: { type: "string", description: "Job title." },
+      organization_name: { type: "string", description: "Company name." },
+      website_url: { type: "string", description: "Company website." },
+      label_names: { type: "array", items: { type: "string" }, description: "List/label names to apply." },
+      present_raw_address: { type: "string", description: "Raw location string." },
+      direct_phone: { type: "string", description: "Direct phone number." },
+      mobile_phone: { type: "string", description: "Mobile phone number." },
+    };
+  }
+  if (toolName === "apollo/search_sequences") {
+    return {
+      data: { type: "object", description: "Raw Apollo emailer_campaigns/search body. Overrides the convenience params below." },
+      q_name: { type: "string", description: "Sequence name keyword." },
+      page: { type: "number", description: "Page number (1-based)." },
+      per_page: { type: "number", description: "Results per page (max 100)." },
+    };
+  }
+  if (toolName === "apollo/add_contacts_to_sequence") {
+    return {
+      sequence_id: { type: "string", description: "Apollo sequence (emailer_campaign) id." },
+      contact_ids: { type: "array", items: { type: "string" }, description: "Apollo contact ids to add to the sequence." },
+      send_email_from_email_account_id: { type: "string", description: "Mailbox id to send from (required by some Apollo plans)." },
+      sequence_active_in_other_campaigns: { type: "boolean", description: "Allow contacts already active in other sequences." },
+      data: { type: "object", description: "Raw body override." },
     };
   }
   if (toolName === "heyreach/check_api_key") {
@@ -2241,6 +2349,9 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "clay/update_row") return ["table_id", "row_id", "data"];
   if (toolName === "clay/enrich_person") return ["data"];
   if (toolName === "clay/enrich_company") return ["data"];
+  if (toolName === "apollo/enrich_organization") return ["domain"];
+  if (toolName === "apollo/update_contact") return ["contact_id"];
+  if (toolName === "apollo/add_contacts_to_sequence") return ["sequence_id"];
   if (toolName === "heyreach/get_campaign") return ["campaign_id"];
   if (toolName === "heyreach/pause_campaign") return ["campaign_id"];
   if (toolName === "heyreach/resume_campaign") return ["campaign_id"];
@@ -2539,6 +2650,7 @@ async function dispatchProviderTool(
   if (provider === "youtube") return callYouTubeTool(toolName, args, token);
   if (provider === "attio") return callAttioTool(toolName, args, token);
   if (provider === "clay") return callClayTool(toolName, args, token);
+  if (provider === "apollo") return callApolloTool(toolName, args, token);
   if (provider === "heyreach") return callHeyReachTool(toolName, args, token);
   if (provider === "chatwork") return callChatworkTool(toolName, args, token);
   if (provider === "railway") {

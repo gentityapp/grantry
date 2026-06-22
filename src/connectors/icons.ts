@@ -91,6 +91,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   clarity: "#0078D4", // Microsoft blue
   attio: "#266DF0",
   clay: "#292929",
+  apollo: "#5C3FFF", // Apollo.io purple
   heyreach: "#6A5CFF",
   chatwork: "#EA3C3C",
   yahoo_ads: "#FF0033", // Yahoo! JAPAN red

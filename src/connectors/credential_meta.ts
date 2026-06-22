@@ -565,6 +565,27 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "apollo") {
+      const resp = await fetchWithTimeout("https://api.apollo.io/api/v1/auth/health", {
+        headers: { "X-Api-Key": token, Accept: "application/json" },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) {
+        return { provider, authType, status: "error", checkedAt, error: `Apollo API key check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: typeof body === "object" && body ? body : undefined,
+        notes: [
+          "Apollo API key is sent in the X-Api-Key header.",
+          "People/organization search and enrichment consume Apollo credits and require API access on your plan.",
+        ],
+        checkedAt,
+      };
+    }
+
     if (provider === "chatwork") {
       const resp = await fetchWithTimeout("https://api.chatwork.com/v2/me", {
         headers: {
