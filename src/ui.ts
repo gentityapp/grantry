@@ -722,17 +722,6 @@ function clientIdPreview(clientId: string | null | undefined) {
   return `${id.slice(0, 8)}...${id.slice(-10)}`;
 }
 
-function oauthAppStatusFromCredential(credential: { credentialMetadata?: string | null; updatedAt?: Date | null } | null | undefined) {
-  const meta = safeJsonObject(credential?.credentialMetadata);
-  const clientId = typeof meta.oauthClientId === "string" ? meta.oauthClientId.trim() : "";
-  const authMethod = typeof meta.oauthClientAuthMethod === "string" ? meta.oauthClientAuthMethod : "";
-  return {
-    clientId,
-    authMethod,
-    updatedAt: credential?.updatedAt ?? null,
-  };
-}
-
 function oauthCallbackUrl(c: any, providerKey: string) {
   const origin = String(process.env.BETTER_AUTH_URL || publicOrigin(c)).replace(/\/+$/, "");
   return `${origin}/oauth/${providerKey}/callback`;
@@ -2749,24 +2738,6 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
 
   const usedProviders = new Set(connections.map((c) => c.provider));
   const usedProviderAuthTypes = new Set(connections.map((c) => `${c.provider}:${c.authType}`));
-  const workspaceOAuthProviderKeysForScope = Array.from(new Set(connections
-    .filter((cn) => cn.authType === "oauth" && providerRequiresWorkspaceOAuthApp(cn.provider))
-    .map((cn) => cn.provider)));
-  const workspaceOAuthAppCredentials = workspaceOAuthProviderKeysForScope.length && wsId
-    ? await prisma.providerCredential.findMany({
-        where: {
-          workspaceId: wsId,
-          provider: { in: workspaceOAuthProviderKeysForScope },
-          authType: "oauth_app",
-          enabled: true,
-        },
-        orderBy: { updatedAt: "desc" },
-      })
-    : [];
-  const oauthAppCredentialByProvider = new Map<string, (typeof workspaceOAuthAppCredentials)[number]>();
-  for (const credential of workspaceOAuthAppCredentials) {
-    if (!oauthAppCredentialByProvider.has(credential.provider)) oauthAppCredentialByProvider.set(credential.provider, credential);
-  }
   const availableToAdd = providers.flatMap((p) =>
     p.authTypes.map((authType) => ({ provider: p, authType }))
   ).filter((option) => !usedProviderAuthTypes.has(`${option.provider.key}:${option.authType}`));
@@ -2911,56 +2882,6 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           <p class="field-hint">↻ <b>Reconnect</b> re-runs the provider's OAuth consent screen and refreshes this connection's access/refresh tokens in place. <b>Delete</b> removes only that credential connection; agents remain.</p>
         </div>`}
 
-        ${workspaceOAuthProviderKeysForScope.length ? `
-        <h2 id="workspace-oauth-apps">Workspace OAuth app credentials</h2>
-        <div class="card">
-          <p class="field-hint" style="margin-top:0;">
-            These OAuth app credentials are used for reconnect and token refresh. They are separate from provider API keys such as the Google Ads Developer token.
-          </p>
-          ${workspaceOAuthProviderKeysForScope.map((providerKey) => {
-            const providerDef = getProvider(providerKey);
-            const credential = oauthAppCredentialByProvider.get(providerKey);
-            const status = oauthAppStatusFromCredential(credential);
-            const defaultAuthMethod = defaultOAuthClientAuthMethod(providerKey, providerDef);
-            const selectedAuthMethod = status.authMethod || defaultAuthMethod;
-            const label = providerDef?.label ?? providerKey;
-            return `
-          <div class="provider-block" style="border:1px solid #e3e8ee;border-radius:8px;padding:12px 16px;margin-top:12px;">
-            <h3 style="margin:0 0 10px;display:flex;align-items:center;gap:8px;">${providerIcon(providerKey)} ${escapeHtml(label)}</h3>
-            <div class="field-hint" style="margin-bottom:10px;">
-              OAuth client:
-              ${status.clientId
-                ? `<span class="badge ok">saved</span> <code>${escapeHtml(clientIdPreview(status.clientId))}</code>${status.updatedAt ? ` <span style="color:#8792a2;">updated ${status.updatedAt.toISOString().slice(0, 10)}</span>` : ""}`
-                : '<span class="badge denied">missing</span>'}
-            </div>
-            <div class="field" style="margin-bottom:10px;">
-              <label for="oauth_redirect_${providerKey}_settings">Redirect URI</label>
-              <div style="display:flex;gap:8px;align-items:center;">
-                <input type="text" id="oauth_redirect_${providerKey}_settings" readonly value="${escapeHtml(oauthCallbackUrl(c, providerKey))}" style="font-family:monospace;">
-                <button type="button" class="secondary copy-oauth-redirect" data-copy-target="oauth_redirect_${providerKey}_settings" style="white-space:nowrap;">Copy</button>
-              </div>
-            </div>
-            <div class="field" style="margin-bottom:10px;">
-              <label for="oauth_client_id_${providerKey}_settings">Client ID</label>
-              <input type="text" name="oauth_client_id_${providerKey}_settings" id="oauth_client_id_${providerKey}_settings" autocomplete="off" placeholder="${status.clientId ? "Paste a new Client ID to replace the saved one" : "Client ID"}">
-            </div>
-            <div class="field" style="margin-bottom:10px;">
-              <label for="oauth_client_secret_${providerKey}_settings">Client Secret</label>
-              <input type="password" name="oauth_client_secret_${providerKey}_settings" id="oauth_client_secret_${providerKey}_settings" autocomplete="off" placeholder="${status.clientId ? "Paste the matching new Client Secret" : "Client Secret"}">
-            </div>
-            <div class="field" style="margin-bottom:0;">
-              <label for="oauth_client_auth_method_${providerKey}_settings">Client authentication method</label>
-              <select name="oauth_client_auth_method_${providerKey}_settings" id="oauth_client_auth_method_${providerKey}_settings">
-                <option value="CLIENT_SECRET_BASIC" ${selectedAuthMethod === "CLIENT_SECRET_BASIC" ? "selected" : ""}>CLIENT_SECRET_BASIC</option>
-                <option value="CLIENT_SECRET_POST" ${selectedAuthMethod === "CLIENT_SECRET_POST" ? "selected" : ""}>CLIENT_SECRET_POST</option>
-              </select>
-            </div>
-            <div class="field-hint">Leave Client ID and Client Secret blank to keep the saved OAuth app credential unchanged. To replace it, paste both values and save settings.</div>
-          </div>`;
-          }).join("")}
-        </div>
-        ` : ""}
-
         <h2>Connection grants</h2>
         <div class="card">
           <p class="field-hint" style="margin-top:0;">Agents use explicit connection grants. Provider permissions come from each credential itself; Grantry does not maintain separate per-tool switches here.</p>
@@ -2976,20 +2897,6 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         <form id="recheck_connection_${cn.id}" method="post" action="/tenants/${scope}/connections/${cn.id}/recheck"></form>
         <form id="delete_connection_${cn.id}" method="post" action="/tenants/${scope}/connections/${cn.id}/delete" onsubmit="return confirm(${jsString(`Delete connection ${cn.label}?\n\nProvider: ${cn.provider}\nScope: ${cn.scope}\n\nRelated agent connection grants will be removed automatically.`)});"></form>
       `).join("")}
-      <script>
-        document.querySelectorAll('.copy-oauth-redirect').forEach((btn) => {
-          btn.addEventListener('click', async () => {
-            const target = document.getElementById(btn.dataset.copyTarget || '');
-            if (!target) return;
-            try {
-              await navigator.clipboard.writeText(target.value || target.textContent || '');
-              const oldText = btn.textContent;
-              btn.textContent = 'Copied';
-              setTimeout(() => { btn.textContent = oldText || 'Copy'; }, 1200);
-            } catch {}
-          });
-        });
-      </script>
 
       <h2>Advanced: additional agent token</h2>
       <div class="card">
@@ -3538,7 +3445,6 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
 
   // --- save_settings: update connection labels/enabled + role desc/tools/scopes ---
   if (action === "save_settings") {
-    let oauthAppCredentialUpdates = 0;
     // Tenant display name/description. The slug itself is immutable (wire key).
     if (body.tenant_display_name !== undefined || body.tenant_description !== undefined) {
       const tenantRow = await ensureTenant(user.id, scope, undefined, wsId);
@@ -3549,28 +3455,6 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
           where: { id: tenantRow.id },
           data: { displayName, description },
         });
-      }
-    }
-
-    for (const providerKey of workspaceOAuthAppProviderKeys()) {
-      const providerDef = getProvider(providerKey);
-      const structuredOAuthAppCredential = oauthAppCredentialFromStructuredFields(
-        body,
-        `${providerKey}_settings`,
-        defaultOAuthClientAuthMethod(providerKey, providerDef),
-      );
-      if (!structuredOAuthAppCredential) continue;
-      try {
-        await upsertWorkspaceOAuthAppCredential({
-          workspaceId: wsId,
-          ownerId: user.id,
-          providerKey,
-          providerDef,
-          rawCredential: structuredOAuthAppCredential,
-        });
-        oauthAppCredentialUpdates++;
-      } catch (e: any) {
-        return c.html(`<h1>Invalid OAuth app credential for ${escapeHtml(providerDef?.label ?? providerKey)}</h1><p>${escapeHtml(String(e?.message ?? e))}</p><p><a href="/tenants/${scope}/edit#workspace-oauth-apps">Back</a></p>`, 400);
       }
     }
 
@@ -3616,7 +3500,6 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
         <h1>✓ Settings saved for <code>${scope}</code></h1>
         <div class="card">
           <h2>Connections updated (${connUpdates.length})</h2>
-          ${oauthAppCredentialUpdates > 0 ? `<p>OAuth app credentials saved: ${oauthAppCredentialUpdates}</p>` : ""}
           ${connUpdates.length === 0 ? '<p><em>No changes.</em></p>' : `
           <ul>${connUpdates.map((u) => `<li><code>${escapeHtml(u.label)}</code> · ${u.enabled ? "enabled" : "DISABLED"}</li>`).join("")}</ul>
           `}
@@ -5247,7 +5130,7 @@ oauthApp.get("/:provider/start", async (c) => {
   const oauthCfg = await resolveOAuthClientConfig(providerKey, providerDef, workspaceId, String(payload.oauth_app_credential_id || ""));
   if (!oauthCfg.clientId) {
     const envPrefix = providerKey.toUpperCase();
-    const setupLink = payload.tenant ? `/tenants/${encodeURIComponent(payload.tenant)}/edit#workspace-oauth-apps` : "/tenants/new";
+    const setupLink = payload.tenant ? `/tenants/${encodeURIComponent(payload.tenant)}/edit` : "/tenants/new";
     const hint = providerRequiresWorkspaceOAuthApp(providerKey, providerDef)
       ? `Configure this workspace's ${escapeHtml(providerDef.label)} OAuth app first. Paste its <code>client_id</code> and <code>client_secret</code> on the scope edit page; do not use Grantry-wide environment variables.`
       : `Set <code>${envPrefix}_CLIENT_ID</code> env var.`;
@@ -5355,7 +5238,7 @@ oauthApp.get("/:provider/callback", async (c) => {
   const publicUrl = process.env.BETTER_AUTH_URL || `${publicOrigin(c)}`;
   if (!clientId || !clientSecret) {
     const envPrefix = providerKey.toUpperCase();
-    const setupLink = payload.tenant ? `/tenants/${encodeURIComponent(payload.tenant)}/edit#workspace-oauth-apps` : "/tenants/new";
+    const setupLink = payload.tenant ? `/tenants/${encodeURIComponent(payload.tenant)}/edit` : "/tenants/new";
     const hint = providerRequiresWorkspaceOAuthApp(providerKey, providerDef)
       ? `Configure this workspace's ${escapeHtml(providerDef.label)} OAuth app first. Paste its <code>client_id</code> and <code>client_secret</code> on the scope edit page; do not use Grantry-wide environment variables.`
       : `Set <code>${envPrefix}_CLIENT_ID</code> and <code>${envPrefix}_CLIENT_SECRET</code> env vars.`;
