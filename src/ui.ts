@@ -54,6 +54,29 @@ function noticeBanner(notice: string | undefined, kind: "ok" | "error" = "ok"): 
   </div>`;
 }
 
+function oauthPopupCompletePage(c: any, args: { scope: string; provider: string; notice: string; kind?: "ok" | "error" }) {
+  const targetUrl = tenantEditUrl(args.scope, args.notice, args.kind ?? "ok", "#connections");
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>OAuth complete — grantry</title>
+    ${FAVICON}<style>${CSS}</style></head><body>
+    <main style="max-width:560px;margin:40px auto;">
+      <h1>✓ OAuth complete</h1>
+      <div class="card">
+        <p><code>${escapeHtml(args.provider)}</code> is connected. This window will close automatically.</p>
+        <p><a href="${targetUrl}" target="_blank" rel="noopener">Open scope settings</a></p>
+      </div>
+    </main>
+    <script>
+      const message = { type: 'grantry:oauth-complete', url: ${jsString(targetUrl)}, notice: ${jsString(args.notice)}, provider: ${jsString(args.provider)} };
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage(message, window.location.origin);
+        setTimeout(() => window.close(), 150);
+      }
+    </script>
+    </body></html>
+  `);
+}
+
 function authTypeLabel(providerKey: string, authType: string): string {
   if (authType === "oauth") return "OAuth";
   if (authType === "service_account") return "Service Account (DWD)";
@@ -2897,7 +2920,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                 <td><label style="font-weight:normal;font-size:13px;"><input type="checkbox" name="conn_enabled_${cn.id}" ${cn.enabled ? "checked" : ""}> on</label></td>
                 <td><code>${cn.createdAt.toISOString().slice(0, 10)}</code></td>
                 <td><span class="stacked-actions">${canReconnect
-                  ? `<a href="/oauth/${cn.provider}/start?tenant=${encodeURIComponent(cn.scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run the OAuth consent flow and refresh this exact connection's tokens">↻ Reconnect</a>${needsReconnect ? '<span class="badge denied">needs reconnect</span>' : ""}`
+                  ? `<a href="/oauth/${cn.provider}/start?tenant=${encodeURIComponent(cn.scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}&popup=1" class="btn secondary oauth-popup-link" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run the OAuth consent flow and refresh this exact connection's tokens">↻ Reconnect</a>${needsReconnect ? '<span class="badge denied">needs reconnect</span>' : ""}`
                   : `<button type="submit" form="recheck_connection_${cn.id}" class="secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run credential validation without showing the saved token">Recheck</button>`}
                   <button type="submit" form="delete_connection_${cn.id}" class="danger" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Delete only this connection">Delete</button>
                 </span></td>
@@ -2966,6 +2989,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
       </div>` : `
       <form method="post" action="/tenants/${scope}/edit" id="addConnForm">
         <input type="hidden" name="_action" value="add_service">
+        <input type="hidden" name="oauth_popup" id="oauthPopup" value="">
         <div class="step-card">
           <h2><span class="num">+</span> New service</h2>
           <div class="field">
@@ -3074,10 +3098,58 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         const oauthAppSetupLinkRow = document.getElementById('oauthAppSetupLinkRow');
         const oauthAppSetupLink = document.getElementById('oauthAppSetupLink');
         const addServiceButton = document.getElementById('addServiceButton');
+        const addConnForm = document.getElementById('addConnForm');
+        const oauthPopup = document.getElementById('oauthPopup');
         const subjectFieldRow = document.getElementById('subjectFieldRow');
         const subjectField = document.getElementById('subject');
+        const oauthPopupName = 'grantry_oauth_popup';
         function escapeText(s) {
           return String(s || '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+        }
+        function openOAuthPopup(url) {
+          const width = 720;
+          const height = 780;
+          const left = Math.max(0, Math.round(window.screenX + (window.outerWidth - width) / 2));
+          const top = Math.max(0, Math.round(window.screenY + (window.outerHeight - height) / 2));
+          return window.open(url || 'about:blank', oauthPopupName, 'popup=yes,width=' + width + ',height=' + height + ',left=' + left + ',top=' + top + ',resizable=yes,scrollbars=yes');
+        }
+        window.addEventListener('message', (event) => {
+          if (event.origin !== window.location.origin) return;
+          const data = event.data || {};
+          if (data.type !== 'grantry:oauth-complete') return;
+          window.location.href = data.url || (${jsString(tenantEditUrl(scope, "OAuth connection updated.", "ok", "#connections"))});
+        });
+        document.querySelectorAll('.oauth-popup-link').forEach((link) => {
+          link.addEventListener('click', (event) => {
+            event.preventDefault();
+            const popup = openOAuthPopup(link.href);
+            if (popup) {
+              popup.focus();
+            } else {
+              const fallback = new URL(link.href, window.location.href);
+              fallback.searchParams.delete('popup');
+              window.location.href = fallback.toString();
+            }
+          });
+        });
+        if (addConnForm) {
+          addConnForm.addEventListener('submit', (event) => {
+            if (providerAuth.value !== 'oauth') return;
+            if (!addConnForm.reportValidity()) return;
+            const popup = openOAuthPopup('');
+            if (!popup) {
+              if (oauthPopup) oauthPopup.value = '';
+              addConnForm.removeAttribute('target');
+              return;
+            }
+            if (oauthPopup) oauthPopup.value = '1';
+            addConnForm.target = oauthPopupName;
+            popup.focus();
+            setTimeout(() => {
+              addConnForm.removeAttribute('target');
+              if (oauthPopup) oauthPopup.value = '';
+            }, 0);
+          });
         }
 
         function updateUI() {
@@ -3611,6 +3683,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
         }
       }
       const params = new URLSearchParams({ tenant: scope, reauth: "1" });
+      if (body.oauth_popup === "1") params.set("popup", "1");
       if (oauthAppCredentialId) params.set("oauth_app_credential_id", oauthAppCredentialId);
       return c.redirect(`/oauth/${provider}/start?${params.toString()}`);
     }
@@ -5068,6 +5141,7 @@ oauthApp.get("/:provider/start", async (c) => {
     connection_id: c.req.query("connection_id") || "",
     oauth_app_credential_id: c.req.query("oauth_app_credential_id") || "",
     optional_scopes: c.req.query("optional_scopes") || "",
+    popup: c.req.query("popup") === "1",
     reauth,
     userId: user.id,
   };
@@ -5385,6 +5459,13 @@ oauthApp.get("/:provider/callback", async (c) => {
       });
       await ensureProviderCredentialForConnection(created, user.id);
       await grantConnectionToTenantAgents(user.id, effectiveTenant, created.id);
+    }
+    if (payload.popup) {
+      return oauthPopupCompletePage(c, {
+        scope: effectiveTenant,
+        provider: providerKey,
+        notice: `Re-authorized ${providerKey}.`,
+      });
     }
     return c.redirect(`/tenants/${effectiveTenant}/edit?reauthed=${encodeURIComponent(providerKey)}`);
   }
