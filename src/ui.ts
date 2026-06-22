@@ -2726,7 +2726,7 @@ dashboardApp.get("/tenants", async (c) => {
                 ? `<span style="color:#687385;font-size:13px;">No connections yet</span>`
                 : conns.map((cn) => `
                   <span class="scope-service-pill" title="${escapeHtml(cn.label)}">
-                    ${providerIcon(cn.provider)}<span>${escapeHtml(providerDisplayName(cn.provider))}</span><code>${escapeHtml(cn.authType)}</code>
+                    ${providerIcon(cn.provider)}<span>${escapeHtml(providerDisplayName(cn.provider))}</span>
                   </span>
                 `).join("")}
             </span>
