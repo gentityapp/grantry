@@ -437,7 +437,7 @@ test("Google OAuth tokeninfo failure is captured without a real provider token",
   restoreFetch();
 });
 
-test("HubSpot manifest keeps content optional for OAuth and reports missing capability scopes", async () => {
+test("HubSpot manifest keeps content optional for OAuth and reports missing capability scopes as coverage, not an error", async () => {
   const hubspot = getProvider("hubspot");
   assert.ok(hubspot);
   assert.ok(hubspot.oauthOptionalScopes?.includes("content"));
@@ -470,12 +470,16 @@ test("HubSpot manifest keeps content optional for OAuth and reports missing capa
 
   assert.equal(metadata.provider, "hubspot");
   assert.equal(metadata.status, "ok");
-  assert.equal(metadata.capabilities.status, "error");
+  // The connectivity smoke test (/account-info/v3/details) passes, so the
+  // connection is healthy even though an optional capability scope is missing.
+  // Scope coverage varies per customer — a missing scope is reported, not erred.
+  assert.equal(metadata.capabilities.status, "ok");
   assert.ok(metadata.capabilities.missingScopes.includes("content"));
   assert.ok(metadata.capabilities.operations.some((op: any) => op.id === "marketing_emails"));
+  // The per-capability probe still records the 403 so the gap is visible.
   assert.ok(metadata.capabilities.smokeTests.some((smoke: any) => smoke.id === "operation:marketing_emails" && smoke.status === "error"));
-  assert.equal(result.healthStatus, "warn");
-  assert.equal(result.healthErrorCode, "missing_scope");
+  assert.equal(result.healthStatus, "ok");
+  assert.equal(result.healthErrorCode, null);
   assert.deepEqual(JSON.parse(result.healthMissingScopes), ["content"]);
   restoreFetch();
 });

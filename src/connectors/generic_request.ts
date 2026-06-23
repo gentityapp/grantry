@@ -413,12 +413,28 @@ export async function callGenericCheckConnection(args: {
     }
   }
 
-  const failed = results.filter((r) => r.status !== "ok");
+  // A 403 for an ungranted scope is *coverage*, not a broken connection.
+  // Scope sets vary per customer, so a missing (often optional) scope must not
+  // flip the whole connection to "error" — only genuine connectivity/auth
+  // failures do. Scope gaps are surfaced separately as informational coverage.
+  const isScopeGap = (r: any) => {
+    if (!r || r.status === "ok") return false;
+    if (Array.isArray(r.missingScopes) && r.missingScopes.length) return true;
+    return /provider_scope_missing|provider_plan_or_api_unavailable/.test(String(r.error ?? ""));
+  };
+  const hardFailures = results.filter((r) => r.status !== "ok" && !isScopeGap(r));
+  const scopeGaps = results.filter((r) => r.status !== "ok" && isScopeGap(r));
   return {
     structuredContent: {
       provider: args.provider.key,
-      status: failed.length ? "error" : "ok",
+      status: hardFailures.length ? "error" : "ok",
       tests: results,
+      scopeGaps: scopeGaps.map((r: any) => ({
+        id: r.id,
+        operationId: r.operationId ?? null,
+        requiredScopes: r.requiredScopes ?? [],
+        missingScopes: r.missingScopes ?? [],
+      })),
     },
   };
 }

@@ -1060,9 +1060,16 @@ function renderCapabilitySummary(provider: string | undefined, authType: string 
   const smokeTests = Array.isArray(caps.smokeTests) ? caps.smokeTests : [];
   const operations = Array.isArray(caps.operations) ? caps.operations : [];
   const missingScopes: string[] = Array.isArray(caps.missingScopes) ? caps.missingScopes.map(String).filter(Boolean) : [];
-  const okTests = smokeTests.filter((t: any) => t?.status === "ok").length;
-  const failedTests = smokeTests.filter((t: any) => t?.status === "error").length;
-  const knownOps = operations.length;
+  // Split connectivity smoke tests from per-capability operation probes
+  // (operation results carry an "operation:" id prefix). A failed connectivity
+  // check is a real problem; an operation probe that 403s is just an ungranted
+  // capability — reported as coverage, not an error.
+  const connTests = smokeTests.filter((t: any) => !(typeof t?.id === "string" && t.id.startsWith("operation:")));
+  const opTests = smokeTests.filter((t: any) => typeof t?.id === "string" && t.id.startsWith("operation:"));
+  const okConn = connTests.filter((t: any) => t?.status === "ok").length;
+  const failedConn = connTests.filter((t: any) => t?.status === "error").length;
+  const reachableOps = opTests.filter((t: any) => t?.status === "ok").length;
+  const totalOps = operations.length;
   const badge = status === "ok"
     ? '<span class="badge ok">capabilities ok</span>'
     : status === "error"
@@ -1071,15 +1078,21 @@ function renderCapabilitySummary(provider: string | undefined, authType: string 
   const rows: string[] = [
     `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed #e3e8ee;">${badge}</div>`,
   ];
-  if (okTests || failedTests) {
-    rows.push(`<span style="color:#687385;font-size:12px;">Smoke tests: ${okTests} ok${failedTests ? `, ${failedTests} failed` : ""}</span>`);
+  if (okConn || failedConn) {
+    rows.push(`<span style="color:#687385;font-size:12px;">Connection check: ${okConn} ok${failedConn ? `, ${failedConn} failed` : ""}</span>`);
   }
-  if (knownOps) {
-    rows.push(`<span style="color:#687385;font-size:12px;">Known capabilities: ${knownOps}</span>`);
+  if (totalOps) {
+    rows.push(`<span style="color:#687385;font-size:12px;">Capabilities reachable with this token: ${reachableOps}/${totalOps}</span>`);
   }
   if (missingScopes.length) {
-    rows.push(`<span class="badge denied">missing ${missingScopes.map((s: string) => escapeHtml(s)).join(", ")}</span>`);
-    rows.push(`<span style="color:#687385;font-size:12px;">Fix: ${authType === "oauth" ? "Reconnect after granting the missing scope." : "Add the missing permission to the provider token/private app, then recheck."}</span>`);
+    if (status === "error") {
+      rows.push(`<span class="badge denied">missing ${missingScopes.map((s: string) => escapeHtml(s)).join(", ")}</span>`);
+      rows.push(`<span style="color:#687385;font-size:12px;">Fix: ${authType === "oauth" ? "Reconnect after granting the missing scope." : "Add the missing permission to the provider token/private app, then recheck."}</span>`);
+    } else {
+      // Connection works; these scopes simply aren't on this token. Scope
+      // coverage varies per customer, so this is informational, not a problem.
+      rows.push(`<span style="color:#687385;font-size:12px;">Scopes not granted: ${missingScopes.map((s: string) => escapeHtml(s)).join(", ")} — those capabilities are unavailable with this token. Add them in the provider only if this tenant needs them.</span>`);
+    }
   }
   if (caps.error) {
     rows.push(`<span style="color:#687385;font-size:12px;">${escapeHtml(String(caps.error)).slice(0, 100)}</span>`);
