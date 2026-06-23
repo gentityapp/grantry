@@ -228,15 +228,20 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "google_analytics",
     label: "Google Analytics",
     authTypes: ["oauth"],
-    helpText: "Connect your Google account to access GA4 properties and run read-only Analytics Data API reports.",
+    helpText: "Connect your Google account to access GA4 properties, run Analytics Data API reports, and (with edit access) provision new properties and web data streams.",
     oauthSetupUrl: "https://console.cloud.google.com/apis/credentials",
     oauthScopes: [
       "https://www.googleapis.com/auth/analytics.readonly",
+      "https://www.googleapis.com/auth/analytics.edit",
       "https://www.googleapis.com/auth/userinfo.email",
     ],
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
     oauthTokenUrl: "https://oauth2.googleapis.com/token",
-    tools: ["google_analytics/list_properties", "google_analytics/run_report", "google_analytics/list_data_streams"],
+    tools: ["google_analytics/list_properties", "google_analytics/run_report", "google_analytics/list_data_streams", "google_analytics/create_property", "google_analytics/create_data_stream"],
+    toolScopeRequirements: {
+      "google_analytics/create_property": ["https://www.googleapis.com/auth/analytics.edit"],
+      "google_analytics/create_data_stream": ["https://www.googleapis.com/auth/analytics.edit"],
+    },
     implemented: true,
   },
   google_ads: {

@@ -568,6 +568,22 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       page_token: { type: "string", description: "Optional pagination token." },
     };
   }
+  if (toolName === "google_analytics/create_property") {
+    return {
+      account_id: { type: "string", description: "Parent GA4 account id, either 123456 or accounts/123456. Required." },
+      display_name: { type: "string", description: "Display name for the new property, e.g. one-webinar.ai. Required." },
+      time_zone: { type: "string", description: "IANA time zone. Defaults to Asia/Tokyo." },
+      currency_code: { type: "string", description: "ISO 4217 currency code. Defaults to JPY." },
+      industry_category: { type: "string", description: "Optional GA4 industry category enum, e.g. TECHNOLOGY." },
+    };
+  }
+  if (toolName === "google_analytics/create_data_stream") {
+    return {
+      property_id: { type: "string", description: "GA4 property id, either 123456 or properties/123456. Required." },
+      default_uri: { type: "string", description: "Website URL for the WEB data stream, e.g. https://one-webinar.ai. Required." },
+      display_name: { type: "string", description: "Stream display name. Defaults to the default_uri." },
+    };
+  }
   if (toolName === "google_ads/list_accessible_customers") {
     return {
       login_customer_id: { type: "string", description: "Optional Google Ads manager customer id, no dashes." },
@@ -2311,6 +2327,8 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "google_drive/get_file") return ["file_id"];
   if (toolName === "google_gsc/search_analytics") return ["site_url", "start_date", "end_date"];
   if (toolName === "google_analytics/run_report") return ["property_id", "start_date", "end_date"];
+  if (toolName === "google_analytics/create_property") return ["account_id", "display_name"];
+  if (toolName === "google_analytics/create_data_stream") return ["property_id", "default_uri"];
   if (toolName === "google_analytics/list_data_streams") return ["property_id"];
   if (toolName === "google_ads/search") return ["customer_id", "query"];
   if (toolName === "google_ads/mutate") return ["customer_id", "operations"];

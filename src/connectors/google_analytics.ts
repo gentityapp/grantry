@@ -58,6 +58,12 @@ function propertyPath(value: unknown) {
   return raw.startsWith("properties/") ? raw : `properties/${raw}`;
 }
 
+function accountPath(value: unknown) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  return raw.startsWith("accounts/") ? raw : `accounts/${raw}`;
+}
+
 function namesArray(value: unknown, fallback: string[]) {
   if (!Array.isArray(value)) return fallback;
   const names = value.map((v) => String(v).trim()).filter(Boolean);
@@ -169,6 +175,77 @@ export async function callGoogleAnalyticsTool(tool: string, args: GaArgs, token:
           firebase_app_id: s.androidAppStreamData?.firebaseAppId ?? s.iosAppStreamData?.firebaseAppId ?? null,
         })),
         next_page_token: j.nextPageToken ?? null,
+      },
+    };
+  }
+
+  if (tool === "google_analytics/create_property") {
+    // Requires the analytics.edit OAuth scope. Creates a new GA4 property under an account.
+    const parent = accountPath(args.account_id ?? args.accountId ?? args.account ?? args.parent);
+    if (!parent) throw new Error("account_id is required (e.g. 123456 or accounts/123456)");
+    const displayName = String(args.display_name ?? args.displayName ?? "").trim();
+    if (!displayName) throw new Error("display_name is required");
+    const body: Record<string, unknown> = {
+      parent,
+      displayName,
+      timeZone: String(args.time_zone ?? args.timeZone ?? "Asia/Tokyo").trim() || "Asia/Tokyo",
+      currencyCode: String(args.currency_code ?? args.currencyCode ?? "JPY").trim() || "JPY",
+    };
+    const industry = String(args.industry_category ?? args.industryCategory ?? "").trim();
+    if (industry) body.industryCategory = industry;
+
+    const r = await fetchGoogleAnalytics(`${GA_ADMIN_API}/properties`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    }, { tool, parent });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Google Analytics create_property failed: ${r.status} ${JSON.stringify(j).slice(0, 500)}`);
+    return {
+      structuredContent: {
+        property: j.name,
+        property_id: String(j.name ?? "").replace(/^properties\//, ""),
+        display_name: j.displayName,
+        parent: j.parent,
+        time_zone: j.timeZone,
+        currency_code: j.currencyCode,
+        property_type: j.propertyType,
+        create_time: j.createTime,
+      },
+    };
+  }
+
+  if (tool === "google_analytics/create_data_stream") {
+    // Requires the analytics.edit OAuth scope. Creates a WEB data stream and returns its measurement id (G-XXXX).
+    const property = propertyPath(args.property_id ?? args.propertyId ?? args.property);
+    if (!property) throw new Error("property_id is required");
+    const defaultUri = String(args.default_uri ?? args.defaultUri ?? args.url ?? "").trim();
+    if (!defaultUri) throw new Error("default_uri is required (the website URL, e.g. https://one-webinar.ai)");
+    const displayName = String(args.display_name ?? args.displayName ?? "").trim() || defaultUri;
+    const body = {
+      type: "WEB_DATA_STREAM",
+      displayName,
+      webStreamData: { defaultUri },
+    };
+
+    const r = await fetchGoogleAnalytics(`${GA_ADMIN_API}/${property}/dataStreams`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    }, { tool, property });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`Google Analytics create_data_stream failed: ${r.status} ${JSON.stringify(j).slice(0, 500)}`);
+    return {
+      structuredContent: {
+        property,
+        name: j.name,
+        display_name: j.displayName,
+        type: j.type,
+        // measurement_id is the "G-XXXX" tag id to embed on the site.
+        measurement_id: j.webStreamData?.measurementId ?? null,
+        default_uri: j.webStreamData?.defaultUri ?? null,
+        stream_id: String(j.name ?? "").split("/").pop() ?? null,
+        create_time: j.createTime,
       },
     };
   }
