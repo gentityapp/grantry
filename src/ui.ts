@@ -478,6 +478,27 @@ const CSS = `
   .credential-summary { max-width: 100%; }
   .credential-summary code { display: inline-block; max-width: 100%; white-space: normal; word-break: break-all; }
   .stacked-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .public-shell { min-height: 100vh; background: var(--surface); color: var(--ink-2); }
+  .public-topbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px clamp(20px, 5vw, 72px); border-bottom: 1px solid var(--border); }
+  .public-brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); font-weight: 700; font-size: 18px; letter-spacing: -0.03em; }
+  .public-brand .brand-mark { width: 28px; height: 28px; color: var(--ink); }
+  .public-links { display: inline-flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 14px; }
+  .public-main { margin: 0; max-width: none; padding: 0; }
+  .public-hero { padding: clamp(56px, 9vw, 104px) clamp(20px, 5vw, 72px) clamp(44px, 6vw, 72px); max-width: 1080px; }
+  .public-hero h1 { font-size: clamp(36px, 6vw, 72px); line-height: 1.02; max-width: 900px; margin-bottom: 20px; }
+  .public-hero p { max-width: 720px; font-size: 18px; color: var(--muted); margin: 0 0 28px; }
+  .public-band { border-top: 1px solid var(--border); background: var(--bg); padding: 34px clamp(20px, 5vw, 72px); }
+  .public-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; max-width: 1080px; }
+  .public-feature { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 18px; box-shadow: var(--shadow-sm); }
+  .public-feature h2 { margin-top: 0; font-size: 16px; }
+  .public-feature p { margin-bottom: 0; color: var(--muted); font-size: 14px; }
+  .legal-main { margin: 0 auto; max-width: 860px; padding: 48px 24px 80px; }
+  .legal-main h1 { margin-bottom: 8px; }
+  .legal-main h2 { margin-top: 30px; }
+  .legal-main p, .legal-main li { color: var(--ink-2); }
+  .legal-main ul { padding-left: 22px; }
+  .legal-updated { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+  .public-footer { border-top: 1px solid var(--border); padding: 18px clamp(20px, 5vw, 72px); color: var(--muted); font-size: 13px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   @media (max-width: 900px) {
     nav { position: static; width: 100%; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--border); overflow-x: auto; }
     nav .brand { padding: 6px 8px; font-size: 16px; }
@@ -489,6 +510,8 @@ const CSS = `
     .card { padding: 16px; }
     th, td { padding: 9px 10px; }
     .connection-table { min-width: 860px; }
+    .public-topbar { align-items: flex-start; flex-direction: column; }
+    .public-grid { grid-template-columns: 1fr; }
   }
 `;
 
@@ -569,6 +592,33 @@ const NAV = (current: string, email?: string) => `
   </div>
 </nav>
 `;
+
+const PUBLIC_HEADER = `
+  <header class="public-topbar">
+    <a class="public-brand" href="/"><svg class="brand-mark" viewBox="0 0 176 176" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><circle cx="88" cy="88" r="76" stroke="currentColor" stroke-width="24"/><line x1="100" y1="88" x2="100" y2="169" stroke="currentColor" stroke-width="24"/><line x1="76" y1="7" x2="76" y2="88" stroke="currentColor" stroke-width="24"/><rect x="64" y="75" width="48" height="24" fill="currentColor"/></svg>grantry</a>
+    <div class="public-links">
+      <a href="/privacy">Privacy Policy</a>
+      <a href="/terms">Terms of Service</a>
+      <a class="btn secondary" href="/login">Sign in</a>
+    </div>
+  </header>
+`;
+
+const PUBLIC_FOOTER = `
+  <footer class="public-footer">
+    <span>&copy; ${new Date().getFullYear()} grantry.ai</span>
+    <span><a href="/privacy">Privacy Policy</a> &middot; <a href="/terms">Terms of Service</a> &middot; <a href="mailto:<運営者のメール>">Contact</a></span>
+  </footer>
+`;
+
+function publicPage(title: string, body: string): string {
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} — grantry</title>
+  ${FAVICON}<style>${CSS}</style></head><body class="public-shell">
+  ${PUBLIC_HEADER}
+  ${body}
+  ${PUBLIC_FOOTER}
+  </body></html>`;
+}
 
 function safeJsonArray(s: string | null | undefined): string[] {
   if (!s) return [];
@@ -2056,8 +2106,107 @@ function envStatus(names: string[]): { present: boolean; variable: string; candi
   return { present: names.some((name) => !!process.env[name]), variable, candidates: names };
 }
 
-// --- /dashboard ---
-dashboardApp.get("/", (c) => c.redirect("/dashboard"));
+// --- Public pages required for OAuth app review ---
+dashboardApp.get("/", (c) => c.html(publicPage("OAuth credential broker for AI agents", `
+  <main class="public-main">
+    <section class="public-hero">
+      <h1>OAuth credential broker for AI agents.</h1>
+      <p>grantry lets teams connect third-party services such as Google Analytics, Google Ads, Google Search Console, GitHub, Slack, HubSpot, and other business tools, then grant specific AI agents access to only the connections they are allowed to use.</p>
+      <div class="row">
+        <a class="btn" href="/login">Open dashboard</a>
+        <a class="btn secondary" href="/privacy">Read privacy policy</a>
+      </div>
+    </section>
+    <section class="public-band">
+      <div class="public-grid">
+        <div class="public-feature">
+          <h2>Connection control</h2>
+          <p>Workspace owners decide which provider connections each agent can use.</p>
+        </div>
+        <div class="public-feature">
+          <h2>Provider-backed access</h2>
+          <p>Provider APIs continue to enforce their own account permissions and scopes.</p>
+        </div>
+        <div class="public-feature">
+          <h2>Audit visibility</h2>
+          <p>Agent tool calls and connection usage are logged so teams can review activity.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+`)));
+
+dashboardApp.get("/privacy", (c) => c.html(publicPage("Privacy Policy", `
+  <main class="legal-main">
+    <h1>Privacy Policy</h1>
+    <p class="legal-updated">Last updated: June 23, 2026</p>
+
+    <p>grantry.ai ("grantry", "we", "us") provides an OAuth credential broker and access-control dashboard for teams that connect business tools to AI agents. This Privacy Policy explains what information we collect, how we use it, and how users can request deletion.</p>
+
+    <h2>Information we collect</h2>
+    <ul>
+      <li>Account information such as email address, name, authentication session data, workspace membership, and application settings.</li>
+      <li>Provider connection information such as provider name, selected OAuth scopes, encrypted access tokens, encrypted refresh tokens, token expiration times, credential health metadata, and connection labels.</li>
+      <li>Operational logs such as agent name, provider connection used, tool name, request status, timestamps, and error summaries.</li>
+      <li>Support information you send to us directly, including email messages and debugging context.</li>
+    </ul>
+
+    <h2>Google user data</h2>
+    <p>When you connect a Google service, grantry requests only the Google OAuth scopes shown on the Google consent screen for that connection. Depending on the provider you choose, this may include access to Google Analytics, Google Ads, Google Search Console, Google Drive, Gmail, Google Calendar, Google Sheets, Google Tag Manager, BigQuery, Google Cloud, or Google Admin data.</p>
+    <p>We use Google user data only to provide the features you configure: storing the connection securely, refreshing tokens, checking connection health, listing available capabilities, routing authorized AI-agent requests to the selected Google API, and showing audit history in your dashboard.</p>
+    <p>We do not sell Google user data. We do not use Google user data for advertising. We do not use Google user data to train general-purpose AI models. We do not transfer Google user data to third parties except as necessary to provide the service you requested, comply with law, prevent abuse, or with your explicit direction.</p>
+
+    <h2>How we protect information</h2>
+    <p>OAuth tokens and provider credentials are encrypted at rest. Access to provider connections is controlled by workspace, connection, and agent grants. Audit logs are maintained to help account owners review how agents use configured connections.</p>
+
+    <h2>Data retention and deletion</h2>
+    <p>You can disconnect provider connections in the dashboard. Disconnecting a provider removes the stored credentials for that connection and prevents future agent use. You may also request account, workspace, or connection deletion by contacting us at <a href="mailto:<運営者のメール>"><運営者のメール></a>.</p>
+
+    <h2>Contact</h2>
+    <p>For privacy questions or deletion requests, contact <a href="mailto:<運営者のメール>"><運営者のメール></a>.</p>
+  </main>
+`)));
+
+dashboardApp.get("/terms", (c) => c.html(publicPage("Terms of Service", `
+  <main class="legal-main">
+    <h1>Terms of Service</h1>
+    <p class="legal-updated">Last updated: June 23, 2026</p>
+
+    <p>These Terms of Service govern your use of grantry.ai ("grantry", "we", "us"). By using grantry, you agree to these terms.</p>
+
+    <h2>Service</h2>
+    <p>grantry provides a dashboard and MCP-compatible gateway that lets teams connect third-party provider accounts and grant AI agents controlled access to those connections.</p>
+
+    <h2>Your responsibilities</h2>
+    <ul>
+      <li>You are responsible for the accounts, provider connections, agents, prompts, and automation workflows you configure.</li>
+      <li>You must have the right to connect each third-party account and authorize the requested OAuth scopes.</li>
+      <li>You must not use grantry to violate laws, provider terms, security controls, or the rights of others.</li>
+      <li>You are responsible for reviewing agent actions and keeping credentials, account access, and workspace membership current.</li>
+    </ul>
+
+    <h2>Third-party providers</h2>
+    <p>Provider APIs, accounts, data, rate limits, scopes, and permissions are controlled by the relevant third-party provider. grantry does not control those providers and is not responsible for provider availability, policy changes, or permission decisions.</p>
+
+    <h2>Acceptable use</h2>
+    <p>You may not attempt to bypass authorization checks, access another user's data, reverse engineer the service, overload the service, or use grantry for unlawful, harmful, deceptive, or abusive activity.</p>
+
+    <h2>Data and privacy</h2>
+    <p>Our handling of personal information and provider data is described in the <a href="/privacy">Privacy Policy</a>.</p>
+
+    <h2>Disclaimers</h2>
+    <p>The service is provided "as is" and "as available." To the fullest extent permitted by law, we disclaim warranties of merchantability, fitness for a particular purpose, non-infringement, and uninterrupted availability.</p>
+
+    <h2>Limitation of liability</h2>
+    <p>To the fullest extent permitted by law, grantry will not be liable for indirect, incidental, special, consequential, exemplary, or punitive damages, or for lost profits, lost data, or business interruption.</p>
+
+    <h2>Changes</h2>
+    <p>We may update these terms from time to time. Continued use of grantry after changes become effective means you accept the updated terms.</p>
+
+    <h2>Contact</h2>
+    <p>Questions about these terms can be sent to <a href="mailto:<運営者のメール>"><運営者のメール></a>.</p>
+  </main>
+`)));
 
 dashboardApp.get("/dashboard", async (c) => {
   const user = await getSessionUser(c);
