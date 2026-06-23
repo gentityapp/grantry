@@ -105,6 +105,8 @@ export async function callApolloTool(tool: string, args: ApolloArgs, apiKey: str
   }
 
   // People search (prospecting). Accepts a raw `data` body or convenience params.
+  // Apollo's public, API-key-accessible search lives at /mixed_people/api_search;
+  // /mixed_people/search is UI-internal and returns API_INACCESSIBLE for API keys.
   if (tool === "apollo/search_people") {
     const body = bodyFrom(args, [
       "q_keywords",
@@ -118,7 +120,7 @@ export async function callApolloTool(tool: string, args: ApolloArgs, apiKey: str
       "page",
       "per_page",
     ]);
-    return { structuredContent: await request(apiKey, "POST", "/mixed_people/search", body, tool) };
+    return { structuredContent: await request(apiKey, "POST", "/mixed_people/api_search", body, tool) };
   }
 
   // Person enrichment (match a single person by email/name/domain/linkedin_url).
@@ -138,6 +140,8 @@ export async function callApolloTool(tool: string, args: ApolloArgs, apiKey: str
   }
 
   // Organization / account search.
+  // Same UI-vs-API split as people search: /mixed_companies/api_search is the
+  // API-key-accessible endpoint; /mixed_companies/search is UI-internal.
   if (tool === "apollo/search_organizations") {
     const body = bodyFrom(args, [
       "q_organization_name",
@@ -148,7 +152,7 @@ export async function callApolloTool(tool: string, args: ApolloArgs, apiKey: str
       "page",
       "per_page",
     ]);
-    return { structuredContent: await request(apiKey, "POST", "/mixed_companies/search", body, tool) };
+    return { structuredContent: await request(apiKey, "POST", "/mixed_companies/api_search", body, tool) };
   }
 
   // Organization enrichment by domain.
