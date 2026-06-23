@@ -823,7 +823,7 @@ function parseOAuthAppCredentialInput(raw: string, providerDef: any) {
     parsed.client_auth_method
       ?? parsed.clientAuthMethod
       ?? parsed.oauthClientAuthMethod
-      ?? "CLIENT_SECRET_BASIC",
+      ?? defaultOAuthClientAuthMethod(providerDef.key, providerDef),
   ).trim().toUpperCase();
   return { clientId, clientSecret, oauthScopes, oauthOptionalScopes, oauthClientAuthMethod };
 }
@@ -909,7 +909,7 @@ async function resolveOAuthClientConfig(providerKey: string, providerDef: any, w
           clientSecret: decrypt(credential.encryptedCredential),
           oauthScopes: Array.isArray(meta.oauthScopes) ? meta.oauthScopes.map(String).filter(Boolean) : [],
           oauthOptionalScopes: Array.isArray(meta.oauthOptionalScopes) ? meta.oauthOptionalScopes.map(String).filter(Boolean) : [],
-          oauthClientAuthMethod: typeof meta.oauthClientAuthMethod === "string" ? meta.oauthClientAuthMethod : "CLIENT_SECRET_BASIC",
+          oauthClientAuthMethod: typeof meta.oauthClientAuthMethod === "string" ? meta.oauthClientAuthMethod : defaultOAuthClientAuthMethod(providerKey, providerDef),
         };
       }
     }
@@ -922,7 +922,7 @@ async function resolveOAuthClientConfig(providerKey: string, providerDef: any, w
       clientSecret: "",
       oauthScopes: providerDef.oauthScopes || [],
       oauthOptionalScopes: providerDef.oauthOptionalScopes || [],
-      oauthClientAuthMethod: "CLIENT_SECRET_BASIC",
+      oauthClientAuthMethod: defaultOAuthClientAuthMethod(providerKey, providerDef),
     };
   }
   const envPrefix = providerKey.toUpperCase();

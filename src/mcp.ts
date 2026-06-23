@@ -3353,7 +3353,7 @@ async function oauthClientConfigForRefresh(provider: string, workspaceId: string
           source: "workspace" as const,
           clientId,
           clientSecret: decrypt(credential.encryptedCredential),
-          clientAuthMethod: typeof meta.oauthClientAuthMethod === "string" ? meta.oauthClientAuthMethod : "CLIENT_SECRET_BASIC",
+          clientAuthMethod: typeof meta.oauthClientAuthMethod === "string" ? meta.oauthClientAuthMethod : (PROVIDERS[provider]?.oauthClientAuthMethod || "CLIENT_SECRET_POST"),
         };
       }
     }

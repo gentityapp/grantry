@@ -280,6 +280,8 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authTypes: ["oauth"],
     helpText: "Connect a Facebook user with access to the Meta Ads account via Business Manager. grantry exchanges the login for a long-lived (~60 day) access token; reconnect when it expires. Requires a Meta app with the Marketing API and the ads_read / ads_management permissions.",
     oauthSetupUrl: "https://developers.facebook.com/apps",
+    oauthAppOwner: "workspace",
+    oauthClientAuthMethod: "CLIENT_SECRET_POST",
     oauthScopes: ["ads_read", "ads_management", "business_management"],
     authorizeUrl: "https://www.facebook.com/v21.0/dialog/oauth",
     oauthTokenUrl: "https://graph.facebook.com/v21.0/oauth/access_token",
