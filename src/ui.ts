@@ -441,6 +441,8 @@ const CSS = `
   button:hover, .btn:hover { background: var(--accent-strong); text-decoration: none; color: #fff; transform: translateY(-1px); }
   button.secondary, .btn.secondary { background: var(--surface); color: var(--ink-2); border: 1px solid var(--border-strong); box-shadow: none; }
   button.secondary:hover, .btn.secondary:hover { background: var(--bg); color: var(--ink); transform: none; }
+  button.danger, .btn.danger { background: var(--danger); color: #fff; }
+  button.danger:hover, .btn.danger:hover { background: #b4233c; color: #fff; }
   .combo { position: relative; flex: 1; }
   .combo-btn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 9px 12px; background: var(--surface); color: var(--ink-2); border: 1px solid var(--border-strong); border-radius: 8px; font-weight: 400; font-size: 14px; text-align: left; box-shadow: none; }
   .combo-btn:hover { background: var(--surface); color: var(--ink-2); transform: none; }
@@ -1470,6 +1472,21 @@ dashboardApp.get("/workspaces", async (c) => {
         <td><form method="post" action="/workspaces/${ws.id}/invites/${inv.id}/revoke" style="margin:0;"><button type="submit" class="secondary" style="font-size:12px;padding:4px 8px;">Revoke</button></form></td>
       </tr>`).join("")}
       </tbody></table>` : ""}
+
+      ${m.role === "owner" ? `
+      <h3>Danger zone</h3>
+      <div style="border:1px solid var(--danger);background:var(--danger-soft);border-radius:10px;padding:14px;">
+        <div style="font-weight:700;color:var(--danger);">Delete workspace</div>
+        <div style="color:#687385;font-size:13px;margin-top:4px;">This permanently deletes this workspace and its members, invites, agents, connections, tenants, provider settings, and credentials.</div>
+        ${memberships.length > 1 ? `
+        <form method="post" action="/workspaces/${escapeHtml(ws.id)}/delete" style="margin-top:12px;">
+          <label for="deleteWorkspaceConfirm" style="font-size:13px;">Type the workspace name to confirm</label>
+          <div class="row" style="gap:8px;align-items:center;margin-top:6px;">
+            <input id="deleteWorkspaceConfirm" type="text" name="confirmName" placeholder="${escapeHtml(ws.displayName)}" autocomplete="off" required style="flex:1;">
+            <button type="submit" class="danger">Delete workspace</button>
+          </div>
+        </form>` : `<div style="color:#687385;font-size:13px;margin-top:10px;">Create or join another workspace before deleting this one.</div>`}
+      </div>` : ""}
     </div>`);
     }
   }
@@ -1515,6 +1532,35 @@ dashboardApp.post("/workspaces", async (c) => {
   // Drop the creator straight into the new workspace as the active context.
   setActiveWorkspaceCookie(c, ws.id);
   return c.redirect(`/workspaces?ok=${encodeURIComponent(`Workspace "${displayName}" created (slug: ${slug}) — now active`)}`);
+});
+
+dashboardApp.post("/workspaces/:id/delete", async (c) => {
+  const wsId = c.req.param("id");
+  const user = await getSessionUser(c);
+  if (!user?.id) return c.redirect("/login");
+
+  const form = await c.req.formData();
+  const confirmName = String(form.get("confirmName") ?? "").trim();
+  const memberships = await prisma.workspaceMember.findMany({
+    where: { userId: user.id },
+    include: { workspace: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const current = memberships.find((m) => m.workspaceId === wsId);
+  if (!current || current.role !== "owner") {
+    return c.redirect(`/workspaces?ok=${encodeURIComponent("Only the workspace owner can delete this workspace")}`);
+  }
+  if (memberships.length <= 1) {
+    return c.redirect(`/workspaces?ok=${encodeURIComponent("Create or join another workspace before deleting this one")}`);
+  }
+  if (confirmName !== current.workspace.displayName) {
+    return c.redirect(`/workspaces?ok=${encodeURIComponent("Workspace name did not match")}`);
+  }
+
+  const nextWorkspaceId = memberships.find((m) => m.workspaceId !== wsId)?.workspaceId;
+  await prisma.workspace.delete({ where: { id: wsId } });
+  if (nextWorkspaceId) setActiveWorkspaceCookie(c, nextWorkspaceId);
+  return c.redirect(`/workspaces?ok=${encodeURIComponent(`Workspace "${current.workspace.displayName}" deleted`)}`);
 });
 
 dashboardApp.post("/workspaces/:id/invite", async (c) => {
