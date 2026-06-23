@@ -251,27 +251,51 @@ export async function inspectCredential(provider: string, authType: string, toke
     }
 
     if (provider === "cloudflare") {
+      const cfHeaders = {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/json",
+      };
+      // /user/tokens/verify only works for User API Tokens. Account-scoped tokens
+      // return 401 here even though they operate fine, so treat verify as a best-effort
+      // hint and fall back to a real (non-consuming) zone listing before declaring failure.
       const resp = await fetchWithTimeout("https://api.cloudflare.com/client/v4/user/tokens/verify", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          Accept: "application/json",
-        },
+        headers: cfHeaders,
       });
       const body: any = await readJson(resp);
-      if (!resp.ok || body.success === false) {
-        return { provider, authType, status: "error", checkedAt, error: `Cloudflare token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      if (resp.ok && body.success !== false) {
+        return {
+          provider,
+          authType,
+          status: "ok",
+          subject: {
+            id: body.result?.id,
+            status: body.result?.status,
+          },
+          notes: ["Cloudflare token permissions are scoped in the Cloudflare dashboard and are not fully enumerated by token verification."],
+          checkedAt,
+        };
       }
-      return {
-        provider,
-        authType,
-        status: "ok",
-        subject: {
-          id: body.result?.id,
-          status: body.result?.status,
-        },
-        notes: ["Cloudflare token permissions are scoped in the Cloudflare dashboard and are not fully enumerated by token verification."],
-        checkedAt,
-      };
+
+      // Fallback: token may be account-scoped (verify returns 401/403). Confirm it can
+      // reach the zones API, which is what the connector actually uses.
+      const zonesResp = await fetchWithTimeout("https://api.cloudflare.com/client/v4/zones?per_page=1", {
+        headers: cfHeaders,
+      });
+      const zonesBody: any = await readJson(zonesResp);
+      if (zonesResp.ok && zonesBody.success !== false) {
+        return {
+          provider,
+          authType,
+          status: "ok",
+          notes: [
+            "Cloudflare token is account/zone-scoped (token verification endpoint is not available to it); validated against the zones API instead.",
+            "Cloudflare token permissions are scoped in the Cloudflare dashboard and are not fully enumerated by token verification.",
+          ],
+          checkedAt,
+        };
+      }
+
+      return { provider, authType, status: "error", checkedAt, error: `Cloudflare token check failed: ${zonesResp.status} ${JSON.stringify(zonesBody).slice(0, 300)}` };
     }
 
     if (provider === "clarity") {
