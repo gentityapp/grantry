@@ -322,8 +322,27 @@ export async function inspectCredential(provider: string, authType: string, toke
       );
       const body: any = await readJson(resp);
       const status = body?.status;
-      if (!resp.ok || status === "REQUEST_DENIED" || status === "INVALID_REQUEST") {
-        return { provider, authType, status: "error", checkedAt, error: `Google Maps API key check failed: ${resp.status} ${status ?? ""} ${body?.error_message ?? ""}`.trim() };
+      const errMsg = String(body?.error_message ?? "");
+      // REQUEST_DENIED covers both a truly invalid key and a valid key that simply isn't
+      // authorized for the Geocoding probe (Geocoding API not enabled, or the key is
+      // restricted to other APIs). Only the former is a broken credential.
+      const keyInvalid = /api[_ ]?key/i.test(errMsg) && /invalid|not valid/i.test(errMsg);
+      const denied = !resp.ok || status === "REQUEST_DENIED" || status === "INVALID_REQUEST";
+      if (denied && (keyInvalid || (!resp.ok && !status))) {
+        return { provider, authType, status: "error", checkedAt, error: `Google Maps API key check failed: ${resp.status} ${status ?? ""} ${errMsg}`.trim() };
+      }
+      if (denied) {
+        return {
+          provider,
+          authType,
+          status: "ok",
+          notes: [
+            "Google Maps Platform API keys are sent as the `key` query parameter.",
+            `Key accepted but the Geocoding probe was denied (${status || resp.status}${errMsg ? ": " + errMsg : ""}) — likely the Geocoding API is not enabled or the key is restricted to other APIs.`,
+            "Enable the APIs you intend to use (Geocoding, Places, Directions, Distance Matrix) and apply key restrictions in Google Cloud Console.",
+          ],
+          checkedAt,
+        };
       }
       return {
         provider,
@@ -492,6 +511,21 @@ export async function inspectCredential(provider: string, authType: string, toke
           },
         });
         const body: any = await readJson(resp);
+        // 403 = the token authenticates but this private app lacks the CRM contacts scope
+        // (e.g. a marketing/content-only app). That is not a broken credential, so only a
+        // genuine auth failure (401) or other error should mark it broken.
+        if (resp.status === 403) {
+          return {
+            provider,
+            authType,
+            status: "ok",
+            notes: [
+              "HubSpot private app token is valid but lacks the CRM contacts scope; validated by authentication only.",
+              "HubSpot private app token permissions are managed in HubSpot and are not fully enumerated here.",
+            ],
+            checkedAt,
+          };
+        }
         if (!resp.ok) {
           return { provider, authType, status: "error", checkedAt, error: `HubSpot private app token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
         }
@@ -778,6 +812,19 @@ export async function inspectCredential(provider: string, authType: string, toke
         headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
       });
       const body: any = await readJson(resp);
+      // 401 = invalid/expired token (broken). 403 = valid token lacking the offices.read scope.
+      if (resp.status === 403) {
+        return {
+          provider,
+          authType,
+          status: "ok",
+          notes: [
+            "Money Forward token is valid but lacks the offices.read scope; validated by authentication only.",
+            "Money Forward Cloud Accounting API uses OAuth 2.0; API key authentication is not supported for this provider.",
+          ],
+          checkedAt,
+        };
+      }
       if (!resp.ok) {
         return { provider, authType, status: "error", checkedAt, error: `Money Forward Cloud Accounting token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
       }
@@ -929,6 +976,10 @@ export async function inspectCredential(provider: string, authType: string, toke
     if (provider === "sendgrid") {
       const resp = await fetchWithTimeout("https://api.sendgrid.com/v3/scopes", { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
       const body: any = await readJson(resp);
+      // 401 = invalid key. 403 = valid send-only key that cannot read /v3/scopes — not broken.
+      if (resp.status === 403) {
+        return { provider, authType, status: "ok", notes: ["SendGrid API key is valid but cannot read its own scopes (likely a mail.send-only key); validated by authentication only.", "SendGrid API keys are sent as Authorization: Bearer."], checkedAt };
+      }
       if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `SendGrid API key check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
       return { provider, authType, status: "ok", scopes: Array.isArray(body.scopes) ? body.scopes : [], notes: ["SendGrid API keys are sent as Authorization: Bearer. Restrict to mail.send for send-only use."], checkedAt };
     }
@@ -944,6 +995,11 @@ export async function inspectCredential(provider: string, authType: string, toke
     if (provider === "stripe") {
       const resp = await fetchWithTimeout("https://api.stripe.com/v1/balance", { headers: { Authorization: `Bearer ${token}`, Accept: "application/json", "Stripe-Version": "2024-06-20" } });
       const body: any = await readJson(resp);
+      // 401 = invalid/expired key (broken). 403 = valid restricted key lacking balance read —
+      // authenticated, so not broken.
+      if (resp.status === 403) {
+        return { provider, authType, status: "ok", notes: ["Stripe restricted key is valid but lacks balance read permission; validated by authentication only.", "Stripe secret keys are sent as Authorization: Bearer."], checkedAt };
+      }
       if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `Stripe key check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
       return { provider, authType, status: "ok", notes: ["Stripe secret keys are sent as Authorization: Bearer. Use a restricted key to limit access."], checkedAt };
     }
@@ -951,6 +1007,10 @@ export async function inspectCredential(provider: string, authType: string, toke
     if (provider === "webflow") {
       const resp = await fetchWithTimeout("https://api.webflow.com/v2/sites", { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
       const body: any = await readJson(resp);
+      // 401 = invalid token. 403 = valid token missing the sites scope — authenticated, not broken.
+      if (resp.status === 403) {
+        return { provider, authType, status: "ok", notes: ["Webflow token is valid but lacks the sites read scope; validated by authentication only.", "Webflow tokens are sent as Authorization: Bearer to the Data API v2."], checkedAt };
+      }
       if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `Webflow token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
       const sites = Array.isArray(body.sites) ? body.sites : [];
       return { provider, authType, status: "ok", resources: sites.slice(0, 50).map((s: any) => ({ id: s.id, displayName: s.displayName })), notes: ["Webflow tokens are sent as Authorization: Bearer to the Data API v2."], checkedAt };
