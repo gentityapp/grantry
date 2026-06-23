@@ -82,7 +82,7 @@ function oauthSuccessResponse({ url }: FetchCall) {
         "https://www.googleapis.com/auth/adwords",
         "https://www.googleapis.com/auth/gmail.readonly",
         "https://www.googleapis.com/auth/youtube.readonly",
-        "https://www.googleapis.com/auth/calendar",
+        "https://www.googleapis.com/auth/calendar.readonly",
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/tagmanager.readonly",
         "https://www.googleapis.com/auth/cloud-platform.read-only",
