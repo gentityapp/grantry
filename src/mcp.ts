@@ -213,12 +213,24 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       owner: { type: "string", description: "Repository owner (user or org)." },
       repo: { type: "string", description: "Repository name." },
       branch: { type: "string", description: "Target branch. Defaults to main. Created if it does not exist." },
+      base_branch: { type: "string", description: "When the target branch is new, base it on this branch (inherit its history + full tree). Defaults to the repo's default branch. Prevents orphan branches." },
       commit_message: { type: "string", description: "Commit message. Defaults to 'chore: update via grantry'." },
       files: {
         type: "object",
         additionalProperties: { type: "string" },
         description: "Map of repository file path to UTF-8 text content, e.g. { \"README.md\": \"# Title\", \"src/app.ts\": \"...\" }. All files land in a single commit.",
       },
+    };
+  }
+  if (toolName === "github/create_pull_request") {
+    return {
+      owner: { type: "string", description: "Repository owner (user or org)." },
+      repo: { type: "string", description: "Repository name." },
+      title: { type: "string", description: "Pull request title." },
+      head: { type: "string", description: "Branch with the changes (e.g. seo/2026-06-20-foo)." },
+      base: { type: "string", description: "Branch to merge into. Defaults to the repo's default branch." },
+      body: { type: "string", description: "PR description (Markdown)." },
+      draft: { type: "boolean", description: "Create as a draft PR. Defaults to true." },
     };
   }
   if (toolName === "github/create_repo") {
@@ -2275,6 +2287,7 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "github/list_issues") return ["owner", "repo"];
   if (toolName === "github/create_issue") return ["owner", "repo", "title"];
   if (toolName === "github/git_push_repo") return ["owner", "repo", "files"];
+  if (toolName === "github/create_pull_request") return ["owner", "repo", "title", "head"];
   if (toolName === "github/create_repo") return ["name"];
   if (toolName === "notion/get_page") return ["page_id"];
   if (toolName === "notion/query_db") return ["database_id"];

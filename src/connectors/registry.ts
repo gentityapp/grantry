@@ -151,10 +151,11 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     oauthScopes: ["repo", "read:user"],
     authorizeUrl: "https://github.com/login/oauth/authorize",
     oauthTokenUrl: "https://github.com/login/oauth/access_token",
-    tools: ["github/list_repos", "github/get_repo", "github/get_file_contents", "github/list_issues", "github/create_issue", "github/git_push_repo", "github/create_repo"],
+    tools: ["github/list_repos", "github/get_repo", "github/get_file_contents", "github/list_issues", "github/create_issue", "github/git_push_repo", "github/create_pull_request", "github/create_repo"],
     toolScopeRequirements: {
       "github/create_issue": ["repo"],
       "github/git_push_repo": ["repo"],
+      "github/create_pull_request": ["repo"],
       "github/create_repo": ["repo"],
     },
     implemented: true,

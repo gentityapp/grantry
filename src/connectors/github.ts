@@ -176,16 +176,53 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
       }
     };
 
-    // 1. Resolve the branch's current commit + base tree (404 => empty repo).
+    // 1. Resolve the target branch's current commit + base tree.
+    //    If the target branch does NOT exist yet, base the new branch on
+    //    `base_branch` (arg) or the repo's default branch, so the new commit
+    //    has that branch's commit as its parent AND inherits its full tree.
+    //    Without this, a new branch was created as an ORPHAN commit with only
+    //    the pushed files (no parent, no base_tree) -> `compare main...branch`
+    //    returns "No common ancestor", PRs can't be created, and merging would
+    //    delete every untouched file. (Root cause of the 2026-06-16 + 2026-06-20
+    //    death-store incidents; the instruction-level "branch from main" knob
+    //    could not fix it because the agent cannot influence this resolution.)
     let parentCommitSha: string | null = null;
     let baseTreeSha: string | undefined;
+    let branchExists = false;
     const refRes = await fetch(`${base}/ref/heads/${encodeURIComponent(branch)}`, { headers });
     if (refRes.ok) {
       const ref: any = await refRes.json();
       parentCommitSha = ref.object.sha;
       const parentCommit = await gh(`/commits/${parentCommitSha}`);
       baseTreeSha = parentCommit.tree.sha;
-    } else if (refRes.status !== 404 && refRes.status !== 409) {
+      branchExists = true;
+    } else if (refRes.status === 404 || refRes.status === 409) {
+      await refRes.text(); // drain
+      // New branch: resolve a base branch to inherit history + tree from.
+      let baseBranch = String(args.base_branch ?? args.baseBranch ?? "").trim();
+      if (!baseBranch) {
+        const repoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
+        if (repoRes.ok) {
+          const repoInfo: any = await repoRes.json();
+          baseBranch = String(repoInfo.default_branch ?? "main");
+        } else {
+          await repoRes.text();
+        }
+      }
+      if (baseBranch && baseBranch !== branch) {
+        const baseRefRes = await fetch(`${base}/ref/heads/${encodeURIComponent(baseBranch)}`, { headers });
+        if (baseRefRes.ok) {
+          const baseRef: any = await baseRefRes.json();
+          parentCommitSha = baseRef.object.sha;
+          const baseCommit = await gh(`/commits/${parentCommitSha}`);
+          baseTreeSha = baseCommit.tree.sha;
+        } else {
+          // Base branch missing too => genuinely empty repo: fall through to an
+          // initial (parentless) commit, which is correct for that case.
+          await baseRefRes.text();
+        }
+      }
+    } else {
       throw new Error(`git_push_repo resolve ref failed: ${refRes.status} ${await refRes.text()}`);
     }
 
@@ -218,8 +255,10 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
       }),
     });
 
-    // 5. Point the branch at the new commit (PATCH existing, POST to create).
-    if (parentCommitSha) {
+    // 5. Point the branch at the new commit (PATCH existing branch, POST to
+    //    create a new one). Keyed on whether the TARGET branch already existed,
+    //    not on parentCommitSha (a new branch now also has a parent commit).
+    if (branchExists) {
       await gh(`/refs/heads/${encodeURIComponent(branch)}`, {
         method: "PATCH",
         body: JSON.stringify({ sha: commit.sha, force: false }),
@@ -237,7 +276,8 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
         files_pushed: tree.length,
         files: tree.map((t) => t.path),
         branch,
-        created_branch: !parentCommitSha,
+        created_branch: !branchExists,
+        based_on_parent: Boolean(parentCommitSha),
         url: `https://github.com/${owner}/${repo}/commit/${commit.sha}`,
       },
     };
@@ -263,6 +303,43 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
     if (!r.ok) throw new Error(`GitHub create_repo failed: ${r.status} ${await r.text()}`);
     const j: any = await r.json();
     return { structuredContent: { id: j.id, name: j.full_name, url: j.html_url, org: org || null } };
+  }
+
+  if (tool === "github/create_pull_request") {
+    const owner = String(args.owner ?? "");
+    const repo = String(args.repo ?? "");
+    const title = String(args.title ?? "");
+    const head = String(args.head ?? "").trim();
+    if (!owner || !repo) throw new Error("owner and repo are required");
+    if (!title) throw new Error("title is required");
+    if (!head) throw new Error("head (the branch with changes) is required");
+
+    // Resolve base branch (default to the repo's default branch).
+    let base = String(args.base ?? args.base_branch ?? "").trim();
+    if (!base) {
+      const repoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
+      if (!repoRes.ok) throw new Error(`GitHub create_pull_request resolve repo failed: ${repoRes.status} ${await repoRes.text()}`);
+      const repoInfo: any = await repoRes.json();
+      base = String(repoInfo.default_branch ?? "main");
+    }
+    const draft = args.draft === undefined ? true : Boolean(args.draft);
+
+    const r = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls`, {
+      method: "POST", headers,
+      body: JSON.stringify({ title, head, base, body: args.body ?? "", draft }),
+    });
+    if (!r.ok) throw new Error(`GitHub create_pull_request failed: ${r.status} ${await r.text()}`);
+    const j: any = await r.json();
+    return {
+      structuredContent: {
+        number: j.number,
+        url: j.html_url,
+        state: j.state,
+        draft: j.draft,
+        head: j.head?.ref,
+        base: j.base?.ref,
+      },
+    };
   }
 
   throw new Error(`Unknown GitHub tool: ${tool}`);
