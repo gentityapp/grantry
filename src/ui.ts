@@ -1171,14 +1171,14 @@ function healthStatusFromConnection(cn: {
   healthStatusSnapshot?: string | null;
   healthCheckedAtSnapshot?: Date | null;
 }) {
-  if (cn.healthStatusSnapshot) {
-    return {
-      status: cn.healthStatusSnapshot,
-      checkedAt: cn.healthCheckedAtSnapshot ?? null,
-      derived: false,
-    };
-  }
   if (!cn.credentialMetadata || cn.credentialMetadata === "{}") {
+    if (cn.healthStatusSnapshot) {
+      return {
+        status: cn.healthStatusSnapshot,
+        checkedAt: cn.healthCheckedAtSnapshot ?? null,
+        derived: false,
+      };
+    }
     return { status: "unchecked", checkedAt: null, derived: false };
   }
   const health = deriveCredentialHealth({
@@ -1186,6 +1186,13 @@ function healthStatusFromConnection(cn: {
     credentialValidatedAt: cn.credentialValidatedAt,
     accessTokenExpiresAt: cn.accessTokenExpiresAt,
   });
+  if (cn.healthStatusSnapshot && cn.healthStatusSnapshot !== "unknown") {
+    return {
+      status: cn.healthStatusSnapshot,
+      checkedAt: cn.healthCheckedAtSnapshot ?? health.healthCheckedAt,
+      derived: false,
+    };
+  }
   return { status: health.healthStatus, checkedAt: health.healthCheckedAt, derived: true };
 }
 
