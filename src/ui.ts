@@ -3817,11 +3817,15 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             </div>
           </div>
           <input type="hidden" name="auth_method" id="authMethodHidden" value="">
+          <div class="field" id="reuseConnectionRow" style="display:none;">
+            <label for="reuseConnectionId">Connection</label>
+            <select name="reuse_connection_id" id="reuseConnectionId"></select>
+            <div class="field-hint">Creates a new scope-scoped connection using the selected workspace credential.</div>
+          </div>
           <div class="field" id="credFieldRow">
             <label for="credential">Credential</label>
             <textarea name="credential" id="credential" rows="3"></textarea>
             <div class="field-hint" id="credHint"></div>
-            <div class="field-hint" id="reuseHint"></div>
             <div id="patLinkRow" style="margin-top:6px;display:none;">
               <a id="patLink" href="#" target="_blank" rel="noopener" style="font-size:13px;">🔗 Get a new token here →</a>
             </div>
@@ -3888,7 +3892,8 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         const providerSearch = document.getElementById('providerSearch');
         const providerSearchEmpty = document.getElementById('providerSearchEmpty');
         const credHint = document.getElementById('credHint');
-        const reuseHint = document.getElementById('reuseHint');
+        const reuseConnectionRow = document.getElementById('reuseConnectionRow');
+        const reuseConnectionId = document.getElementById('reuseConnectionId');
         const credField = document.getElementById('credential');
         const credFieldRow = document.getElementById('credFieldRow');
         const serverCredentialHint = document.getElementById('serverCredentialHint');
@@ -3971,10 +3976,14 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           const needsWorkspaceOAuthApp = useOauth && WORKSPACE_OAUTH_APP_PROVIDERS.has(sel.value);
           const reusable = REUSABLE_BY_PROVIDER_AUTH[sel.value + ':' + authType] || [];
           credHint.textContent = p.helpText;
-          if (reuseHint) {
-            reuseHint.innerHTML = usePat && reusable.length
-              ? 'Leave blank to use an existing workspace connection: ' + reusable.slice(0, 3).map(c => '<code>' + escapeText(c.label) + '</code> <span style="color:#8792a2;">(' + escapeText(c.scope) + ')</span>').join(', ') + (reusable.length > 3 ? ' ...' : '')
+          if (reuseConnectionRow && reuseConnectionId) {
+            const previousReuseConnectionId = reuseConnectionId.value;
+            reuseConnectionRow.style.display = usePat && reusable.length ? "" : "none";
+            reuseConnectionId.innerHTML = usePat && reusable.length
+              ? reusable.map(c => '<option value="' + escapeText(c.id) + '">Use existing: ' + escapeText(c.label) + ' (' + escapeText(c.scope) + ')</option>').join('') + '<option value="">Paste a new credential instead</option>'
               : '';
+            if (usePat && reusable.some(c => c.id === previousReuseConnectionId)) reuseConnectionId.value = previousReuseConnectionId;
+            if (usePat && previousReuseConnectionId === "") reuseConnectionId.value = "";
           }
           if (serverCredentialHint) {
             if (sel.value === "google_ads") {
@@ -4003,9 +4012,14 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             ? "Paste the full service account JSON key file ({ \\"type\\": \\"service_account\\", ... })"
             : "Paste your " + tokenLabel + (sel.value === "hubspot" ? " here (starts with pat-)" : " here");
           credField.disabled = false;
-          credField.required = (usePat && reusable.length === 0) || useSa;
+          const reusingExisting = usePat && reusable.length > 0 && reuseConnectionId && reuseConnectionId.value;
+          credField.required = (usePat && !reusingExisting) || useSa;
           credFieldRow.style.opacity = "1";
           credFieldRow.style.display = useOauth ? "none" : "";
+          if (usePat && reusingExisting) {
+            credField.value = "";
+            credField.placeholder = "Selected existing connection will be reused";
+          }
           if (oauthAppFieldRow) {
             oauthAppFieldRow.style.display = needsWorkspaceOAuthApp ? "" : "none";
             if (oauthRedirectUri) oauthRedirectUri.value = OAUTH_REDIRECT_ORIGIN + "/oauth/" + sel.value + "/callback";
@@ -4158,6 +4172,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           }
         });
         updateUI();
+        if (reuseConnectionId) reuseConnectionId.addEventListener('change', updateUI);
       </script>
       `}
     </main></body></html>
@@ -4405,6 +4420,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     const provider = String(body.provider ?? "").trim();
     const authMethod = String(body.auth_method ?? "").trim();
     let credential = String(body.credential ?? "").trim();
+    const reuseConnectionId = String(body.reuse_connection_id ?? "").trim();
 
     const providerDef = await getProviderForWorkspace(provider, wsId);
     if (!providerDef) return c.html("<h1>unknown provider</h1>", 400);
@@ -4417,6 +4433,12 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     const wantsSa = authMethod === "service_account";
     const wantsOauth = authMethod === "oauth" || (!authMethod && providerDef.authTypes.includes("oauth") && !providerDef.authTypes.includes("pat") && !providerDef.authTypes.includes("service_account"));
     const wantsPat = authMethod === "pat" || (!authMethod && providerDef.authTypes.includes("pat") && !providerDef.authTypes.includes("oauth"));
+    if (reuseConnectionId && !wantsPat) {
+      return c.html("<h1>existing connection reuse is only supported for paste-token providers</h1>", 400);
+    }
+    if (reuseConnectionId && credential) {
+      return c.html("<h1>choose an existing connection or paste a new credential, not both</h1>", 400);
+    }
     if (wantsOauth) {
       const structuredOAuthAppCredential = oauthAppCredentialFromStructuredFields(body, "", defaultOAuthClientAuthMethod(provider, providerDef));
       if (structuredOAuthAppCredential) credential = structuredOAuthAppCredential;
@@ -4531,6 +4553,26 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     } else if (existingConn) {
       conn = existingConn;
       await ensureProviderCredentialForConnection(existingConn, user.id);
+    } else if (reuseConnectionId) {
+      const reusableConn = await prisma.connection.findFirst({
+        where: {
+          id: reuseConnectionId,
+          provider,
+          authType: "pat",
+          ownerId: user.id,
+          workspaceId: tenantRow.workspaceId ?? wsId,
+          enabled: true,
+          scope: { not: scope },
+        },
+      });
+      if (!reusableConn) {
+        return c.html(`<h1>existing ${escapeHtml(providerDef.label)} connection not found</h1><p>Select an enabled workspace connection, or paste a new credential.</p><p><a href="/tenants/${scope}/edit">Back</a></p>`, 400);
+      }
+      conn = await createTenantConnectionFromCredential({
+        tenant: tenantRow,
+        sourceConnection: reusableConn,
+        createdById: user.id,
+      });
     } else {
       const reusableConnsForProvider = await prisma.connection.findMany({
         where: {
