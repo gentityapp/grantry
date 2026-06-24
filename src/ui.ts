@@ -3168,6 +3168,7 @@ dashboardApp.get("/connections", async (c) => {
                       : canScopeAction
                         ? `<button type="submit" form="recheck_connection_${cn.id}" class="secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Check now</button>`
                         : '<span style="color:#687385;font-size:12px;">Open scope to repair</span>'}
+                    <a href="/connections/${encodeURIComponent(cn.id)}/edit" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Edit connection</a>
                     ${canScopeAction ? `<a href="/tenants/${encodeURIComponent(scope)}/edit#connections" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Open scope</a>` : ""}
                     ${credentialSettingsLink}
                   </span></td>
@@ -3182,6 +3183,167 @@ dashboardApp.get("/connections", async (c) => {
         : "").join("")}
     </main></body></html>
   `);
+});
+
+// --- /connections/:connectionId/edit — direct repair/edit for one connection ---
+dashboardApp.get("/connections/:connectionId/edit", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+
+  const wsId = await getActiveWorkspaceId(c);
+  const connectionId = c.req.param("connectionId");
+  const notice = c.req.query("ok") || c.req.query("err");
+  const noticeKind = c.req.query("err") ? "error" : "ok";
+  const conn = await prisma.connection.findFirst({
+    where: { id: connectionId, ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) },
+    include: {
+      tenant: { select: { slug: true, displayName: true } },
+      agentGrants: {
+        where: { agent: { enabled: true, ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) } },
+        include: { agent: { select: { id: true, name: true } } },
+      },
+    },
+  });
+  if (!conn) return c.html("<h1>connection not found</h1>", 404);
+
+  const providerDef = getProvider(conn.provider);
+  const providerName = providerDisplayName(conn.provider);
+  const scope = conn.scope || "";
+  const canReconnect = conn.authType === "oauth" && /^[a-z0-9_-]+$/.test(scope);
+  const canRotateSecret = ["pat", "private_app"].includes(conn.authType);
+  const tokenLabel = conn.authType === "private_app" ? "private app token" : "token";
+  const credentialSettingsLink = providerCredentialSettingsLink(conn.provider, conn.authType);
+  const health = healthStatusFromConnection(conn);
+  const showHealthTimestamp = ["ok", "warn", "error"].includes(String(health.status));
+
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Edit connection — grantry</title>
+    ${FAVICON}<style>${CSS}</style></head><body>
+    ${NAV("connections", user?.email)}
+    <main>
+      <div class="row spread" style="margin-bottom:16px;">
+        <div>
+          <h1 style="margin:0;">Edit connection</h1>
+          <p style="color:#687385;margin:6px 0 0;">Update the saved connection record and repair its credential when possible.</p>
+        </div>
+        <a href="/connections" class="btn secondary">Back to connections</a>
+      </div>
+      ${notice ? noticeBanner(String(notice), noticeKind) : ""}
+
+      <div class="card">
+        <div class="row spread" style="align-items:flex-start;gap:16px;">
+          <div>
+            <span class="provider-cell">${providerIcon(conn.provider)}<span>${escapeHtml(providerName)}</span></span>
+            <br><code>${escapeHtml(conn.provider)}</code> <span class="tool-pill">${escapeHtml(authTypeLabel(conn.provider, conn.authType))}</span>
+            <p style="color:#687385;margin:10px 0 0;">
+              Scope:
+              ${scope ? `<a href="/tenants/${encodeURIComponent(scope)}/edit#connections"><span class="badge scoped">${escapeHtml(conn.tenant?.displayName && conn.tenant.displayName !== scope ? conn.tenant.displayName : scope)}</span></a> <code>${escapeHtml(scope)}</code>` : '<span class="badge unscoped">legacy unscoped</span>'}
+            </p>
+          </div>
+          <div>
+            ${renderCredentialHealthBadge(conn)}
+            ${oauthTokenStatus(conn)}
+            ${showHealthTimestamp && health.checkedAt ? `<br><span style="color:#687385;font-size:12px;">Checked ${health.checkedAt.toISOString().slice(0, 16).replace("T", " ")}</span>` : ""}
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Connection settings</h2>
+        <form method="post" action="/connections/${encodeURIComponent(conn.id)}/edit">
+          <label for="label">Label</label>
+          <input type="text" name="label" id="label" value="${escapeHtml(conn.label)}" required>
+          <label style="font-weight:normal;margin-top:12px;"><input type="checkbox" name="enabled" ${conn.enabled ? "checked" : ""}> enabled</label>
+          ${canRotateSecret ? `
+            <hr style="border:none;border-top:1px solid #e3e8ee;margin:18px 0;">
+            <label for="credential">Replace ${escapeHtml(tokenLabel)}</label>
+            <textarea name="credential" id="credential" rows="5" placeholder="${escapeHtml(providerDef ? credentialPlaceholder(conn.provider, providerDef.label, conn.authType) : `Paste new ${tokenLabel}`)}"></textarea>
+            <p class="field-hint">Leave blank to keep the saved credential. Pasting a new value validates it and updates any shared provider credential snapshot.</p>
+            ${credentialSettingsLink ? `<p style="margin-top:8px;">${credentialSettingsLink}</p>` : ""}
+          ` : ""}
+          <button type="submit" style="margin-top:14px;">Save connection</button>
+        </form>
+      </div>
+
+      ${conn.authType === "oauth" ? `
+        <div class="card">
+          <h2>OAuth repair</h2>
+          <p class="field-hint" style="margin-top:0;">Use Reconnect when the OAuth token is expired, revoked, or missing scopes. This refreshes this exact connection in place.</p>
+          <span class="stacked-actions">
+            ${canReconnect ? `<a href="/oauth/${encodeURIComponent(conn.provider)}/start?tenant=${encodeURIComponent(scope)}&reauth=1&connection_id=${encodeURIComponent(conn.id)}&return_to=connections" class="btn">Reconnect</a>` : '<span class="badge denied">Reconnect requires a scoped connection</span>'}
+            ${credentialSettingsLink}
+          </span>
+        </div>
+      ` : ""}
+
+      <div class="card">
+        <h2>Granted agents</h2>
+        ${conn.agentGrants.length
+          ? conn.agentGrants.map((g) => `<a href="/agents/${encodeURIComponent(g.agent.id)}"><code>${escapeHtml(g.agent.name)}</code></a>`).join("<br>")
+          : '<span class="badge denied">no agent grant</span>'}
+      </div>
+    </main></body></html>
+  `);
+});
+
+dashboardApp.post("/connections/:connectionId/edit", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+
+  const wsId = await getActiveWorkspaceId(c);
+  const connectionId = c.req.param("connectionId");
+  const conn = await prisma.connection.findFirst({
+    where: { id: connectionId, ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) },
+  });
+  if (!conn) return c.html("<h1>connection not found</h1>", 404);
+
+  const body = await c.req.parseBody();
+  const label = String(body.label ?? "").trim();
+  if (!label) return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent("Label is required")}`);
+
+  const enabled = body.enabled !== undefined;
+  const newCredential = String(body.credential ?? "").trim();
+  const baseUpdate = { label, enabled };
+
+  if (newCredential && !["pat", "private_app"].includes(conn.authType)) {
+    return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent("This connection type is repaired with Reconnect, not by pasting a credential")}`);
+  }
+
+  if (!newCredential) {
+    const updated = await prisma.connection.update({ where: { id: conn.id }, data: baseUpdate });
+    if (updated.credentialId) {
+      await prisma.providerCredential.update({ where: { id: updated.credentialId }, data: { label: updated.label } });
+    }
+    return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?ok=${encodeURIComponent("Connection settings saved.")}`);
+  }
+
+  const providerDef = getProvider(conn.provider);
+  if (!providerDef) return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent("Unknown provider")}`);
+
+  let credentialMeta;
+  try {
+    credentialMeta = await credentialMetadataForStorage(conn.provider, conn.authType, newCredential);
+  } catch (e: any) {
+    const message = String(e?.message ?? e);
+    return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent(`Credential validation failed: ${message}`)}`);
+  }
+
+  await rotateSharedCredential({
+    credentialId: conn.credentialId,
+    connectionId: conn.id,
+    data: {
+      encryptedCredential: encrypt(newCredential),
+      refreshToken: null,
+      accessTokenExpiresAt: null,
+      ...credentialMeta,
+    },
+  });
+  await prisma.connection.update({ where: { id: conn.id }, data: baseUpdate });
+  if (conn.credentialId) {
+    await prisma.providerCredential.update({ where: { id: conn.credentialId }, data: { label } });
+  }
+
+  return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?ok=${encodeURIComponent("Connection credential updated and checked.")}`);
 });
 
 // --- /tenants ---
