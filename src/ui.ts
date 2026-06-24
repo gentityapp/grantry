@@ -3053,7 +3053,6 @@ dashboardApp.get("/connections", async (c) => {
     where: { ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) },
     include: {
       tenant: { select: { slug: true, displayName: true } },
-      credential: { select: { id: true, label: true, healthStatus: true, healthCheckedAt: true } },
       agentGrants: {
         where: { agent: { enabled: true, ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) } },
         include: { agent: { select: { id: true, name: true, enabled: true } } },
@@ -3097,7 +3096,7 @@ dashboardApp.get("/connections", async (c) => {
         <h1 style="margin:0;">Connections</h1>
         <a href="/tenants/new" class="btn">+ New scope connection</a>
       </div>
-      <p style="color:#687385;margin-top:-8px;">Workspace-wide health view for scope connections. Credentials are managed from Providers; scope wiring is edited from each scope.</p>
+      <p style="color:#687385;margin-top:-8px;">Workspace-wide health view for scope connections. Provider app and token settings are linked from each row's actions.</p>
       ${notice ? noticeBanner(String(notice), noticeKind) : ""}
 
       <div class="row" style="gap:16px;flex-wrap:wrap;margin-bottom:24px;">
@@ -3136,7 +3135,7 @@ dashboardApp.get("/connections", async (c) => {
 
         <div class="table-wrap">
           <table class="connection-table">
-            <thead><tr><th>Connection</th><th>Scope</th><th>Health</th><th>Credential</th><th>Agents</th><th>Updated</th><th>Action</th></tr></thead>
+            <thead><tr><th>Connection</th><th>Scope</th><th>Health</th><th>Agents</th><th>Updated</th><th>Action</th></tr></thead>
             <tbody>
               ${rows.length ? rows.map(({ cn, health, providerName }) => {
                 const scope = cn.scope || "";
@@ -3144,10 +3143,6 @@ dashboardApp.get("/connections", async (c) => {
                 const needsReconnect = cn.authType === "oauth" && cn.accessTokenExpiresAt && cn.accessTokenExpiresAt < new Date() && !cn.refreshToken;
                 const credentialSettingsLink = providerCredentialSettingsLink(cn.provider, cn.authType);
                 const showHealthTimestamp = ["ok", "warn", "error"].includes(String(health.status));
-                const canonicalHealthStatus = cn.credential?.healthStatus ?? null;
-                const canonicalHealthLine = canonicalHealthStatus && canonicalHealthStatus !== "unknown"
-                  ? `<br><span style="color:#687385;font-size:12px;">canonical: ${escapeHtml(canonicalHealthStatus)}</span>`
-                  : "";
                 return `
                 <tr>
                   <td>
@@ -3163,9 +3158,6 @@ dashboardApp.get("/connections", async (c) => {
                     ${!cn.enabled ? '<br><span class="badge denied">disabled</span>' : ""}
                     ${needsReconnect ? '<br><span class="badge denied">needs reconnect</span>' : ""}
                   </td>
-                  <td>${cn.credential
-                    ? `<a href="/providers"><code>${escapeHtml(cn.credential.label)}</code></a>${canonicalHealthLine}`
-                    : '<span class="badge unscoped">legacy snapshot</span>'}</td>
                   <td>${cn.agentGrants.length
                     ? cn.agentGrants.map((g) => `<a href="/agents/${encodeURIComponent(g.agent.id)}"><code>${escapeHtml(g.agent.name)}</code></a>`).join("<br>")
                     : '<span class="badge denied">no agent grant</span>'}</td>
@@ -3180,7 +3172,7 @@ dashboardApp.get("/connections", async (c) => {
                     ${credentialSettingsLink}
                   </span></td>
                 </tr>`;
-              }).join("") : '<tr><td colspan="7"><div class="empty">No connections match this filter.</div></td></tr>'}
+              }).join("") : '<tr><td colspan="6"><div class="empty">No connections match this filter.</div></td></tr>'}
             </tbody>
           </table>
         </div>
