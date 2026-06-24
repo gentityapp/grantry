@@ -797,7 +797,7 @@ async function credentialMetadataForProviderDef(providerDef: any, authType: stri
     const smokeTests = Array.isArray(checkContent.tests) ? checkContent.tests : [];
     const operations = Array.isArray(capabilityContent.operations) ? capabilityContent.operations : [];
     metadata.status = checkContent.status === "ok" ? "ok" : checkContent.status === "error" ? "error" : "unknown";
-    metadata.capabilities = { status: metadata.status, smokeTests, operations, missingScopes: Array.from(new Set(smokeTests.flatMap((test: any) => Array.isArray(test.missingScopes) ? test.missingScopes.map(String) : []))), checkedAt };
+    metadata.capabilities = { status: metadata.status, message: typeof checkContent.message === "string" ? checkContent.message : undefined, smokeTests, operations, missingScopes: Array.from(new Set(smokeTests.flatMap((test: any) => Array.isArray(test.missingScopes) ? test.missingScopes.map(String) : []))), checkedAt };
   } catch (e: any) { metadata.status = "unknown"; metadata.capabilities = { status: "unknown", checkedAt, error: String(e?.message ?? e).slice(0, 500) }; }
   const credentialValidatedAt = new Date();
   return {
@@ -1127,6 +1127,10 @@ function renderCapabilitySummary(provider: string | undefined, authType: string 
   }
   if (caps.error) {
     rows.push(`<span style="color:#687385;font-size:12px;">${escapeHtml(String(caps.error)).slice(0, 100)}</span>`);
+  }
+  if (status === "unknown" && !connTests.length) {
+    rows.push(`<span style="color:#687385;font-size:12px;">${escapeHtml(String(caps.message || "No connection check path is configured for this custom provider."))}</span>`);
+    rows.push(`<span style="color:#687385;font-size:12px;">Add a connection check path such as <code>/v1/crews</code> to verify this credential.</span>`);
   }
   const providerDef = provider ? getProvider(provider) : null;
   if (providerDef?.genericRequest) {
@@ -4641,7 +4645,14 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/recheck", async (c)
     data: credentialMeta,
   });
 
-  return redirectAfterRecheck(`Rechecked ${conn.label}.`);
+  const meta = safeJsonObject(credentialMeta.credentialMetadata);
+  const status = String(meta.status ?? "unknown");
+  const message = status === "ok"
+    ? `Rechecked ${conn.label}: credential verified.`
+    : status === "error"
+      ? `Rechecked ${conn.label}: ${String(meta.error ?? "credential check failed").slice(0, 180)}`
+      : `Rechecked ${conn.label}: could not verify because no connection check path is configured.`;
+  return redirectAfterRecheck(message, status === "error" ? "error" : "ok");
 });
 
 // --- /tenants/:scope/connections/:connectionId/delete (POST) — delete one connection ---
