@@ -495,6 +495,15 @@ const CSS = `
   .connection-table td:nth-child(4) { line-height: 1.7; }
   .connection-table td:nth-child(5) label { display: inline-flex; align-items: center; gap: 6px; margin: 0; white-space: nowrap; }
   .connection-table td:nth-child(6) code { white-space: nowrap; }
+  .connection-health-table { min-width: 1120px; }
+  .connection-health-table th:nth-child(1), .connection-health-table td:nth-child(1) { width: 260px; }
+  .connection-health-table th:nth-child(2), .connection-health-table td:nth-child(2) { width: 150px; }
+  .connection-health-table th:nth-child(3), .connection-health-table td:nth-child(3) { width: 178px; }
+  .connection-health-table th:nth-child(4), .connection-health-table td:nth-child(4) { width: auto; }
+  .connection-health-table th:nth-child(5), .connection-health-table td:nth-child(5) { width: 118px; }
+  .connection-health-table th:nth-child(6), .connection-health-table td:nth-child(6) { width: 188px; }
+  .connection-health-table td:nth-child(5) code { white-space: nowrap; }
+  .connection-health-table td:nth-child(6) .stacked-actions { align-items: flex-start; gap: 6px; }
   .credential-summary { max-width: 100%; }
   .credential-summary code { display: inline-block; max-width: 100%; white-space: normal; word-break: break-all; }
   .stacked-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -530,6 +539,7 @@ const CSS = `
     .card { padding: 16px; }
     th, td { padding: 9px 10px; }
     .connection-table { min-width: 860px; }
+    .connection-health-table { min-width: 1040px; }
     .public-topbar { align-items: flex-start; flex-direction: column; }
     .public-grid { grid-template-columns: 1fr; }
   }
@@ -3135,7 +3145,7 @@ dashboardApp.get("/connections", async (c) => {
         </form>
 
         <div class="table-wrap">
-          <table class="connection-table">
+          <table class="connection-table connection-health-table">
             <thead><tr><th>Connection</th><th>Scope</th><th>Health</th><th>Agents</th><th>Updated</th><th>Action</th></tr></thead>
             <tbody>
               ${rows.length ? rows.map(({ cn, health, providerName }) => {
