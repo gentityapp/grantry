@@ -158,6 +158,26 @@ function tokenLinkLabel(providerKey: string, providerLabel: string): string {
   return `🔗 Get a new ${providerLabel} token here →`;
 }
 
+function providerCredentialSettingsLink(providerKey: string, authType: string) {
+  const provider = getProvider(providerKey);
+  if (!provider) return "";
+  if (authType === "oauth" && provider.oauthSetupUrl) {
+    const label = providerKey === "google_ads"
+      ? "Edit Google OAuth app"
+      : providerKey === "yahoo_ads"
+        ? "Edit LINE Yahoo Ads app"
+        : `Edit ${provider.label} OAuth app`;
+    return `<a href="${escapeHtml(provider.oauthSetupUrl)}" target="_blank" rel="noopener" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">${escapeHtml(label)}</a>`;
+  }
+  if (authType === "pat" && provider.tokenUrl) {
+    const label = providerKey === "hubspot"
+      ? "Edit HubSpot private app"
+      : `Edit ${provider.label} token`;
+    return `<a href="${escapeHtml(provider.tokenUrl)}" target="_blank" rel="noopener" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">${escapeHtml(label)}</a>`;
+  }
+  return "";
+}
+
 function serverCredentialHint(providerKey: string): string {
   const provider = getProvider(providerKey);
   if (!provider?.serverCredentialEnv) return "";
@@ -3122,6 +3142,7 @@ dashboardApp.get("/connections", async (c) => {
                 const scope = cn.scope || "";
                 const canScopeAction = /^[a-z0-9_-]+$/.test(scope);
                 const needsReconnect = cn.authType === "oauth" && cn.accessTokenExpiresAt && cn.accessTokenExpiresAt < new Date() && !cn.refreshToken;
+                const credentialSettingsLink = providerCredentialSettingsLink(cn.provider, cn.authType);
                 const showHealthTimestamp = ["ok", "warn", "error"].includes(String(health.status));
                 const canonicalHealthStatus = cn.credential?.healthStatus ?? null;
                 const canonicalHealthLine = canonicalHealthStatus && canonicalHealthStatus !== "unknown"
@@ -3156,6 +3177,7 @@ dashboardApp.get("/connections", async (c) => {
                         ? `<button type="submit" form="recheck_connection_${cn.id}" class="secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Check now</button>`
                         : '<span style="color:#687385;font-size:12px;">Open scope to repair</span>'}
                     ${canScopeAction ? `<a href="/tenants/${encodeURIComponent(scope)}/edit#connections" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Open scope</a>` : ""}
+                    ${credentialSettingsLink}
                   </span></td>
                 </tr>`;
               }).join("") : '<tr><td colspan="7"><div class="empty">No connections match this filter.</div></td></tr>'}
@@ -3418,6 +3440,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             ${connections.map((cn) => {
               const canReconnect = cn.authType === "oauth";
               const needsReconnect = cn.authType === "oauth" && cn.accessTokenExpiresAt && cn.accessTokenExpiresAt < new Date() && !cn.refreshToken;
+              const credentialSettingsLink = providerCredentialSettingsLink(cn.provider, cn.authType);
               return `
               <tr>
                 <td><span class="provider-cell">${providerIcon(cn.provider)}<span>${escapeHtml(providerDisplayName(cn.provider))}</span></span></td>
@@ -3453,6 +3476,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                 <td><span class="stacked-actions">${canReconnect
                   ? `<a href="/oauth/${cn.provider}/start?tenant=${encodeURIComponent(cn.scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}&popup=1" class="btn secondary oauth-popup-link" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run the OAuth consent flow and refresh this exact connection's tokens">↻ Reconnect</a>${needsReconnect ? '<span class="badge denied">needs reconnect</span>' : ""}`
                   : `<button type="submit" form="recheck_connection_${cn.id}" class="secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run credential validation without showing the saved token">Recheck</button>`}
+                  ${credentialSettingsLink}
                   <button type="submit" form="delete_connection_${cn.id}" class="danger" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Delete only this connection">Delete</button>
                 </span></td>
               </tr>
