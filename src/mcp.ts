@@ -3025,9 +3025,11 @@ function buildToolList(
   }
 
   const advertisedToolNames = new Set<string>();
-  for (const p of Object.values(PROVIDERS)) {
-    if (p.implemented === false) continue;
-    for (const toolName of p.tools) {
+  const toolNamesToAdvertise = Array.from(new Set([
+    ...scopesByTool.keys(),
+    ...delegatable.keys(),
+  ])).sort();
+  for (const toolName of toolNamesToAdvertise) {
       if (advertisedToolNames.has(toolName)) continue;
       const directScopes = scopesByTool.get(toolName) ?? new Set<string>();
       // Scopes only reachable by delegation (drop any the agent can call directly).
@@ -3040,7 +3042,8 @@ function buildToolList(
       const authTypes = Array.from(authTypesByTool.get(toolName) ?? []).sort();
       const connectionIds = Array.from(connectionIdsByTool.get(toolName) ?? []).sort();
       const action = toolName.split("/")[1]?.replace(/_/g, " ");
-      const providerLabel = Array.from(providerLabelsByTool.get(toolName) ?? [p.label]).sort().join(" / ");
+      const providerKey = toolName.split("/", 1)[0] ?? "";
+      const providerLabel = Array.from(providerLabelsByTool.get(toolName) ?? [PROVIDERS[providerKey]?.label ?? providerKey]).sort().join(" / ");
       // Flag tools that are *only* reachable by delegation, so the model knows a
       // grant_token is required rather than a direct call.
       const delegationOnly = directScopes.size === 0;
@@ -3063,7 +3066,6 @@ function buildToolList(
           required: ["scope", ...requiredToolSpecificArgs(toolName)],
         },
       });
-    }
   }
   return tools;
 }
