@@ -3044,7 +3044,8 @@ dashboardApp.get("/connections", async (c) => {
   if (!user) return c.redirect("/login");
 
   const wsId = await getActiveWorkspaceId(c);
-  const statusFilter = String(c.req.query("status") ?? "all");
+  const rawStatusFilter = String(c.req.query("status") ?? "all");
+  const statusFilter = rawStatusFilter === "active" ? "ok" : rawStatusFilter;
   const q = String(c.req.query("q") ?? "").trim().toLowerCase();
   const notice = c.req.query("ok") || c.req.query("err");
   const noticeKind = c.req.query("err") ? "error" : "ok";
