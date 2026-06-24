@@ -578,6 +578,7 @@ const NAV = (current: string, email?: string) => `
   <div class="nav-links">
     <a href="/dashboard" class="${current === "dashboard" ? "active" : ""}">Dashboard</a>
     <a href="/tenants" class="${current === "tenants" ? "active" : ""}">Scopes</a>
+    <a href="/connections" class="${current === "connections" ? "active" : ""}">Connections</a>
     <a href="/providers" class="${current === "providers" ? "active" : ""}">Providers</a>
     <a href="/agents" class="${current === "agents" ? "active" : ""}">Agents</a>
     <a href="/workspaces" class="${current === "workspaces" ? "active" : ""}">Workspace</a>
@@ -3015,6 +3016,151 @@ dashboardApp.post("/account/password", async (c) => {
   return c.redirect("/account?ok=1");
 });
 
+// --- /connections — workspace-wide connection health operations ---
+dashboardApp.get("/connections", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+
+  const wsId = await getActiveWorkspaceId(c);
+  const statusFilter = String(c.req.query("status") ?? "all");
+  const q = String(c.req.query("q") ?? "").trim().toLowerCase();
+  const notice = c.req.query("ok") || c.req.query("err");
+  const noticeKind = c.req.query("err") ? "error" : "ok";
+
+  const connections = await prisma.connection.findMany({
+    where: { ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) },
+    include: {
+      tenant: { select: { slug: true, displayName: true } },
+      credential: { select: { id: true, label: true, healthStatus: true, healthCheckedAt: true } },
+      agentGrants: {
+        where: { agent: { enabled: true, ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) } },
+        include: { agent: { select: { id: true, name: true, enabled: true } } },
+      },
+    },
+    orderBy: [{ scope: "asc" }, { provider: "asc" }, { authType: "asc" }],
+  });
+
+  const rows = connections.map((cn) => {
+    const health = healthStatusFromConnection(cn);
+    const providerName = providerDisplayName(cn.provider);
+    const haystack = `${cn.label} ${cn.provider} ${providerName} ${cn.scope} ${cn.authType}`.toLowerCase();
+    return { cn, health, providerName, haystack };
+  }).filter((row) => {
+    if (q && !row.haystack.includes(q)) return false;
+    if (statusFilter === "all") return true;
+    if (statusFilter === "problem") return !["ok", "unchecked"].includes(String(row.health.status));
+    if (statusFilter === "orphan") return row.cn.enabled && row.cn.agentGrants.length === 0;
+    if (statusFilter === "disabled") return !row.cn.enabled;
+    return row.health.status === statusFilter;
+  });
+
+  const counts = connections.reduce<Record<string, number>>((acc, cn) => {
+    const status = String(healthStatusFromConnection(cn).status);
+    acc[status] = (acc[status] ?? 0) + 1;
+    if (cn.enabled && cn.agentGrants.length === 0) acc.orphan = (acc.orphan ?? 0) + 1;
+    if (!cn.enabled) acc.disabled = (acc.disabled ?? 0) + 1;
+    return acc;
+  }, {});
+  const problemCount = (counts.warn ?? 0) + (counts.error ?? 0) + (counts.unknown ?? 0);
+  const filterHref = (status: string) => `/connections?status=${encodeURIComponent(status)}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
+
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Connections — grantry</title>
+    ${FAVICON}<style>${CSS}</style></head><body>
+    ${NAV("connections", user?.email)}
+    <main>
+      <div class="row spread" style="margin-bottom:16px;">
+        <h1 style="margin:0;">Connections</h1>
+        <a href="/tenants/new" class="btn">+ New scope connection</a>
+      </div>
+      <p style="color:#687385;margin-top:-8px;">Workspace-wide health view for scope connections. Credentials are managed from Providers; scope wiring is edited from each scope.</p>
+      ${notice ? noticeBanner(String(notice), noticeKind) : ""}
+
+      <div class="row" style="gap:16px;flex-wrap:wrap;margin-bottom:24px;">
+        <a class="card" href="${filterHref("all")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">Total</div><div style="font-size:24px;font-weight:700;">${connections.length}</div></a>
+        <a class="card" href="${filterHref("ok")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">Active</div><div style="font-size:24px;font-weight:700;">${counts.ok ?? 0}</div></a>
+        <a class="card" href="${filterHref("problem")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">Needs attention</div><div style="font-size:24px;font-weight:700;">${problemCount}</div></a>
+        <a class="card" href="${filterHref("orphan")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">No agent grant</div><div style="font-size:24px;font-weight:700;">${counts.orphan ?? 0}</div></a>
+        <a class="card" href="${filterHref("disabled")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">Disabled</div><div style="font-size:24px;font-weight:700;">${counts.disabled ?? 0}</div></a>
+      </div>
+
+      <div class="card">
+        <form method="get" action="/connections" class="row" style="gap:8px;align-items:end;flex-wrap:wrap;margin-bottom:12px;">
+          <div class="field" style="margin:0;min-width:220px;flex:1;">
+            <label for="q">Search</label>
+            <input type="text" id="q" name="q" value="${escapeHtml(q)}" placeholder="provider, scope, label">
+          </div>
+          <div class="field" style="margin:0;min-width:180px;">
+            <label for="status">Status</label>
+            <select id="status" name="status">
+              ${[
+                ["all", "All"],
+                ["problem", "Needs attention"],
+                ["ok", "Active"],
+                ["warn", "Partial"],
+                ["error", "Broken"],
+                ["unknown", "Check unavailable"],
+                ["unchecked", "Not checked"],
+                ["orphan", "No agent grant"],
+                ["disabled", "Disabled"],
+              ].map(([value, label]) => `<option value="${value}" ${statusFilter === value ? "selected" : ""}>${label}</option>`).join("")}
+            </select>
+          </div>
+          <button type="submit">Apply</button>
+          <a href="/connections" class="btn secondary">Reset</a>
+        </form>
+
+        <div class="table-wrap">
+          <table class="connection-table">
+            <thead><tr><th>Connection</th><th>Scope</th><th>Health</th><th>Credential</th><th>Agents</th><th>Updated</th><th>Action</th></tr></thead>
+            <tbody>
+              ${rows.length ? rows.map(({ cn, health, providerName }) => {
+                const scope = cn.scope || "";
+                const canScopeAction = /^[a-z0-9_-]+$/.test(scope);
+                const needsReconnect = cn.authType === "oauth" && cn.accessTokenExpiresAt && cn.accessTokenExpiresAt < new Date() && !cn.refreshToken;
+                return `
+                <tr>
+                  <td>
+                    <span class="provider-cell">${providerIcon(cn.provider)}<span>${escapeHtml(providerName)}</span></span>
+                    <br><code>${escapeHtml(cn.provider)}</code> <span class="tool-pill">${escapeHtml(authTypeLabel(cn.provider, cn.authType))}</span>
+                    <br><span style="color:#687385;font-size:12px;">${escapeHtml(cn.label)}</span>
+                  </td>
+                  <td>${scope ? `<a href="/tenants/${encodeURIComponent(scope)}/edit#connections"><span class="badge scoped">${escapeHtml(cn.tenant?.displayName && cn.tenant.displayName !== scope ? cn.tenant.displayName : scope)}</span></a><br><code>${escapeHtml(scope)}</code>` : '<span class="badge unscoped">legacy unscoped</span>'}</td>
+                  <td>
+                    ${renderCredentialHealthBadge(cn)}
+                    ${oauthTokenStatus(cn)}
+                    <br><span style="color:#687385;font-size:12px;">${health.checkedAt ? `Checked ${health.checkedAt.toISOString().slice(0, 16).replace("T", " ")}` : "Not checked"}</span>
+                    ${!cn.enabled ? '<br><span class="badge denied">disabled</span>' : ""}
+                    ${needsReconnect ? '<br><span class="badge denied">needs reconnect</span>' : ""}
+                  </td>
+                  <td>${cn.credential
+                    ? `<a href="/providers"><code>${escapeHtml(cn.credential.label)}</code></a><br><span style="color:#687385;font-size:12px;">canonical: ${escapeHtml(cn.credential.healthStatus || "unknown")}</span>`
+                    : '<span class="badge unscoped">legacy snapshot</span>'}</td>
+                  <td>${cn.agentGrants.length
+                    ? cn.agentGrants.map((g) => `<a href="/agents/${encodeURIComponent(g.agent.id)}"><code>${escapeHtml(g.agent.name)}</code></a>`).join("<br>")
+                    : '<span class="badge denied">no agent grant</span>'}</td>
+                  <td><code>${cn.updatedAt.toISOString().slice(0, 10)}</code></td>
+                  <td><span class="stacked-actions">
+                    ${cn.authType === "oauth" && canScopeAction
+                      ? `<a href="/oauth/${encodeURIComponent(cn.provider)}/start?tenant=${encodeURIComponent(scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}&return_to=connections" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Reconnect</a>`
+                      : canScopeAction
+                        ? `<button type="submit" form="recheck_connection_${cn.id}" class="secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Check now</button>`
+                        : '<span style="color:#687385;font-size:12px;">Open scope to repair</span>'}
+                    ${canScopeAction ? `<a href="/tenants/${encodeURIComponent(scope)}/edit#connections" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Open scope</a>` : ""}
+                  </span></td>
+                </tr>`;
+              }).join("") : '<tr><td colspan="7"><div class="empty">No connections match this filter.</div></td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      ${rows.map(({ cn }) => /^[a-z0-9_-]+$/.test(cn.scope)
+        ? `<form id="recheck_connection_${cn.id}" method="post" action="/tenants/${encodeURIComponent(cn.scope)}/connections/${cn.id}/recheck"><input type="hidden" name="return_to" value="connections"></form>`
+        : "").join("")}
+    </main></body></html>
+  `);
+});
+
 // --- /tenants ---
 dashboardApp.get("/tenants", async (c) => {
   const user = await getSessionUser(c);
@@ -4138,6 +4284,12 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/recheck", async (c)
   const scope = c.req.param("scope");
   const connectionId = c.req.param("connectionId");
   if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
+  const body = await c.req.parseBody();
+  const returnToConnections = String(body.return_to ?? "") === "connections";
+  const redirectAfterRecheck = (message: string, kind: "ok" | "error" = "ok") =>
+    returnToConnections
+      ? c.redirect(`/connections?${kind === "error" ? "err" : "ok"}=${encodeURIComponent(message)}`)
+      : c.redirect(tenantEditUrl(scope, message, kind, "#connections"));
 
   const conn = await prisma.connection.findFirst({
     where: { id: connectionId, scope, ownerId: user.id },
@@ -4153,12 +4305,10 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/recheck", async (c)
     : null;
   const lastCheckedAt = credentialHealth?.healthCheckedAt ?? conn.healthCheckedAtSnapshot;
   if (lastCheckedAt && Date.now() - lastCheckedAt.getTime() < CREDENTIAL_RECHECK_MIN_INTERVAL_MS) {
-    return c.redirect(tenantEditUrl(
-      scope,
+    return redirectAfterRecheck(
       `Recheck skipped for ${conn.label}; wait a few seconds before checking this credential again.`,
       "error",
-      "#connections",
-    ));
+    );
   }
   if (conn.authType === "oauth") {
     return c.html(`<h1>OAuth connection uses Reconnect</h1><p>Use the Reconnect button to refresh this credential.</p><p><a href="/tenants/${scope}/edit">← Back</a></p>`, 400);
@@ -4192,14 +4342,12 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/recheck", async (c)
         ...deriveCredentialHealth({ credentialMetadata: newMeta, credentialValidatedAt: checkedAt }),
       },
     });
-    return c.redirect(tenantEditUrl(
-      scope,
+    return redirectAfterRecheck(
       ok
         ? `Rechecked ${conn.label}: Domain-Wide Delegation is configured.`
         : `Rechecked ${conn.label}: ${errorMsg.slice(0, 180)}`,
       ok ? "ok" : "error",
-      "#connections",
-    ));
+    );
   }
 
   const token = decrypt(conn.encryptedCredential);
@@ -4212,7 +4360,7 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/recheck", async (c)
     data: credentialMeta,
   });
 
-  return c.redirect(tenantEditUrl(scope, `Rechecked ${conn.label}.`, "ok", "#connections"));
+  return redirectAfterRecheck(`Rechecked ${conn.label}.`);
 });
 
 // --- /tenants/:scope/connections/:connectionId/delete (POST) — delete one connection ---
@@ -5540,6 +5688,7 @@ oauthApp.get("/:provider/start", async (c) => {
     provider_credential_id: c.req.query("provider_credential_id") || "",
     oauth_app_credential_id: c.req.query("oauth_app_credential_id") || "",
     optional_scopes: c.req.query("optional_scopes") || "",
+    return_to: c.req.query("return_to") || "",
     popup: c.req.query("popup") === "1",
     provider_credential: providerCredentialMode,
     reauth,
@@ -5585,7 +5734,7 @@ oauthApp.get("/:provider/start", async (c) => {
       state,
       provider: providerKey,
       payload: JSON.stringify(payload),
-      redirectTo: providerCredentialMode ? "/providers" : (reauth ? `/tenants/${payload.tenant}/edit` : "/tenants/new"),
+      redirectTo: providerCredentialMode ? "/providers" : (payload.return_to === "connections" ? "/connections" : (reauth ? `/tenants/${payload.tenant}/edit` : "/tenants/new")),
       expiresAt: new Date(Date.now() + 30 * 60 * 1000),
     },
   });
@@ -5924,6 +6073,9 @@ oauthApp.get("/:provider/callback", async (c) => {
         provider: providerKey,
         notice: `Re-authorized ${providerKey}.`,
       });
+    }
+    if (payload.return_to === "connections") {
+      return c.redirect(`/connections?ok=${encodeURIComponent(`Re-authorized ${providerKey}.`)}`);
     }
     return c.redirect(`/tenants/${effectiveTenant}/edit?reauthed=${encodeURIComponent(providerKey)}`);
   }
