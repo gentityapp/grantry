@@ -1171,8 +1171,7 @@ function renderCredentialHealthBadge(cn: {
   if (health.status === "ok") return `<span class="badge ok"${title}>active</span>`;
   if (health.status === "warn") return `<span class="badge unscoped"${title}>partial</span>`;
   if (health.status === "error") return `<span class="badge denied"${title}>broken</span>`;
-  if (health.status === "unknown") return `<span class="badge unscoped"${title}>check unavailable</span>`;
-  return '<span class="badge unscoped">not checked</span>';
+  return `<span class="badge unscoped"${title}>not checked</span>`;
 }
 
 function renderProviderCredentialHealthBadge(credential: {
@@ -1187,7 +1186,6 @@ function renderProviderCredentialHealthBadge(credential: {
     if (credential.healthStatus === "ok") return `<span class="badge ok"${title}>active</span>`;
     if (credential.healthStatus === "warn") return `<span class="badge unscoped"${title}>partial</span>`;
     if (credential.healthStatus === "error") return `<span class="badge denied"${title}>broken</span>`;
-    if (credential.healthStatus === "unknown") return `<span class="badge unscoped"${title}>check unavailable</span>`;
   }
   return renderCredentialHealthBadge({
     credentialMetadata: credential.credentialMetadata,
@@ -3048,7 +3046,8 @@ dashboardApp.get("/connections", async (c) => {
   }).filter((row) => {
     if (q && !row.haystack.includes(q)) return false;
     if (statusFilter === "all") return true;
-    if (statusFilter === "problem") return !["ok", "unchecked"].includes(String(row.health.status));
+    if (statusFilter === "problem") return ["warn", "error"].includes(String(row.health.status));
+    if (statusFilter === "unchecked") return ["unchecked", "unknown"].includes(String(row.health.status));
     if (statusFilter === "orphan") return row.cn.enabled && row.cn.agentGrants.length === 0;
     if (statusFilter === "disabled") return !row.cn.enabled;
     return row.health.status === statusFilter;
@@ -3061,7 +3060,8 @@ dashboardApp.get("/connections", async (c) => {
     if (!cn.enabled) acc.disabled = (acc.disabled ?? 0) + 1;
     return acc;
   }, {});
-  const problemCount = (counts.warn ?? 0) + (counts.error ?? 0) + (counts.unknown ?? 0);
+  const uncheckedCount = (counts.unchecked ?? 0) + (counts.unknown ?? 0);
+  const problemCount = (counts.warn ?? 0) + (counts.error ?? 0);
   const filterHref = (status: string) => `/connections?status=${encodeURIComponent(status)}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
 
   return c.html(`
@@ -3080,6 +3080,7 @@ dashboardApp.get("/connections", async (c) => {
         <a class="card" href="${filterHref("all")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">Total</div><div style="font-size:24px;font-weight:700;">${connections.length}</div></a>
         <a class="card" href="${filterHref("ok")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">Active</div><div style="font-size:24px;font-weight:700;">${counts.ok ?? 0}</div></a>
         <a class="card" href="${filterHref("problem")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">Needs attention</div><div style="font-size:24px;font-weight:700;">${problemCount}</div></a>
+        <a class="card" href="${filterHref("unchecked")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">Not checked</div><div style="font-size:24px;font-weight:700;">${uncheckedCount}</div></a>
         <a class="card" href="${filterHref("orphan")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">No agent grant</div><div style="font-size:24px;font-weight:700;">${counts.orphan ?? 0}</div></a>
         <a class="card" href="${filterHref("disabled")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">Disabled</div><div style="font-size:24px;font-weight:700;">${counts.disabled ?? 0}</div></a>
       </div>
@@ -3099,7 +3100,6 @@ dashboardApp.get("/connections", async (c) => {
                 ["ok", "Active"],
                 ["warn", "Partial"],
                 ["error", "Broken"],
-                ["unknown", "Check unavailable"],
                 ["unchecked", "Not checked"],
                 ["orphan", "No agent grant"],
                 ["disabled", "Disabled"],
@@ -3134,7 +3134,7 @@ dashboardApp.get("/connections", async (c) => {
                     ${needsReconnect ? '<br><span class="badge denied">needs reconnect</span>' : ""}
                   </td>
                   <td>${cn.credential
-                    ? `<a href="/providers"><code>${escapeHtml(cn.credential.label)}</code></a><br><span style="color:#687385;font-size:12px;">canonical: ${escapeHtml(cn.credential.healthStatus || "unknown")}</span>`
+                    ? `<a href="/providers"><code>${escapeHtml(cn.credential.label)}</code></a><br><span style="color:#687385;font-size:12px;">canonical: ${escapeHtml(cn.credential.healthStatus === "unknown" ? "not checked" : (cn.credential.healthStatus || "not checked"))}</span>`
                     : '<span class="badge unscoped">legacy snapshot</span>'}</td>
                   <td>${cn.agentGrants.length
                     ? cn.agentGrants.map((g) => `<a href="/agents/${encodeURIComponent(g.agent.id)}"><code>${escapeHtml(g.agent.name)}</code></a>`).join("<br>")
