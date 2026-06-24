@@ -1160,6 +1160,7 @@ function healthStatusFromConnection(cn: {
 }
 
 function renderCredentialHealthBadge(cn: {
+  authType?: string | null;
   credentialMetadata?: string | null;
   credentialValidatedAt?: Date | null;
   accessTokenExpiresAt?: Date | null;
@@ -1171,10 +1172,12 @@ function renderCredentialHealthBadge(cn: {
   if (health.status === "ok") return `<span class="badge ok"${title}>active</span>`;
   if (health.status === "warn") return `<span class="badge unscoped"${title}>partial</span>`;
   if (health.status === "error") return `<span class="badge denied"${title}>broken</span>`;
+  if (health.status === "unknown" && cn.authType === "oauth" && cn.accessTokenExpiresAt && cn.accessTokenExpiresAt >= new Date()) return "";
   return `<span class="badge unscoped"${title}>not checked</span>`;
 }
 
 function renderProviderCredentialHealthBadge(credential: {
+  authType?: string | null;
   credentialMetadata?: string | null;
   credentialValidatedAt?: Date | null;
   accessTokenExpiresAt?: Date | null;
@@ -1188,6 +1191,7 @@ function renderProviderCredentialHealthBadge(credential: {
     if (credential.healthStatus === "error") return `<span class="badge denied"${title}>broken</span>`;
   }
   return renderCredentialHealthBadge({
+    authType: credential.authType,
     credentialMetadata: credential.credentialMetadata,
     credentialValidatedAt: credential.credentialValidatedAt,
     accessTokenExpiresAt: credential.accessTokenExpiresAt,
@@ -3118,6 +3122,11 @@ dashboardApp.get("/connections", async (c) => {
                 const scope = cn.scope || "";
                 const canScopeAction = /^[a-z0-9_-]+$/.test(scope);
                 const needsReconnect = cn.authType === "oauth" && cn.accessTokenExpiresAt && cn.accessTokenExpiresAt < new Date() && !cn.refreshToken;
+                const showHealthTimestamp = ["ok", "warn", "error"].includes(String(health.status));
+                const canonicalHealthStatus = cn.credential?.healthStatus ?? null;
+                const canonicalHealthLine = canonicalHealthStatus && canonicalHealthStatus !== "unknown"
+                  ? `<br><span style="color:#687385;font-size:12px;">canonical: ${escapeHtml(canonicalHealthStatus)}</span>`
+                  : "";
                 return `
                 <tr>
                   <td>
@@ -3129,12 +3138,12 @@ dashboardApp.get("/connections", async (c) => {
                   <td>
                     ${renderCredentialHealthBadge(cn)}
                     ${oauthTokenStatus(cn)}
-                    <br><span style="color:#687385;font-size:12px;">${health.checkedAt ? `Checked ${health.checkedAt.toISOString().slice(0, 16).replace("T", " ")}` : "Not checked"}</span>
+                    ${showHealthTimestamp && health.checkedAt ? `<br><span style="color:#687385;font-size:12px;">Checked ${health.checkedAt.toISOString().slice(0, 16).replace("T", " ")}</span>` : ""}
                     ${!cn.enabled ? '<br><span class="badge denied">disabled</span>' : ""}
                     ${needsReconnect ? '<br><span class="badge denied">needs reconnect</span>' : ""}
                   </td>
                   <td>${cn.credential
-                    ? `<a href="/providers"><code>${escapeHtml(cn.credential.label)}</code></a><br><span style="color:#687385;font-size:12px;">canonical: ${escapeHtml(cn.credential.healthStatus === "unknown" ? "not checked" : (cn.credential.healthStatus || "not checked"))}</span>`
+                    ? `<a href="/providers"><code>${escapeHtml(cn.credential.label)}</code></a>${canonicalHealthLine}`
                     : '<span class="badge unscoped">legacy snapshot</span>'}</td>
                   <td>${cn.agentGrants.length
                     ? cn.agentGrants.map((g) => `<a href="/agents/${encodeURIComponent(g.agent.id)}"><code>${escapeHtml(g.agent.name)}</code></a>`).join("<br>")
