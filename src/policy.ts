@@ -2,7 +2,7 @@
 // Full-scope managers are explicit owner/workspace-bounded exceptions that
 // resolve against every enabled tenant connection in their boundary.
 import { prisma } from "./db.js";
-import { getProvider, PROVIDERS } from "./connectors/registry.js";
+import { getProvider, getProviderForWorkspace, PROVIDERS } from "./connectors/registry.js";
 
 export type PolicyDecision = {
   allowed: boolean;
@@ -35,14 +35,14 @@ function compatibleProviderKeys(provider: string): string[] {
   return [provider];
 }
 
-function providerTools(provider: string): string[] {
-  const providerDef = getProvider(provider);
+async function providerTools(provider: string, workspaceId?: string | null): Promise<string[]> {
+  const providerDef = await getProviderForWorkspace(provider, workspaceId);
   if (!providerDef || providerDef.implemented === false) return [];
   return providerDef.tools;
 }
 
-function toolImplemented(provider: string, tool: string): boolean {
-  return providerTools(provider).includes(tool);
+async function toolImplemented(provider: string, tool: string, workspaceId?: string | null): Promise<boolean> {
+  return (await providerTools(provider, workspaceId)).includes(tool);
 }
 
 /**
@@ -70,13 +70,6 @@ export async function checkPolicy(args: {
   const authType = args.authType ? String(args.authType) : "";
   const requestedConnectionId = args.connectionId ? String(args.connectionId) : "";
   const provider = toolProvider(tool);
-  const providerDef = getProvider(provider);
-  if (!providerDef || providerDef.implemented === false) {
-    return { allowed: false, reason: `provider not implemented: ${provider || "<unknown>"}`, provider, tool, scope };
-  }
-  if (!providerDef.tools.includes(tool)) {
-    return { allowed: false, reason: `tool not implemented for provider: ${tool}`, provider, tool, scope };
-  }
 
   const agent = await prisma.agent.findUnique({
     where: { id: agentId },
@@ -84,6 +77,13 @@ export async function checkPolicy(args: {
   });
   if (!agent || !agent.enabled) return { allowed: false, reason: "agent not found or disabled", provider, tool, scope };
   if (agent.expiresAt && agent.expiresAt < new Date()) return { allowed: false, reason: "agent token expired", provider, tool, scope };
+  const providerDef = await getProviderForWorkspace(provider, agent.workspaceId);
+  if (!providerDef || providerDef.implemented === false) {
+    return { allowed: false, reason: `provider not implemented: ${provider || "<unknown>"}`, provider, tool, scope };
+  }
+  if (!providerDef.tools.includes(tool)) {
+    return { allowed: false, reason: `tool not implemented for provider: ${tool}`, provider, tool, scope };
+  }
 
   const providerKeys = compatibleProviderKeys(provider);
   const where: any = {
@@ -158,7 +158,7 @@ export async function connectionsForAgent(agentId: string): Promise<AgentConnect
 
   const out: AgentConnection[] = [];
   for (const cn of conns) {
-    const tools = providerTools(cn.provider);
+    const tools = await providerTools(cn.provider, agent.workspaceId);
     if (!tools.length) continue;
     out.push({ ...cn, tools });
   }
@@ -203,7 +203,7 @@ export async function delegatableToolsForAgent(agentId: string): Promise<Map<str
       const cn = grant.connection;
       if (!cn.enabled) continue;
       if (self.workspaceId ? cn.workspaceId !== self.workspaceId : cn.ownerId !== self.ownerId) continue;
-      for (const tool of providerTools(cn.provider)) {
+      for (const tool of await providerTools(cn.provider, self.workspaceId)) {
         if (ownPairs.has(`${tool}\0${cn.scope}`)) continue;
         if (!result.has(tool)) result.set(tool, new Set());
         result.get(tool)!.add(cn.scope);
@@ -226,6 +226,8 @@ export function normalizeToolName(name: unknown): string {
     const matched = p.tools.find((t) => t.replace("/", "_") === raw);
     if (matched) return matched;
   }
+  const customMatch = raw.match(/^([a-z0-9_-]+)_(request|check_connection|list_capabilities)$/);
+  if (customMatch) return `${customMatch[1]}/${customMatch[2]}`;
   return raw;
 }
 
@@ -255,7 +257,7 @@ export async function findCapableAgents(args: {
   const tool = normalizeToolName(args.tool);
   const scope = args.scope === undefined || args.scope === null || args.scope === "" ? undefined : String(args.scope);
   const provider = toolProvider(tool);
-  if (!provider || !toolImplemented(provider, tool)) return [];
+  if (!provider || !await toolImplemented(provider, tool, args.workspaceId)) return [];
 
   const agentWhere: any = { enabled: true };
   if (args.workspaceId) agentWhere.workspaceId = args.workspaceId;

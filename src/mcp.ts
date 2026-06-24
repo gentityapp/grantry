@@ -141,6 +141,8 @@ function canonicalToolName(name: unknown): string {
     const matched = provider.tools.find((tool) => publicToolName(tool) === raw);
     if (matched) return matched;
   }
+  const customMatch = raw.match(/^([a-z0-9_-]+)_(request|check_connection|list_capabilities)$/);
+  if (customMatch) return `${customMatch[1]}/${customMatch[2]}`;
   return raw;
 }
 
@@ -2602,10 +2604,8 @@ async function getSkillContent() {
   };
 }
 
-function getProviderMetadata(includeTools = true) {
-  const providers = Object.values(PROVIDERS)
-    .filter((p) => p.implemented !== false)
-    .map((p) => ({
+function providerMetadataItem(p: any, includeTools = true) {
+  return {
       key: p.key,
       label: p.label,
       auth_types: p.authTypes,
@@ -2624,12 +2624,19 @@ function getProviderMetadata(includeTools = true) {
           }
         : null,
       ...(includeTools ? { tools: p.tools } : {}),
-    }));
+    };
+}
+
+async function getProviderMetadata(includeTools = true, workspaceId?: string | null) {
+  const providerDefs = workspaceId
+    ? await listProvidersForWorkspace(workspaceId)
+    : Object.values(PROVIDERS).filter((p) => p.implemented !== false);
+  const providers = providerDefs.map((p) => providerMetadataItem(p, includeTools));
   return {
     providers,
     metadata: {
       count: providers.length,
-      tool_count_including_system: 1 + SYSTEM_TOOLS.length + Object.values(PROVIDERS).reduce((sum, p) => p.implemented === false ? sum : sum + p.tools.length, 0),
+      tool_count_including_system: 1 + SYSTEM_TOOLS.length + providerDefs.reduce((sum, p) => p.implemented === false ? sum : sum + p.tools.length, 0),
       updated_at: new Date().toISOString(),
       commit_sha: process.env.RAILWAY_GIT_COMMIT_SHA || process.env.GIT_SHA || null,
       server_version: "0.1.0",
@@ -2648,20 +2655,20 @@ async function dispatchProviderTool(
   toolName: string,
   args: Record<string, unknown>,
   token: string,
-  conn: { provider?: string; encryptedServerCredential: string | null },
+  conn: { provider?: string; encryptedServerCredential: string | null; workspaceId?: string | null },
 ): Promise<any> {
   if (toolName === `${provider}/request`) {
-    const providerDef = PROVIDERS[provider];
+    const providerDef = await getProviderForWorkspace(provider, conn.workspaceId);
     if (!providerDef) throw new Error(`provider not implemented: ${provider}`);
     return callGenericProviderRequest({ provider: providerDef, toolName, requestArgs: args, credential: token });
   }
   if (toolName === `${provider}/check_connection`) {
-    const providerDef = PROVIDERS[provider];
+    const providerDef = await getProviderForWorkspace(provider, conn.workspaceId);
     if (!providerDef) throw new Error(`provider not implemented: ${provider}`);
     return callGenericCheckConnection({ provider: providerDef, credential: token });
   }
   if (toolName === `${provider}/list_capabilities`) {
-    const providerDef = PROVIDERS[provider];
+    const providerDef = await getProviderForWorkspace(provider, conn.workspaceId);
     if (!providerDef) throw new Error(`provider not implemented: ${provider}`);
     return callGenericListCapabilities({ provider: providerDef });
   }
@@ -2742,7 +2749,7 @@ async function callSystemTool(toolName: string, args: Record<string, unknown>, c
   }
   if (toolName === "grantry/get_providers") {
     const includeTools = args.include_tools !== false && args.includeTools !== false;
-    const providers = getProviderMetadata(includeTools);
+    const providers = await getProviderMetadata(includeTools, ctx?.workspaceId);
     // When called with an agent token, surface the scopes this token can
     // actually reach so the caller can discover them in the same round-trip
     // (full detail is in grantry/list_scopes). Anonymous callers get no scopes.
