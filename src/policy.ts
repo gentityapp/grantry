@@ -50,14 +50,16 @@ async function toolImplemented(provider: string, tool: string, workspaceId?: str
  *
  * Grantry gates only its own boundary:
  *   - agent exists and is enabled
- *   - provider tool is implemented
+ *   - provider exists and is implemented
  *   - connection exists, is enabled, and matches provider/scope/authType/id
  *   - agent and connection share owner/workspace boundary
  *   - AgentConnectionGrant(agentId, connectionId) exists, unless the agent is
  *     an explicit full-scope manager
  *
- * Provider-side ACLs are intentionally not pre-modeled here. A 401/403 from
- * the provider is surfaced as a provider error by the caller, not as policy.
+ * Provider-side tools/scopes are intentionally not pre-modeled here. The
+ * registry catalog powers discovery, but a missing catalog entry must not
+ * block an otherwise granted connection. Unknown tools and missing provider
+ * scopes are surfaced by the provider dispatcher/API, not as Grantry policy.
  */
 export async function checkPolicy(args: {
   agentId: string;
@@ -80,9 +82,6 @@ export async function checkPolicy(args: {
   const providerDef = await getProviderForWorkspace(provider, agent.workspaceId);
   if (!providerDef || providerDef.implemented === false) {
     return { allowed: false, reason: `provider not implemented: ${provider || "<unknown>"}`, provider, tool, scope };
-  }
-  if (!providerDef.tools.includes(tool)) {
-    return { allowed: false, reason: `tool not implemented for provider: ${tool}`, provider, tool, scope };
   }
 
   const providerKeys = compatibleProviderKeys(provider);
@@ -225,6 +224,13 @@ export function normalizeToolName(name: unknown): string {
   for (const p of Object.values(PROVIDERS)) {
     const matched = p.tools.find((t) => t.replace("/", "_") === raw);
     if (matched) return matched;
+  }
+  for (const p of Object.values(PROVIDERS).sort((a, b) => b.key.length - a.key.length)) {
+    if (p.implemented === false) continue;
+    const prefix = `${p.key}_`;
+    if (raw.startsWith(prefix) && raw.length > prefix.length) {
+      return `${p.key}/${raw.slice(prefix.length)}`;
+    }
   }
   const customMatch = raw.match(/^([a-z0-9_-]+)_(request|check_connection|list_capabilities)$/);
   if (customMatch) return `${customMatch[1]}/${customMatch[2]}`;

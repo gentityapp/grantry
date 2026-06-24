@@ -3177,158 +3177,6 @@ function safeJsonObject(s: string | null | undefined): Record<string, any> {
   }
 }
 
-function requiredScopesForTool(provider: string, toolName: string): string[] {
-  const providerDef = PROVIDERS[provider];
-  const operations = providerDef?.genericRequest?.operations ?? [];
-  const required = new Set<string>();
-  for (const scope of providerDef?.toolScopeRequirements?.[toolName] ?? []) required.add(scope);
-  for (const op of operations) {
-    if ((op.tools ?? []).includes(toolName)) {
-      for (const scope of op.requiredScopes ?? []) required.add(scope);
-    }
-  }
-  return Array.from(required);
-}
-
-function grantedScopesFromMetadata(raw: string | null | undefined): string[] {
-  const meta = safeJsonObject(raw);
-  const scopes = Array.isArray(meta.scopes) ? meta.scopes.map(String).filter(Boolean) : [];
-  return Array.from(new Set(scopes));
-}
-
-function missingRequiredScopes(required: string[], granted: string[]) {
-  const grantedSet = new Set(granted);
-  return required.filter((scope) => !grantedSet.has(scope));
-}
-
-function probeMissingScopesFromMetadata(raw: string | null | undefined, requiredScopes: string[]): string[] {
-  const requiredSet = new Set(requiredScopes);
-  const meta = safeJsonObject(raw);
-  const tests = Array.isArray(meta.capabilities?.smokeTests) ? meta.capabilities.smokeTests : [];
-  const missing = new Set<string>();
-  for (const test of tests) {
-    const testRequired = Array.isArray(test.requiredScopes) ? test.requiredScopes.map(String) : [];
-    if (!testRequired.some((scope: string) => requiredSet.has(scope))) continue;
-    for (const scope of Array.isArray(test.missingScopes) ? test.missingScopes.map(String) : []) {
-      if (requiredSet.has(scope)) missing.add(scope);
-    }
-  }
-  return Array.from(missing);
-}
-
-function providerReauthUrl(provider: string, conn: { scope: string }, missingScopes: string[]) {
-  const params = new URLSearchParams({ tenant: conn.scope, reauth: "1" });
-  if (missingScopes.length) params.set("optional_scopes", missingScopes.join(","));
-  return `/oauth/${provider}/start?${params.toString()}`;
-}
-
-function providerScopeDeniedPayload(args: {
-  provider: string;
-  toolName: string;
-  authType: string;
-  connectionId: string;
-  scope: string;
-  requiredScopes: string[];
-  grantedScopes: string[];
-  missingScopes: string[];
-}) {
-  return {
-    code: "provider_scope_missing",
-    provider: args.provider,
-    tool: args.toolName,
-    authType: args.authType,
-    connectionId: args.connectionId,
-    scope: args.scope,
-    requiredScopes: args.requiredScopes,
-    grantedScopes: args.grantedScopes,
-    missingScopes: args.missingScopes,
-    reauthUrl: providerReauthUrl(args.provider, { scope: args.scope }, args.missingScopes),
-    message: `${args.provider} connection is missing required scope(s): ${args.missingScopes.join(", ")}`,
-  };
-}
-
-async function assertProviderScopesBeforeDispatch(args: {
-  provider: string;
-  toolName: string;
-  token: string;
-  conn: {
-    id: string;
-    provider: string;
-    authType: string;
-    scope: string;
-    credentialMetadata: string | null;
-    credentialId: string | null;
-  };
-}) {
-  const requiredScopes = requiredScopesForTool(args.provider, args.toolName);
-  if (!requiredScopes.length) return null;
-
-  let grantedScopes = grantedScopesFromMetadata(args.conn.credentialMetadata);
-  if (args.conn.authType === "oauth") {
-    let missing = missingRequiredScopes(requiredScopes, grantedScopes);
-    if (missing.length) {
-      const meta = await credentialMetadataForStorage(args.conn.provider, args.conn.authType, args.token);
-      grantedScopes = grantedScopesFromMetadata(meta.credentialMetadata);
-      missing = missingRequiredScopes(requiredScopes, grantedScopes);
-      await prisma.connection.update({
-        where: { id: args.conn.id },
-        data: connectionCredentialData(meta),
-      });
-      if (args.conn.credentialId) {
-        await prisma.providerCredential.update({
-          where: { id: args.conn.credentialId },
-          data: providerCredentialData(meta),
-        }).catch(() => {});
-      }
-    }
-    missing = missingRequiredScopes(requiredScopes, grantedScopes);
-    if (missing.length) {
-      return providerScopeDeniedPayload({
-        provider: args.provider,
-        toolName: args.toolName,
-        authType: args.conn.authType,
-        connectionId: args.conn.id,
-        scope: args.conn.scope,
-        requiredScopes,
-        grantedScopes,
-        missingScopes: missing,
-      });
-    }
-  }
-
-  if (args.conn.authType !== "oauth") {
-    let missing = probeMissingScopesFromMetadata(args.conn.credentialMetadata, requiredScopes);
-    if (!missing.length) {
-      const meta = await credentialMetadataForStorage(args.conn.provider, args.conn.authType, args.token);
-      missing = probeMissingScopesFromMetadata(meta.credentialMetadata, requiredScopes);
-      await prisma.connection.update({
-        where: { id: args.conn.id },
-        data: connectionCredentialData(meta),
-      });
-      if (args.conn.credentialId) {
-        await prisma.providerCredential.update({
-          where: { id: args.conn.credentialId },
-          data: providerCredentialData(meta),
-        }).catch(() => {});
-      }
-    }
-    if (missing.length) {
-      return providerScopeDeniedPayload({
-        provider: args.provider,
-        toolName: args.toolName,
-        authType: args.conn.authType,
-        connectionId: args.conn.id,
-        scope: args.conn.scope,
-        requiredScopes,
-        grantedScopes,
-        missingScopes: missing,
-      });
-    }
-  }
-
-  return null;
-}
-
 function providerRequiresWorkspaceOAuthApp(provider: string) {
   const providerDef = PROVIDERS[provider];
   return Array.isArray(providerDef?.authTypes)
@@ -3897,19 +3745,6 @@ const handleMcpPost = async (c: any) => {
       delete innerArgs.grantToken;
       try {
         const credential = await credentialForConnection(conn);
-        const scopeDenied = await assertProviderScopesBeforeDispatch({ provider: decision.provider, toolName, token: credential, conn });
-        if (scopeDenied) {
-          await prisma.auditLog.create({ data: {
-            agentId: grant!.targetAgentId, delegatedById: agent.id, delegationId: grant!.id,
-            connectionId: conn.id,
-            provider: decision.provider, tool: toolName, scope, status: "denied",
-            errorMessage: scopeDenied.message,
-            requestArgs: maskAuditArgs(innerArgs),
-            durationMs: Date.now() - started,
-            ipAddress: c.req.header("x-forwarded-for") ?? null,
-          } });
-          return c.json({ jsonrpc: "2.0", id, error: { code: -32012, message: scopeDenied.message, data: scopeDenied } }, 403);
-        }
 
         // Burn the single use up front: a failed provider call still consumes the grant.
         await prisma.delegationGrant.update({ where: { id: grant!.id }, data: { status: "consumed", consumedAt: now } });
@@ -3991,24 +3826,6 @@ const handleMcpPost = async (c: any) => {
       return c.json({ jsonrpc: "2.0", id, error: { code: -32011, message: "connection vanished" } }, 500);
     }
     const token = await credentialForConnection(conn);
-    const scopeDenied = await assertProviderScopesBeforeDispatch({ provider: decision.provider, toolName, token, conn });
-    if (scopeDenied) {
-      await prisma.auditLog.create({
-        data: {
-          agentId: agent.id,
-          connectionId: conn.id,
-          provider: decision.provider,
-          tool: toolName,
-          scope,
-          status: "denied",
-          errorMessage: scopeDenied.message,
-          requestArgs: maskAuditArgs(args),
-          durationMs: Date.now() - started,
-          ipAddress: c.req.header("x-forwarded-for") ?? null,
-        },
-      });
-      return c.json({ jsonrpc: "2.0", id, error: { code: -32012, message: scopeDenied.message, data: scopeDenied } }, 403);
-    }
 
     // 4) Dispatch to provider-specific tool
     try {
