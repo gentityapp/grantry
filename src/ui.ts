@@ -829,6 +829,17 @@ function providerRequiresWorkspaceOAuthApp(providerKey: string, providerDef?: an
   return providerUsesWorkspaceOAuthApp(providerDef ?? PROVIDERS[providerKey]);
 }
 
+function oauthAppClientIdFromCredential(credential: { credentialMetadata?: string | null } | null | undefined) {
+  const meta = safeJsonObject(credential?.credentialMetadata);
+  return typeof meta.oauthClientId === "string" ? meta.oauthClientId.trim() : "";
+}
+
+function oauthAppConfiguredBadge(configured: boolean) {
+  return configured
+    ? '<span class="badge ok">OAuth app configured</span>'
+    : '<span class="badge denied">OAuth app missing</span>';
+}
+
 function defaultOAuthClientAuthMethod(providerKey: string, providerDef?: any) {
   const configured = String((providerDef ?? PROVIDERS[providerKey])?.oauthClientAuthMethod ?? "").trim().toUpperCase();
   if (configured === "CLIENT_SECRET_BASIC" || configured === "CLIENT_SECRET_POST") return configured;
@@ -3097,6 +3108,16 @@ dashboardApp.get("/connections", async (c) => {
     },
     orderBy: [{ scope: "asc" }, { provider: "asc" }, { authType: "asc" }],
   });
+  const oauthAppCredentials = wsId
+    ? await prisma.providerCredential.findMany({
+        where: { workspaceId: wsId, authType: "oauth_app", enabled: true },
+        orderBy: { updatedAt: "desc" },
+      })
+    : [];
+  const oauthAppByProvider = new Map<string, (typeof oauthAppCredentials)[number]>();
+  for (const credential of oauthAppCredentials) {
+    if (!oauthAppByProvider.has(credential.provider)) oauthAppByProvider.set(credential.provider, credential);
+  }
 
   const rows = connections.map((cn) => {
     const health = healthStatusFromConnection(cn);
@@ -3180,6 +3201,9 @@ dashboardApp.get("/connections", async (c) => {
                 const canScopeAction = /^[a-z0-9_-]+$/.test(scope);
                 const needsReconnect = cn.authType === "oauth" && cn.accessTokenExpiresAt && cn.accessTokenExpiresAt < new Date() && !cn.refreshToken;
                 const credentialSettingsLink = providerCredentialSettingsLink(cn.provider, cn.authType);
+                const providerDef = getProvider(cn.provider);
+                const requiresWorkspaceOAuthApp = cn.authType === "oauth" && providerDef && providerRequiresWorkspaceOAuthApp(cn.provider, providerDef);
+                const oauthAppConfigured = !requiresWorkspaceOAuthApp || !!oauthAppClientIdFromCredential(oauthAppByProvider.get(cn.provider));
                 const showHealthTimestamp = ["ok", "warn", "error"].includes(String(health.status));
                 return `
                 <tr>
@@ -3192,6 +3216,7 @@ dashboardApp.get("/connections", async (c) => {
                   <td>
                     ${renderCredentialHealthBadge(cn)}
                     ${oauthTokenStatus(cn)}
+                    ${requiresWorkspaceOAuthApp ? `<br>${oauthAppConfiguredBadge(oauthAppConfigured)}` : ""}
                     ${showHealthTimestamp && health.checkedAt ? `<br><span style="color:#687385;font-size:12px;">Checked ${health.checkedAt.toISOString().slice(0, 16).replace("T", " ")}</span>` : ""}
                     ${!cn.enabled ? '<br><span class="badge denied">disabled</span>' : ""}
                     ${needsReconnect ? '<br><span class="badge denied">needs reconnect</span>' : ""}
@@ -3201,8 +3226,10 @@ dashboardApp.get("/connections", async (c) => {
                     : '<span class="badge denied">no agent grant</span>'}</td>
                   <td><code>${cn.updatedAt.toISOString().slice(0, 10)}</code></td>
                   <td><span class="stacked-actions">
-                    ${cn.authType === "oauth" && canScopeAction
+                    ${cn.authType === "oauth" && canScopeAction && oauthAppConfigured
                       ? `<a href="/oauth/${encodeURIComponent(cn.provider)}/start?tenant=${encodeURIComponent(scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}&return_to=connections" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Reconnect</a>`
+                      : cn.authType === "oauth" && canScopeAction
+                        ? `<a href="/connections/${encodeURIComponent(cn.id)}/edit?err=${encodeURIComponent("Save this provider's OAuth app settings before reconnecting.")}" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Set up OAuth app</a>`
                       : canScopeAction
                         ? `<button type="submit" form="recheck_connection_${cn.id}" class="secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Check now</button>`
                         : '<span style="color:#687385;font-size:12px;">Open scope to repair</span>'}
@@ -3247,16 +3274,18 @@ dashboardApp.get("/connections/:connectionId/edit", async (c) => {
   const providerDef = getProvider(conn.provider);
   const oauthAppCredential = conn.authType === "oauth" && providerDef && providerRequiresWorkspaceOAuthApp(conn.provider, providerDef) && wsId
     ? await prisma.providerCredential.findFirst({
-        where: { workspaceId: wsId, provider: conn.provider, authType: "oauth_app" },
+        where: { workspaceId: wsId, provider: conn.provider, authType: "oauth_app", enabled: true },
         orderBy: { updatedAt: "desc" },
       })
     : null;
   const oauthAppMetadata = oauthAppCredential ? safeJsonObject(oauthAppCredential.credentialMetadata) : {};
-  const existingOauthClientId = String(oauthAppMetadata.oauthClientId ?? "");
+  const existingOauthClientId = oauthAppClientIdFromCredential(oauthAppCredential);
   const existingOauthClientAuthMethod = String(oauthAppMetadata.oauthClientAuthMethod ?? defaultOAuthClientAuthMethod(conn.provider, providerDef)).toUpperCase();
   const providerName = providerDisplayName(conn.provider);
   const scope = conn.scope || "";
-  const canReconnect = conn.authType === "oauth" && /^[a-z0-9_-]+$/.test(scope);
+  const requiresWorkspaceOAuthApp = !!(conn.authType === "oauth" && providerDef && providerRequiresWorkspaceOAuthApp(conn.provider, providerDef));
+  const oauthAppConfigured = !requiresWorkspaceOAuthApp || !!existingOauthClientId;
+  const canReconnect = conn.authType === "oauth" && /^[a-z0-9_-]+$/.test(scope) && oauthAppConfigured;
   const canRotateSecret = ["pat", "private_app"].includes(conn.authType);
   const tokenLabel = conn.authType === "private_app" ? "private app token" : "token";
   const credentialSettingsLink = providerCredentialSettingsLink(conn.provider, conn.authType);
@@ -3290,6 +3319,7 @@ dashboardApp.get("/connections/:connectionId/edit", async (c) => {
           <div>
             ${renderCredentialHealthBadge(conn)}
             ${oauthTokenStatus(conn)}
+            ${requiresWorkspaceOAuthApp ? `<br>${oauthAppConfiguredBadge(oauthAppConfigured)}` : ""}
             ${showHealthTimestamp && health.checkedAt ? `<br><span style="color:#687385;font-size:12px;">Checked ${health.checkedAt.toISOString().slice(0, 16).replace("T", " ")}</span>` : ""}
           </div>
         </div>
@@ -3343,7 +3373,11 @@ dashboardApp.get("/connections/:connectionId/edit", async (c) => {
             </form>
           ` : ""}
           <span class="stacked-actions">
-            ${canReconnect ? `<a href="/oauth/${encodeURIComponent(conn.provider)}/start?tenant=${encodeURIComponent(scope)}&reauth=1&connection_id=${encodeURIComponent(conn.id)}&return_to=connections" class="btn">Reconnect</a>` : '<span class="badge denied">Reconnect requires a scoped connection</span>'}
+            ${canReconnect
+              ? `<a href="/oauth/${encodeURIComponent(conn.provider)}/start?tenant=${encodeURIComponent(scope)}&reauth=1&connection_id=${encodeURIComponent(conn.id)}&return_to=connections" class="btn">Reconnect</a>`
+              : conn.authType === "oauth" && requiresWorkspaceOAuthApp && !oauthAppConfigured
+                ? '<span class="badge denied">Save OAuth app settings before reconnecting</span>'
+                : '<span class="badge denied">Reconnect requires a scoped connection</span>'}
             ${providerDef && providerRequiresWorkspaceOAuthApp(conn.provider, providerDef) ? "" : credentialSettingsLink}
           </span>
         </div>
@@ -3585,6 +3619,16 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
   });
   const providers = await listConnectionCandidateProviders(wsId);
   const knownProviders = Object.values(PROVIDERS);
+  const oauthAppCredentials = wsId
+    ? await prisma.providerCredential.findMany({
+        where: { workspaceId: wsId, authType: "oauth_app", enabled: true },
+        orderBy: { updatedAt: "desc" },
+      })
+    : [];
+  const oauthAppByProvider = new Map<string, (typeof oauthAppCredentials)[number]>();
+  for (const credential of oauthAppCredentials) {
+    if (!oauthAppByProvider.has(credential.provider)) oauthAppByProvider.set(credential.provider, credential);
+  }
 
   const usedProviders = new Set(connections.map((c) => c.provider));
   const usedProviderAuthTypes = new Set(connections.map((c) => `${c.provider}:${c.authType}`));
@@ -3693,6 +3737,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
               const canReconnect = cn.authType === "oauth";
               const needsReconnect = cn.authType === "oauth" && cn.accessTokenExpiresAt && cn.accessTokenExpiresAt < new Date() && !cn.refreshToken;
               const credentialSettingsLink = providerCredentialSettingsLink(cn.provider, cn.authType);
+              const providerDef = getProvider(cn.provider);
+              const requiresWorkspaceOAuthApp = cn.authType === "oauth" && providerDef && providerRequiresWorkspaceOAuthApp(cn.provider, providerDef);
+              const oauthAppConfigured = !requiresWorkspaceOAuthApp || !!oauthAppClientIdFromCredential(oauthAppByProvider.get(cn.provider));
               return `
               <tr>
                 <td><span class="provider-cell">${providerIcon(cn.provider)}<span>${escapeHtml(providerDisplayName(cn.provider))}</span></span></td>
@@ -3701,6 +3748,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                 <td>
                   ${renderCredentialHealthBadge(cn)}
                   ${oauthTokenStatus(cn)}
+                  ${requiresWorkspaceOAuthApp ? `<br>${oauthAppConfiguredBadge(oauthAppConfigured)}` : ""}
                   ${renderCredentialSummary(cn)}
                   ${renderDwdInfo(cn)}
                   ${cn.provider === "google_ads" ? `
@@ -3726,7 +3774,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                 <td><label style="font-weight:normal;font-size:13px;"><input type="checkbox" name="conn_enabled_${cn.id}" ${cn.enabled ? "checked" : ""}> on</label></td>
                 <td><code>${cn.createdAt.toISOString().slice(0, 10)}</code></td>
                 <td><span class="stacked-actions">${canReconnect
-                  ? `<a href="/oauth/${cn.provider}/start?tenant=${encodeURIComponent(cn.scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}&popup=1" class="btn secondary oauth-popup-link" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run the OAuth consent flow and refresh this exact connection's tokens">↻ Reconnect</a>${needsReconnect ? '<span class="badge denied">needs reconnect</span>' : ""}`
+                  ? (oauthAppConfigured
+                    ? `<a href="/oauth/${cn.provider}/start?tenant=${encodeURIComponent(cn.scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}&popup=1" class="btn secondary oauth-popup-link" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run the OAuth consent flow and refresh this exact connection's tokens">↻ Reconnect</a>${needsReconnect ? '<span class="badge denied">needs reconnect</span>' : ""}`
+                    : `<a href="/connections/${encodeURIComponent(cn.id)}/edit?err=${encodeURIComponent("Save this provider's OAuth app settings before reconnecting.")}" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Save this provider's OAuth app settings before reconnecting">Set up OAuth app</a>`)
                   : `<button type="submit" form="recheck_connection_${cn.id}" class="secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run credential validation without showing the saved token">Recheck</button>`}
                   ${credentialSettingsLink}
                   <button type="submit" form="delete_connection_${cn.id}" class="danger" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Delete only this connection">Delete</button>
@@ -6054,9 +6104,15 @@ oauthApp.get("/:provider/start", async (c) => {
   if (!oauthCfg.clientId) {
     const envPrefix = providerKey.toUpperCase();
     const setupLink = providerCredentialMode ? "/providers" : (payload.tenant ? `/tenants/${encodeURIComponent(payload.tenant)}/edit` : "/tenants/new");
+    const missingMessage = providerRequiresWorkspaceOAuthApp(providerKey, providerDef)
+      ? `Configure this workspace's ${providerDef.label} OAuth app first. Paste its client_id and client_secret before reconnecting.`
+      : `Set ${envPrefix}_CLIENT_ID env var.`;
     const hint = providerRequiresWorkspaceOAuthApp(providerKey, providerDef)
       ? `Configure this workspace's ${escapeHtml(providerDef.label)} OAuth app first. Paste its <code>client_id</code> and <code>client_secret</code> before connecting the provider credential; do not use Grantry-wide environment variables.`
       : `Set <code>${envPrefix}_CLIENT_ID</code> env var.`;
+    if (reauth && payload.connection_id) {
+      return c.redirect(`/connections/${encodeURIComponent(String(payload.connection_id))}/edit?err=${encodeURIComponent(missingMessage)}`);
+    }
     return c.html(`<h1>${escapeHtml(providerDef.label)} OAuth not configured</h1><p>${hint} <a href="${setupLink}">← Back</a></p>`, 500);
   }
   if (oauthCfg.credentialId) payload.oauth_app_credential_id = oauthCfg.credentialId;
