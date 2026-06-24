@@ -138,6 +138,26 @@ Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing scope):
 - **Clay**: paste the API key from Clay Settings > Account > API key.
 - **HeyReach**: paste a Public API key.
 - **Chatwork**: paste a Chatwork API token.
+- **SmartHR (custom provider)**: create a custom provider first, then add a PAT
+  connection. Custom provider fields:
+  - `Provider key`: `smarthr`
+  - `Label`: `SmartHR`
+  - `API base URL`: `https://<tenant>.smarthr.jp/api` (do **not** include
+    `/v1`; the check path supplies that)
+  - `Auth style`: `Authorization: Bearer token`
+  - `API key header`: leave blank
+  - `Allowed path prefixes`: `/v1`
+  - `Connection check path`: `/v1/crews`
+  - `Token settings URL`: optional / blank is OK
+
+  After creating the custom provider, add the connection and paste the SmartHR
+  access token in the credential field. A successful Recheck shows
+  `active`, `ok`, `capabilities ok`, and `Connection check: 1 ok`. If SmartHR
+  asks for allowed IP addresses, register Grantry production's Railway
+  **Static Outbound IPs** for service `agent-oauth` in environment `production`
+  (the dashboard domain IP is not the outbound API source IP). Enable Static
+  Outbound IPs in Railway service networking, add every displayed IPv4 address
+  to SmartHR with no subnet mask for single IPs, redeploy, then Recheck.
 - **Railway Project Token**: paste a Project Token from Project Settings >
   Tokens. These are scoped to one project environment.
 - **Railway API Token**: paste an Account or Workspace API Token from Account
