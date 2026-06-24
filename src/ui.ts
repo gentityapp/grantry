@@ -3208,6 +3208,15 @@ dashboardApp.get("/connections/:connectionId/edit", async (c) => {
   if (!conn) return c.html("<h1>connection not found</h1>", 404);
 
   const providerDef = getProvider(conn.provider);
+  const oauthAppCredential = conn.authType === "oauth" && providerDef && providerRequiresWorkspaceOAuthApp(conn.provider, providerDef) && wsId
+    ? await prisma.providerCredential.findFirst({
+        where: { workspaceId: wsId, provider: conn.provider, authType: "oauth_app" },
+        orderBy: { updatedAt: "desc" },
+      })
+    : null;
+  const oauthAppMetadata = oauthAppCredential ? safeJsonObject(oauthAppCredential.credentialMetadata) : {};
+  const existingOauthClientId = String(oauthAppMetadata.oauthClientId ?? "");
+  const existingOauthClientAuthMethod = String(oauthAppMetadata.oauthClientAuthMethod ?? defaultOAuthClientAuthMethod(conn.provider, providerDef)).toUpperCase();
   const providerName = providerDisplayName(conn.provider);
   const scope = conn.scope || "";
   const canReconnect = conn.authType === "oauth" && /^[a-z0-9_-]+$/.test(scope);
@@ -3269,10 +3278,36 @@ dashboardApp.get("/connections/:connectionId/edit", async (c) => {
       ${conn.authType === "oauth" ? `
         <div class="card">
           <h2>OAuth repair</h2>
-          <p class="field-hint" style="margin-top:0;">Use Reconnect when the OAuth token is expired, revoked, or missing scopes. This refreshes this exact connection in place.</p>
+          <p class="field-hint" style="margin-top:0;">Use Reconnect when the OAuth token is expired, revoked, or missing scopes. If the provider app's Client ID or Client Secret changed, save the OAuth app settings here first.</p>
+          ${providerDef && providerRequiresWorkspaceOAuthApp(conn.provider, providerDef) ? `
+            <form method="post" action="/connections/${encodeURIComponent(conn.id)}/edit" style="margin:14px 0 18px;padding:14px;border:1px solid #e3e8ee;border-radius:8px;">
+              <input type="hidden" name="oauth_app_update" value="1">
+              <input type="hidden" name="label" value="${escapeHtml(conn.label)}">
+              ${conn.enabled ? '<input type="hidden" name="enabled" value="on">' : ""}
+              <div class="field-hint" style="margin-top:0;">
+                Current Client ID: ${existingOauthClientId ? `<code>${escapeHtml(clientIdPreview(existingOauthClientId))}</code>` : '<span class="badge unscoped">not configured</span>'}
+              </div>
+              <label for="oauth_client_id">Client ID</label>
+              <input type="text" name="oauth_client_id" id="oauth_client_id" value="${escapeHtml(existingOauthClientId)}" placeholder="Paste Client ID from ${escapeHtml(providerName)}">
+              <label for="oauth_client_secret" style="margin-top:10px;">Client Secret</label>
+              <input type="password" name="oauth_client_secret" id="oauth_client_secret" placeholder="Paste Client Secret">
+              <label for="oauth_client_auth_method" style="margin-top:10px;">Client authentication method</label>
+              <select name="oauth_client_auth_method" id="oauth_client_auth_method">
+                <option value="CLIENT_SECRET_BASIC" ${existingOauthClientAuthMethod === "CLIENT_SECRET_BASIC" ? "selected" : ""}>CLIENT_SECRET_BASIC</option>
+                <option value="CLIENT_SECRET_POST" ${existingOauthClientAuthMethod === "CLIENT_SECRET_POST" ? "selected" : ""}>CLIENT_SECRET_POST</option>
+              </select>
+              <label for="oauth_redirect_uri" style="margin-top:10px;">Redirect URI</label>
+              <input type="text" id="oauth_redirect_uri" value="${escapeHtml(oauthCallbackUrl(c, conn.provider))}" readonly onclick="this.select()">
+              <p class="field-hint">Copy this Redirect URI into the provider app. For security, Grantry cannot show the existing Client Secret; paste it again when updating app settings.</p>
+              <span class="stacked-actions" style="margin-top:10px;">
+                <button type="submit">Save OAuth app settings</button>
+                ${credentialSettingsLink}
+              </span>
+            </form>
+          ` : ""}
           <span class="stacked-actions">
             ${canReconnect ? `<a href="/oauth/${encodeURIComponent(conn.provider)}/start?tenant=${encodeURIComponent(scope)}&reauth=1&connection_id=${encodeURIComponent(conn.id)}&return_to=connections" class="btn">Reconnect</a>` : '<span class="badge denied">Reconnect requires a scoped connection</span>'}
-            ${credentialSettingsLink}
+            ${providerDef && providerRequiresWorkspaceOAuthApp(conn.provider, providerDef) ? "" : credentialSettingsLink}
           </span>
         </div>
       ` : ""}
@@ -3303,8 +3338,34 @@ dashboardApp.post("/connections/:connectionId/edit", async (c) => {
   if (!label) return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent("Label is required")}`);
 
   const enabled = body.enabled !== undefined;
+  const wantsOAuthAppUpdate = body.oauth_app_update === "1";
   const newCredential = String(body.credential ?? "").trim();
   const baseUpdate = { label, enabled };
+  const providerDef = getProvider(conn.provider);
+
+  if (wantsOAuthAppUpdate) {
+    if (conn.authType !== "oauth" || !providerDef || !providerRequiresWorkspaceOAuthApp(conn.provider, providerDef)) {
+      return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent("OAuth app settings are not used by this connection")}`);
+    }
+    const rawCredential = oauthAppCredentialFromStructuredFields(body, "", defaultOAuthClientAuthMethod(conn.provider, providerDef));
+    if (!rawCredential) {
+      return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent("Client ID and Client Secret are required")}`);
+    }
+    try {
+      await upsertWorkspaceOAuthAppCredential({
+        workspaceId: wsId,
+        ownerId: user.id,
+        providerKey: conn.provider,
+        providerDef,
+        rawCredential,
+      });
+      await prisma.connection.update({ where: { id: conn.id }, data: baseUpdate });
+    } catch (e: any) {
+      const message = String(e?.message ?? e);
+      return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent(`OAuth app settings failed: ${message}`)}`);
+    }
+    return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?ok=${encodeURIComponent("OAuth app settings saved. Reconnect this connection to refresh the token.")}`);
+  }
 
   if (newCredential && !["pat", "private_app"].includes(conn.authType)) {
     return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent("This connection type is repaired with Reconnect, not by pasting a credential")}`);
@@ -3318,7 +3379,6 @@ dashboardApp.post("/connections/:connectionId/edit", async (c) => {
     return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?ok=${encodeURIComponent("Connection settings saved.")}`);
   }
 
-  const providerDef = getProvider(conn.provider);
   if (!providerDef) return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent("Unknown provider")}`);
 
   let credentialMeta;
