@@ -1206,6 +1206,21 @@ function renderCredentialHealthBadge(cn: {
   return `<span class="badge unscoped"${title}>not checked</span>`;
 }
 
+function connectionDisplayStatus(cn: {
+  authType?: string | null;
+  credentialMetadata?: string | null;
+  credentialValidatedAt?: Date | null;
+  accessTokenExpiresAt?: Date | null;
+  healthStatusSnapshot?: string | null;
+  healthCheckedAtSnapshot?: Date | null;
+}) {
+  const health = healthStatusFromConnection(cn);
+  if (health.status === "unknown" && cn.authType === "oauth" && cn.accessTokenExpiresAt && cn.accessTokenExpiresAt >= new Date()) {
+    return "ok";
+  }
+  return String(health.status);
+}
+
 function renderProviderCredentialHealthBadge(credential: {
   authType?: string | null;
   credentialMetadata?: string | null;
@@ -3074,21 +3089,22 @@ dashboardApp.get("/connections", async (c) => {
 
   const rows = connections.map((cn) => {
     const health = healthStatusFromConnection(cn);
+    const displayStatus = connectionDisplayStatus(cn);
     const providerName = providerDisplayName(cn.provider);
     const haystack = `${cn.label} ${cn.provider} ${providerName} ${cn.scope} ${cn.authType}`.toLowerCase();
-    return { cn, health, providerName, haystack };
+    return { cn, health, displayStatus, providerName, haystack };
   }).filter((row) => {
     if (q && !row.haystack.includes(q)) return false;
     if (statusFilter === "all") return true;
-    if (statusFilter === "problem") return ["warn", "error"].includes(String(row.health.status));
-    if (statusFilter === "unchecked") return ["unchecked", "unknown"].includes(String(row.health.status));
+    if (statusFilter === "problem") return ["warn", "error"].includes(row.displayStatus);
+    if (statusFilter === "unchecked") return ["unchecked", "unknown"].includes(row.displayStatus);
     if (statusFilter === "orphan") return row.cn.enabled && row.cn.agentGrants.length === 0;
     if (statusFilter === "disabled") return !row.cn.enabled;
-    return row.health.status === statusFilter;
+    return row.displayStatus === statusFilter;
   });
 
   const counts = connections.reduce<Record<string, number>>((acc, cn) => {
-    const status = String(healthStatusFromConnection(cn).status);
+    const status = connectionDisplayStatus(cn);
     acc[status] = (acc[status] ?? 0) + 1;
     if (cn.enabled && cn.agentGrants.length === 0) acc.orphan = (acc.orphan ?? 0) + 1;
     if (!cn.enabled) acc.disabled = (acc.disabled ?? 0) + 1;
