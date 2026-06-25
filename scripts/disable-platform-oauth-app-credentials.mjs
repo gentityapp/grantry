@@ -26,11 +26,26 @@ const PLATFORM_OAUTH_PROVIDERS = [
   "zoom",
   "hubspot",
   "freee",
+];
+
+// These providers require a workspace-owned OAuth app. A previous version of
+// this maintenance script incorrectly disabled them as platform apps; restore
+// those rows so reconnect can find the saved client_id/client_secret again.
+const WORKSPACE_OAUTH_APP_PROVIDERS = [
   "moneyforward",
   "meta_ads",
 ];
 
 try {
+  const restored = await prisma.providerCredential.updateMany({
+    where: {
+      authType: "oauth_app",
+      provider: { in: WORKSPACE_OAUTH_APP_PROVIDERS },
+      enabled: false,
+    },
+    data: { enabled: true },
+  });
+
   const result = await prisma.providerCredential.updateMany({
     where: {
       authType: "oauth_app",
@@ -40,7 +55,7 @@ try {
     data: { enabled: false },
   });
 
-  console.log(`[disable-platform-oauth-app-credentials] disabled ${result.count} stale platform oauth_app credential(s)`);
+  console.log(`[disable-platform-oauth-app-credentials] restored ${restored.count} workspace oauth_app credential(s); disabled ${result.count} stale platform oauth_app credential(s)`);
 } catch (err) {
   console.error("[disable-platform-oauth-app-credentials] failed:", err);
   process.exitCode = 1;
