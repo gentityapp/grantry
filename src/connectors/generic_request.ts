@@ -3,6 +3,14 @@ import type { ProviderDef } from "./registry.js";
 const GENERIC_TIMEOUT_MS = 12_000;
 const MAX_RESPONSE_CHARS = 120_000;
 const MAX_FULL_JSON_PARSE_CHARS = 2_000_000;
+const BODYLESS_METHODS = new Set(["GET", "HEAD"]);
+const BLOCKED_EXTRA_HEADERS = new Set([
+  "authorization",
+  "cookie",
+  "host",
+  "content-length",
+  "connection",
+]);
 
 type GenericRequestArgs = Record<string, unknown>;
 type GenericManifest = NonNullable<ProviderDef["genericRequest"]>;
@@ -39,6 +47,31 @@ function queryFromRecord(query: Record<string, unknown>) {
 function queryFromArgs(args: GenericRequestArgs) {
   const query = args.query && typeof args.query === "object" && !Array.isArray(args.query) ? args.query as Record<string, unknown> : {};
   return queryFromRecord(query);
+}
+
+function headersFromArgs(headersValue: unknown) {
+  if (!headersValue || typeof headersValue !== "object" || Array.isArray(headersValue)) return {};
+  const headers: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headersValue as Record<string, unknown>)) {
+    const name = key.trim();
+    if (!name) continue;
+    if (BLOCKED_EXTRA_HEADERS.has(name.toLowerCase())) {
+      throw new Error(`provider_header_not_allowed: ${name} cannot be overridden`);
+    }
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value) || typeof value === "object") {
+      throw new Error(`provider_header_not_allowed: ${name} must be a scalar value`);
+    }
+    headers[name] = String(value);
+  }
+  return headers;
+}
+
+function requestBodyFromArgs(args: GenericRequestArgs) {
+  if (Object.prototype.hasOwnProperty.call(args, "body")) return args.body;
+  if (Object.prototype.hasOwnProperty.call(args, "data")) return args.data;
+  if (Object.prototype.hasOwnProperty.call(args, "json")) return args.json;
+  return undefined;
 }
 
 function normalizeBaseUrl(url: string) {
@@ -229,6 +262,8 @@ async function executeGenericRequest(args: {
   method: string;
   path: string;
   query?: Record<string, unknown>;
+  body?: unknown;
+  headers?: Record<string, string>;
   baseUrlKey?: unknown;
   logTool: string;
 }) {
@@ -252,13 +287,27 @@ async function executeGenericRequest(args: {
   if (args.provider.key === "github") headers["User-Agent"] = "grantry";
   if (args.provider.key === "reddit") headers["User-Agent"] = "grantry/1.0 (MCP connector)";
   if (args.provider.key === "stripe") headers["Stripe-Version"] = "2024-06-20";
+  Object.assign(headers, args.headers ?? {});
+
+  const init: RequestInit = { method, headers, signal: undefined };
+  if (args.body !== undefined) {
+    if (BODYLESS_METHODS.has(method)) throw new Error(`provider_body_not_allowed: ${method} requests cannot include a body`);
+    if (typeof args.body === "string") {
+      init.body = args.body;
+      if (!Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) headers["Content-Type"] = "text/plain";
+    } else {
+      init.body = JSON.stringify(args.body ?? {});
+      if (!Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) headers["Content-Type"] = "application/json";
+    }
+  }
 
   const controller = new AbortController();
+  init.signal = controller.signal;
   const timeout = setTimeout(() => controller.abort(), GENERIC_TIMEOUT_MS);
   const started = Date.now();
   try {
     console.log("[provider-request] request", { provider: args.provider.key, method, path, baseUrlKey: args.baseUrlKey });
-    const response = await fetch(url, { method, headers, signal: controller.signal });
+    const response = await fetch(url, init);
     const { body, truncated, pagination } = await readResponse(response);
     console.log("[provider-request] response", {
       provider: args.provider.key,
@@ -307,6 +356,8 @@ export async function callGenericProviderRequest(args: {
     query: args.requestArgs.query && typeof args.requestArgs.query === "object" && !Array.isArray(args.requestArgs.query)
       ? args.requestArgs.query as Record<string, unknown>
       : {},
+    body: requestBodyFromArgs(args.requestArgs),
+    headers: headersFromArgs(args.requestArgs.headers),
     baseUrlKey: args.requestArgs.base_url_key ?? args.requestArgs.baseUrlKey,
     logTool: args.toolName,
   });

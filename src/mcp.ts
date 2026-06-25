@@ -752,11 +752,18 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
     };
   }
   if (toolName.endsWith("/request")) {
+    const providerKey = toolName.split("/", 1)[0] ?? "";
+    const methods = PROVIDERS[providerKey]?.genericRequest?.defaultMethods?.length
+      ? PROVIDERS[providerKey].genericRequest!.defaultMethods
+      : ["GET", "POST", "PUT", "PATCH", "DELETE"];
     return {
       path: { type: "string", description: "Provider API path relative to the provider base URL. Full URLs are rejected." },
-      method: { type: "string", enum: ["GET"], description: "HTTP method. Phase 1 generic requests are read-only and allow GET only." },
+      method: { type: "string", enum: methods, description: "HTTP method. Defaults to GET. Provider API permissions are enforced by the connected credential." },
       base_url_key: { type: "string", description: "Optional manifest-defined base URL key for providers with multiple API hosts, e.g. google_analytics admin." },
       query: { type: "object", description: "Optional query parameters. Array values are repeated." },
+      body: { type: "object", description: "Optional JSON request body for POST/PUT/PATCH/DELETE. Alias: data or json." },
+      data: { type: "object", description: "Alias for body." },
+      headers: { type: "object", description: "Optional extra scalar headers. Authorization/Cookie/Host/Content-Length cannot be overridden." },
     };
   }
   if (toolName.endsWith("/check_connection")) {

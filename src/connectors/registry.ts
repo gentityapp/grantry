@@ -44,7 +44,7 @@ export type ProviderDef = {
   tools: string[];
   /** Provider permission scopes required for specific tools before dispatch. */
   toolScopeRequirements?: Record<string, string[]>;
-  /** Safe generic provider API request manifest. Phase 1 is read-only. */
+  /** Generic provider API request manifest. Built-ins default to provider-token authority; custom providers may restrict methods as an explicit workspace policy. */
   genericRequest?: {
     baseUrl: string;
     baseUrls?: Record<string, string>;
@@ -1593,10 +1593,15 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
   },
 };
 
+const PROVIDER_AUTHORITY_GENERIC_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
+
 for (const provider of Object.values(PROVIDERS)) {
   const genericRequest = GENERIC_REQUESTS[provider.key];
   if (!genericRequest || provider.implemented === false) continue;
-  provider.genericRequest = genericRequest;
+  provider.genericRequest = {
+    ...genericRequest,
+    defaultMethods: PROVIDER_AUTHORITY_GENERIC_METHODS,
+  };
   const requestTool = `${provider.key}/request`;
   if (!provider.tools.includes(requestTool)) provider.tools.push(requestTool);
   const checkTool = `${provider.key}/check_connection`;
