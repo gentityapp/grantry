@@ -1179,6 +1179,16 @@ function oauthTokenStatus(cn: { authType: string; accessTokenExpiresAt?: Date | 
   return `<span class="badge denied" title="Access token expired at ${cn.accessTokenExpiresAt.toISOString()} and no refresh token is stored.">token expired</span>`;
 }
 
+function oauthCredentialUsable(cn: {
+  authType?: string | null;
+  accessTokenExpiresAt?: Date | null;
+  refreshToken?: string | null;
+}) {
+  if (cn.authType !== "oauth") return false;
+  if (cn.accessTokenExpiresAt && cn.accessTokenExpiresAt >= new Date()) return true;
+  return !!cn.refreshToken;
+}
+
 function healthStatusFromConnection(cn: {
   credentialMetadata?: string | null;
   credentialValidatedAt?: Date | null;
@@ -1216,6 +1226,7 @@ function renderCredentialHealthBadge(cn: {
   credentialMetadata?: string | null;
   credentialValidatedAt?: Date | null;
   accessTokenExpiresAt?: Date | null;
+  refreshToken?: string | null;
   healthStatusSnapshot?: string | null;
   healthCheckedAtSnapshot?: Date | null;
 }) {
@@ -1224,7 +1235,9 @@ function renderCredentialHealthBadge(cn: {
   if (health.status === "ok") return `<span class="badge ok"${title}>active</span>`;
   if (health.status === "warn") return `<span class="badge unscoped"${title}>partial</span>`;
   if (health.status === "error") return `<span class="badge denied"${title}>broken</span>`;
-  if (health.status === "unknown" && cn.authType === "oauth" && cn.accessTokenExpiresAt && cn.accessTokenExpiresAt >= new Date()) return "";
+  if (["unknown", "unchecked"].includes(String(health.status)) && oauthCredentialUsable(cn)) {
+    return '<span class="badge ok" title="OAuth token is usable; provider health check has not produced a stronger status yet.">active</span>';
+  }
   return `<span class="badge unscoped"${title}>not checked</span>`;
 }
 
@@ -1233,11 +1246,12 @@ function connectionDisplayStatus(cn: {
   credentialMetadata?: string | null;
   credentialValidatedAt?: Date | null;
   accessTokenExpiresAt?: Date | null;
+  refreshToken?: string | null;
   healthStatusSnapshot?: string | null;
   healthCheckedAtSnapshot?: Date | null;
 }) {
   const health = healthStatusFromConnection(cn);
-  if (health.status === "unknown" && cn.authType === "oauth" && cn.accessTokenExpiresAt && cn.accessTokenExpiresAt >= new Date()) {
+  if (["unknown", "unchecked"].includes(String(health.status)) && oauthCredentialUsable(cn)) {
     return "ok";
   }
   return String(health.status);
