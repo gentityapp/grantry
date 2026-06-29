@@ -6121,7 +6121,7 @@ oauthApp.get("/:provider/start", async (c) => {
   }
   const oauthCfg = await resolveOAuthClientConfig(providerKey, providerDef, workspaceId, String(payload.oauth_app_credential_id || ""));
   if (!oauthCfg.clientId) {
-    const envPrefix = providerKey.toUpperCase();
+    const envPrefix = oauthEnvPrefix(providerKey);
     const setupLink = providerCredentialMode ? "/providers" : (payload.tenant ? `/tenants/${encodeURIComponent(payload.tenant)}/edit` : "/tenants/new");
     const missingMessage = providerRequiresWorkspaceOAuthApp(providerKey, providerDef)
       ? `Configure this workspace's ${providerDef.label} OAuth app first. Paste its client_id and client_secret before reconnecting.`
@@ -6235,7 +6235,7 @@ oauthApp.get("/:provider/callback", async (c) => {
   const clientSecret = oauthCfg.clientSecret;
   const publicUrl = process.env.BETTER_AUTH_URL || `${publicOrigin(c)}`;
   if (!clientId || !clientSecret) {
-    const envPrefix = providerKey.toUpperCase();
+    const envPrefix = oauthEnvPrefix(providerKey);
     const setupLink = payload.tenant ? `/tenants/${encodeURIComponent(payload.tenant)}/edit` : "/tenants/new";
     const hint = providerRequiresWorkspaceOAuthApp(providerKey, providerDef)
       ? `Configure this workspace's ${escapeHtml(providerDef.label)} OAuth app first. Paste its <code>client_id</code> and <code>client_secret</code> on the scope edit page; do not use Grantry-wide environment variables.`
