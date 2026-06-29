@@ -984,6 +984,35 @@ export async function inspectCredential(provider: string, authType: string, toke
       return { provider, authType, status: "ok", scopes: Array.isArray(body.scopes) ? body.scopes : [], notes: ["SendGrid API keys are sent as Authorization: Bearer. Restrict to mail.send for send-only use."], checkedAt };
     }
 
+    if (provider === "openai") {
+      let apiKey = token.trim();
+      const extraHeaders: Record<string, string> = {};
+      if (apiKey.startsWith("{")) {
+        let p: any; try { p = JSON.parse(apiKey); } catch { return { provider, authType, status: "error", checkedAt, error: 'OpenAI credential JSON is invalid; expected {"api_key":"sk-..."}' }; }
+        apiKey = String(p.api_key ?? p.apiKey ?? p.token ?? "").trim();
+        if (p.organization ?? p.org ?? p.organization_id) extraHeaders["OpenAI-Organization"] = String(p.organization ?? p.org ?? p.organization_id);
+        if (p.project ?? p.project_id) extraHeaders["OpenAI-Project"] = String(p.project ?? p.project_id);
+      }
+      if (!apiKey) return { provider, authType, status: "error", checkedAt, error: "OpenAI API key is required" };
+      const resp = await fetchWithTimeout("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json", ...extraHeaders } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `OpenAI API key check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      const models = Array.isArray(body.data) ? body.data.map((m: any) => m.id) : [];
+      return {
+        provider,
+        authType,
+        status: "ok",
+        resources: models.includes("gpt-image-1") || models.includes("dall-e-3")
+          ? [{ image_models: models.filter((id: string) => id === "gpt-image-1" || /^dall-e/.test(id)) }]
+          : undefined,
+        notes: [
+          "OpenAI API keys are sent as Authorization: Bearer.",
+          "Image generation (openai/generate_image) requires an account with billing enabled and access to gpt-image-1 or a dall-e model.",
+        ],
+        checkedAt,
+      };
+    }
+
     if (provider === "vercel") {
       const resp = await fetchWithTimeout("https://api.vercel.com/v2/user", { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
       const body: any = await readJson(resp);

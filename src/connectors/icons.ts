@@ -131,6 +131,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   bigquery: "#669DF6",
   google_admin: "#1A73E8",
   godaddy: "#1BDBDB", // GoDaddy teal
+  openai: "#000000", // OpenAI black
 };
 
 /** Letter overrides where the label's first character is not the recognizable one. */

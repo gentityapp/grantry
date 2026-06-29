@@ -1134,6 +1134,17 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  openai: {
+    key: "openai",
+    label: "OpenAI",
+    authTypes: ["pat"],
+    helpText: "Paste an OpenAI API key (starts with sk- or sk-proj-) from platform.openai.com/api-keys. It is sent as Authorization: Bearer. To pin an org/project, paste JSON like {\"api_key\":\"sk-...\",\"organization\":\"org_...\",\"project\":\"proj_...\"}. Image generation requires an account with billing enabled.",
+    tokenUrl: "https://platform.openai.com/api-keys",
+    tools: [
+      "openai/generate_image",
+    ],
+    implemented: true,
+  },
 };
 
 const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]>> = {
@@ -1617,6 +1628,12 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     baseUrl: "https://bigquery.googleapis.com/bigquery/v2",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
+  },
+  openai: {
+    baseUrl: "https://api.openai.com/v1",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "models", method: "GET", path: "/models" }],
   },
 };
 

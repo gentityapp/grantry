@@ -42,6 +42,7 @@ import { callFacebookMessengerTool } from "./connectors/facebook_messenger.js";
 import { callAirtableTool } from "./connectors/airtable.js";
 import { callLinearTool } from "./connectors/linear.js";
 import { callSendGridTool } from "./connectors/sendgrid.js";
+import { callOpenAITool } from "./connectors/openai.js";
 import { callVercelTool } from "./connectors/vercel.js";
 import { callStripeTool } from "./connectors/stripe.js";
 import { callWebflowTool } from "./connectors/webflow.js";
@@ -2030,6 +2031,21 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
     };
   }
   if (toolName === "sendgrid/list_bounces") { return { start_time: { type: "number", description: "Unix timestamp lower bound." }, end_time: { type: "number", description: "Unix timestamp upper bound." } }; }
+  // --- openai ---
+  if (toolName === "openai/generate_image") {
+    return {
+      prompt: { type: "string", description: "Text description of the image to generate." },
+      model: { type: "string", description: "Image model. Default dall-e-3 (returns a hosted URL). Use gpt-image-1 for the newest/higher-quality model (returns base64; requires OpenAI org verification)." },
+      size: { type: "string", description: "Image size, e.g. 1024x1024. gpt-image-1: 1024x1024 | 1536x1024 | 1024x1536 | auto. dall-e-3: 1024x1024 | 1792x1024 | 1024x1792." },
+      quality: { type: "string", description: "gpt-image-1: low | medium | high | auto. dall-e-3: standard | hd." },
+      n: { type: "number", description: "Number of images to generate (dall-e-3 supports only 1)." },
+      response_format: { type: "string", enum: ["url", "b64_json"], description: "DALL·E models only: return a hosted url (default) or base64. Ignored by gpt-image-1, which always returns base64." },
+      style: { type: "string", enum: ["vivid", "natural"], description: "dall-e-3 only: rendering style." },
+      background: { type: "string", enum: ["transparent", "opaque", "auto"], description: "gpt-image-1 only: background handling." },
+      output_format: { type: "string", enum: ["png", "jpeg", "webp"], description: "gpt-image-1 only: output image format." },
+      user: { type: "string", description: "Optional end-user identifier for abuse monitoring." },
+    };
+  }
   // --- vercel ---
   if (toolName === "vercel/list_projects") { return { limit: { type: "number", description: "Projects to return." }, team_id: { type: "string", description: "Optional Vercel team id." } }; }
   if (toolName === "vercel/get_project") { return { project_id: { type: "string", description: "Vercel project id or name." } }; }
@@ -2497,6 +2513,7 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "sendgrid/send_email") return ["from", "to", "subject"];
   if (toolName === "sendgrid/get_template") return ["template_id"];
   if (toolName === "sendgrid/get_stats") return ["start_date"];
+  if (toolName === "openai/generate_image") return ["prompt"];
   if (toolName === "vercel/get_project") return ["project_id"];
   if (toolName === "vercel/get_deployment") return ["deployment_id"];
   if (toolName === "stripe/get_customer") return ["customer_id"];
@@ -2729,6 +2746,7 @@ async function dispatchProviderTool(
   if (provider === "airtable") return callAirtableTool(toolName, args, token);
   if (provider === "linear") return callLinearTool(toolName, args, token);
   if (provider === "sendgrid") return callSendGridTool(toolName, args, token);
+  if (provider === "openai") return callOpenAITool(toolName, args, token);
   if (provider === "vercel") return callVercelTool(toolName, args, token);
   if (provider === "stripe") return callStripeTool(toolName, args, token);
   if (provider === "webflow") return callWebflowTool(toolName, args, token);
