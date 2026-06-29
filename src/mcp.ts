@@ -3199,8 +3199,12 @@ function providerRequiresWorkspaceOAuthApp(provider: string) {
     && providerDef.oauthAppOwner === "workspace";
 }
 
+function oauthEnvPrefix(provider: string) {
+  return provider === "meta_ads_platform" ? "META_ADS" : provider.toUpperCase();
+}
+
 function oauthEnvClientConfig(provider: string) {
-  const envPrefix = provider.toUpperCase();
+  const envPrefix = oauthEnvPrefix(provider);
   const legacyAliases: Record<string, string[]> = {
     github: ["GH_CLIENT_ID", "GRANTRY_GITHUB_CLIENT_ID"],
     google_gsc: ["GOOGLE_CLIENT_ID"],
@@ -3216,7 +3220,6 @@ function oauthEnvClientConfig(provider: string) {
     bigquery: ["GOOGLE_CLIENT_ID"],
     google_admin: ["GOOGLE_CLIENT_ID"],
     yahoo_ads: ["YAHOO_CLIENT_ID"],
-    meta_ads_platform: ["META_ADS_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
     github: ["GH_CLIENT_SECRET", "GRANTRY_GITHUB_CLIENT_SECRET"],
@@ -3233,7 +3236,6 @@ function oauthEnvClientConfig(provider: string) {
     bigquery: ["GOOGLE_CLIENT_SECRET"],
     google_admin: ["GOOGLE_CLIENT_SECRET"],
     yahoo_ads: ["YAHOO_CLIENT_SECRET"],
-    meta_ads_platform: ["META_ADS_CLIENT_SECRET"],
   };
   return {
     clientId: process.env[`${envPrefix}_CLIENT_ID`]

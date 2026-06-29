@@ -979,6 +979,10 @@ async function resolveOAuthWorkspaceId(c: any, userId: string, providerKey: stri
   return getActiveWorkspaceId(c);
 }
 
+function oauthEnvPrefix(providerKey: string) {
+  return providerKey === "meta_ads_platform" ? "META_ADS" : providerKey.toUpperCase();
+}
+
 async function resolveOAuthClientConfig(providerKey: string, providerDef: any, workspaceId: string | null, credentialId?: string | null) {
   const shouldUseWorkspaceCredential = !!credentialId || providerRequiresWorkspaceOAuthApp(providerKey, providerDef);
   if (workspaceId && shouldUseWorkspaceCredential) {
@@ -1017,7 +1021,7 @@ async function resolveOAuthClientConfig(providerKey: string, providerDef: any, w
       oauthClientAuthMethod: defaultOAuthClientAuthMethod(providerKey, providerDef),
     };
   }
-  const envPrefix = providerKey.toUpperCase();
+  const envPrefix = oauthEnvPrefix(providerKey);
   const legacyAliases: Record<string, string[]> = {
     github: ["GH_CLIENT_ID", "GRANTRY_GITHUB_CLIENT_ID"],
     google_gsc: ["GOOGLE_CLIENT_ID"],
@@ -1033,7 +1037,6 @@ async function resolveOAuthClientConfig(providerKey: string, providerDef: any, w
     bigquery: ["GOOGLE_CLIENT_ID"],
     google_admin: ["GOOGLE_CLIENT_ID"],
     yahoo_ads: ["YAHOO_CLIENT_ID"],
-    meta_ads_platform: ["META_ADS_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
     github: ["GH_CLIENT_SECRET", "GRANTRY_GITHUB_CLIENT_SECRET"],
@@ -1050,7 +1053,6 @@ async function resolveOAuthClientConfig(providerKey: string, providerDef: any, w
     bigquery: ["GOOGLE_CLIENT_SECRET"],
     google_admin: ["GOOGLE_CLIENT_SECRET"],
     yahoo_ads: ["YAHOO_CLIENT_SECRET"],
-    meta_ads_platform: ["META_ADS_CLIENT_SECRET"],
   };
   return {
     source: "env" as const,
