@@ -1762,7 +1762,10 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   }
   if (toolName === "x/post_tweet") {
     return {
-      text: { type: "string", description: "Tweet text, max 280 characters." },
+      text: { type: "string", description: "Tweet text, max 280 characters. Optional if at least one image is attached." },
+      image_urls: { type: "array", items: { type: "string" }, description: "Optional image URLs to download and attach (max 4 images total across all image inputs)." },
+      image_base64: { type: "array", items: { type: "string" }, description: "Optional base64-encoded images to attach (data: URIs allowed). Counts toward the 4-image total." },
+      media_ids: { type: "array", items: { type: "string" }, description: "Optional pre-uploaded X media IDs to attach." },
       reply_to: { type: "string", description: "Optional tweet ID to reply to." },
       quote_tweet_id: { type: "string", description: "Optional tweet ID to quote." },
     };
@@ -2458,7 +2461,7 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "x/get_user_tweets") return ["user_id"];
   if (toolName === "x/search_recent") return ["query"];
   if (toolName === "x/get_tweet") return ["id"];
-  if (toolName === "x/post_tweet") return ["text"];
+  if (toolName === "x/post_tweet") return [];
   if (toolName === "x/delete_tweet") return ["id"];
   if (toolName === "discord/get_guild") return ["guild_id"];
   if (toolName === "discord/list_channels") return ["guild_id"];

@@ -729,10 +729,10 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "x",
     label: "X",
     authTypes: ["oauth"],
-    helpText: "Create an OAuth 2.0 app in the X developer portal (Confidential client, type Web App) with the callback URL set to this app's /oauth/x/callback. Connect grants read access plus posting and deleting tweets as the authorized account.",
+    helpText: "Create an OAuth 2.0 app in the X developer portal (Confidential client, type Web App) with the callback URL set to this app's /oauth/x/callback. Connect grants read access plus posting (with images), and deleting tweets as the authorized account.",
     oauthSetupUrl: "https://developer.x.com/en/portal/dashboard",
     oauthClientAuthMethod: "CLIENT_SECRET_BASIC",
-    oauthScopes: ["tweet.read", "tweet.write", "users.read", "offline.access"],
+    oauthScopes: ["tweet.read", "tweet.write", "users.read", "offline.access", "media.write"],
     authorizeUrl: "https://x.com/i/oauth2/authorize",
     oauthTokenUrl: "https://api.x.com/2/oauth2/token",
     tools: [

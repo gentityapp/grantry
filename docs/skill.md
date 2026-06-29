@@ -560,7 +560,9 @@ All tools are read-only and send the API key as the `key` query parameter.
 - `search_recent` (read): `query`; optional `max_results` (10-100), `next_token`,
   `tweet_fields`.
 - `get_tweet` (read): `id`; optional `tweet_fields`.
-- `post_tweet` (write): `text` (≤280 chars); optional `reply_to`, `quote_tweet_id`.
+- `post_tweet` (write): `text` (≤280 chars; optional when an image is attached);
+  optional `image_urls` / `image_base64` / `media_ids` (≤4 images total),
+  `reply_to`, `quote_tweet_id`. Images require the `media.write` scope.
 - `delete_tweet` (write): `id` (a tweet owned by the authorized account).
 
 ### Discord tool arguments (besides `scope`)
