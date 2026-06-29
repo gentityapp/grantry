@@ -26,6 +26,7 @@ const PLATFORM_OAUTH_PROVIDERS = [
   "zoom",
   "hubspot",
   "freee",
+  "meta_ads_platform",
 ];
 
 // These providers require a workspace-owned OAuth app. A previous version of

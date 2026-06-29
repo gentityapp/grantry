@@ -125,6 +125,12 @@ function publicToolName(canonicalName: string): string {
   return canonicalName === "ping" ? canonicalName : canonicalName.replace("/", "_");
 }
 
+function metaAdsRuntimeToolName(toolName: string): string {
+  return toolName.startsWith("meta_ads_platform/")
+    ? toolName.replace("meta_ads_platform/", "meta_ads/")
+    : toolName;
+}
+
 function canonicalToolName(name: unknown): string {
   const raw = String(name ?? "");
   if (raw === "ping") return raw;
@@ -147,6 +153,7 @@ function canonicalToolName(name: unknown): string {
 }
 
 function toolSpecificInputProperties(toolName: string): Record<string, any> {
+  const metaToolName = metaAdsRuntimeToolName(toolName);
   if (toolName === "grantry/get_skill") {
     return {
       format: { type: "string", enum: ["markdown"], description: "Output format. Defaults to markdown." },
@@ -641,20 +648,20 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       body: { type: "object", description: "Alias for operation." },
     };
   }
-  if (toolName === "meta_ads/list_ad_accounts") {
+  if (metaToolName === "meta_ads/list_ad_accounts") {
     return {
       fields: { type: "string", description: "Comma-separated ad account fields. Defaults to id,account_id,name,account_status,currency,timezone_name." },
       limit: { type: "number", minimum: 1, maximum: 500, description: "Accounts to return." },
       after: { type: "string", description: "Graph API paging cursor." },
     };
   }
-  if (toolName === "meta_ads/get_ad_account") {
+  if (metaToolName === "meta_ads/get_ad_account") {
     return {
       account_id: { type: "string", description: "Meta ad account id, with or without the act_ prefix." },
       fields: { type: "string", description: "Comma-separated fields to include." },
     };
   }
-  if (toolName === "meta_ads/list_campaigns") {
+  if (metaToolName === "meta_ads/list_campaigns") {
     return {
       account_id: { type: "string", description: "Meta ad account id, with or without the act_ prefix." },
       fields: { type: "string", description: "Comma-separated campaign fields." },
@@ -663,13 +670,13 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       after: { type: "string", description: "Graph API paging cursor." },
     };
   }
-  if (toolName === "meta_ads/get_campaign") {
+  if (metaToolName === "meta_ads/get_campaign") {
     return {
       campaign_id: { type: "string", description: "Meta campaign id." },
       fields: { type: "string", description: "Comma-separated fields to include." },
     };
   }
-  if (toolName === "meta_ads/list_ad_sets") {
+  if (metaToolName === "meta_ads/list_ad_sets") {
     return {
       account_id: { type: "string", description: "Meta ad account id (used when campaign_id is omitted)." },
       campaign_id: { type: "string", description: "Optional campaign id to list its ad sets." },
@@ -678,7 +685,7 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       after: { type: "string", description: "Graph API paging cursor." },
     };
   }
-  if (toolName === "meta_ads/list_ads") {
+  if (metaToolName === "meta_ads/list_ads") {
     return {
       account_id: { type: "string", description: "Meta ad account id (used when campaign_id/adset_id are omitted)." },
       campaign_id: { type: "string", description: "Optional campaign id." },
@@ -688,7 +695,7 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       after: { type: "string", description: "Graph API paging cursor." },
     };
   }
-  if (toolName === "meta_ads/get_insights") {
+  if (metaToolName === "meta_ads/get_insights") {
     return {
       object_id: { type: "string", description: "Object to report on: ad account (act_…), campaign, ad set, or ad id." },
       account_id: { type: "string", description: "Ad account id, used when object_id is omitted." },
@@ -701,13 +708,13 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       after: { type: "string", description: "Graph API paging cursor." },
     };
   }
-  if (toolName === "meta_ads/create_campaign") {
+  if (metaToolName === "meta_ads/create_campaign") {
     return {
       account_id: { type: "string", description: "Meta ad account id, with or without the act_ prefix." },
       campaign: { type: "object", description: "Campaign object, e.g. { name, objective, status, special_ad_categories }." },
     };
   }
-  if (toolName === "meta_ads/update_campaign") {
+  if (metaToolName === "meta_ads/update_campaign") {
     return {
       campaign_id: { type: "string", description: "Meta campaign id to update." },
       updates: { type: "object", description: "Fields to update, e.g. { name, status, daily_budget }." },
@@ -2306,6 +2313,7 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
 }
 
 function requiredToolSpecificArgs(toolName: string): string[] {
+  const metaToolName = metaAdsRuntimeToolName(toolName);
   if (SYSTEM_TOOLS.includes(toolName as any)) return [];
   if (toolName === "github/get_file_contents") return ["owner", "repo"];
   if (toolName === "github/get_repo") return ["owner", "repo"];
@@ -2343,11 +2351,11 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "google_ads/mutate") return ["customer_id", "operations"];
   if (toolName === "yahoo_ads/get") return ["base_account_id", "service"];
   if (toolName === "yahoo_ads/mutate") return ["base_account_id", "service", "method"];
-  if (toolName === "meta_ads/get_ad_account") return ["account_id"];
-  if (toolName === "meta_ads/list_campaigns") return ["account_id"];
-  if (toolName === "meta_ads/get_campaign") return ["campaign_id"];
-  if (toolName === "meta_ads/create_campaign") return ["account_id", "campaign"];
-  if (toolName === "meta_ads/update_campaign") return ["campaign_id", "updates"];
+  if (metaToolName === "meta_ads/get_ad_account") return ["account_id"];
+  if (metaToolName === "meta_ads/list_campaigns") return ["account_id"];
+  if (metaToolName === "meta_ads/get_campaign") return ["campaign_id"];
+  if (metaToolName === "meta_ads/create_campaign") return ["account_id", "campaign"];
+  if (metaToolName === "meta_ads/update_campaign") return ["campaign_id", "updates"];
   if (toolName === "hubspot/get_contact") return ["contact_id"];
   if (toolName === "hubspot/create_deal") return ["properties"];
   if (toolName === "hubspot/update_marketing_email") return ["email_id", "confirm"];
@@ -2689,7 +2697,7 @@ async function dispatchProviderTool(
   if (provider === "google_analytics") return callGoogleAnalyticsTool(toolName, args, token);
   if (provider === "google_ads") return callGoogleAdsTool(toolName, args, token, conn.encryptedServerCredential ? decrypt(conn.encryptedServerCredential) : null);
   if (provider === "yahoo_ads") return callYahooAdsTool(toolName, args, token);
-  if (provider === "meta_ads") return callMetaAdsTool(toolName, args, token);
+  if (provider === "meta_ads" || provider === "meta_ads_platform") return callMetaAdsTool(metaAdsRuntimeToolName(toolName), args, token);
   if (provider === "hubspot") return callHubSpotTool(toolName, args, token);
   if (provider === "gmail") return callGmailTool(toolName, args, token);
   if (provider === "youtube") return callYouTubeTool(toolName, args, token);
@@ -3208,6 +3216,7 @@ function oauthEnvClientConfig(provider: string) {
     bigquery: ["GOOGLE_CLIENT_ID"],
     google_admin: ["GOOGLE_CLIENT_ID"],
     yahoo_ads: ["YAHOO_CLIENT_ID"],
+    meta_ads_platform: ["META_ADS_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
     github: ["GH_CLIENT_SECRET", "GRANTRY_GITHUB_CLIENT_SECRET"],
@@ -3224,6 +3233,7 @@ function oauthEnvClientConfig(provider: string) {
     bigquery: ["GOOGLE_CLIENT_SECRET"],
     google_admin: ["GOOGLE_CLIENT_SECRET"],
     yahoo_ads: ["YAHOO_CLIENT_SECRET"],
+    meta_ads_platform: ["META_ADS_CLIENT_SECRET"],
   };
   return {
     clientId: process.env[`${envPrefix}_CLIENT_ID`]

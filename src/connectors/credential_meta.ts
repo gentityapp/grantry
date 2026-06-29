@@ -417,7 +417,7 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
-    if (provider === "meta_ads") {
+    if (provider === "meta_ads" || provider === "meta_ads_platform") {
       const apiVersion = process.env.META_ADS_API_VERSION || "v21.0";
       const resp = await fetchWithTimeout(`https://graph.facebook.com/${apiVersion}/me?fields=id,name`, {
         headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
@@ -433,7 +433,7 @@ export async function inspectCredential(provider: string, authType: string, toke
         subject: { id: body.id, name: body.name },
         notes: [
           "Meta access tokens are long-lived (~60 days); reconnect when expired since Meta does not issue refresh tokens.",
-          "Use meta_ads/list_ad_accounts to verify which ad accounts this user can access.",
+          `Use ${provider === "meta_ads_platform" ? "meta_ads_platform" : "meta_ads"}/list_ad_accounts to verify which ad accounts this user can access.`,
         ],
         checkedAt,
       };

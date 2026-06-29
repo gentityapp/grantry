@@ -85,6 +85,20 @@ export type ProviderDef = {
   implemented?: boolean;
 };
 
+const META_ADS_READ_TOOLS = [
+  "meta_ads/list_ad_accounts",
+  "meta_ads/get_ad_account",
+  "meta_ads/list_campaigns",
+  "meta_ads/get_campaign",
+  "meta_ads/list_ad_sets",
+  "meta_ads/list_ads",
+  "meta_ads/get_insights",
+];
+
+const META_ADS_PLATFORM_READ_TOOLS = META_ADS_READ_TOOLS.map((tool) =>
+  tool.replace("meta_ads/", "meta_ads_platform/"),
+);
+
 export const PROVIDERS: Record<string, ProviderDef> = {
   notion: {
     key: "notion",
@@ -306,6 +320,19 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "meta_ads/create_campaign": ["ads_management"],
       "meta_ads/update_campaign": ["ads_management"],
     },
+    implemented: true,
+  },
+  meta_ads_platform: {
+    key: "meta_ads_platform",
+    label: "Meta Ads (Grantry OAuth)",
+    authTypes: ["oauth"],
+    helpText: "Connect a Facebook user with access to the Meta Ads account via Business Manager using Grantry's reviewed Meta app. This read-only connection is for ad performance analysis; it does not create, edit, pause, or delete ads.",
+    oauthAppOwner: "platform",
+    oauthClientAuthMethod: "CLIENT_SECRET_POST",
+    oauthScopes: ["ads_read"],
+    authorizeUrl: "https://www.facebook.com/v21.0/dialog/oauth",
+    oauthTokenUrl: "https://graph.facebook.com/v21.0/oauth/access_token",
+    tools: META_ADS_PLATFORM_READ_TOOLS,
     implemented: true,
   },
   gmail: {

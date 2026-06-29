@@ -1033,6 +1033,7 @@ async function resolveOAuthClientConfig(providerKey: string, providerDef: any, w
     bigquery: ["GOOGLE_CLIENT_ID"],
     google_admin: ["GOOGLE_CLIENT_ID"],
     yahoo_ads: ["YAHOO_CLIENT_ID"],
+    meta_ads_platform: ["META_ADS_CLIENT_ID"],
   };
   const legacySecretAliases: Record<string, string[]> = {
     github: ["GH_CLIENT_SECRET", "GRANTRY_GITHUB_CLIENT_SECRET"],
@@ -1049,6 +1050,7 @@ async function resolveOAuthClientConfig(providerKey: string, providerDef: any, w
     bigquery: ["GOOGLE_CLIENT_SECRET"],
     google_admin: ["GOOGLE_CLIENT_SECRET"],
     yahoo_ads: ["YAHOO_CLIENT_SECRET"],
+    meta_ads_platform: ["META_ADS_CLIENT_SECRET"],
   };
   return {
     source: "env" as const,
@@ -6295,7 +6297,7 @@ oauthApp.get("/:provider/callback", async (c) => {
   }
   // Meta returns a short-lived token from the code exchange and issues no refresh
   // token. Swap it for a long-lived (~60 day) token so the connection stays usable.
-  if (providerKey === "meta_ads") {
+  if (providerKey === "meta_ads" || providerKey === "meta_ads_platform") {
     try {
       const metaVersion = process.env.META_ADS_API_VERSION || "v21.0";
       const llParams = new URLSearchParams({
@@ -6341,7 +6343,7 @@ oauthApp.get("/:provider/callback", async (c) => {
       const u: any = await (await fetch("https://api-accounting.moneyforward.com/api/v3/offices", { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } })).json();
       if (u?.name) userLogin = u.name;
       else userLogin = "moneyforward-accounting";
-    } else if (providerKey === "meta_ads") {
+    } else if (providerKey === "meta_ads" || providerKey === "meta_ads_platform") {
       const metaVersion = process.env.META_ADS_API_VERSION || "v21.0";
       const u: any = await (await fetch(`https://graph.facebook.com/${metaVersion}/me?fields=id,name`, { headers: { Authorization: `Bearer ${accessToken}` } })).json();
       if (u.name) userLogin = String(u.name).replace(/\s+/g, "-").toLowerCase();
