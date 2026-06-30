@@ -98,6 +98,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   apollo: "#5C3FFF", // Apollo.io purple
   heyreach: "#6A5CFF",
   chatwork: "#EA3C3C",
+  channel_talk: "#3B5AFE", // Channel Talk blue
   yahoo_ads: "#FF0033", // Yahoo! JAPAN red
   freee: "#2864F0", // freee blue
   moneyforward: "#3686C3", // Money Forward blue

@@ -537,6 +537,23 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  channel_talk: {
+    key: "channel_talk",
+    label: "Channel Talk",
+    authTypes: ["pat"],
+    helpText: "Paste JSON with your Channel Talk Open API credentials: {\"accessKey\":\"...\",\"accessSecret\":\"...\"}. Create them in the Channel desk under Settings > Security > API. They are sent as the x-access-key and x-access-secret headers.",
+    tokenUrl: "https://developers.channel.io/docs/open-api-keys",
+    tools: [
+      "channel_talk/list_managers",
+      "channel_talk/get_manager",
+      "channel_talk/list_user_chats",
+      "channel_talk/get_user_chat",
+      "channel_talk/list_messages",
+      "channel_talk/send_message",
+      "channel_talk/get_user",
+    ],
+    implemented: true,
+  },
   railway: {
     key: "railway",
     label: "Railway Project Token",

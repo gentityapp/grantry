@@ -95,7 +95,7 @@ function authTypeLabel(providerKey: string, authType: string): string {
   if (providerKey === "line") return "Channel access token";
   if (["airtable", "linear", "sendgrid", "vercel", "stripe", "webflow", "intercom", "customerio", "mailchimp", "openai"].includes(providerKey)) return "API key";
   if (providerKey === "linkedin_ads" || providerKey === "tiktok_ads") return "Access token";
-  if (["zendesk", "wordpress", "shopify", "jira", "salesforce", "microsoft_ads", "aws", "snowflake"].includes(providerKey)) return "JSON credential";
+  if (["zendesk", "wordpress", "shopify", "jira", "salesforce", "microsoft_ads", "aws", "snowflake", "channel_talk"].includes(providerKey)) return "JSON credential";
   return "paste token";
 }
 
@@ -138,6 +138,7 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
   if (providerKey === "microsoft_ads") return 'JSON: {"developer_token":"...","access_token":"...","customer_id":"...","account_id":"..."}';
   if (providerKey === "aws") return 'JSON: {"accessKeyId":"AKIA...","secretAccessKey":"...","region":"us-east-1"}';
   if (providerKey === "snowflake") return 'JSON: {"account":"orgname-accountname","token":"...","warehouse":"...","database":"..."}';
+  if (providerKey === "channel_talk") return 'JSON: {"accessKey":"...","accessSecret":"..."}';
   return `Paste your ${providerLabel} token here`;
 }
 
@@ -147,6 +148,7 @@ function tokenLinkLabel(providerKey: string, providerLabel: string): string {
   if (providerKey === "clay") return "🔗 Open Clay API key settings →";
   if (providerKey === "heyreach") return "🔗 Open HeyReach app →";
   if (providerKey === "chatwork") return "🔗 Open Chatwork API token settings →";
+  if (providerKey === "channel_talk") return "🔗 Open Channel Talk Open API docs →";
   if (providerKey === "railway") return "🔗 Open Railway project tokens →";
   if (providerKey === "railway_api") return "🔗 Open Railway API tokens →";
   if (providerKey === "resend") return "🔗 Open Resend API keys →";

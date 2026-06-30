@@ -28,6 +28,7 @@ import { callClayTool } from "./connectors/clay.js";
 import { callApolloTool } from "./connectors/apollo.js";
 import { callHeyReachTool } from "./connectors/heyreach.js";
 import { callChatworkTool } from "./connectors/chatwork.js";
+import { callChannelTalkTool } from "./connectors/channel_talk.js";
 import { callRailwayTool } from "./connectors/railway.js";
 import { callResendTool } from "./connectors/resend.js";
 import { callSlackTool } from "./connectors/slack.js";
@@ -1352,6 +1353,47 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       create_download_url: { type: "boolean", description: "When true, create a temporary download URL." },
     };
   }
+  // --- channel_talk ---
+  if (toolName === "channel_talk/list_managers") {
+    return {
+      limit: { type: "number", description: "Max managers to return (pagination)." },
+      since: { type: "string", description: "Pagination cursor (the previous response's next value)." },
+      sortOrder: { type: "string", description: "Sort order, e.g. asc or desc." },
+    };
+  }
+  if (toolName === "channel_talk/get_manager") {
+    return { manager_id: { type: "string", description: "Channel Talk manager ID." } };
+  }
+  if (toolName === "channel_talk/list_user_chats") {
+    return {
+      state: { type: "string", description: "Filter by chat state, e.g. opened, closed, snoozed." },
+      sortOrder: { type: "string", description: "Sort order, e.g. asc or desc." },
+      limit: { type: "number", description: "Max user-chats to return (pagination)." },
+      since: { type: "string", description: "Pagination cursor (the previous response's next value)." },
+    };
+  }
+  if (toolName === "channel_talk/get_user_chat") {
+    return { user_chat_id: { type: "string", description: "Channel Talk user-chat ID." } };
+  }
+  if (toolName === "channel_talk/list_messages") {
+    return {
+      user_chat_id: { type: "string", description: "Channel Talk user-chat ID." },
+      limit: { type: "number", description: "Max messages to return (pagination)." },
+      since: { type: "string", description: "Pagination cursor (the previous response's next value)." },
+      sortOrder: { type: "string", description: "Sort order, e.g. asc or desc." },
+    };
+  }
+  if (toolName === "channel_talk/send_message") {
+    return {
+      user_chat_id: { type: "string", description: "Channel Talk user-chat ID to post into." },
+      plain_text: { type: "string", description: "Message text (required unless blocks is supplied)." },
+      blocks: { type: "array", description: "Optional Channel Talk rich message blocks; overrides/augments plain_text." },
+      bot_name: { type: "string", description: "Optional bot name to attribute the message to (botName query param)." },
+    };
+  }
+  if (toolName === "channel_talk/get_user") {
+    return { user_id: { type: "string", description: "Channel Talk user ID." } };
+  }
   if (toolName === "railway/graphql") {
     return {
       query: { type: "string", description: "Railway GraphQL query or mutation." },
@@ -2436,6 +2478,11 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "chatwork/create_room_task") return ["room_id", "body", "to_ids"];
   if (toolName === "chatwork/list_room_files") return ["room_id"];
   if (toolName === "chatwork/get_room_file") return ["room_id", "file_id"];
+  if (toolName === "channel_talk/get_manager") return ["manager_id"];
+  if (toolName === "channel_talk/get_user_chat") return ["user_chat_id"];
+  if (toolName === "channel_talk/list_messages") return ["user_chat_id"];
+  if (toolName === "channel_talk/send_message") return ["user_chat_id"];
+  if (toolName === "channel_talk/get_user") return ["user_id"];
   if (toolName === "railway/graphql") return ["query"];
   if (toolName === "google_maps/geocode") return ["address"];
   if (toolName === "google_maps/reverse_geocode") return [];
@@ -2726,6 +2773,7 @@ async function dispatchProviderTool(
   if (provider === "apollo") return callApolloTool(toolName, args, token);
   if (provider === "heyreach") return callHeyReachTool(toolName, args, token);
   if (provider === "chatwork") return callChatworkTool(toolName, args, token);
+  if (provider === "channel_talk") return callChannelTalkTool(toolName, args, token);
   if (provider === "railway") {
     const railwayToken = conn.provider === "railway_api" && !token.trim().startsWith("{")
       ? JSON.stringify({ token, token_type: "workspace" })

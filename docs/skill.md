@@ -3,7 +3,7 @@ name: grantry
 description: |
   Use grantry when the user wants an AI agent to call external SaaS APIs
   (GitHub, Notion, Google Drive/GSC/Ads/Maps, HubSpot, Attio, Clay, HeyReach,
-  Chatwork, Railway, Resend, Slack, Reddit, X, Discord, LINE, Airtable, Linear,
+  Chatwork, Channel Talk, Railway, Resend, Slack, Reddit, X, Discord, LINE, Airtable, Linear,
   SendGrid, Vercel, Stripe, Webflow, Intercom, Customer.io, Mailchimp, Zendesk,
   WordPress, Shopify, Jira, Salesforce, LinkedIn Ads, TikTok Ads, Microsoft Ads,
   AWS, Snowflake, Google Calendar/Sheets/Tag Manager/Cloud, BigQuery) under OAuth/PAT authentication
@@ -138,6 +138,8 @@ Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing scope):
 - **Clay**: paste the API key from Clay Settings > Account > API key.
 - **HeyReach**: paste a Public API key.
 - **Chatwork**: paste a Chatwork API token.
+- **Channel Talk**: paste JSON `{"accessKey":"…","accessSecret":"…"}` from the
+  Channel desk Settings > Security > API (sent as x-access-key/x-access-secret).
 - **SmartHR (custom provider)**: create a custom provider first, then add a PAT
   connection. Custom provider fields:
   - `Provider key`: `smarthr`
@@ -289,6 +291,8 @@ the same provider+scope; disambiguate with `auth_type` (`service_account` vs
   `list_room_members`, `list_messages`, `get_message`, `send_message`,
   `list_my_tasks`, `list_room_tasks`, `get_room_task`, `create_room_task`,
   `list_room_files`, `get_room_file`
+- **channel_talk** (JSON access key/secret): `list_managers`, `get_manager`,
+  `list_user_chats`, `get_user_chat`, `list_messages`, `send_message`, `get_user`
 - **railway** (Project token): `graphql`, `project_token_info`,
   `introspect_schema`
 - **railway_api** (Account/Workspace API token): `graphql`, `introspect_schema`
@@ -492,6 +496,16 @@ a same-owner peer) `delegate` to get a one-time grant and run it yourself.
 - `get_room_task` (read): `room_id`, `task_id`.
 - `create_room_task` (write): `room_id`, `body`, `to_ids`; optional `limit`.
 - `get_room_file` (read): `room_id`, `file_id`; optional `create_download_url`.
+
+### Channel Talk tool arguments (besides `scope`)
+- `list_managers` (read): optional `limit`, `since`, `sortOrder`.
+- `get_manager` (read): `manager_id`.
+- `list_user_chats` (read): optional `state`, `sortOrder`, `limit`, `since`.
+- `get_user_chat` (read): `user_chat_id`.
+- `list_messages` (read): `user_chat_id`; optional `limit`, `since`, `sortOrder`.
+- `send_message` (write): `user_chat_id`; `plain_text` (or `blocks`); optional
+  `bot_name` to attribute the message to a bot.
+- `get_user` (read): `user_id`.
 
 ### Resend tool arguments (besides `scope`)
 - `send_email` (write): `from`, `to`, `subject`; one of `html`, `text`, or
@@ -716,7 +730,8 @@ When asked to act via grantry:
    `heyreach/pause_campaign`,
    `heyreach/resume_campaign`, `heyreach/add_leads_to_campaign`,
    `heyreach/create_empty_list`, `chatwork/send_message`,
-   `chatwork/create_room_task`, `railway/graphql` with mutations,
+   `chatwork/create_room_task`, `channel_talk/send_message`,
+   `railway/graphql` with mutations,
    `resend/send_email`, `slack/post_message`, `slack/update_message`,
    `reddit/submit_post`, `reddit/submit_comment`, `reddit/vote`,
    `x/post_tweet`, `x/delete_tweet`, `discord/send_message`,

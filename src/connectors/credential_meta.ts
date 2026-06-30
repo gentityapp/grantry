@@ -671,6 +671,26 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "channel_talk") {
+      let p: any;
+      try { p = JSON.parse(token.trim()); } catch { return { provider, authType, status: "error", checkedAt, error: 'Channel Talk credential must be JSON {"accessKey":"...","accessSecret":"..."}' }; }
+      const accessKey = String(p.accessKey ?? p.access_key ?? "").trim();
+      const accessSecret = String(p.accessSecret ?? p.access_secret ?? "").trim();
+      if (!accessKey || !accessSecret) return { provider, authType, status: "error", checkedAt, error: "Channel Talk JSON must include accessKey and accessSecret" };
+      const resp = await fetchWithTimeout("https://api.channel.io/open/v5/managers?limit=1", {
+        headers: { "x-access-key": accessKey, "x-access-secret": accessSecret, Accept: "application/json" },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `Channel Talk API key check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      return {
+        provider,
+        authType,
+        status: "ok",
+        notes: ["Channel Talk Open API credentials are sent as the x-access-key and x-access-secret headers."],
+        checkedAt,
+      };
+    }
+
     if (provider === "resend") {
       if (!token.trim()) {
         return { provider, authType, status: "error", checkedAt, error: "Resend API key is required" };
