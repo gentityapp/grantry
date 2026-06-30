@@ -924,6 +924,58 @@ function oauthAppCredentialFromStructuredFields(body: any, suffix = "", defaultC
   });
 }
 
+// Assemble a JSON PAT credential from structured per-field inputs. Mirrors
+// oauthAppCredentialFromStructuredFields. Fields are named `credfield_<key>`
+// (or `credfield_<key>_<suffix>` in the multi-provider wizard). Returns "" when
+// nothing was entered (so callers fall back to reuse/existing logic), otherwise
+// a JSON string of the non-empty fields. The credential verify step rejects any
+// incomplete result, and required-field UX is enforced in-browser where the
+// inputs are always visible at submit time.
+function patCredentialFromStructuredFields(body: any, providerDef: any, suffix = ""): string {
+  const fields = providerDef?.credentialFields;
+  if (!Array.isArray(fields) || fields.length === 0) return "";
+  const field = (name: string) => (suffix ? `${name}_${suffix}` : name);
+  const obj: Record<string, string> = {};
+  let any = false;
+  for (const f of fields) {
+    const v = String(body[field(`credfield_${f.key}`)] ?? "").trim();
+    if (v) { obj[f.key] = v; any = true; }
+  }
+  if (!any) return "";
+  return JSON.stringify(obj);
+}
+
+// Render the structured credential inputs for a JSON-credential provider, one
+// labelled field per credentialFields entry. Returns "" for providers without a
+// credentialFields schema, so callers fall back to the raw textarea.
+//   - suffix: appended to input names in the multi-provider wizard (`<p>_<authType>`)
+//   - enforceRequired: add the HTML `required` attr (only safe where the inputs
+//     are always visible at submit time — NOT in the wizard, where unselected
+//     blocks are display:none and would block submit on a hidden required field)
+function renderCredentialFieldsHtml(providerDef: any, opts: { suffix?: string; enforceRequired?: boolean; idPrefix?: string } = {}): string {
+  const fields = providerDef?.credentialFields;
+  if (!Array.isArray(fields) || fields.length === 0) return "";
+  const suffix = opts.suffix ?? "";
+  const nameFor = (key: string) => (suffix ? `credfield_${key}_${suffix}` : `credfield_${key}`);
+  const idp = opts.idPrefix ?? `cf_${suffix || providerDef.key}`;
+  return fields
+    .map((f: any) => {
+      const id = `${idp}_${f.key}`;
+      const type = f.secret ? "password" : "text";
+      const ph = f.placeholder ? ` placeholder="${escapeHtml(f.placeholder)}"` : "";
+      const req = opts.enforceRequired && f.required ? " required" : "";
+      const marker = f.required
+        ? ' <span style="color:#df1b41;">*</span>'
+        : ' <span style="color:#687385;font-weight:normal;font-size:12px;">(optional)</span>';
+      return `<div class="field" style="margin-bottom:8px;">
+        <label for="${id}" style="font-size:13px;">${escapeHtml(f.label)}${marker}</label>
+        <input type="${type}" name="${nameFor(f.key)}" id="${id}"${ph}${req} autocomplete="off" style="margin-bottom:0;">
+        ${f.hint ? `<div class="field-hint">${escapeHtml(f.hint)}</div>` : ""}
+      </div>`;
+    })
+    .join("");
+}
+
 function parseOAuthAppCredentialInput(raw: string, providerDef: any) {
   const text = String(raw ?? "").trim();
   if (!text) return null;
@@ -3498,7 +3550,9 @@ dashboardApp.get("/connections/:connectionId/edit", async (c) => {
           ${canRotateSecret ? `
             <hr style="border:none;border-top:1px solid #e3e8ee;margin:18px 0;">
             <label for="credential">Replace ${escapeHtml(tokenLabel)}</label>
-            <textarea name="credential" id="credential" rows="5" placeholder="${escapeHtml(providerDef ? credentialPlaceholder(conn.provider, providerDef.label, conn.authType) : `Paste new ${tokenLabel}`)}"></textarea>
+            ${providerDef && conn.authType === "pat" && renderCredentialFieldsHtml(providerDef)
+              ? renderCredentialFieldsHtml(providerDef)
+              : `<textarea name="credential" id="credential" rows="5" placeholder="${escapeHtml(providerDef ? credentialPlaceholder(conn.provider, providerDef.label, conn.authType) : `Paste new ${tokenLabel}`)}"></textarea>`}
             <p class="field-hint">Leave blank to keep the saved credential. Pasting a new value validates it and updates any shared provider credential snapshot.</p>
             ${credentialSettingsLink ? `<p style="margin-top:8px;">${credentialSettingsLink}</p>` : ""}
           ` : ""}
@@ -3574,9 +3628,11 @@ dashboardApp.post("/connections/:connectionId/edit", async (c) => {
 
   const enabled = body.enabled !== undefined;
   const wantsOAuthAppUpdate = body.oauth_app_update === "1";
-  const newCredential = String(body.credential ?? "").trim();
   const baseUpdate = { label, enabled };
   const providerDef = getProvider(conn.provider);
+  // Structured JSON-credential providers post one input per field; assemble them
+  // into the JSON the connector expects. Falls back to a raw pasted credential.
+  const newCredential = patCredentialFromStructuredFields(body, providerDef) || String(body.credential ?? "").trim();
 
   if (wantsOAuthAppUpdate) {
     if (conn.authType !== "oauth" || !providerDef || !providerRequiresWorkspaceOAuthApp(conn.provider, providerDef)) {
@@ -4039,6 +4095,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           <div class="field" id="credFieldRow">
             <label for="credential">Credential</label>
             <textarea name="credential" id="credential" rows="3"></textarea>
+            <div id="credStructured" style="display:none;"></div>
             <div class="field-hint" id="credHint"></div>
             <div id="patLinkRow" style="margin-top:6px;display:none;">
               <a id="patLink" href="#" target="_blank" rel="noopener" style="font-size:13px;">🔗 Get a new token here →</a>
@@ -4109,6 +4166,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         const reuseConnectionRow = document.getElementById('reuseConnectionRow');
         const reuseConnectionId = document.getElementById('reuseConnectionId');
         const credField = document.getElementById('credential');
+        const credStructured = document.getElementById('credStructured');
         const credFieldRow = document.getElementById('credFieldRow');
         const serverCredentialHint = document.getElementById('serverCredentialHint');
         const authMethodHidden = document.getElementById('authMethodHidden');
@@ -4233,6 +4291,32 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           if (usePat && reusingExisting) {
             credField.value = "";
             credField.placeholder = "Selected existing connection will be reused";
+          }
+          // Structured JSON-credential providers: render one labelled input per
+          // field instead of the raw JSON textarea. Input names match the
+          // server's patCredentialFromStructuredFields (credfield_<key>).
+          const credFields = (usePat && Array.isArray(p.credentialFields) && p.credentialFields.length) ? p.credentialFields : null;
+          if (credStructured) {
+            if (credFields && !reusingExisting) {
+              credStructured.innerHTML = credFields.map(function(f){
+                var id = 'cfb_' + f.key;
+                var type = f.secret ? 'password' : 'text';
+                var ph = f.placeholder ? ' placeholder="' + escapeText(f.placeholder) + '"' : '';
+                var req = f.required ? ' required' : '';
+                var mark = f.required ? ' <span style="color:#df1b41;">*</span>' : ' <span style="color:#687385;font-weight:normal;font-size:12px;">(optional)</span>';
+                return '<div class="field" style="margin-bottom:8px;"><label for="' + id + '" style="font-size:13px;">' + escapeText(f.label) + mark + '</label>'
+                  + '<input type="' + type + '" name="credfield_' + f.key + '" id="' + id + '"' + ph + req + ' autocomplete="off" style="margin-bottom:0;">'
+                  + (f.hint ? '<div class="field-hint">' + escapeText(f.hint) + '</div>' : '') + '</div>';
+              }).join('');
+              credStructured.style.display = "";
+              credField.style.display = "none";
+              credField.required = false;
+              credField.value = "";
+            } else {
+              credStructured.innerHTML = "";
+              credStructured.style.display = "none";
+              if (!useOauth) credField.style.display = "";
+            }
           }
           if (oauthAppFieldRow) {
             oauthAppFieldRow.style.display = needsWorkspaceOAuthApp ? "" : "none";
@@ -4642,6 +4726,9 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
       return c.html(`<h1>provider disabled for this workspace</h1><p>Enable <code>${escapeHtml(provider)}</code> from <a href="/providers">Providers</a> before adding it to a scope.</p>`, 400);
     }
     if (providerDef.implemented === false) return c.html("<h1>provider not implemented</h1>", 400);
+    // Structured JSON-credential providers post one input per field; assemble.
+    const structuredCredential = patCredentialFromStructuredFields(body, providerDef);
+    if (structuredCredential) credential = structuredCredential;
     // Explicit auth_method from the form is authoritative; the includes()-based
     // inference is only a fallback for providers with a single auth method.
     const wantsSa = authMethod === "service_account";
@@ -5046,7 +5133,9 @@ dashboardApp.get("/tenants/new", async (c) => {
                 <div class="field-hint">Creates a new scope-scoped connection that uses the selected workspace credential.</div>
                 ` : ""}
                 <label>Credential</label>
-                <textarea name="credential_${p.key}_${authType}" class="cred-input" rows="2" placeholder="${escapeHtml(credentialPlaceholder(p.key, p.label, authType))}"></textarea>
+                ${renderCredentialFieldsHtml(p, { suffix: `${p.key}_${authType}` })
+                  ? `<div class="cred-input">${renderCredentialFieldsHtml(p, { suffix: `${p.key}_${authType}` })}</div>`
+                  : `<textarea name="credential_${p.key}_${authType}" class="cred-input" rows="2" placeholder="${escapeHtml(credentialPlaceholder(p.key, p.label, authType))}"></textarea>`}
                 <div class="field-hint">${escapeHtml(p.helpText)}</div>
                 ${p.tokenUrl ? `<div style="margin-top:4px;"><a href="${p.tokenUrl}" target="_blank" rel="noopener" style="font-size:13px;">${escapeHtml(tokenLinkLabel(p.key, p.label))}</a></div>` : ""}
                 <div class="reusing-notice" style="display:none;margin-top:6px;padding:8px;background:rgba(99,91,255,0.08);border-radius:6px;font-size:13px;">
@@ -5356,6 +5445,10 @@ dashboardApp.post("/tenants/new", async (c) => {
     if (authType === "oauth") {
       const structuredOAuthAppCredential = oauthAppCredentialFromStructuredFields(body, `${p}_${authType}`, defaultOAuthClientAuthMethod(p, providerDef));
       if (structuredOAuthAppCredential) return structuredOAuthAppCredential;
+    }
+    if (authType === "pat") {
+      const structuredPat = patCredentialFromStructuredFields(body, providerDef, `${p}_${authType}`);
+      if (structuredPat) return structuredPat;
     }
     const specificAuth = String((body as any)[`credential_${p}_${authType}`] ?? "").trim();
     if (specificAuth) return specificAuth;

@@ -83,6 +83,19 @@ export type ProviderDef = {
   };
   /** Whether this provider has an MCP dispatcher implemented in this service. */
   implemented?: boolean;
+  /** Structured credential fields for PAT providers whose credential is a JSON
+   *  object. When set, the wizard renders one labelled input per field instead of
+   *  a raw JSON textarea, and assembles them into the JSON string the connector
+   *  expects. Each `key` MUST match the exact JSON key the connector parses. */
+  credentialFields?: Array<{
+    key: string;
+    label: string;
+    required?: boolean;
+    /** Render as a password input (masked) for secret values. */
+    secret?: boolean;
+    placeholder?: string;
+    hint?: string;
+  }>;
 };
 
 const META_ADS_READ_TOOLS = [
@@ -541,7 +554,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "channel_talk",
     label: "Channel Talk",
     authTypes: ["pat"],
-    helpText: "Paste JSON with your Channel Talk Open API credentials: {\"accessKey\":\"...\",\"accessSecret\":\"...\"}. Create them in the Channel desk under Settings > Security > API. They are sent as the x-access-key and x-access-secret headers.",
+    helpText: "Create Open API credentials in the Channel desk under Settings > Security > API, then enter the Access Key and Access Secret. They are sent as the x-access-key and x-access-secret headers.",
     tokenUrl: "https://developers.channel.io/docs/open-api-keys",
     tools: [
       "channel_talk/list_managers",
@@ -551,6 +564,10 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "channel_talk/list_messages",
       "channel_talk/send_message",
       "channel_talk/get_user",
+    ],
+    credentialFields: [
+      { key: "accessKey", label: "Access Key", required: true, placeholder: "e.g. 6a43c75f02b923b300c4" },
+      { key: "accessSecret", label: "Access Secret", required: true, secret: true },
     ],
     implemented: true,
   },
@@ -912,45 +929,68 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "zendesk",
     label: "Zendesk",
     authTypes: ["pat"],
-    helpText: "Paste JSON with your subdomain, agent email, and API token: {\"subdomain\":\"acme\",\"email\":\"you@example.com\",\"token\":\"...\"}. Create an API token in Admin Center > Apps and integrations > APIs > Zendesk API.",
+    helpText: "Enter your Zendesk subdomain, agent email, and API token. Create an API token in Admin Center > Apps and integrations > APIs > Zendesk API.",
     tokenUrl: "https://support.zendesk.com/hc/en-us/articles/4408889192858",
     tools: ["zendesk/list_tickets", "zendesk/get_ticket", "zendesk/create_ticket", "zendesk/update_ticket", "zendesk/add_comment", "zendesk/search", "zendesk/list_users"],
+    credentialFields: [
+      { key: "subdomain", label: "Subdomain", required: true, placeholder: "acme (from acme.zendesk.com)" },
+      { key: "email", label: "Agent email", required: true, placeholder: "you@example.com" },
+      { key: "token", label: "API token", required: true, secret: true },
+    ],
     implemented: true,
   },
   wordpress: {
     key: "wordpress",
     label: "WordPress",
     authTypes: ["pat"],
-    helpText: "Paste JSON with your site URL, username, and Application Password: {\"site\":\"https://blog.example.com\",\"username\":\"admin\",\"app_password\":\"xxxx xxxx ...\"}. Create an Application Password in wp-admin > Users > Profile.",
+    helpText: "Enter your site URL, username, and an Application Password. Create one in wp-admin > Users > Profile > Application Passwords.",
     tokenUrl: "https://make.wordpress.org/core/2020/11/05/application-passwords-integration-guide/",
     tools: ["wordpress/list_posts", "wordpress/get_post", "wordpress/create_post", "wordpress/update_post", "wordpress/list_pages", "wordpress/list_categories"],
+    credentialFields: [
+      { key: "site", label: "Site URL", required: true, placeholder: "https://blog.example.com" },
+      { key: "username", label: "Username", required: true, placeholder: "admin" },
+      { key: "app_password", label: "Application Password", required: true, secret: true, hint: "Create in wp-admin > Users > Profile > Application Passwords." },
+    ],
     implemented: true,
   },
   shopify: {
     key: "shopify",
     label: "Shopify",
     authTypes: ["pat"],
-    helpText: "Paste JSON with your shop domain and Admin API access token: {\"shop\":\"acme.myshopify.com\",\"token\":\"shpat_...\"}. Create a custom app in Shopify Admin > Settings > Apps and sales channels > Develop apps.",
+    helpText: "Enter your shop domain and an Admin API access token. Create a custom app in Shopify Admin > Settings > Apps and sales channels > Develop apps.",
     tokenUrl: "https://shopify.dev/docs/apps/build/authentication-authorization/access-token-types/admin-api-access-tokens",
     tools: ["shopify/list_products", "shopify/get_product", "shopify/create_product", "shopify/list_orders", "shopify/get_order", "shopify/list_customers"],
+    credentialFields: [
+      { key: "shop", label: "Shop domain", required: true, placeholder: "acme.myshopify.com" },
+      { key: "token", label: "Admin API access token", required: true, secret: true, placeholder: "shpat_..." },
+    ],
     implemented: true,
   },
   jira: {
     key: "jira",
     label: "Jira",
     authTypes: ["pat"],
-    helpText: "Paste JSON with your Atlassian site, email, and API token: {\"site\":\"https://acme.atlassian.net\",\"email\":\"you@example.com\",\"token\":\"...\"}. Generate an API token at id.atlassian.com/manage-profile/security/api-tokens.",
+    helpText: "Enter your Atlassian site, account email, and API token. Generate an API token at id.atlassian.com/manage-profile/security/api-tokens.",
     tokenUrl: "https://id.atlassian.com/manage-profile/security/api-tokens",
     tools: ["jira/search", "jira/get_issue", "jira/create_issue", "jira/update_issue", "jira/add_comment", "jira/list_projects", "jira/transition_issue"],
+    credentialFields: [
+      { key: "site", label: "Atlassian site", required: true, placeholder: "https://acme.atlassian.net" },
+      { key: "email", label: "Account email", required: true, placeholder: "you@example.com" },
+      { key: "token", label: "API token", required: true, secret: true },
+    ],
     implemented: true,
   },
   salesforce: {
     key: "salesforce",
     label: "Salesforce",
     authTypes: ["pat"],
-    helpText: "Paste JSON with your instance URL and OAuth access token: {\"instance_url\":\"https://acme.my.salesforce.com\",\"token\":\"...\"}. Access tokens expire (default ~2h); re-paste a fresh one when needed.",
+    helpText: "Enter your instance URL and an OAuth access token. Access tokens expire (default ~2h); re-enter a fresh one when needed.",
     tokenUrl: "https://login.salesforce.com",
     tools: ["salesforce/query", "salesforce/search", "salesforce/get_record", "salesforce/create_record", "salesforce/update_record", "salesforce/delete_record"],
+    credentialFields: [
+      { key: "instance_url", label: "Instance URL", required: true, placeholder: "https://acme.my.salesforce.com" },
+      { key: "token", label: "OAuth access token", required: true, secret: true, hint: "Access tokens expire (default ~2h); re-paste a fresh one when needed." },
+    ],
     implemented: true,
   },
   linkedin_ads: {
@@ -975,27 +1015,47 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "microsoft_ads",
     label: "Microsoft Ads",
     authTypes: ["pat"],
-    helpText: "Paste JSON with your Microsoft Advertising developer token and OAuth access token: {\"developer_token\":\"...\",\"access_token\":\"...\",\"customer_id\":\"...\",\"account_id\":\"...\"}. Microsoft Ads is SOAP-based; the access token is short-lived and must be refreshed externally.",
+    helpText: "Enter your Microsoft Advertising developer token, OAuth access token, customer ID, and account ID. Microsoft Ads is SOAP-based; the access token is short-lived and must be refreshed externally.",
     tokenUrl: "https://learn.microsoft.com/advertising/guides/get-started",
     tools: ["microsoft_ads/get_user", "microsoft_ads/get_accounts_info"],
+    credentialFields: [
+      { key: "developer_token", label: "Developer token", required: true, secret: true },
+      { key: "access_token", label: "OAuth access token", required: true, secret: true, hint: "Short-lived; refresh externally and re-paste when expired." },
+      { key: "customer_id", label: "Customer ID", required: true },
+      { key: "account_id", label: "Account ID", required: true },
+    ],
     implemented: true,
   },
   aws: {
     key: "aws",
     label: "AWS",
     authTypes: ["pat"],
-    helpText: "Paste JSON with your AWS credentials: {\"accessKeyId\":\"AKIA...\",\"secretAccessKey\":\"...\",\"region\":\"us-east-1\",\"sessionToken\":\"...\"}. region defaults to us-east-1; sessionToken is only needed for temporary credentials. Requests are signed with AWS SigV4.",
+    helpText: "Enter your AWS access key ID and secret access key. Region defaults to us-east-1; session token is only needed for temporary credentials. Requests are signed with AWS SigV4.",
     tokenUrl: "https://console.aws.amazon.com/iam/home#/security_credentials",
     tools: ["aws/get_caller_identity", "aws/s3_list_buckets", "aws/s3_list_objects"],
+    credentialFields: [
+      { key: "accessKeyId", label: "Access Key ID", required: true, placeholder: "AKIA..." },
+      { key: "secretAccessKey", label: "Secret Access Key", required: true, secret: true },
+      { key: "region", label: "Region", placeholder: "us-east-1 (default)" },
+      { key: "sessionToken", label: "Session token", secret: true, hint: "Only for temporary credentials." },
+    ],
     implemented: true,
   },
   snowflake: {
     key: "snowflake",
     label: "Snowflake",
     authTypes: ["pat"],
-    helpText: "Paste JSON with your account identifier and a Programmatic Access Token: {\"account\":\"orgname-accountname\",\"token\":\"...\",\"warehouse\":\"...\",\"database\":\"...\",\"schema\":\"...\",\"role\":\"...\"}. Only account and token are required; the rest are optional per-call defaults.",
+    helpText: "Enter your account identifier and a Programmatic Access Token. Warehouse, database, schema, and role are optional per-call defaults.",
     tokenUrl: "https://docs.snowflake.com/en/user-guide/programmatic-access-tokens",
     tools: ["snowflake/execute_statement", "snowflake/get_statement", "snowflake/cancel_statement"],
+    credentialFields: [
+      { key: "account", label: "Account identifier", required: true, placeholder: "orgname-accountname" },
+      { key: "token", label: "Programmatic Access Token", required: true, secret: true },
+      { key: "warehouse", label: "Warehouse", hint: "Optional per-call default." },
+      { key: "database", label: "Database", hint: "Optional per-call default." },
+      { key: "schema", label: "Schema", hint: "Optional per-call default." },
+      { key: "role", label: "Role", hint: "Optional per-call default." },
+    ],
     implemented: true,
   },
   google_calendar: {
