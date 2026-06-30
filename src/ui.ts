@@ -822,6 +822,8 @@ function parseScopeList(raw: string | null | undefined): string[] {
   return scopes;
 }
 
+const DEFAULT_PROVIDER_SCOPE = "default";
+
 function providerUsesWorkspaceOAuthApp(providerDef: any) {
   return Array.isArray(providerDef?.authTypes)
     && providerDef.authTypes.includes("oauth")
@@ -873,6 +875,40 @@ function clientIdPreview(clientId: string | null | undefined) {
 function oauthCallbackUrl(c: any, providerKey: string) {
   const origin = String(process.env.BETTER_AUTH_URL || publicOrigin(c)).replace(/\/+$/, "");
   return `${origin}/oauth/${providerKey}/callback`;
+}
+
+function defaultProviderConnectionAction(c: any, args: {
+  providerDef: any;
+  authType: string;
+  admin: boolean;
+  enabled: boolean;
+  requiresWorkspaceOAuthApp: boolean;
+  oauthAppConfigured: boolean;
+}) {
+  const { providerDef, authType, admin, enabled, requiresWorkspaceOAuthApp, oauthAppConfigured } = args;
+  if (!admin) return '<span style="color:#687385;">admin only</span>';
+  if (!enabled) return '<span style="color:#687385;">enable first</span>';
+  if (providerDef.implemented === false) return '<span style="color:#687385;">coming soon</span>';
+  const providerKey = providerDef.key;
+  const authLabel = authTypeLabel(providerKey, authType);
+  if (authType === "oauth") {
+    if (requiresWorkspaceOAuthApp && !oauthAppConfigured) {
+      return '<span style="color:#687385;">save OAuth app first</span>';
+    }
+    const params = new URLSearchParams({ tenant: DEFAULT_PROVIDER_SCOPE, return_to: "providers" });
+    return `<a class="btn secondary" href="/oauth/${encodeURIComponent(providerKey)}/start?${params.toString()}" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Add default OAuth</a>`;
+  }
+  if (!["pat", "service_account"].includes(authType)) return "";
+  return `
+    <details style="margin-top:6px;">
+      <summary class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;display:inline-block;cursor:pointer;">Add default ${escapeHtml(authLabel)}</summary>
+      <form method="post" action="/providers/${encodeURIComponent(providerKey)}/default-connection" style="min-width:260px;margin-top:8px;">
+        <input type="hidden" name="auth_type" value="${escapeHtml(authType)}">
+        <textarea name="credential" rows="3" placeholder="${escapeHtml(credentialPlaceholder(providerKey, providerDef.label, authType))}" style="font-size:12px;"></textarea>
+        <div class="field-hint">Creates a <code>${DEFAULT_PROVIDER_SCOPE}</code> scope connection. Leave blank only when one existing workspace credential can be reused.</div>
+        <button type="submit" style="font-size:12px;padding:4px 10px;">Create default connection</button>
+      </form>
+    </details>`;
 }
 
 function oauthAppCredentialFromStructuredFields(body: any, suffix = "", defaultClientAuthMethod = "CLIENT_SECRET_POST") {
@@ -1984,6 +2020,8 @@ dashboardApp.get("/providers", async (c) => {
             <tbody>
               ${catalog.map(({ provider: p, enabled, pinned, explicit }) => {
                 const isCustom = customKeys.has(p.key);
+                const requiresWorkspaceOAuthApp = p.authTypes.includes("oauth") && providerRequiresWorkspaceOAuthApp(p.key, p);
+                const oauthAppConfigured = !requiresWorkspaceOAuthApp || !!oauthAppByProvider.get(p.key);
                 return `
                 <tr class="provider-catalog-row" data-search="${escapeHtml((p.key + " " + p.label + " " + p.authTypes.join(" ")).toLowerCase())}">
                   <td><span class="provider-cell">${providerIcon(p.key)}<span>${escapeHtml(p.label)}</span></span></td>
@@ -1991,11 +2029,20 @@ dashboardApp.get("/providers", async (c) => {
                   <td>${p.authTypes.map((a) => `<span class="tool-pill">${escapeHtml(authTypeLabel(p.key, a))}</span>`).join(" ")}</td>
                   <td>${countByProvider.get(p.key) ?? 0}</td>
                   <td>${enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge unscoped">hidden from scopes</span>'}${explicit ? "" : '<br><span style="color:#687385;font-size:12px;">default</span>'}</td>
-                  <td>
+                  <td><div class="stacked-actions">
                     ${admin ? `<form method="post" action="/providers/${encodeURIComponent(p.key)}/toggle" style="display:inline;">
                       <input type="hidden" name="enabled" value="${enabled ? "0" : "1"}">
                       <button type="submit" class="${enabled ? "secondary" : ""}" style="font-size:12px;padding:4px 10px;">${enabled ? "Hide" : "Enable"}</button>
                     </form>` : '<span style="color:#687385;">admin only</span>'}
+                    ${p.authTypes.map((authType) => defaultProviderConnectionAction(c, {
+                      providerDef: p,
+                      authType,
+                      admin: !!admin,
+                      enabled,
+                      requiresWorkspaceOAuthApp: authType === "oauth" && requiresWorkspaceOAuthApp,
+                      oauthAppConfigured,
+                    })).join("")}
+                  </div>
                   </td>
                 </tr>`;
               }).join("")}
@@ -2073,6 +2120,102 @@ dashboardApp.post("/providers/:providerKey/oauth-app", async (c) => {
     return c.html(`<h1>Invalid OAuth app credential</h1><p>${escapeHtml(String(e?.message ?? e))}</p><p><a href="/providers">Back</a></p>`, 400);
   }
   return c.redirect(`/providers?ok=${encodeURIComponent(`Saved ${providerDef.label} OAuth app settings.`)}`);
+});
+
+dashboardApp.post("/providers/:providerKey/default-connection", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ error: "not authenticated" }, 401);
+  const wsId = await getActiveWorkspaceId(c);
+  if (!wsId) return c.html("<h1>workspace required</h1>", 400);
+  const admin = await requireWsAdmin(c, wsId);
+  if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
+
+  const providerKey = c.req.param("providerKey");
+  const providerDef = await getProviderForWorkspace(providerKey, wsId);
+  if (!providerDef || providerDef.implemented === false) return c.html(`<h1>unknown provider: ${escapeHtml(providerKey)}</h1>`, 404);
+  if (!(await workspaceProviderEnabled(wsId, providerKey))) {
+    return c.html(`<h1>provider hidden for this workspace</h1><p>Enable <code>${escapeHtml(providerKey)}</code> before adding its default connection.</p><p><a href="/providers">Back</a></p>`, 400);
+  }
+
+  const body = await c.req.parseBody();
+  const authType = String(body.auth_type ?? "pat").trim();
+  if (authType === "oauth") {
+    const params = new URLSearchParams({ tenant: DEFAULT_PROVIDER_SCOPE, return_to: "providers" });
+    return c.redirect(`/oauth/${encodeURIComponent(providerKey)}/start?${params.toString()}`);
+  }
+  if (!["pat", "service_account"].includes(authType) || !providerDef.authTypes.includes(authType as any)) {
+    return c.html(`<h1>${escapeHtml(authType)} is not supported for ${escapeHtml(providerDef.label)}</h1><p><a href="/providers">Back</a></p>`, 400);
+  }
+
+  const credential = String(body.credential ?? "").trim();
+  const tenantRow = await ensureTenant(user.id, DEFAULT_PROVIDER_SCOPE, "Default", wsId);
+  const existingConn = await prisma.connection.findFirst({
+    where: {
+      provider: providerKey,
+      authType,
+      scope: DEFAULT_PROVIDER_SCOPE,
+      ownerId: user.id,
+      workspaceId: wsId,
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+  let conn;
+  if (credential) {
+    const credentialMeta = await credentialMetadataForProviderDef(providerDef, authType, credential);
+    const data = {
+      encryptedCredential: encrypt(credential),
+      refreshToken: null,
+      accessTokenExpiresAt: null,
+      ...connectionCredentialData(credentialMeta),
+    };
+    conn = existingConn
+      ? await prisma.connection.update({ where: { id: existingConn.id }, data })
+      : await prisma.connection.create({
+          data: {
+            provider: providerKey,
+            authType,
+            label: `${providerKey}-${DEFAULT_PROVIDER_SCOPE}-${authType}`,
+            scope: DEFAULT_PROVIDER_SCOPE,
+            tenantId: tenantRow.id,
+            ownerId: user.id,
+            workspaceId: wsId,
+            ...data,
+          },
+        });
+    await ensureProviderCredentialForConnection(conn, user.id);
+    await syncProviderCredentialFromConnection(conn);
+  } else if (existingConn) {
+    conn = existingConn;
+    await ensureProviderCredentialForConnection(conn, user.id);
+  } else {
+    const reusableConnsForProvider = await prisma.connection.findMany({
+      where: {
+        provider: providerKey,
+        authType,
+        ownerId: user.id,
+        workspaceId: wsId,
+        enabled: true,
+        scope: { not: DEFAULT_PROVIDER_SCOPE },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    if (reusableConnsForProvider.length > 1) {
+      return c.html(`<h1>multiple existing ${escapeHtml(providerDef.label)} connections</h1><p>Paste a credential, or remove the extra existing connection so Grantry can infer which workspace credential to reuse.</p><p><a href="/providers">Back</a></p>`, 400);
+    }
+    const reusableConn = reusableConnsForProvider[0];
+    if (!reusableConn) {
+      return c.html(`<h1>credential required for ${escapeHtml(providerDef.label)}</h1><p>Paste a credential to create the default connection.</p><p><a href="/providers">Back</a></p>`, 400);
+    }
+    conn = await createTenantConnectionFromCredential({
+      tenant: tenantRow,
+      sourceConnection: reusableConn,
+      createdById: user.id,
+    });
+  }
+
+  await grantConnectionToTenantAgents(user.id, DEFAULT_PROVIDER_SCOPE, conn.id);
+  return c.redirect(`/providers?ok=${encodeURIComponent(`Added ${providerDef.label} default connection.`)}`);
 });
 
 dashboardApp.post("/providers/custom/new", async (c) => {
@@ -6145,7 +6288,7 @@ oauthApp.get("/:provider/start", async (c) => {
       state,
       provider: providerKey,
       payload: JSON.stringify(payload),
-      redirectTo: providerCredentialMode ? "/providers" : (payload.return_to === "connections" ? "/connections" : (reauth ? `/tenants/${payload.tenant}/edit` : "/tenants/new")),
+      redirectTo: providerCredentialMode || payload.return_to === "providers" ? "/providers" : (payload.return_to === "connections" ? "/connections" : (reauth ? `/tenants/${payload.tenant}/edit` : "/tenants/new")),
       expiresAt: new Date(Date.now() + 30 * 60 * 1000),
     },
   });
@@ -6488,6 +6631,9 @@ oauthApp.get("/:provider/callback", async (c) => {
     if (payload.return_to === "connections") {
       return c.redirect(`/connections?ok=${encodeURIComponent(`Re-authorized ${providerKey}.`)}`);
     }
+    if (payload.return_to === "providers") {
+      return c.redirect(`/providers?ok=${encodeURIComponent(`Connected ${providerDef.label} default connection.`)}`);
+    }
     return c.redirect(`/tenants/${effectiveTenant}/edit?reauthed=${encodeURIComponent(providerKey)}`);
   }
 
@@ -6546,6 +6692,9 @@ oauthApp.get("/:provider/callback", async (c) => {
   }
 
   if (!agent) {
+    if (payload.return_to === "providers") {
+      return c.redirect(`/providers?ok=${encodeURIComponent(`Connected ${providerDef.label} default connection.`)}`);
+    }
     return c.redirect(`/tenants/${effectiveTenant}/agents/setup?created=1&connected=${encodeURIComponent(providerKey)}`);
   }
 
