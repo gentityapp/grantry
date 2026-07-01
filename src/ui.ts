@@ -904,7 +904,9 @@ function defaultProviderConnectionAction(c: any, args: {
       <summary class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;display:inline-block;cursor:pointer;">Add default ${escapeHtml(authLabel)}</summary>
       <form method="post" action="/providers/${encodeURIComponent(providerKey)}/default-connection" style="min-width:260px;margin-top:8px;">
         <input type="hidden" name="auth_type" value="${escapeHtml(authType)}">
-        <textarea name="credential" rows="3" placeholder="${escapeHtml(credentialPlaceholder(providerKey, providerDef.label, authType))}" style="font-size:12px;"></textarea>
+        ${authType === "pat" && renderCredentialFieldsHtml(providerDef, { enforceRequired: true })
+          ? renderCredentialFieldsHtml(providerDef, { enforceRequired: true })
+          : `<textarea name="credential" rows="3" placeholder="${escapeHtml(credentialPlaceholder(providerKey, providerDef.label, authType))}" style="font-size:12px;"></textarea>`}
         <div class="field-hint">Creates a <code>${DEFAULT_PROVIDER_SCOPE}</code> scope connection. Leave blank only when one existing workspace credential can be reused.</div>
         <button type="submit" style="font-size:12px;padding:4px 10px;">Create default connection</button>
       </form>
@@ -2199,7 +2201,7 @@ dashboardApp.post("/providers/:providerKey/default-connection", async (c) => {
     return c.html(`<h1>${escapeHtml(authType)} is not supported for ${escapeHtml(providerDef.label)}</h1><p><a href="/providers">Back</a></p>`, 400);
   }
 
-  const credential = String(body.credential ?? "").trim();
+  const credential = patCredentialFromStructuredFields(body, providerDef) || String(body.credential ?? "").trim();
   const tenantRow = await ensureTenant(user.id, DEFAULT_PROVIDER_SCOPE, "Default", wsId);
   const existingConn = await prisma.connection.findFirst({
     where: {
