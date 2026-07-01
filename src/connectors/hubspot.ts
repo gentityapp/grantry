@@ -22,9 +22,6 @@ if (hubspotProvider) {
   for (const t of HUBSPOT_MARKETING_EMAIL_TOOLS) {
     if (!hubspotProvider.tools.includes(t)) hubspotProvider.tools.push(t);
   }
-  // HubSpot optional app scopes must be sent with the `optional_scope` query
-  // parameter. Keep these out of the required scope list to avoid mismatches
-  // when the HubSpot app config marks them optional.
   if (!Array.isArray(hubspotProvider.oauthOptionalScopes)) {
     hubspotProvider.oauthOptionalScopes = [];
   }
@@ -123,9 +120,6 @@ export async function callHubSpotTool(tool: string, args: HubSpotArgs, token: st
     return { structuredContent: j };
   }
 
-  // --- Marketing emails (broadcast / automated nurture sends) ---
-  // GET /marketing/v3/emails — list marketing emails. Supports includeStats=true
-  // to inline open/click metrics per email.
   if (tool === "hubspot/list_marketing_emails") {
     const params = new URLSearchParams();
     const limit = Number(args.limit ?? 20);
@@ -155,7 +149,6 @@ export async function callHubSpotTool(tool: string, args: HubSpotArgs, token: st
     return { structuredContent: { results: j.results ?? [], paging: j.paging ?? null, total: j.total ?? null } };
   }
 
-  // GET /marketing/v3/emails/{emailId}
   if (tool === "hubspot/get_marketing_email") {
     const emailId = String(args.email_id ?? args.emailId ?? "").trim();
     if (!emailId) throw new Error("email_id is required");
@@ -170,7 +163,6 @@ export async function callHubSpotTool(tool: string, args: HubSpotArgs, token: st
     return { structuredContent: j };
   }
 
-  // GET /marketing/v3/emails/statistics/list — aggregated stats over a window.
   if (tool === "hubspot/get_marketing_email_statistics") {
     const startTimestamp = String(args.start_timestamp ?? args.startTimestamp ?? "").trim();
     const endTimestamp = String(args.end_timestamp ?? args.endTimestamp ?? "").trim();
@@ -188,12 +180,22 @@ export async function callHubSpotTool(tool: string, args: HubSpotArgs, token: st
     return { structuredContent: j };
   }
 
-  // PATCH /marketing/v3/emails/{emailId} — update subject/name/content.
-  // Published emails cannot be PATCHed directly: fall back to PATCH {id}/draft
-  // then POST {id}/publish (unless publish=false). Requires content(+marketing-email to publish).
+  // PATCH /marketing/v3/emails/{emailId} — update subject/name/content/preview_text,
+  // with optional replace_in_content (find/replace across the content object).
+  // Published emails go via {id}/draft then {id}/publish. publish 403 (account
+  // lacking marketing-email) is non-fatal: draft is saved, publish via UI.
   if (tool === "hubspot/update_marketing_email") {
     const emailId = String(args.email_id ?? args.emailId ?? "").trim();
     if (!emailId) throw new Error("email_id is required");
+    const previewText = args.preview_text ?? args.previewText;
+    const rawReplace: any = args.replace_in_content ?? args.replaceInContent;
+    const replaceList: Array<{ from: string; to: string }> = Array.isArray(rawReplace)
+      ? rawReplace.map((x: any) => ({ from: String(x?.from ?? ""), to: String(x?.to ?? "") }))
+      : (rawReplace && typeof rawReplace === "object"
+        ? [{ from: String(rawReplace.from ?? ""), to: String(rawReplace.to ?? "") }]
+        : []);
+    const needsContentOps = previewText !== undefined || replaceList.some((x) => x.from);
+
     const body: Record<string, unknown> = {};
     if (args.updates && typeof args.updates === "object" && !Array.isArray(args.updates)) {
       Object.assign(body, args.updates as Record<string, unknown>);
@@ -203,41 +205,68 @@ export async function callHubSpotTool(tool: string, args: HubSpotArgs, token: st
     if (args.content && typeof args.content === "object" && !Array.isArray(args.content)) {
       body.content = args.content;
     }
-    if (Object.keys(body).length === 0) {
-      throw new Error("nothing to update: provide `updates` (object) and/or subject/name/content");
+
+    if (needsContentOps) {
+      let content: any = body.content;
+      if (!content) {
+        const gr = await fetchHubSpot(`/marketing/v3/emails/${encodeURIComponent(emailId)}`, { headers: headers(token) }, { tool, emailId, step: "get" });
+        const gj: any = await readJsonResponse(gr);
+        if (!gr.ok) throw new Error(`HubSpot update_marketing_email(get) failed: ${gr.status} ${JSON.stringify(gj).slice(0, 1200)}`);
+        content = gj.content ?? {};
+      }
+      if (replaceList.some((x) => x.from)) {
+        let s = JSON.stringify(content);
+        for (const rep of replaceList) {
+          if (rep.from) s = s.split(rep.from).join(rep.to);
+        }
+        content = JSON.parse(s);
+      }
+      if (previewText !== undefined) {
+        content.widgets = content.widgets || {};
+        const pt: any = content.widgets.preview_text || { id: "preview_text", name: "preview_text", type: "text", order: 0 };
+        pt.body = pt.body || {};
+        pt.body.value = String(previewText);
+        content.widgets.preview_text = pt;
+      }
+      body.content = content;
     }
+
+    if (Object.keys(body).length === 0) {
+      throw new Error("nothing to update: provide subject/name/content/updates/preview_text/replace_in_content");
+    }
+
+    const finishPublish = async () => {
+      if (args.publish === false || String(args.publish) === "false") {
+        return { structuredContent: { draftUpdated: true, published: false } };
+      }
+      const pr = await fetchHubSpot(`/marketing/v3/emails/${encodeURIComponent(emailId)}/publish`, {
+        method: "POST", headers: headers(token), body: JSON.stringify({}),
+      }, { tool, emailId, step: "publish" });
+      const pj: any = await readJsonResponse(pr);
+      if (pr.ok) return { structuredContent: { draftUpdated: true, published: true, result: pj } };
+      if (pr.status === 403 && /MISSING_SCOPES|marketing-email/i.test(JSON.stringify(pj))) {
+        return { structuredContent: { draftUpdated: true, published: false, needsUiPublish: true, reason: "publish requires marketing-email entitlement; draft saved, publish via HubSpot UI" } };
+      }
+      throw new Error(`HubSpot update_marketing_email(publish) failed: ${pr.status} ${JSON.stringify(pj).slice(0, 1500)}`);
+    };
+
     const r = await fetchHubSpot(`/marketing/v3/emails/${encodeURIComponent(emailId)}`, {
-      method: "PATCH",
-      headers: headers(token),
-      body: JSON.stringify(body),
+      method: "PATCH", headers: headers(token), body: JSON.stringify(body),
     }, { tool, emailId });
     const j: any = await readJsonResponse(r);
     if (r.ok) return { structuredContent: j };
     const msg = JSON.stringify(j);
-    const isPublished = r.status === 400 && /published email/i.test(msg);
-    if (!isPublished) throw new Error(`HubSpot update_marketing_email failed: ${r.status} ${msg.slice(0, 1500)}`);
-    // Published: update the draft, then publish (unless publish=false).
+    if (!(r.status === 400 && /published email/i.test(msg))) {
+      throw new Error(`HubSpot update_marketing_email failed: ${r.status} ${msg.slice(0, 1500)}`);
+    }
     const dr = await fetchHubSpot(`/marketing/v3/emails/${encodeURIComponent(emailId)}/draft`, {
-      method: "PATCH",
-      headers: headers(token),
-      body: JSON.stringify(body),
+      method: "PATCH", headers: headers(token), body: JSON.stringify(body),
     }, { tool, emailId, step: "draft" });
     const dj: any = await readJsonResponse(dr);
     if (!dr.ok) throw new Error(`HubSpot update_marketing_email(draft) failed: ${dr.status} ${JSON.stringify(dj).slice(0, 1500)}`);
-    if (args.publish === false || String(args.publish) === "false") {
-      return { structuredContent: { draftUpdated: true, published: false, draft: dj } };
-    }
-    const pr = await fetchHubSpot(`/marketing/v3/emails/${encodeURIComponent(emailId)}/publish`, {
-      method: "POST",
-      headers: headers(token),
-      body: JSON.stringify({}),
-    }, { tool, emailId, step: "publish" });
-    const pj: any = await readJsonResponse(pr);
-    if (!pr.ok) throw new Error(`HubSpot update_marketing_email(publish) failed: ${pr.status} ${JSON.stringify(pj).slice(0, 1500)}`);
-    return { structuredContent: { draftUpdated: true, published: true, result: pj } };
+    return await finishPublish();
   }
 
-  // POST /marketing/v3/emails/{emailId}/publish — publish the email.
   if (tool === "hubspot/publish_marketing_email") {
     const emailId = String(args.email_id ?? args.emailId ?? "").trim();
     if (!emailId) throw new Error("email_id is required");
