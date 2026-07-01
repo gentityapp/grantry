@@ -1,4 +1,5 @@
 import type { Connection, ProviderCredential, Tenant } from "@prisma/client";
+import nodeCrypto from "node:crypto";
 import { deriveCredentialHealth } from "./connectors/credential_meta.js";
 import { prisma } from "./db.js";
 
@@ -63,6 +64,10 @@ function requireWorkspaceId(workspaceId: string | null, connectionId?: string): 
   return workspaceId;
 }
 
+function newConnectionLabel(provider: string, scope: string, authType: string): string {
+  return `${provider}-${scope}-${authType}-${nodeCrypto.randomUUID().slice(0, 8)}`;
+}
+
 export async function ensureProviderCredentialForConnection(
   conn: ConnectionSecretFields,
   createdById?: string,
@@ -118,6 +123,7 @@ export async function createTenantConnectionFromCredential(args: {
       tenantId: args.tenant.id,
       provider: args.sourceConnection.provider,
       authType: args.sourceConnection.authType,
+      credentialId: credential.id,
     },
     orderBy: { createdAt: "desc" },
   });
@@ -127,7 +133,7 @@ export async function createTenantConnectionFromCredential(args: {
     data: {
       provider: args.sourceConnection.provider,
       authType: args.sourceConnection.authType,
-      label: `${args.sourceConnection.provider}-${args.tenant.slug}-${args.sourceConnection.authType}`,
+      label: newConnectionLabel(args.sourceConnection.provider, args.tenant.slug, args.sourceConnection.authType),
       scope: args.tenant.slug,
       tenantId: args.tenant.id,
       ownerId: args.tenant.ownerId,

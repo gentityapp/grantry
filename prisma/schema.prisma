@@ -216,7 +216,6 @@ model Connection {
   agentGrants         AgentConnectionGrant[]
   auditLogs           AuditLog[]
 
-  @@unique([ownerId, provider, scope, authType])
   @@index([provider, scope])
   @@index([ownerId, provider, scope])
   @@index([ownerId])

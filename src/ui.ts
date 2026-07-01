@@ -99,6 +99,10 @@ function authTypeLabel(providerKey: string, authType: string): string {
   return "paste token";
 }
 
+function newConnectionLabel(providerKey: string, scope: string, authType: string): string {
+  return `${providerKey}-${scope}-${authType}-${nodeCrypto.randomUUID().slice(0, 8)}`;
+}
+
 function providerDisplayName(providerKey: string): string {
   return getProvider(providerKey)?.label ?? providerKey;
 }
@@ -3852,11 +3856,10 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
     if (!oauthAppByProvider.has(credential.provider)) oauthAppByProvider.set(credential.provider, credential);
   }
 
-  const usedProviders = new Set(connections.map((c) => c.provider));
-  const usedProviderAuthTypes = new Set(connections.map((c) => `${c.provider}:${c.authType}`));
   const availableToAdd = providers.flatMap((p) =>
     p.authTypes.map((authType) => ({ provider: p, authType }))
-  ).filter((option) => !usedProviderAuthTypes.has(`${option.provider.key}:${option.authType}`));
+  );
+  const usedProviders = new Set(connections.map((c) => c.provider));
   const comingSoonProviders = knownProviders.filter((p) => p.implemented === false && !usedProviders.has(p.key));
   const reusableConns = await prisma.connection.findMany({
     where: {
@@ -4058,7 +4061,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
       <h2 id="add-service">Add a service</h2>
       ${availableToAdd.length === 0 ? `
       <div class="card">
-        <div class="empty">All enabled provider/auth combinations are already connected for this scope.</div>
+        <div class="empty">No enabled providers are available for this workspace.</div>
         <p class="field-hint" style="text-align:center;margin-top:14px;">Enable or add providers from <a href="/providers">Providers</a>.</p>
         ${comingSoonProviders.length > 0 ? `
           <p class="field-hint" style="text-align:center;margin-top:14px;">
@@ -4761,9 +4764,6 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
       const blob = JSON.stringify({ sa_key: saCred.sa_key, subject: saCred.subject });
       const credentialMetadata = JSON.stringify({ kind: "service_account", ...serviceAccountPublicMeta(saCred, scopes) });
       const tenantRow = await ensureTenant(user.id, scope, undefined, wsId);
-      const existingSa = await prisma.connection.findFirst({
-        where: { provider, authType: "service_account", scope, ownerId: user.id },
-      });
       const saData = {
         encryptedCredential: encrypt(blob),
         refreshToken: null,
@@ -4771,20 +4771,18 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
         credentialMetadata,
         credentialValidatedAt: null,
       };
-      const conn = existingSa
-        ? await prisma.connection.update({ where: { id: existingSa.id }, data: saData })
-        : await prisma.connection.create({
-            data: {
-              provider,
-              authType: "service_account",
-              label: `${provider}-${scope}-service_account`,
-              scope,
-              tenantId: tenantRow.id,
-              ownerId: user.id,
-              workspaceId: tenantRow.workspaceId ?? wsId,
-              ...saData,
-            },
-          });
+      const conn = await prisma.connection.create({
+        data: {
+          provider,
+          authType: "service_account",
+          label: newConnectionLabel(provider, scope, "service_account"),
+          scope,
+          tenantId: tenantRow.id,
+          ownerId: user.id,
+          workspaceId: tenantRow.workspaceId ?? wsId,
+          ...saData,
+        },
+      });
       invalidateDwdToken(conn.id);
       await ensureProviderCredentialForConnection(conn, user.id);
       await syncProviderCredentialFromConnection(conn);
@@ -4813,49 +4811,35 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
           return c.html(`<h1>Invalid OAuth app credential</h1><p>${escapeHtml(String(e?.message ?? e))}</p><p><a href="/tenants/${scope}/edit">← Back</a></p>`, 400);
         }
       }
-      const params = new URLSearchParams({ tenant: scope, reauth: "1" });
+      const params = new URLSearchParams({ tenant: scope });
       if (body.oauth_popup === "1") params.set("popup", "1");
       if (oauthAppCredentialId) params.set("oauth_app_credential_id", oauthAppCredentialId);
       return c.redirect(`/oauth/${provider}/start?${params.toString()}`);
     }
     if (!wantsPat || !providerDef.authTypes.includes("pat")) return c.html("<h1>paste token is not supported for this provider</h1>", 400);
 
-    // 1) Create or rotate the PAT connection for this provider/auth type.
+    // 1) Add a PAT connection for this provider/auth type, or reuse a selected
+    // workspace credential. Existing same-scope connections are edited from
+    // /connections/:id/edit, not overwritten by Add service.
     const tenantRow = await ensureTenant(user.id, scope, undefined, wsId);
-    const existingConn = await prisma.connection.findFirst({
-      where: { provider, authType: "pat", scope, ownerId: user.id },
-    });
     let conn;
     if (credential) {
       const credentialMeta = await credentialMetadataForProviderDef(providerDef, "pat", credential);
-      conn = existingConn
-        ? await prisma.connection.update({
-            where: { id: existingConn.id },
-            data: {
-              encryptedCredential: encrypt(credential),
-              refreshToken: null,
-              accessTokenExpiresAt: null,
-              ...connectionCredentialData(credentialMeta),
-            },
-          })
-        : await prisma.connection.create({
-            data: {
-              provider,
-              authType: "pat",
-              label: `${provider}-${scope}-pat`,
-              scope,
-              tenantId: tenantRow.id,
-              ownerId: user.id,
-              workspaceId: tenantRow.workspaceId ?? wsId,
-              encryptedCredential: encrypt(credential),
-              ...connectionCredentialData(credentialMeta),
-            },
-          });
+      conn = await prisma.connection.create({
+        data: {
+          provider,
+          authType: "pat",
+          label: newConnectionLabel(provider, scope, "pat"),
+          scope,
+          tenantId: tenantRow.id,
+          ownerId: user.id,
+          workspaceId: tenantRow.workspaceId ?? wsId,
+          encryptedCredential: encrypt(credential),
+          ...connectionCredentialData(credentialMeta),
+        },
+      });
       await ensureProviderCredentialForConnection(conn, user.id);
       await syncProviderCredentialFromConnection(conn);
-    } else if (existingConn) {
-      conn = existingConn;
-      await ensureProviderCredentialForConnection(existingConn, user.id);
     } else if (reuseConnectionId) {
       const reusableConn = await prisma.connection.findFirst({
         where: {
@@ -5549,8 +5533,8 @@ dashboardApp.post("/tenants/new", async (c) => {
       : [];
 
     // Decide how to authenticate this provider:
-    //   - credential pasted           -> create/rotate a PAT connection now
-    //   - existing connection, no cred -> reuse as-is
+    //   - credential pasted           -> create a PAT connection now
+    //   - selected/only reusable conn -> create a scope connection from it
     //   - supports OAuth, no cred      -> queue for OAuth authorization
     //   - PAT-only, no cred, no conn   -> error
     if (authType === "oauth" && providerDef.authTypes.includes("oauth")) {
@@ -5572,30 +5556,22 @@ dashboardApp.post("/tenants/new", async (c) => {
       oauthQueue.push({ provider, oauthAppCredentialId });
     } else if (credential) {
       const credentialMeta = await credentialMetadataForProviderDef(providerDef, "pat", credential);
-      const conn = existingConn
-        ? await prisma.connection.update({
-            where: { id: existingConn.id },
-            data: { encryptedCredential: encrypt(credential), refreshToken: null, accessTokenExpiresAt: null, ...connectionCredentialData(credentialMeta) },
-          })
-        : await prisma.connection.create({
-            data: {
-              provider,
-              authType: "pat",
-              label: `${provider}-${tenant}-pat`,
-              scope: tenant,
-              tenantId: tenantRow.id,
-              ownerId: user.id,
-              workspaceId: tenantRow.workspaceId ?? wsId,
-              encryptedCredential: encrypt(credential),
-              ...connectionCredentialData(credentialMeta),
-            },
-          });
+      const conn = await prisma.connection.create({
+        data: {
+          provider,
+          authType: "pat",
+          label: newConnectionLabel(provider, tenant, "pat"),
+          scope: tenant,
+          tenantId: tenantRow.id,
+          ownerId: user.id,
+          workspaceId: tenantRow.workspaceId ?? wsId,
+          encryptedCredential: encrypt(credential),
+          ...connectionCredentialData(credentialMeta),
+        },
+      });
       await ensureProviderCredentialForConnection(conn, user.id);
       await syncProviderCredentialFromConnection(conn);
       connections.push(conn);
-    } else if (existingConn) {
-      await ensureProviderCredentialForConnection(existingConn, user.id);
-      connections.push(existingConn);
     } else if (requestedReuseConnectionId && !selectedReusableConn) {
       return c.html(`<h1>selected connection cannot be reused</h1><p>The selected ${escapeHtml(providerDef.label)} connection does not belong to this workspace, provider, or auth type.</p><p><a href="/tenants/new">Back</a></p>`, 400);
     } else if (selectedReusableConn) {
@@ -6732,16 +6708,13 @@ oauthApp.get("/:provider/callback", async (c) => {
     return c.redirect(`/tenants/${effectiveTenant}/edit?reauthed=${encodeURIComponent(providerKey)}`);
   }
 
-  // 1) Create connection (idempotent by provider+scope for this user)
-  const existingConn = await prisma.connection.findFirst({
-    where: { provider: providerKey, authType: "oauth", scope: effectiveTenant, ownerId: user.id },
-    orderBy: { createdAt: "desc" },
-  });
-  const conn = existingConn ?? await prisma.connection.create({
+  // 1) Create connection. Reconnect mode above updates a specific existing
+  // connection; a normal OAuth callback represents adding another credential.
+  const conn = await prisma.connection.create({
     data: {
       provider: providerKey,
       authType: "oauth",
-      label: `${providerKey}-${userLogin}-${effectiveTenant}-oauth`,
+      label: newConnectionLabel(providerKey, effectiveTenant, "oauth"),
       scope: effectiveTenant,
       tenantId: tenantRow.id,
       ownerId: user.id,
@@ -6752,21 +6725,7 @@ oauthApp.get("/:provider/callback", async (c) => {
       ...connectionCredentialData(await credentialMetadataForStorage(providerKey, "oauth", accessToken)),
     },
   });
-  // If the connection already existed, update the credential (token may have rotated)
-  if (existingConn) {
-    await rotateSharedCredential({
-      credentialId: existingConn.credentialId,
-      connectionId: existingConn.id,
-      data: {
-        encryptedCredential: encrypt(accessToken),
-        accessTokenExpiresAt: tokenJson.expires_in ? new Date(Date.now() + tokenJson.expires_in * 1000) : null,
-        ...(await credentialMetadataForStorage(providerKey, "oauth", accessToken)),
-        ...(refreshToken ? { refreshToken: encrypt(refreshToken) } : {}),
-      },
-    });
-  } else {
-    await ensureProviderCredentialForConnection(conn, user.id);
-  }
+  await ensureProviderCredentialForConnection(conn, user.id);
   await grantConnectionToTenantAgents(user.id, effectiveTenant, conn.id);
 
   // If more providers in the chain still need OAuth authorization, hand off
