@@ -623,6 +623,26 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "smartlead") {
+      const resp = await fetchWithTimeout(`https://server.smartlead.ai/api/v1/campaigns?limit=1&api_key=${encodeURIComponent(token)}`, {
+        headers: {
+          Accept: "application/json",
+        },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) {
+        return { provider, authType, status: "error", checkedAt, error: `Smartlead API key check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: typeof body === "object" && body ? body : undefined,
+        notes: ["Smartlead API key is sent as the api_key query parameter."],
+        checkedAt,
+      };
+    }
+
     if (provider === "apollo") {
       const resp = await fetchWithTimeout("https://api.apollo.io/api/v1/auth/health", {
         headers: { "X-Api-Key": token, Accept: "application/json" },

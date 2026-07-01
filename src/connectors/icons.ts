@@ -97,6 +97,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   clay: "#292929",
   apollo: "#5C3FFF", // Apollo.io purple
   heyreach: "#6A5CFF",
+  smartlead: "#4F46E5", // Smartlead indigo
   chatwork: "#EA3C3C",
   channel_talk: "#3B5AFE", // Channel Talk blue
   yahoo_ads: "#FF0033", // Yahoo! JAPAN red

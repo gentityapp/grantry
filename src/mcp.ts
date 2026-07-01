@@ -27,6 +27,7 @@ import { callAttioTool } from "./connectors/attio.js";
 import { callClayTool } from "./connectors/clay.js";
 import { callApolloTool } from "./connectors/apollo.js";
 import { callHeyReachTool } from "./connectors/heyreach.js";
+import { callSmartleadTool } from "./connectors/smartlead.js";
 import { callChatworkTool } from "./connectors/chatwork.js";
 import { callChannelTalkTool } from "./connectors/channel_talk.js";
 import { callRailwayTool } from "./connectors/railway.js";
@@ -1264,6 +1265,60 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       data: { type: "object", description: "Raw HeyReach GetOverallStats request body, e.g. date/campaign filters." },
     };
   }
+  if (toolName === "smartlead/check_connection" || toolName === "smartlead/list_campaigns" || toolName === "smartlead/list_email_accounts") {
+    return {};
+  }
+  if (
+    toolName === "smartlead/get_campaign" ||
+    toolName === "smartlead/get_campaign_analytics" ||
+    toolName === "smartlead/get_campaign_statistics"
+  ) {
+    return {
+      campaign_id: { type: "string", description: "Smartlead campaign ID." },
+    };
+  }
+  if (toolName === "smartlead/create_campaign") {
+    return {
+      name: { type: "string", description: "New Smartlead campaign name." },
+      client_id: { type: "string", description: "Optional Smartlead client ID to attach the campaign to." },
+      data: { type: "object", description: "Raw Smartlead create-campaign request body; overrides name/client_id." },
+    };
+  }
+  if (toolName === "smartlead/update_campaign_status") {
+    return {
+      campaign_id: { type: "string", description: "Smartlead campaign ID." },
+      status: { type: "string", enum: ["START", "PAUSED", "STOPPED"], description: "New campaign status." },
+      data: { type: "object", description: "Raw Smartlead status request body; overrides status." },
+    };
+  }
+  if (toolName === "smartlead/save_sequence") {
+    return {
+      campaign_id: { type: "string", description: "Smartlead campaign ID." },
+      sequences: { type: "array", items: { type: "object" }, description: "Sequence steps to save. Use raw Smartlead sequence fields." },
+      data: { type: "object", description: "Raw Smartlead sequences request body; overrides sequences." },
+    };
+  }
+  if (toolName === "smartlead/add_leads_to_campaign") {
+    return {
+      campaign_id: { type: "string", description: "Smartlead campaign ID." },
+      lead_list: { type: "array", items: { type: "object" }, description: "Leads to add. Use raw Smartlead lead fields." },
+      settings: { type: "object", description: "Optional Smartlead lead-upload settings." },
+      data: { type: "object", description: "Raw Smartlead add-leads request body; overrides lead_list/settings." },
+    };
+  }
+  if (toolName === "smartlead/list_campaign_leads") {
+    return {
+      campaign_id: { type: "string", description: "Smartlead campaign ID." },
+      offset: { type: "number", minimum: 0, description: "Pagination offset." },
+      limit: { type: "number", minimum: 1, maximum: 100, description: "Leads to return, max 100." },
+    };
+  }
+  if (toolName === "smartlead/get_message_history") {
+    return {
+      campaign_id: { type: "string", description: "Smartlead campaign ID." },
+      lead_id: { type: "string", description: "Smartlead lead ID." },
+    };
+  }
   if (toolName === "chatwork/get_me" || toolName === "chatwork/list_contacts" || toolName === "chatwork/list_rooms") {
     return {};
   }
@@ -2466,6 +2521,15 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "heyreach/resume_campaign") return ["campaign_id"];
   if (toolName === "heyreach/add_leads_to_campaign") return [];
   if (toolName === "heyreach/create_empty_list") return [];
+  if (toolName === "smartlead/get_campaign") return ["campaign_id"];
+  if (toolName === "smartlead/get_campaign_analytics") return ["campaign_id"];
+  if (toolName === "smartlead/get_campaign_statistics") return ["campaign_id"];
+  if (toolName === "smartlead/update_campaign_status") return ["campaign_id"];
+  if (toolName === "smartlead/save_sequence") return ["campaign_id"];
+  if (toolName === "smartlead/add_leads_to_campaign") return ["campaign_id"];
+  if (toolName === "smartlead/list_campaign_leads") return ["campaign_id"];
+  if (toolName === "smartlead/get_message_history") return ["campaign_id", "lead_id"];
+  if (toolName === "smartlead/create_campaign") return [];
   if (toolName === "chatwork/create_room") return ["name", "members_admin_ids"];
   if (toolName === "chatwork/update_room_members") return ["room_id", "members_admin_ids"];
   if (toolName === "chatwork/get_room") return ["room_id"];
@@ -2772,6 +2836,7 @@ async function dispatchProviderTool(
   if (provider === "clay") return callClayTool(toolName, args, token);
   if (provider === "apollo") return callApolloTool(toolName, args, token);
   if (provider === "heyreach") return callHeyReachTool(toolName, args, token);
+  if (provider === "smartlead") return callSmartleadTool(toolName, args, token);
   if (provider === "chatwork") return callChatworkTool(toolName, args, token);
   if (provider === "channel_talk") return callChannelTalkTool(toolName, args, token);
   if (provider === "railway") {
