@@ -17,15 +17,21 @@ const HUBSPOT_MARKETING_EMAIL_TOOLS = [
   "hubspot/update_marketing_email",
   "hubspot/publish_marketing_email",
 ];
+// Automation / Workflows (v4 flows) — read tools for the workflow-optimization
+// engine. Require the `automation` scope (added to optional scopes below).
+const HUBSPOT_AUTOMATION_TOOLS = [
+  "hubspot/list_flows",
+  "hubspot/get_flow",
+];
 const hubspotProvider = PROVIDERS.hubspot;
 if (hubspotProvider) {
-  for (const t of HUBSPOT_MARKETING_EMAIL_TOOLS) {
+  for (const t of [...HUBSPOT_MARKETING_EMAIL_TOOLS, ...HUBSPOT_AUTOMATION_TOOLS]) {
     if (!hubspotProvider.tools.includes(t)) hubspotProvider.tools.push(t);
   }
   if (!Array.isArray(hubspotProvider.oauthOptionalScopes)) {
     hubspotProvider.oauthOptionalScopes = [];
   }
-  for (const s of ["content", "marketing-email"]) {
+  for (const s of ["content", "marketing-email", "automation"]) {
     if (!hubspotProvider.oauthOptionalScopes.includes(s)) {
       hubspotProvider.oauthOptionalScopes.push(s);
     }
@@ -277,6 +283,31 @@ export async function callHubSpotTool(tool: string, args: HubSpotArgs, token: st
     }, { tool, emailId });
     const j: any = await readJsonResponse(r);
     if (!r.ok) throw new Error(`HubSpot publish_marketing_email failed: ${r.status} ${JSON.stringify(j).slice(0, 1200)}`);
+    return { structuredContent: j };
+  }
+
+  // --- Automation / Workflows (v4 flows) — read, for structure analysis ---
+  // GET /automation/v4/flows — list flows (workflows). Requires `automation` scope.
+  if (tool === "hubspot/list_flows") {
+    const params = new URLSearchParams();
+    const limit = Number(args.limit ?? 100);
+    params.set("limit", String(Number.isFinite(limit) ? Math.min(Math.max(Math.floor(limit), 1), 500) : 100));
+    const after = String(args.after ?? "").trim();
+    if (after) params.set("after", after);
+    const r = await fetchHubSpot(`/automation/v4/flows?${params.toString()}`, { headers: headers(token) }, { tool });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`HubSpot list_flows failed: ${r.status} ${JSON.stringify(j).slice(0, 1200)}`);
+    return { structuredContent: { results: j.results ?? [], paging: j.paging ?? null, total: j.total ?? null } };
+  }
+
+  // GET /automation/v4/flows/{flowId} — full flow definition (enrollment criteria,
+  // actions, branches). Used to diagnose structural issues (e.g. steps not sending).
+  if (tool === "hubspot/get_flow") {
+    const flowId = String(args.flow_id ?? args.flowId ?? "").trim();
+    if (!flowId) throw new Error("flow_id is required");
+    const r = await fetchHubSpot(`/automation/v4/flows/${encodeURIComponent(flowId)}`, { headers: headers(token) }, { tool, flowId });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`HubSpot get_flow failed: ${r.status} ${JSON.stringify(j).slice(0, 1500)}`);
     return { structuredContent: j };
   }
 
