@@ -360,12 +360,16 @@ export async function callAdminTool(
     const label = args.label ? String(args.label).trim() : `${provider}-${scope}-${authType}`;
 
     const tenant = await ensureTenant(ctx.ownerId, scope, undefined, ctx.workspaceId);
-    const existing = await prisma.connection.findUnique({
-      where: { ownerId_provider_scope_authType: { ownerId: ctx.ownerId, provider, scope, authType } },
-      select: { id: true },
+    // Multiple connections per (provider, scope) are allowed since 0f90feb,
+    // but an agent-driven create refuses duplicates unless it labels them —
+    // unlabeled duplicates just make every call ambiguous (checkPolicy would
+    // demand connection_id).
+    const existing = await prisma.connection.findFirst({
+      where: { ...boundaryWhere(ctx), provider, scope, authType, enabled: true },
+      select: { id: true, label: true },
     });
-    if (existing) {
-      throw new Error(`a ${provider} (${authType}) connection already exists at scope ${scope} (connection_id=${existing.id}) — rotate it from the dashboard`);
+    if (existing && !args.label) {
+      throw new Error(`a ${provider} (${authType}) connection already exists at scope ${scope} (connection_id=${existing.id}, label=${existing.label}) — pass a distinct 'label' to add another, or rotate the existing one from the dashboard`);
     }
     const credentialMeta = await credentialMetadataForStorage(provider, authType, credential);
     const conn = await prisma.connection.create({
