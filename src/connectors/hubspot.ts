@@ -22,6 +22,7 @@ const HUBSPOT_MARKETING_EMAIL_TOOLS = [
 const HUBSPOT_AUTOMATION_TOOLS = [
   "hubspot/list_flows",
   "hubspot/get_flow",
+  "hubspot/update_flow",
 ];
 const hubspotProvider = PROVIDERS.hubspot;
 if (hubspotProvider) {
@@ -308,6 +309,36 @@ export async function callHubSpotTool(tool: string, args: HubSpotArgs, token: st
     const r = await fetchHubSpot(`/automation/v4/flows/${encodeURIComponent(flowId)}`, { headers: headers(token) }, { tool, flowId });
     const j: any = await readJsonResponse(r);
     if (!r.ok) throw new Error(`HubSpot get_flow failed: ${r.status} ${JSON.stringify(j).slice(0, 1500)}`);
+    return { structuredContent: j };
+  }
+
+  // PUT /automation/v4/flows/{flowId} — update a flow (structure/enrollment).
+  // HIGH-RISK write on LIVE automation. Requires confirm:true. Read-modify-write:
+  // pass full `flow` (object, replaces), or `updates` (shallow-merged onto the
+  // current flow), or `set_enabled` (convenience on/off toggle).
+  if (tool === "hubspot/update_flow") {
+    const flowId = String(args.flow_id ?? args.flowId ?? "").trim();
+    if (!flowId) throw new Error("flow_id is required");
+    if (args.confirm !== true && String(args.confirm) !== "true") {
+      throw new Error("confirm:true is required to update a HubSpot flow (live automation)");
+    }
+    let flow: any = (args.flow && typeof args.flow === "object" && !Array.isArray(args.flow)) ? args.flow : null;
+    const updates = (args.updates && typeof args.updates === "object" && !Array.isArray(args.updates)) ? (args.updates as Record<string, unknown>) : null;
+    const hasEnabledToggle = args.set_enabled !== undefined;
+    if (!flow && (updates || hasEnabledToggle)) {
+      const gr = await fetchHubSpot(`/automation/v4/flows/${encodeURIComponent(flowId)}`, { headers: headers(token) }, { tool, flowId, step: "get" });
+      const gj: any = await readJsonResponse(gr);
+      if (!gr.ok) throw new Error(`HubSpot update_flow(get) failed: ${gr.status} ${JSON.stringify(gj).slice(0, 1200)}`);
+      flow = gj;
+      if (updates) Object.assign(flow, updates);
+      if (hasEnabledToggle) flow.isEnabled = (args.set_enabled === true || String(args.set_enabled) === "true");
+    }
+    if (!flow) throw new Error("provide `flow` (full object) or `updates`/`set_enabled` to modify");
+    const r = await fetchHubSpot(`/automation/v4/flows/${encodeURIComponent(flowId)}`, {
+      method: "PUT", headers: headers(token), body: JSON.stringify(flow),
+    }, { tool, flowId });
+    const j: any = await readJsonResponse(r);
+    if (!r.ok) throw new Error(`HubSpot update_flow failed: ${r.status} ${JSON.stringify(j).slice(0, 1500)}`);
     return { structuredContent: j };
   }
 
