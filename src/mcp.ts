@@ -72,6 +72,7 @@ import { mintDwdAccessToken, type ServiceAccountCredential } from "./google_dwd.
 import { callGenericCheckConnection, callGenericListCapabilities, callGenericProviderRequest } from "./connectors/generic_request.js";
 import { userMayUseAgent } from "./workspaces.js";
 import { connectionCredentialData, providerCredentialData } from "./provider_credentials.js";
+import { ADMIN_TOOLS, adminToolDescriptor, callAdminTool, isAdminTool } from "./admin_tools.js";
 
 export const mcpApp = new Hono();
 
@@ -143,6 +144,9 @@ function canonicalToolName(name: unknown): string {
   if (raw === "gentity/get_skill" || raw === "gentity_get_skill") return "grantry/get_skill";
   if (raw === "gentity/get_providers" || raw === "gentity_get_providers") return "grantry/get_providers";
   for (const tool of SYSTEM_TOOLS) {
+    if (raw === tool || raw === publicToolName(tool)) return tool;
+  }
+  for (const tool of ADMIN_TOOLS) {
     if (raw === tool || raw === publicToolName(tool)) return tool;
   }
   for (const provider of Object.values(PROVIDERS)) {
@@ -3091,6 +3095,7 @@ function rateLimitExceeded(agentId: string): boolean {
 function buildToolList(
   connections: Awaited<ReturnType<typeof connectionsForAgent>> | null,
   delegatable: Map<string, Set<string>> = new Map(),
+  selfManage = false,
 ) {
   const tools: any[] = [
     { name: "ping", description: "Liveness check", inputSchema: { type: "object", properties: {} } },
@@ -3155,6 +3160,19 @@ function buildToolList(
       },
     },
   );
+
+  // Self-management (control-plane) tools — advertised only to agents whose
+  // selfManage flag a human enabled in the dashboard.
+  if (selfManage) {
+    for (const adminTool of ADMIN_TOOLS) {
+      const d = adminToolDescriptor(adminTool);
+      tools.push({
+        name: publicToolName(adminTool),
+        description: d.description,
+        inputSchema: { type: "object", properties: d.properties, required: d.required },
+      });
+    }
+  }
 
   const scopesByTool = new Map<string, Set<string>>();
   const authTypesByTool = new Map<string, Set<string>>();
@@ -3647,7 +3665,12 @@ const handleMcpPost = async (c: any) => {
         }
       }
     }
-    return c.json({ jsonrpc: "2.0", id, result: { tools: buildToolList(connections, delegatable) } });
+    // Advertise the self-management tools only when the flag is on and the
+    // connector URL is not scope-locked (a locked URL is a single-tenant view).
+    const selfManage = agent && !configuredScope
+      ? (await prisma.agent.findUnique({ where: { id: agent.id }, select: { selfManage: true } }))?.selfManage ?? false
+      : false;
+    return c.json({ jsonrpc: "2.0", id, result: { tools: buildToolList(connections, delegatable, selfManage) } });
   }
 
   // --- connections/list: requires auth; returns the exact (provider, scope)
@@ -3810,6 +3833,75 @@ const handleMcpPost = async (c: any) => {
         structuredContent: payload,
         isError: false,
       } });
+    }
+
+    // grantry self-management (control-plane) tools: gated on Agent.selfManage
+    // (dashboard-only toggle), bounded to the caller's workspace/owner, audited
+    // like provider calls. Minted tokens go only in the result payload — the
+    // audit log records `summary`, never the payload.
+    if (isAdminTool(toolName)) {
+      const adminAuditBase = {
+        agentId: agent.id,
+        provider: "grantry",
+        tool: toolName,
+        scope: typeof (args as any).scope === "string" ? String((args as any).scope) : "",
+        requestArgs: maskAuditArgs(args),
+        ipAddress: c.req.header("x-forwarded-for") ?? null,
+      };
+      if (configuredScope) {
+        await prisma.auditLog.create({ data: {
+          ...adminAuditBase, status: "denied",
+          errorMessage: "self-management tools are not available on a scope-locked MCP URL",
+          durationMs: Date.now() - started,
+        } }).catch(() => {});
+        return c.json({
+          jsonrpc: "2.0", id,
+          error: { code: -32010, message: `policy denied: ${requestedToolName} is not available on a scope-locked MCP URL — use the unlocked /mcp endpoint` },
+        }, 403);
+      }
+      const self = await prisma.agent.findUnique({
+        where: { id: agent.id },
+        select: { ownerId: true, workspaceId: true, selfManage: true },
+      });
+      if (!self?.selfManage) {
+        await prisma.auditLog.create({ data: {
+          ...adminAuditBase, status: "denied",
+          errorMessage: "self-management tools require the selfManage flag (dashboard-only toggle)",
+          durationMs: Date.now() - started,
+        } }).catch(() => {});
+        return c.json({
+          jsonrpc: "2.0", id,
+          error: { code: -32010, message: `policy denied: ${requestedToolName} requires the selfManage flag on this agent — a human must enable it from the dashboard (/agents)` },
+        }, 403);
+      }
+      try {
+        const { payload, summary } = await callAdminTool(toolName, args, {
+          agentId: agent.id,
+          ownerId: self.ownerId,
+          workspaceId: self.workspaceId,
+        });
+        await prisma.auditLog.create({ data: {
+          ...adminAuditBase, status: "ok",
+          responseSummary: summary,
+          durationMs: Date.now() - started,
+        } }).catch(() => {});
+        return c.json({ jsonrpc: "2.0", id, result: {
+          content: [{ type: "text", text: JSON.stringify(payload, null, 2) }],
+          structuredContent: payload,
+          isError: false,
+        } });
+      } catch (e: any) {
+        const message = String(e?.message ?? e);
+        await prisma.auditLog.create({ data: {
+          ...adminAuditBase, status: "error",
+          errorMessage: message.slice(0, 500),
+          durationMs: Date.now() - started,
+        } }).catch(() => {});
+        return c.json({ jsonrpc: "2.0", id, result: {
+          content: [{ type: "text", text: `Error: ${message}` }],
+          isError: true,
+        } });
+      }
     }
 
     // 1) Special case: ping

@@ -122,6 +122,10 @@ model Agent {
   owner         User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   enabled       Boolean  @default(true)
   fullScopeManager Boolean @default(false)
+  // Grants access to the grantry/* self-management tools (create tenants,
+  // mint sibling agents, move grants). Dashboard-only toggle: the tools
+  // themselves can never set it, so a manager is always human-minted.
+  selfManage    Boolean  @default(false)
   expiresAt     DateTime?
   lastUsedAt    DateTime?
   createdAt     DateTime @default(now())

@@ -6033,6 +6033,7 @@ dashboardApp.get("/agents/:id", async (c) => {
         <p>Status: ${agent.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</p>
         <p>Token prefix: <code>${escapeHtml(agent.tokenPrefix)}...</code></p>
         <p>Mode: ${agent.fullScopeManager ? '<span class="badge denied">full-scope manager</span>' : '<span class="badge scoped">selected scopes</span>'}</p>
+        <p>Self-management: ${agent.selfManage ? '<span class="badge denied">enabled — can manage tenants/agents/grants via MCP</span>' : '<span class="badge scoped">off</span>'}</p>
         <p>Granted connections: ${connections.length
           ? `<span class="badge ok">${connections.length}</span>`
           : '<span class="badge denied">none</span>'}</p>
@@ -6062,6 +6063,17 @@ dashboardApp.get("/agents/:id", async (c) => {
         <form method="post" action="/agents/${escapeHtml(agent.id)}/charter">
           <textarea name="charter" rows="3" style="width:100%;box-sizing:border-box;" placeholder="e.g. 曖昧なGitHub issueを取得し、不足情報を補って具体化する係">${escapeHtml(agent.description ?? "")}</textarea>
           <button type="submit" style="margin-top:8px;">Save charter</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Self-management (grantry admin tools)</h2>
+        <p style="color:#687385;">When enabled, this agent can call the <code>grantry_*</code> admin tools over MCP — create tenants, mint sibling agents (token returned once), register PAT connections, and grant/revoke scopes — bounded to this workspace. The admin tools can never create or modify another self-managing agent, so this flag only ever comes from this page.</p>
+        <form method="post" action="/agents/${escapeHtml(agent.id)}/self-manage">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" name="self_manage" ${agent.selfManage ? "checked" : ""} style="transform:scale(1.15);">
+            <span>Allow this agent to manage grantry (tenants / agents / connections / grants)</span>
+          </label>
+          <button type="submit" class="secondary" style="margin-top:8px;">Save</button>
         </form>
       </div>
       <div class="card">
@@ -6153,6 +6165,24 @@ dashboardApp.post("/agents/:id/charter", async (c) => {
   const body = await c.req.parseBody();
   const charter = String(body.charter ?? "").trim();
   await prisma.agent.update({ where: { id: agent.id }, data: { description: charter || null } });
+
+  return c.redirect(`/agents/${agent.id}`);
+});
+
+// --- /agents/:id/self-manage (POST) ---
+// Dashboard-only toggle for the grantry_* self-management (admin) MCP tools.
+// Deliberately unreachable from the MCP API so a manager is always human-minted.
+dashboardApp.post("/agents/:id/self-manage", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+  const id = c.req.param("id");
+  const agent = await prisma.agent.findUnique({ where: { id } });
+  if (!agent) return c.html("<h1>agent not found</h1>", 404);
+  if (agent.ownerId !== user.id) return c.html("<h1>not your agent</h1>", 403);
+
+  const body = await c.req.parseBody();
+  const enabled = body.self_manage === "on" || body.self_manage === "true";
+  await prisma.agent.update({ where: { id: agent.id }, data: { selfManage: enabled } });
 
   return c.redirect(`/agents/${agent.id}`);
 });
