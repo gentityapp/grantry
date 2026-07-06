@@ -47,6 +47,7 @@ function patTokenForProvider(providerKey: string) {
   const jsonTokens: Record<string, string> = {
     aws: JSON.stringify({ accessKeyId: "AKIATEST", secretAccessKey: "secret", region: "us-east-1" }),
     channel_talk: JSON.stringify({ accessKey: "ct-test-key", accessSecret: "ct-test-secret" }),
+    channel_talk_documents: JSON.stringify({ accessKey: "ctd-test-key", accessSecret: "ctd-test-secret" }),
     customerio: JSON.stringify({ token: "cio-test-token", region: "us" }),
     godaddy: "godaddy-key:godaddy-secret",
     jira: JSON.stringify({ site: "https://acme.atlassian.net", email: "ops@example.com", token: "jira-test-token" }),
@@ -193,6 +194,9 @@ function patSuccessResponse(call: FetchCall) {
   }
   if (url === "https://api.channel.io/open/v5/managers?limit=1") {
     return jsonResponse({ managers: [{ id: "manager-1", name: "Ops" }], next: null });
+  }
+  if (url === "https://document-api.channel.io/open/v1/spaces/$me/topics?limit=1") {
+    return jsonResponse({ topics: [{ id: "topic-1", name: "General" }], next: null });
   }
   if (url === "https://backboard.railway.app/graphql/v2") {
     const body = JSON.parse(String(call.init?.body ?? "{}"));

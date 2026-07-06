@@ -711,6 +711,35 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "channel_talk_documents") {
+      const raw = token.trim();
+      if (!raw) return { provider, authType, status: "error", checkedAt, error: "Channel Talk Documents credential is required (Documents space API key)" };
+      let accessKey = "";
+      let accessSecret = "";
+      if (raw.startsWith("{")) {
+        let p: any;
+        try { p = JSON.parse(raw); } catch { return { provider, authType, status: "error", checkedAt, error: 'Channel Talk Documents credential must be JSON {"accessKey":"...","accessSecret":"..."} or a bare API key' }; }
+        accessKey = String(p.accessKey ?? p.access_key ?? p.apiKey ?? p.api_key ?? "").trim();
+        accessSecret = String(p.accessSecret ?? p.access_secret ?? "").trim();
+        if (!accessKey) return { provider, authType, status: "error", checkedAt, error: "Channel Talk Documents JSON must include accessKey (and usually accessSecret)" };
+      } else {
+        accessKey = raw;
+      }
+      const basic = Buffer.from(accessSecret ? `${accessKey}:${accessSecret}` : accessKey).toString("base64");
+      const resp = await fetchWithTimeout("https://document-api.channel.io/open/v1/spaces/$me/topics?limit=1", {
+        headers: { Authorization: `Basic ${basic}`, Accept: "application/json" },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `Channel Talk Documents API key check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      return {
+        provider,
+        authType,
+        status: "ok",
+        notes: ["Channel Talk Documents credentials are sent as HTTP Basic auth to document-api.channel.io (separate from the chat Open API key)."],
+        checkedAt,
+      };
+    }
+
     if (provider === "resend") {
       if (!token.trim()) {
         return { provider, authType, status: "error", checkedAt, error: "Resend API key is required" };

@@ -29,7 +29,7 @@ import { callApolloTool } from "./connectors/apollo.js";
 import { callHeyReachTool } from "./connectors/heyreach.js";
 import { callSmartleadTool } from "./connectors/smartlead.js";
 import { callChatworkTool } from "./connectors/chatwork.js";
-import { callChannelTalkTool } from "./connectors/channel_talk.js";
+import { callChannelTalkTool, callChannelTalkDocumentsTool } from "./connectors/channel_talk.js";
 import { callRailwayTool } from "./connectors/railway.js";
 import { callResendTool } from "./connectors/resend.js";
 import { callSlackTool } from "./connectors/slack.js";
@@ -1453,6 +1453,47 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "channel_talk/get_user") {
     return { user_id: { type: "string", description: "Channel Talk user ID." } };
   }
+  if (toolName === "channel_talk_documents/list_articles") {
+    return {
+      language: { type: "string", description: "Language code of the articles to list, e.g. ja, ko, en (required by the API)." },
+      state: { type: "string", description: "Filter by state: published, unpublished, or draft." },
+      topic_id: { type: "string", description: "Filter to a single topic (folder) id." },
+      limit: { type: "number", description: "Max articles to return (default 25)." },
+      since: { type: "string", description: "Pagination cursor (the previous response's next value)." },
+      order: { type: "string", description: "Sort order: asc or desc." },
+    };
+  }
+  if (toolName === "channel_talk_documents/get_article") {
+    return {
+      article_id: { type: "string", description: "Article id or slug." },
+      language: { type: "string", description: "Language code of the article, e.g. ja (required by the API)." },
+    };
+  }
+  if (toolName === "channel_talk_documents/create_article") {
+    return {
+      title: { type: "string", description: "Article title." },
+      content: { type: "string", description: "Article body content." },
+      description: { type: "string", description: "Short summary/preview text." },
+      language: { type: "string", description: "Language code, e.g. ja, ko, en." },
+      topic_id: { type: "string", description: "Topic (folder) id to file the article under. Use list_topics to find it." },
+      slug: { type: "string", description: "Optional URL-friendly slug." },
+      state: { type: "string", description: "published, unpublished, or draft." },
+      data: { type: "object", description: "Optional raw request body; merged last and overrides the convenience fields above. Use this if the space needs body fields not covered here." },
+    };
+  }
+  if (toolName === "channel_talk_documents/delete_article") {
+    return { article_id: { type: "string", description: "Article id to delete." } };
+  }
+  if (toolName === "channel_talk_documents/list_topics") {
+    return {
+      limit: { type: "number", description: "Max topics to return (default 25)." },
+      since: { type: "string", description: "Pagination cursor (the previous response's next value)." },
+      order: { type: "string", description: "Sort order: asc or desc." },
+    };
+  }
+  if (toolName === "channel_talk_documents/get_topic") {
+    return { topic_id: { type: "string", description: "Topic (folder) id." } };
+  }
   if (toolName === "railway/graphql") {
     return {
       query: { type: "string", description: "Railway GraphQL query or mutation." },
@@ -2551,6 +2592,10 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "channel_talk/list_messages") return ["user_chat_id"];
   if (toolName === "channel_talk/send_message") return ["user_chat_id"];
   if (toolName === "channel_talk/get_user") return ["user_id"];
+  if (toolName === "channel_talk_documents/list_articles") return ["language"];
+  if (toolName === "channel_talk_documents/get_article") return ["article_id", "language"];
+  if (toolName === "channel_talk_documents/delete_article") return ["article_id"];
+  if (toolName === "channel_talk_documents/get_topic") return ["topic_id"];
   if (toolName === "railway/graphql") return ["query"];
   if (toolName === "google_maps/geocode") return ["address"];
   if (toolName === "google_maps/reverse_geocode") return [];
@@ -2843,6 +2888,7 @@ async function dispatchProviderTool(
   if (provider === "smartlead") return callSmartleadTool(toolName, args, token);
   if (provider === "chatwork") return callChatworkTool(toolName, args, token);
   if (provider === "channel_talk") return callChannelTalkTool(toolName, args, token);
+  if (provider === "channel_talk_documents") return callChannelTalkDocumentsTool(toolName, args, token);
   if (provider === "railway") {
     const railwayToken = conn.provider === "railway_api" && !token.trim().startsWith("{")
       ? JSON.stringify({ token, token_type: "workspace" })

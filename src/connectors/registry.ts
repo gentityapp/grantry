@@ -593,6 +593,26 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  channel_talk_documents: {
+    key: "channel_talk_documents",
+    label: "Channel Talk Documents",
+    authTypes: ["pat"],
+    helpText: "Manage Channel Talk Documents (help-center articles). This uses a SEPARATE credential from the chat Open API: create a Documents space, then issue its API key in the space settings and enter the Access Key + Access Secret. They are sent as HTTP Basic auth to document-api.channel.io. Note: v1 supports create/list/get/delete of articles and read of topics — there is no update endpoint.",
+    tokenUrl: "https://developers.channel.io/docs/documents-open-api-welcome",
+    tools: [
+      "channel_talk_documents/list_articles",
+      "channel_talk_documents/get_article",
+      "channel_talk_documents/create_article",
+      "channel_talk_documents/delete_article",
+      "channel_talk_documents/list_topics",
+      "channel_talk_documents/get_topic",
+    ],
+    credentialFields: [
+      { key: "accessKey", label: "Access Key", required: true, placeholder: "Documents space API key" },
+      { key: "accessSecret", label: "Access Secret", required: true, secret: true },
+    ],
+    implemented: true,
+  },
   railway: {
     key: "railway",
     label: "Railway Project Token",

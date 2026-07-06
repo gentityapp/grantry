@@ -297,6 +297,10 @@ the same provider+scope; disambiguate with `auth_type` (`service_account` vs
   `list_room_files`, `get_room_file`
 - **channel_talk** (JSON access key/secret): `list_managers`, `get_manager`,
   `list_user_chats`, `get_user_chat`, `list_messages`, `send_message`, `get_user`
+- **channel_talk_documents** (JSON access key/secret; a **separate** Documents
+  *space* API key, sent as HTTP Basic to document-api.channel.io — NOT the chat
+  Open API key): `list_articles`, `get_article`, `create_article`,
+  `delete_article`, `list_topics`, `get_topic`. v1 has no article-update endpoint.
 - **railway** (Project token): `graphql`, `project_token_info`,
   `introspect_schema`
 - **railway_api** (Account/Workspace API token): `graphql`, `introspect_schema`
@@ -775,6 +779,7 @@ When asked to act via grantry:
    `heyreach/pause_campaign`,
    `heyreach/resume_campaign`, `heyreach/add_leads_to_campaign`,
    `heyreach/create_empty_list`, `chatwork/send_message`,
+   `channel_talk_documents/create_article`, `channel_talk_documents/delete_article`,
    `chatwork/create_room_task`, `channel_talk/send_message`,
    `railway/graphql` with mutations,
    `resend/send_email`, `slack/post_message`, `slack/update_message`,

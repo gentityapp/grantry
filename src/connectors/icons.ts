@@ -100,6 +100,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   smartlead: "#4F46E5", // Smartlead indigo
   chatwork: "#EA3C3C",
   channel_talk: "#3B5AFE", // Channel Talk blue
+  channel_talk_documents: "#3B5AFE", // Channel Talk blue (Documents)
   yahoo_ads: "#FF0033", // Yahoo! JAPAN red
   freee: "#2864F0", // freee blue
   moneyforward: "#3686C3", // Money Forward blue
