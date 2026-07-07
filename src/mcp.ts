@@ -234,8 +234,20 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       commit_message: { type: "string", description: "Commit message. Defaults to 'chore: update via grantry'." },
       files: {
         type: "object",
-        additionalProperties: { type: "string" },
-        description: "Map of repository file path to UTF-8 text content, e.g. { \"README.md\": \"# Title\", \"src/app.ts\": \"...\" }. All files land in a single commit.",
+        additionalProperties: {
+          oneOf: [
+            { type: "string" },
+            {
+              type: "object",
+              properties: {
+                content: { type: "string", description: "UTF-8 text content." },
+                base64: { type: "string", description: "Binary content, base64-encoded (a data: URI prefix is stripped)." },
+                url: { type: "string", description: "Binary source URL; grantry fetches the bytes server-side and commits them as a blob." },
+              },
+            },
+          ],
+        },
+        description: "Map of repository file path to content. Value is either a UTF-8 text string, e.g. { \"README.md\": \"# Title\" }, OR for binary files an object: { \"img/hero.webp\": { url: \"https://...\" } } (grantry fetches the bytes) or { base64: \"...\" }. All files land in a single commit. Use the url form for images — never paste base64.",
       },
     };
   }

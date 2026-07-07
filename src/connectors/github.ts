@@ -125,12 +125,23 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
     const commit_message = String(args.commit_message ?? "chore: update via grantry");
     if (!owner || !repo) throw new Error("owner and repo are required");
 
-    // `files` must be a { path: content } object. Some clients send it as a JSON
-    // STRING (e.g. when the tool schema didn't advertise it as an object); accept
-    // and parse that. Critically, we must NOT fall through to Object.entries() on
-    // a raw string — that iterates the string by character index and would push
-    // one file per character (named "0", "1", "2", … with single-char contents).
-    let files: Record<string, string>;
+    // `files` maps a repo path to its content. Content is EITHER:
+    //   - a string            -> UTF-8 text, inlined into the tree (no extra call)
+    //   - { content: "..." }  -> same as a plain string
+    //   - { base64: "..." }   -> binary bytes, base64-encoded (data: URI prefix ok)
+    //   - { url: "https://.." }-> binary; grantry fetches the bytes server-side.
+    // The url form is the point of this: it lets an agent commit an image
+    // WITHOUT emitting its base64 (~280k chars for a 205KB webp — a model can't
+    // transcribe that). Pass the image URL (e.g. an openai_generate_image result
+    // or any public URL) and grantry handles the bytes. Binary goes through
+    // POST /git/blobs because the Trees API `content` field is UTF-8 text only;
+    // binary bytes placed there get corrupted.
+    //
+    // Some clients send `files` as a JSON STRING; parse that. Critically, do NOT
+    // fall through to Object.entries() on a raw string — it iterates by character
+    // index and pushes one file per character (named "0","1",… single-char).
+    type FileSpec = string | { content?: string; base64?: string; url?: string };
+    let files: Record<string, FileSpec>;
     {
       let raw: unknown = args.files;
       if (typeof raw === "string") {
@@ -143,15 +154,10 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
       if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
         throw new Error("files must be an object mapping path -> content");
       }
-      files = raw as Record<string, string>;
+      files = raw as Record<string, FileSpec>;
     }
     const fileEntries = Object.entries(files);
     if (fileEntries.length === 0) throw new Error("files (object) is required");
-    for (const [path, content] of fileEntries) {
-      if (typeof content !== "string") {
-        throw new Error(`files["${path}"] must be a string (file content); got ${typeof content}`);
-      }
-    }
 
     const base = `https://api.github.com/repos/${owner}/${repo}/git`;
     // GitHub's secondary (abuse) rate limit answers with 429 — or 403 carrying a
@@ -226,18 +232,46 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
       throw new Error(`git_push_repo resolve ref failed: ${refRes.status} ${await refRes.text()}`);
     }
 
-    // 2. Build tree entries with each file's content inlined. The Git Trees API
-    // accepts `content` directly, so we skip the per-file POST /blobs round trips.
-    // Those blob calls were fired concurrently (Promise.all), which tripped
-    // GitHub's secondary rate limit on multi-file pushes; inlining makes the
-    // request count constant (~4) regardless of how many files are pushed.
-    // `files` arrives as a JSON string map, so contents are already UTF-8 text.
-    const tree = fileEntries.map(([path, content]) => ({
-      path,
-      mode: "100644",
-      type: "blob",
-      content,
-    }));
+    // 2. Build tree entries. Text is inlined via the Trees API `content` field
+    // (no extra call). Binary (base64/url) MUST become a blob first — the Trees
+    // `content` field is UTF-8 only. Blob POSTs are done sequentially, not
+    // concurrently: firing them via Promise.all tripped GitHub's secondary rate
+    // limit on multi-file pushes. Text-only pushes still cost a constant ~4
+    // requests; only binaries add one POST /blobs each.
+    const MAX_BLOB_BYTES = 100 * 1024 * 1024; // GitHub blob hard limit
+    const tree: Array<Record<string, string>> = [];
+    for (const [path, spec] of fileEntries) {
+      if (typeof spec === "string") {
+        tree.push({ path, mode: "100644", type: "blob", content: spec });
+        continue;
+      }
+      if (spec && typeof spec === "object" && typeof spec.content === "string") {
+        tree.push({ path, mode: "100644", type: "blob", content: spec.content });
+        continue;
+      }
+      let b64: string | null = null;
+      if (spec && typeof spec === "object" && typeof spec.base64 === "string") {
+        b64 = spec.base64.replace(/^data:[^;]+;base64,/, "");
+      } else if (spec && typeof spec === "object" && typeof spec.url === "string") {
+        const fr = await fetch(spec.url);
+        if (!fr.ok) {
+          throw new Error(`git_push_repo could not fetch files["${path}"].url (${spec.url}): ${fr.status} ${await fr.text()}`);
+        }
+        const buf = Buffer.from(await fr.arrayBuffer());
+        if (buf.length > MAX_BLOB_BYTES) {
+          throw new Error(`files["${path}"] is ${buf.length} bytes; exceeds GitHub's 100MB blob limit`);
+        }
+        b64 = buf.toString("base64");
+      }
+      if (b64 === null) {
+        throw new Error(`files["${path}"] must be a string, or an object { content } | { base64 } | { url }`);
+      }
+      const blob = await gh("/blobs", {
+        method: "POST",
+        body: JSON.stringify({ content: b64, encoding: "base64" }),
+      });
+      tree.push({ path, mode: "100644", type: "blob", sha: blob.sha });
+    }
 
     // 3. Build a tree (on top of base_tree when the branch already exists).
     const newTree = await gh("/trees", {
