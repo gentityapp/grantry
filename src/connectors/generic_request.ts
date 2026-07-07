@@ -274,15 +274,20 @@ async function executeGenericRequest(args: {
   assertAllowed(args.provider.key, manifest, method, path);
 
   const baseUrl = resolveBaseUrl(args.provider.key, manifest, args.credential, args.baseUrlKey);
-  const qs = queryFromRecord(args.query ?? {});
-  const url = `${baseUrl}${path}${qs ? `?${qs}` : ""}`;
   const token = credentialToken(args.provider.key, args.credential);
+  const scheme = manifest.authScheme ?? "bearer";
+  const queryRecord: Record<string, unknown> = { ...(args.query ?? {}) };
   const headers: Record<string, string> = { Accept: "application/json" };
-  if ((manifest.authScheme ?? "bearer") === "api_key") {
+  if (scheme === "api_key_query") {
+    // Credential travels as a query parameter (e.g. Smartlead's `api_key`), not a header.
+    queryRecord[manifest.apiKeyQueryParam ?? "api_key"] = token;
+  } else if (scheme === "api_key") {
     headers[manifest.apiKeyHeader ?? "Authorization"] = manifest.apiKeyHeader ? token : `Bearer ${token}`;
   } else {
     headers.Authorization = `Bearer ${token}`;
   }
+  const qs = queryFromRecord(queryRecord);
+  const url = `${baseUrl}${path}${qs ? `?${qs}` : ""}`;
   if (args.provider.key === "godaddy") headers.Authorization = `sso-key ${token}`;
   if (args.provider.key === "github") headers["User-Agent"] = "grantry";
   if (args.provider.key === "reddit") headers["User-Agent"] = "grantry/1.0 (MCP connector)";

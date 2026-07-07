@@ -51,8 +51,10 @@ export type ProviderDef = {
     defaultMethods: string[];
     allowedPathPrefixes: string[];
     blockedPathPrefixes?: string[];
-    authScheme?: "bearer" | "api_key";
+    authScheme?: "bearer" | "api_key" | "api_key_query";
     apiKeyHeader?: string;
+    /** Query parameter name for the credential when authScheme is "api_key_query" (e.g. Smartlead's `api_key`). */
+    apiKeyQueryParam?: string;
     smokeTests?: Array<{
       id: string;
       method: "GET";
@@ -1428,8 +1430,11 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
   },
   smartlead: {
     baseUrl: "https://server.smartlead.ai",
-    defaultMethods: ["GET"],
+    defaultMethods: ["GET", "POST"],
     allowedPathPrefixes: ["/api/v1/"],
+    authScheme: "api_key_query",
+    apiKeyQueryParam: "api_key",
+    smokeTests: [{ id: "campaigns", method: "GET", path: "/api/v1/campaigns", query: { limit: 1 } }],
   },
   chatwork: {
     baseUrl: "https://api.chatwork.com/v2",

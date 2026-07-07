@@ -82,11 +82,23 @@ function idArg(args: SmartleadArgs, snake: string, aliases: string[] = []) {
   throw new Error(`${snake} is required`);
 }
 
+/**
+ * MCP `structuredContent` must be a JSON object. Several Smartlead endpoints
+ * (list campaigns / email accounts / leads) return a top-level array, which the
+ * MCP client rejects ("expected record, received array"). Wrap arrays (and any
+ * non-object) so the payload is always an object.
+ */
+function asStructured(value: unknown): Record<string, unknown> {
+  if (Array.isArray(value)) return { items: value, count: value.length };
+  if (value && typeof value === "object") return value as Record<string, unknown>;
+  return { value };
+}
+
 async function getJson(apiKey: string, path: string, tool: string, logContext: Record<string, unknown> = {}) {
   const r = await fetchSmartlead(path, apiKey, { headers: headers() }, { tool, ...logContext });
   const j: any = await readJsonResponse(r);
   if (!r.ok) throw new Error(`Smartlead ${tool} failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
-  return j;
+  return asStructured(j);
 }
 
 async function postJson(apiKey: string, path: string, body: unknown, tool: string, logContext: Record<string, unknown> = {}) {
@@ -97,7 +109,7 @@ async function postJson(apiKey: string, path: string, body: unknown, tool: strin
   }, { tool, ...logContext });
   const j: any = await readJsonResponse(r);
   if (!r.ok) throw new Error(`Smartlead ${tool} failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
-  return j;
+  return asStructured(j);
 }
 
 export async function callSmartleadTool(tool: string, args: SmartleadArgs, apiKey: string) {
