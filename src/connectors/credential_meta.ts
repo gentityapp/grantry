@@ -53,7 +53,7 @@ function safeString(value: unknown, max = 500) {
   return String(value ?? "").replace(/[\r\n\t]+/g, " ").slice(0, max);
 }
 
-function parseProviderErrorCode(provider: string, message: string) {
+export function parseProviderErrorCode(provider: string, message: string) {
   const explicit = message.match(/"code"\s*:\s*"([^"]+)"/)?.[1];
   if (explicit) return explicit;
   const prefix = message.match(/\b(provider_[a-z_]+):/)?.[1];
@@ -75,7 +75,7 @@ function parseProviderErrorCode(provider: string, message: string) {
   return "";
 }
 
-function healthErrorCodeFromAuthFailure(message: string, accessTokenExpiresAt?: Date | null) {
+export function healthErrorCodeFromAuthFailure(message: string, accessTokenExpiresAt?: Date | null) {
   if (accessTokenExpiresAt && accessTokenExpiresAt.getTime() < Date.now()) return "expired_token";
   if (EXPIRED_ERROR_PATTERNS.some((pattern) => pattern.test(message))) return "expired_token";
   return "invalid_token";

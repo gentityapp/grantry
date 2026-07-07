@@ -7,6 +7,7 @@ import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-a
 import { auth } from "./auth.js";
 import { mcpApp } from "./mcp.js";
 import { dashboardApp, oauthApp, mcpAuthorizeGate } from "./ui.js";
+import { startHealthSweepScheduler } from "./health_sweep.js";
 
 const app = new Hono();
 
@@ -106,3 +107,7 @@ const port = Number(process.env.PORT ?? 3000);
 serve({ fetch: app.fetch, port }, (info) => {
   console.log(`grantry listening on http://localhost:${info.port}`);
 });
+
+// Background credential-health sweep: re-validates stale connections daily so
+// the Connections page reflects reality without a manual Check now.
+startHealthSweepScheduler();

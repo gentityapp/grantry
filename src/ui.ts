@@ -793,7 +793,7 @@ async function createWorkspaceCustomProvider(c: any, workspaceId: string, ownerI
   return null;
 }
 
-async function credentialMetadataForProviderDef(providerDef: any, authType: string, token: string) {
+export async function credentialMetadataForProviderDef(providerDef: any, authType: string, token: string) {
   if (!providerDef?.genericRequest || getProvider(providerDef.key)) return credentialMetadataForStorage(providerDef.key, authType, token);
   const checkedAt = new Date().toISOString();
   const metadata: any = { provider: providerDef.key, authType, status: "unknown", notes: ["Custom provider credentials are validated through the configured connection check path when available."], checkedAt };

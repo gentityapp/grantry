@@ -6,6 +6,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { prisma } from "./db.js";
 import { decrypt, encrypt } from "./crypto.js";
+import { recordRuntimeCallHealth } from "./connection_health.js";
 import { checkPolicy, connectionsForAgent, delegatableToolsForAgent, findCapableAgents, guessToolsFromTask, normalizeToolName } from "./policy.js";
 import { PROVIDERS, getProviderForWorkspace, listProvidersForWorkspace } from "./connectors/registry.js";
 import { callNotionTool } from "./connectors/notion.js";
@@ -3538,7 +3539,7 @@ async function refreshOAuthToken(provider: string, refreshToken: string, workspa
   }
 }
 
-async function credentialForConnection(conn: {
+export async function credentialForConnection(conn: {
   id: string;
   provider: string;
   encryptedCredential: string;
@@ -4040,6 +4041,7 @@ const handleMcpPost = async (c: any) => {
         // Burn the single use up front: a failed provider call still consumes the grant.
         await prisma.delegationGrant.update({ where: { id: grant!.id }, data: { status: "consumed", consumedAt: now } });
         const result = await dispatchProviderTool(decision.provider, toolName, innerArgs, credential, conn);
+        void recordRuntimeCallHealth(conn, { ok: true });
         await prisma.auditLog.create({ data: {
           agentId: grant!.targetAgentId, delegatedById: agent.id, delegationId: grant!.id,
           connectionId: conn.id,
@@ -4056,6 +4058,7 @@ const handleMcpPost = async (c: any) => {
         } });
       } catch (e: any) {
         const errMsg = String(e?.message ?? e);
+        void recordRuntimeCallHealth(conn, { ok: false, errorMessage: errMsg });
         await prisma.auditLog.create({ data: {
           agentId: grant!.targetAgentId, delegatedById: agent.id, delegationId: grant!.id,
           connectionId: conn.id,
@@ -4116,11 +4119,38 @@ const handleMcpPost = async (c: any) => {
     if (!conn) {
       return c.json({ jsonrpc: "2.0", id, error: { code: -32011, message: "connection vanished" } }, 500);
     }
-    const token = await credentialForConnection(conn);
+    // Resolving the credential can itself fail (expired refresh token, dead
+    // DWD key). Surface that as a normal tool error instead of an opaque 500,
+    // and let the health snapshot reflect it so the dashboard shows broken.
+    let token: string;
+    try {
+      token = await credentialForConnection(conn);
+    } catch (e: any) {
+      const errMsg = String(e?.message ?? e);
+      void recordRuntimeCallHealth(conn, { ok: false, errorMessage: errMsg });
+      await prisma.auditLog.create({
+        data: {
+          agentId: agent.id,
+          connectionId: conn.id,
+          provider: decision.provider,
+          tool: toolName,
+          scope,
+          status: "error",
+          errorMessage: errMsg.slice(0, 2000),
+          requestArgs: maskAuditArgs(args),
+          durationMs: Date.now() - started,
+        },
+      }).catch(() => {});
+      return c.json({
+        jsonrpc: "2.0", id,
+        result: { content: [{ type: "text", text: `Error: ${errMsg}` }], isError: true },
+      });
+    }
 
     // 4) Dispatch to provider-specific tool
     try {
       const result = await dispatchProviderTool(decision.provider, toolName, args, token, conn);
+      void recordRuntimeCallHealth(conn, { ok: true });
 
       await prisma.auditLog.create({
         data: {
@@ -4147,6 +4177,7 @@ const handleMcpPost = async (c: any) => {
       });
     } catch (e: any) {
       const errMsg = String(e?.message ?? e);
+      void recordRuntimeCallHealth(conn, { ok: false, errorMessage: errMsg });
       await prisma.auditLog.create({
         data: {
           agentId: agent.id,
