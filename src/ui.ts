@@ -724,8 +724,8 @@ function customProviderForm(action: string, prefix: string) {
       <div class="field"><label for="${prefix}_key">Provider key</label><input type="text" name="key" id="${prefix}_key" pattern="[a-z0-9_-]+" placeholder="one_stream" required></div>
       <div class="field"><label for="${prefix}_label">Label</label><input type="text" name="label" id="${prefix}_label" placeholder="OneStream" required></div>
       <div class="field"><label for="${prefix}_base_url">API base URL</label><input type="url" name="base_url" id="${prefix}_base_url" placeholder="https://example.com/api" required></div>
-      <div class="field"><label for="${prefix}_auth_scheme">Auth style</label><select name="auth_scheme" id="${prefix}_auth_scheme"><option value="bearer">Authorization: Bearer token</option><option value="api_key">API key header</option></select></div>
-      <div class="field"><label for="${prefix}_api_key_header">API key header</label><input type="text" name="api_key_header" id="${prefix}_api_key_header" placeholder="X-API-Key"></div>
+      <div class="field"><label for="${prefix}_auth_scheme">Auth style</label><select name="auth_scheme" id="${prefix}_auth_scheme"><option value="bearer">Authorization: Bearer token</option><option value="api_key">API key header</option><option value="api_key_query">API key query parameter</option></select></div>
+      <div class="field"><label for="${prefix}_api_key_header">API key header or query parameter</label><input type="text" name="api_key_header" id="${prefix}_api_key_header" placeholder="X-API-Key or api_key"></div>
       <div class="field"><label for="${prefix}_allowed_path_prefixes">Allowed path prefixes</label><textarea name="allowed_path_prefixes" id="${prefix}_allowed_path_prefixes" rows="3">/</textarea></div>
       <div class="field"><label for="${prefix}_smoke_path">Connection check path <span style="color:#687385;">(optional)</span></label><input type="text" name="smoke_path" id="${prefix}_smoke_path" placeholder="/v1/me"></div>
       <div class="field"><label for="${prefix}_token_url">Token settings URL <span style="color:#687385;">(optional)</span></label><input type="url" name="token_url" id="${prefix}_token_url" placeholder="https://example.com/settings/api"></div>
@@ -738,7 +738,8 @@ async function createWorkspaceCustomProvider(c: any, workspaceId: string, ownerI
   const key = String(body.key ?? "").trim().toLowerCase();
   const label = String(body.label ?? "").trim();
   const baseUrl = String(body.base_url ?? "").trim();
-  const authScheme = String(body.auth_scheme ?? "").trim() === "api_key" ? "api_key" : "bearer";
+  const rawAuthScheme = String(body.auth_scheme ?? "").trim();
+  const authScheme = rawAuthScheme === "api_key" || rawAuthScheme === "api_key_query" ? rawAuthScheme : "bearer";
   const apiKeyHeader = String(body.api_key_header ?? "").trim();
   const allowedPathPrefixes = normalizePathPrefixes(String(body.allowed_path_prefixes ?? "/"));
   const smokePath = String(body.smoke_path ?? "").trim();
@@ -753,7 +754,7 @@ async function createWorkspaceCustomProvider(c: any, workspaceId: string, ownerI
   } catch (e: any) {
     return c.html(`<h1>Invalid API base URL</h1><p>${escapeHtml(String(e?.message ?? e))}</p><p><a href="${escapeHtml(backHref)}">Back</a></p>`, 400);
   }
-  if (authScheme === "api_key" && !apiKeyHeader) return c.html(`<h1>API key header required</h1><p><a href="${escapeHtml(backHref)}">Back</a></p>`, 400);
+  if ((authScheme === "api_key" || authScheme === "api_key_query") && !apiKeyHeader) return c.html(`<h1>API key location required</h1><p><a href="${escapeHtml(backHref)}">Back</a></p>`, 400);
   if (tokenUrl) {
     try { new URL(tokenUrl); } catch {
       return c.html(`<h1>Invalid token settings URL</h1><p><a href="${escapeHtml(backHref)}">Back</a></p>`, 400);
@@ -773,7 +774,7 @@ async function createWorkspaceCustomProvider(c: any, workspaceId: string, ownerI
           tokenUrl: tokenUrl || null,
           baseUrl: baseUrl.replace(/\/+$/, ""),
           authScheme,
-          apiKeyHeader: authScheme === "api_key" ? apiKeyHeader : null,
+          apiKeyHeader: authScheme === "api_key" || authScheme === "api_key_query" ? apiKeyHeader : null,
           allowedPathPrefixes: JSON.stringify(allowedPathPrefixes),
           defaultMethods: JSON.stringify(["GET", "POST", "PUT", "PATCH", "DELETE"]),
           smokeTests: JSON.stringify(smokeTests),

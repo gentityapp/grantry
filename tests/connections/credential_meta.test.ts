@@ -186,8 +186,14 @@ function patSuccessResponse(call: FetchCall) {
   if (url === "https://api.heyreach.io/api/public/auth/CheckApiKey") {
     return jsonResponse({ workspaceId: "heyreach-ws" });
   }
+  if (url.startsWith("https://server.smartlead.ai/api/v1/campaigns?")) {
+    return jsonResponse([{ id: "campaign-1", name: "Outbound" }]);
+  }
   if (url === "https://api.apollo.io/api/v1/auth/health") {
     return jsonResponse({ account_id: "apollo-account", user_id: "apollo-user" });
+  }
+  if (url === "https://api.openai.com/v1/models") {
+    return jsonResponse({ object: "list", data: [{ id: "gpt-image-1", object: "model" }] });
   }
   if (url === "https://api.chatwork.com/v2/me") {
     return jsonResponse({ account_id: 1, name: "Ops", chatwork_id: "ops", organization_id: 2, organization_name: "Root" });

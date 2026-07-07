@@ -104,3 +104,42 @@ test("generic request blocks overriding authentication headers", async () => {
     /provider_header_not_allowed: Authorization cannot be overridden/,
   );
 });
+
+test("generic request supports API keys in query parameters without auth headers", async (t) => {
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const provider: ProviderDef = {
+    key: "query_auth",
+    label: "Query Auth",
+    authTypes: ["pat"],
+    helpText: "",
+    tools: ["query_auth/request"],
+    genericRequest: {
+      baseUrl: "https://api.example.com",
+      defaultMethods: ["GET"],
+      allowedPathPrefixes: ["/"],
+      authScheme: "api_key_query",
+      apiKeyQueryParam: "api_key",
+    },
+  };
+
+  const calls = installFetchMock(() => jsonResponse([{ id: "one" }, { id: "two" }]));
+  const result = await callGenericProviderRequest({
+    provider,
+    toolName: "query_auth/request",
+    credential: "query-token",
+    requestArgs: {
+      path: "/items",
+      query: { limit: 2 },
+    },
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://api.example.com/items?limit=2&api_key=query-token");
+  assert.equal((calls[0].init?.headers as Record<string, string>).Authorization, undefined);
+  assert.deepEqual((result.structuredContent as any).body, [{ id: "one" }, { id: "two" }]);
+  assert.equal((result.structuredContent as any).provider, "query_auth");
+  assert.equal((result.structuredContent as any).status, 200);
+});

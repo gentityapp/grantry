@@ -1820,6 +1820,10 @@ function customProviderDef(row: any): ProviderDef {
   const blocked = stringArray(row.blockedPathPrefixes, []);
   const smokeTests = parseArray(row.smokeTests, []);
   const operations = parseArray(row.operations, []);
+  const authScheme =
+    row.authScheme === "api_key" || row.authScheme === "api_key_query"
+      ? row.authScheme
+      : "bearer";
   return {
     key: row.key,
     label: row.label,
@@ -1833,8 +1837,9 @@ function customProviderDef(row: any): ProviderDef {
       defaultMethods: methods.length ? methods : ["GET"],
       allowedPathPrefixes: allowed.length ? allowed : ["/"],
       ...(blocked.length ? { blockedPathPrefixes: blocked } : {}),
-      authScheme: row.authScheme === "api_key" ? "api_key" : "bearer",
-      ...(row.apiKeyHeader ? { apiKeyHeader: row.apiKeyHeader } : {}),
+      authScheme,
+      ...(authScheme === "api_key" && row.apiKeyHeader ? { apiKeyHeader: row.apiKeyHeader } : {}),
+      ...(authScheme === "api_key_query" && row.apiKeyHeader ? { apiKeyQueryParam: row.apiKeyHeader } : {}),
       ...(smokeTests.length ? { smokeTests: smokeTests as any } : {}),
       ...(operations.length ? { operations: operations as any } : {}),
     },
