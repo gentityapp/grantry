@@ -16,6 +16,7 @@
 //   a load test against 60 provider APIs.
 import { prisma } from "./db.js";
 import { decrypt } from "./crypto.js";
+import { recordRuntimeCallHealth } from "./connection_health.js";
 import { deriveCredentialHealth } from "./connectors/credential_meta.js";
 import { PROVIDERS, getProviderForWorkspace } from "./connectors/registry.js";
 import { invalidateDwdToken, mintDwdAccessToken, type ServiceAccountCredential } from "./google_dwd.js";
@@ -125,7 +126,13 @@ export async function runConnectionHealthSweep(): Promise<{ checked: number; upd
         }
       } catch (e: any) {
         stats.failed += 1;
-        console.error(`[health-sweep] check failed for ${conn.provider} ${conn.label}: ${String(e?.message ?? e).slice(0, 300)}`);
+        const errMsg = String(e?.message ?? e);
+        console.error(`[health-sweep] check failed for ${conn.provider} ${conn.label}: ${errMsg.slice(0, 300)}`);
+        // A thrown check is usually credentialForConnection failing before the
+        // provider is reached (dead refresh token, unauthorized_client). Run it
+        // through the same classifier as runtime failures so a genuine auth
+        // failure still lands in the snapshot instead of staying "active".
+        await recordRuntimeCallHealth(conn, { ok: false, errorMessage: errMsg });
       }
       await sleep(PER_CHECK_DELAY_MS);
     }
