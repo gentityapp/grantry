@@ -6,8 +6,36 @@
 // an auth failure marks the connection broken immediately, and a later
 // successful call heals it back to ok. Best-effort: never throws, never blocks
 // the tool-call response.
-import { healthErrorCodeFromAuthFailure, parseProviderErrorCode } from "./connectors/credential_meta.js";
+import { credentialMetadataForStorage, deriveCredentialHealth, healthErrorCodeFromAuthFailure, parseProviderErrorCode } from "./connectors/credential_meta.js";
+import { callGenericCheckConnection, callGenericListCapabilities } from "./connectors/generic_request.js";
+import { getProvider } from "./connectors/registry.js";
 import { rotateSharedCredential } from "./provider_credentials.js";
+
+// Validate a credential for any provider definition — built-in providers via
+// their introspection path, workspace custom providers via the generic
+// connection-check manifest. Returns the credentialMetadata + health fields to
+// persist. (Moved from ui.ts so both the dashboard and the health sweep can
+// use it without an import cycle.)
+export async function credentialMetadataForProviderDef(providerDef: any, authType: string, token: string) {
+  if (!providerDef?.genericRequest || getProvider(providerDef.key)) return credentialMetadataForStorage(providerDef.key, authType, token);
+  const checkedAt = new Date().toISOString();
+  const metadata: any = { provider: providerDef.key, authType, status: "unknown", notes: ["Custom provider credentials are validated through the configured connection check path when available."], checkedAt };
+  try {
+    const [check, capabilities] = await Promise.all([callGenericCheckConnection({ provider: providerDef, credential: token }), callGenericListCapabilities({ provider: providerDef })]);
+    const checkContent: any = check.structuredContent ?? {};
+    const capabilityContent: any = capabilities.structuredContent ?? {};
+    const smokeTests = Array.isArray(checkContent.tests) ? checkContent.tests : [];
+    const operations = Array.isArray(capabilityContent.operations) ? capabilityContent.operations : [];
+    metadata.status = checkContent.status === "ok" ? "ok" : checkContent.status === "error" ? "error" : "unknown";
+    metadata.capabilities = { status: metadata.status, message: typeof checkContent.message === "string" ? checkContent.message : undefined, smokeTests, operations, missingScopes: Array.from(new Set(smokeTests.flatMap((test: any) => Array.isArray(test.missingScopes) ? test.missingScopes.map(String) : []))), checkedAt };
+  } catch (e: any) { metadata.status = "unknown"; metadata.capabilities = { status: "unknown", checkedAt, error: String(e?.message ?? e).slice(0, 500) }; }
+  const credentialValidatedAt = new Date();
+  return {
+    credentialMetadata: JSON.stringify(metadata).slice(0, 16000),
+    credentialValidatedAt,
+    ...deriveCredentialHealth({ credentialMetadata: metadata, credentialValidatedAt }),
+  };
+}
 
 export type RuntimeHealthConnection = {
   id: string;

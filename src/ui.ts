@@ -12,6 +12,9 @@ import { parseServiceAccountInput, serviceAccountPublicMeta, invalidateDwdToken,
 import { connectionsForAgent, findCapableAgents, normalizeToolName } from "./policy.js";
 import { ensureTenant } from "./tenants.js";
 import { connectionCredentialData, createTenantConnectionFromCredential, ensureProviderCredentialForConnection, providerCredentialData, rotateSharedCredential, syncProviderCredentialFromConnection } from "./provider_credentials.js";
+import { credentialMetadataForProviderDef, recordRuntimeCallHealth } from "./connection_health.js";
+import { isSweepRunning, runConnectionHealthSweep } from "./health_sweep.js";
+import { credentialForConnection } from "./mcp.js";
 import { sendSystemEmail } from "./email.js";
 import { connectableAgentsFor, userMayUseAgent } from "./workspaces.js";
 import nodeCrypto from "node:crypto";
@@ -791,27 +794,6 @@ async function createWorkspaceCustomProvider(c: any, workspaceId: string, ownerI
     throw e;
   }
   return null;
-}
-
-export async function credentialMetadataForProviderDef(providerDef: any, authType: string, token: string) {
-  if (!providerDef?.genericRequest || getProvider(providerDef.key)) return credentialMetadataForStorage(providerDef.key, authType, token);
-  const checkedAt = new Date().toISOString();
-  const metadata: any = { provider: providerDef.key, authType, status: "unknown", notes: ["Custom provider credentials are validated through the configured connection check path when available."], checkedAt };
-  try {
-    const [check, capabilities] = await Promise.all([callGenericCheckConnection({ provider: providerDef, credential: token }), callGenericListCapabilities({ provider: providerDef })]);
-    const checkContent: any = check.structuredContent ?? {};
-    const capabilityContent: any = capabilities.structuredContent ?? {};
-    const smokeTests = Array.isArray(checkContent.tests) ? checkContent.tests : [];
-    const operations = Array.isArray(capabilityContent.operations) ? capabilityContent.operations : [];
-    metadata.status = checkContent.status === "ok" ? "ok" : checkContent.status === "error" ? "error" : "unknown";
-    metadata.capabilities = { status: metadata.status, message: typeof checkContent.message === "string" ? checkContent.message : undefined, smokeTests, operations, missingScopes: Array.from(new Set(smokeTests.flatMap((test: any) => Array.isArray(test.missingScopes) ? test.missingScopes.map(String) : []))), checkedAt };
-  } catch (e: any) { metadata.status = "unknown"; metadata.capabilities = { status: "unknown", checkedAt, error: String(e?.message ?? e).slice(0, 500) }; }
-  const credentialValidatedAt = new Date();
-  return {
-    credentialMetadata: JSON.stringify(metadata).slice(0, 16000),
-    credentialValidatedAt,
-    ...deriveCredentialHealth({ credentialMetadata: metadata, credentialValidatedAt }),
-  };
 }
 
 function parseScopeList(raw: string | null | undefined): string[] {
@@ -3375,7 +3357,12 @@ dashboardApp.get("/connections", async (c) => {
     <main>
       <div class="row spread" style="margin-bottom:16px;">
         <h1 style="margin:0;">Connections</h1>
-        <a href="/tenants/new" class="btn">+ New scope connection</a>
+        <span class="row" style="gap:8px;">
+          <form method="post" action="/connections/check-all" style="margin:0;">
+            <button type="submit" class="secondary"${isSweepRunning() ? ' disabled title="A health check is already running."' : ""}>Check all now</button>
+          </form>
+          <a href="/tenants/new" class="btn">+ New scope connection</a>
+        </span>
       </div>
       <p style="color:#687385;margin-top:-8px;">Workspace-wide health view for scope connections. Provider app and token settings are linked from each row's actions.</p>
       ${notice ? noticeBanner(String(notice), noticeKind) : ""}
@@ -3453,8 +3440,11 @@ dashboardApp.get("/connections", async (c) => {
                       : cn.authType === "oauth" && canScopeAction
                         ? `<a href="/connections/${encodeURIComponent(cn.id)}/edit?err=${encodeURIComponent("Save this provider's OAuth app settings before reconnecting.")}" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Set up OAuth app</a>`
                       : canScopeAction
-                        ? `<button type="submit" form="recheck_connection_${cn.id}" class="secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Check now</button>`
+                        ? ""
                         : '<span style="color:#687385;font-size:12px;">Open scope to repair</span>'}
+                    ${canScopeAction
+                      ? `<button type="submit" form="recheck_connection_${cn.id}" class="secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;"${cn.authType === "oauth" ? ' title="Verify the saved token against the provider without re-authorizing"' : ""}>Check now</button>`
+                      : ""}
                     <a href="/connections/${encodeURIComponent(cn.id)}/edit" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Edit connection</a>
                     ${canScopeAction ? `<a href="/tenants/${encodeURIComponent(scope)}/edit#connections" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Open scope</a>` : ""}
                     ${credentialSettingsLink}
@@ -3470,6 +3460,23 @@ dashboardApp.get("/connections", async (c) => {
         : "").join("")}
     </main></body></html>
   `);
+});
+
+// --- /connections/check-all (POST) — force a health sweep over the active workspace ---
+dashboardApp.post("/connections/check-all", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+  const wsId = await getActiveWorkspaceId(c);
+  if (!wsId) return c.redirect("/connections?err=" + encodeURIComponent("No active workspace."));
+  if (isSweepRunning()) {
+    return c.redirect("/connections?err=" + encodeURIComponent("A health check is already running — reload in a minute to see fresh results."));
+  }
+  // Checking ~dozens of provider APIs takes minutes; run it in the background
+  // and let the badge/timestamp columns pick up the results on reload.
+  runConnectionHealthSweep({ workspaceId: wsId, force: true })
+    .then((stats) => console.log(`[health-sweep] manual check-all done: checked=${stats.checked} updated=${stats.updated} failed=${stats.failed}`))
+    .catch((e) => console.error("[health-sweep] manual check-all crashed:", e));
+  return c.redirect("/connections?ok=" + encodeURIComponent("Health check started for all connections in this workspace. It runs in the background — reload in a few minutes."));
 });
 
 // --- /connections/:connectionId/edit — direct repair/edit for one connection ---
@@ -4924,8 +4931,35 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/recheck", async (c)
       "error",
     );
   }
+  // OAuth: resolve a live access token (refreshing if needed — a rejected
+  // refresh is exactly the "silently broken" case) and run the same
+  // introspection as connect-time. Reconnect stays the repair path; this is
+  // the read-only verification path.
   if (conn.authType === "oauth") {
-    return c.html(`<h1>OAuth connection uses Reconnect</h1><p>Use the Reconnect button to refresh this credential.</p><p><a href="/tenants/${scope}/edit">← Back</a></p>`, 400);
+    let token: string;
+    try {
+      token = await credentialForConnection(conn);
+    } catch (e: any) {
+      const errMsg = String(e?.message ?? e);
+      await recordRuntimeCallHealth(conn, { ok: false, errorMessage: errMsg });
+      return redirectAfterRecheck(`Rechecked ${conn.label}: ${errMsg.slice(0, 180)} — use Reconnect to repair.`, "error");
+    }
+    const providerDef = await getProviderForWorkspace(conn.provider, conn.workspaceId);
+    if (!providerDef) return c.html(`<h1>unknown provider</h1><p><a href="/tenants/${scope}/edit">← Back</a></p>`, 400);
+    const credentialMeta = await credentialMetadataForProviderDef(providerDef, "oauth", token);
+    if (credentialMeta.healthStatus !== "unknown") {
+      await rotateSharedCredential({ credentialId: conn.credentialId, connectionId: conn.id, data: credentialMeta });
+    }
+    const meta = safeJsonObject(credentialMeta.credentialMetadata);
+    const status = String(meta.status ?? "unknown");
+    return redirectAfterRecheck(
+      status === "ok"
+        ? `Rechecked ${conn.label}: credential verified.`
+        : status === "error"
+          ? `Rechecked ${conn.label}: ${String(meta.error ?? "credential check failed").slice(0, 180)}`
+          : `Rechecked ${conn.label}: token is usable but this provider has no verification probe.`,
+      status === "error" ? "error" : "ok",
+    );
   }
 
   // Service account: the stored blob is the SA key + subject, not a bearer token.

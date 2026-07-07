@@ -16,13 +16,12 @@
 //   a load test against 60 provider APIs.
 import { prisma } from "./db.js";
 import { decrypt } from "./crypto.js";
-import { recordRuntimeCallHealth } from "./connection_health.js";
+import { credentialMetadataForProviderDef, recordRuntimeCallHealth } from "./connection_health.js";
 import { deriveCredentialHealth } from "./connectors/credential_meta.js";
 import { PROVIDERS, getProviderForWorkspace } from "./connectors/registry.js";
 import { invalidateDwdToken, mintDwdAccessToken, type ServiceAccountCredential } from "./google_dwd.js";
 import { rotateSharedCredential } from "./provider_credentials.js";
 import { credentialForConnection } from "./mcp.js";
-import { credentialMetadataForProviderDef } from "./ui.js";
 import type { Connection } from "@prisma/client";
 
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000; // hourly tick
@@ -90,16 +89,25 @@ async function checkConnection(conn: Connection) {
   return credentialMetadataForProviderDef(providerDef, conn.authType, token);
 }
 
-export async function runConnectionHealthSweep(): Promise<{ checked: number; updated: number; failed: number }> {
+export function isSweepRunning() {
+  return sweepRunning;
+}
+
+export async function runConnectionHealthSweep(opts?: {
+  workspaceId?: string; // limit to one workspace (dashboard "Check all now")
+  force?: boolean; // ignore the 24h staleness filter and check everything
+}): Promise<{ checked: number; updated: number; failed: number }> {
   if (sweepRunning) return { checked: 0, updated: 0, failed: 0 };
   sweepRunning = true;
   const stats = { checked: 0, updated: 0, failed: 0 };
   try {
-    const connections = await prisma.connection.findMany({ where: { enabled: true } });
+    const connections = await prisma.connection.findMany({
+      where: { enabled: true, ...(opts?.workspaceId ? { workspaceId: opts.workspaceId } : {}) },
+    });
     const now = Date.now();
     const seenCredentials = new Set<string>();
     const due = connections
-      .filter((conn) => now - lastCheckedAt(conn) >= STALE_AFTER_MS)
+      .filter((conn) => opts?.force || now - lastCheckedAt(conn) >= STALE_AFTER_MS)
       .sort((a, b) => lastCheckedAt(a) - lastCheckedAt(b))
       .filter((conn) => {
         if (!conn.credentialId) return true;
