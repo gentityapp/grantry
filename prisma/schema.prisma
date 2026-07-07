@@ -39,6 +39,7 @@ model User {
   oauthAgentGrants  OauthAgentGrant[]
   workspaceMembers  WorkspaceMember[]
   agentAssignments  AgentAssignment[]
+  adminApiKeys      AdminApiKey[]
 
   @@map("user")
 }
@@ -122,10 +123,6 @@ model Agent {
   owner         User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   enabled       Boolean  @default(true)
   fullScopeManager Boolean @default(false)
-  // Grants access to the grantry/* self-management tools (create tenants,
-  // mint sibling agents, move grants). Dashboard-only toggle: the tools
-  // themselves can never set it, so a manager is always human-minted.
-  selfManage    Boolean  @default(false)
   expiresAt     DateTime?
   lastUsedAt    DateTime?
   createdAt     DateTime @default(now())
@@ -291,6 +288,33 @@ model CustomProvider {
   @@index([ownerId])
   @@index([workspaceId, enabled])
   @@map("custom_provider")
+}
+
+// ---------- grantry admin API keys ----------
+// grantry treats itself as just another provider: a human mints a gn_adm_ API
+// key on the dashboard (/api-keys), pastes it into a normal connection
+// (provider="grantry"), and grants that connection to an agent like any SaaS
+// credential. The key is the admin capability — issuance is dashboard-only
+// (a key can never mint another key), and agents never see the plaintext, so
+// admin access cannot self-replicate. Rotating/disabling the key kills every
+// connection that holds it.
+model AdminApiKey {
+  id          String   @id @default(cuid())
+  label       String
+  hashedKey   String   @unique // sha256 of the plaintext gn_adm_ key
+  keyPrefix   String   // first 15 chars for display
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  enabled     Boolean  @default(true)
+  lastUsedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([workspaceId])
+  @@index([ownerId])
+  @@map("admin_api_key")
 }
 
 // ---------- OAuth state (CSRF protection during OAuth callback) ----------
@@ -470,6 +494,7 @@ model Workspace {
   workspaceProviders WorkspaceProvider[]
   providerCredentials ProviderCredential[]
   customProviders CustomProvider[]
+  adminApiKeys AdminApiKey[]
   @@map("workspace")
 }
 

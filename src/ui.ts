@@ -623,6 +623,7 @@ const NAV = (current: string, email?: string) => `
     <a href="/agents" class="${current === "agents" ? "active" : ""}">Agents</a>
     <a href="/workspaces" class="${current === "workspaces" ? "active" : ""}">Workspace</a>
     <a href="/audit" class="${current === "audit" ? "active" : ""}">Audit</a>
+    <a href="/api-keys" class="${current === "api-keys" ? "active" : ""}">API keys</a>
     <a href="/account" class="${current === "account" ? "active" : ""}">Account</a>
   </div>
   <div class="nav-foot">
@@ -3180,6 +3181,140 @@ dashboardApp.post("/reset-password", async (c) => {
     return c.redirect(`/reset-password?token=${encodeURIComponent(token)}&err=${encodeURIComponent(message)}`);
   }
   return c.redirect("/login?reset=1");
+});
+
+// --- /api-keys — grantry admin API keys ---
+// grantry-as-a-provider: these gn_adm_ keys are the credential behind
+// provider="grantry" connections. Minting is dashboard-only by design (a key
+// can never mint another key), so admin capability always originates from a
+// human. Owner/admin of the active workspace only.
+async function requireWorkspaceAdmin(c: any): Promise<{ user: any; workspaceId: string } | Response> {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+  const workspaceId = await getActiveWorkspaceId(c);
+  if (!workspaceId) return c.html("<h1>workspace required</h1>", 400);
+  const member = await prisma.workspaceMember.findUnique({
+    where: { workspaceId_userId: { workspaceId, userId: user.id } },
+  });
+  if (!member || !["owner", "admin"].includes(member.role)) {
+    return c.html("<h1>workspace owner/admin required</h1><p>Only workspace owners and admins can manage grantry admin API keys.</p>", 403);
+  }
+  return { user, workspaceId };
+}
+
+function apiKeyRow(k: { id: string; label: string; keyPrefix: string; enabled: boolean; lastUsedAt: Date | null; createdAt: Date }): string {
+  return `
+    <tr>
+      <td>${escapeHtml(k.label)}</td>
+      <td><code>${escapeHtml(k.keyPrefix)}…</code></td>
+      <td>${k.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</td>
+      <td>${k.lastUsedAt ? escapeHtml(k.lastUsedAt.toISOString().slice(0, 16).replace("T", " ")) : "—"}</td>
+      <td>${escapeHtml(k.createdAt.toISOString().slice(0, 10))}</td>
+      <td style="white-space:nowrap;">
+        <form method="post" action="/api-keys/${escapeHtml(k.id)}/toggle" style="display:inline;"><button type="submit" class="secondary">${k.enabled ? "Disable" : "Enable"}</button></form>
+        <form method="post" action="/api-keys/${escapeHtml(k.id)}/delete" style="display:inline;" onsubmit="return confirm('Delete this key? Every grantry connection using it stops working immediately.');"><button type="submit" class="secondary" style="color:#b3261e;">Delete</button></form>
+      </td>
+    </tr>`;
+}
+
+dashboardApp.get("/api-keys", async (c) => {
+  const gate = await requireWorkspaceAdmin(c);
+  if (gate instanceof Response) return gate;
+  const { user, workspaceId } = gate;
+
+  const keys = await prisma.adminApiKey.findMany({
+    where: { workspaceId },
+    orderBy: { createdAt: "desc" },
+  });
+
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Admin API keys — grantry</title>
+    ${FAVICON}<style>${CSS}</style></head><body>
+    ${NAV("api-keys", user?.email)}
+    <main>
+      <h1>grantry admin API keys</h1>
+      <div class="card">
+        <p style="color:#687385;margin-top:0;">grantry manages itself the same way it manages any SaaS: mint an admin API key here, paste it into a <b>grantry</b> connection in the <a href="/tenants/new">connection wizard</a>, and grant that connection to an agent. The agent can then manage this workspace's scopes, agents, connections, and grants over MCP (<code>grantry_create_agent</code>, <code>grantry_grant_scope</code>, …). The key is shown once at mint time; disabling or deleting it immediately cuts off every connection that uses it.</p>
+        <form method="post" action="/api-keys/new" style="display:flex;gap:8px;align-items:center;">
+          <input type="text" name="label" placeholder="e.g. agent-factory key" required style="flex:1;">
+          <button type="submit">Mint new key</button>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Keys in this workspace</h2>
+        ${keys.length === 0 ? '<div class="empty">No admin API keys yet.</div>' : `
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Label</th><th>Key</th><th>Status</th><th>Last used</th><th>Created</th><th></th></tr></thead>
+            <tbody>${keys.map(apiKeyRow).join("")}</tbody>
+          </table>
+        </div>`}
+      </div>
+    </main></body></html>
+  `);
+});
+
+dashboardApp.post("/api-keys/new", async (c) => {
+  const gate = await requireWorkspaceAdmin(c);
+  if (gate instanceof Response) return gate;
+  const { user, workspaceId } = gate;
+
+  const body = await c.req.parseBody();
+  const label = String(body.label ?? "").trim();
+  if (!label) return c.html("<h1>label required</h1>", 400);
+
+  const key = `gn_adm_${crypto.randomUUID().replace(/-/g, "")}`;
+  const hashedKey = await import("node:crypto").then((m) => m.createHash("sha256").update(key).digest("hex"));
+  await prisma.adminApiKey.create({
+    data: {
+      label,
+      hashedKey,
+      keyPrefix: key.slice(0, 15),
+      workspaceId,
+      ownerId: user.id,
+    },
+  });
+
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Admin API key minted — grantry</title>
+    ${FAVICON}<style>${CSS}</style></head><body>
+    ${NAV("api-keys", user?.email)}
+    <main>
+      <h1>✓ Admin API key minted</h1>
+      <div class="card">
+        <h2>${escapeHtml(label)}</h2>
+        <p><b>Copy it now — it is shown only once.</b> Only its hash is stored.</p>
+        <pre style="user-select:all;">${escapeHtml(key)}</pre>
+      </div>
+      <div class="card">
+        <h2>Next step</h2>
+        <p>Add it as a <b>grantry</b> connection in the <a href="/tenants/new">connection wizard</a> (pick a scope such as <code>grantry-admin</code>), then grant that connection to the agent that should manage this workspace.</p>
+      </div>
+      <p><a href="/api-keys">← Back to API keys</a></p>
+    </main></body></html>
+  `);
+});
+
+dashboardApp.post("/api-keys/:id/toggle", async (c) => {
+  const gate = await requireWorkspaceAdmin(c);
+  if (gate instanceof Response) return gate;
+  const { workspaceId } = gate;
+  const id = c.req.param("id");
+  const key = await prisma.adminApiKey.findFirst({ where: { id, workspaceId } });
+  if (!key) return c.html("<h1>key not found</h1>", 404);
+  await prisma.adminApiKey.update({ where: { id: key.id }, data: { enabled: !key.enabled } });
+  return c.redirect("/api-keys");
+});
+
+dashboardApp.post("/api-keys/:id/delete", async (c) => {
+  const gate = await requireWorkspaceAdmin(c);
+  if (gate instanceof Response) return gate;
+  const { workspaceId } = gate;
+  const id = c.req.param("id");
+  const key = await prisma.adminApiKey.findFirst({ where: { id, workspaceId } });
+  if (!key) return c.html("<h1>key not found</h1>", 404);
+  await prisma.adminApiKey.delete({ where: { id: key.id } });
+  return c.redirect("/api-keys");
 });
 
 // --- /account — profile + change password ---
@@ -6068,7 +6203,6 @@ dashboardApp.get("/agents/:id", async (c) => {
         <p>Status: ${agent.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</p>
         <p>Token prefix: <code>${escapeHtml(agent.tokenPrefix)}...</code></p>
         <p>Mode: ${agent.fullScopeManager ? '<span class="badge denied">full-scope manager</span>' : '<span class="badge scoped">selected scopes</span>'}</p>
-        <p>Self-management: ${agent.selfManage ? '<span class="badge denied">enabled — can manage tenants/agents/grants via MCP</span>' : '<span class="badge scoped">off</span>'}</p>
         <p>Granted connections: ${connections.length
           ? `<span class="badge ok">${connections.length}</span>`
           : '<span class="badge denied">none</span>'}</p>
@@ -6098,17 +6232,6 @@ dashboardApp.get("/agents/:id", async (c) => {
         <form method="post" action="/agents/${escapeHtml(agent.id)}/charter">
           <textarea name="charter" rows="3" style="width:100%;box-sizing:border-box;" placeholder="e.g. 曖昧なGitHub issueを取得し、不足情報を補って具体化する係">${escapeHtml(agent.description ?? "")}</textarea>
           <button type="submit" style="margin-top:8px;">Save charter</button>
-        </form>
-      </div>
-      <div class="card">
-        <h2>Self-management (grantry admin tools)</h2>
-        <p style="color:#687385;">When enabled, this agent can call the <code>grantry_*</code> admin tools over MCP — create tenants, mint sibling agents (token returned once), register PAT connections, and grant/revoke scopes — bounded to this workspace. The admin tools can never create or modify another self-managing agent, so this flag only ever comes from this page.</p>
-        <form method="post" action="/agents/${escapeHtml(agent.id)}/self-manage">
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-            <input type="checkbox" name="self_manage" ${agent.selfManage ? "checked" : ""} style="transform:scale(1.15);">
-            <span>Allow this agent to manage grantry (tenants / agents / connections / grants)</span>
-          </label>
-          <button type="submit" class="secondary" style="margin-top:8px;">Save</button>
         </form>
       </div>
       <div class="card">
@@ -6200,24 +6323,6 @@ dashboardApp.post("/agents/:id/charter", async (c) => {
   const body = await c.req.parseBody();
   const charter = String(body.charter ?? "").trim();
   await prisma.agent.update({ where: { id: agent.id }, data: { description: charter || null } });
-
-  return c.redirect(`/agents/${agent.id}`);
-});
-
-// --- /agents/:id/self-manage (POST) ---
-// Dashboard-only toggle for the grantry_* self-management (admin) MCP tools.
-// Deliberately unreachable from the MCP API so a manager is always human-minted.
-dashboardApp.post("/agents/:id/self-manage", async (c) => {
-  const user = await getSessionUser(c);
-  if (!user) return c.redirect("/login");
-  const id = c.req.param("id");
-  const agent = await prisma.agent.findUnique({ where: { id } });
-  if (!agent) return c.html("<h1>agent not found</h1>", 404);
-  if (agent.ownerId !== user.id) return c.html("<h1>not your agent</h1>", 403);
-
-  const body = await c.req.parseBody();
-  const enabled = body.self_manage === "on" || body.self_manage === "true";
-  await prisma.agent.update({ where: { id: agent.id }, data: { selfManage: enabled } });
 
   return c.redirect(`/agents/${agent.id}`);
 });

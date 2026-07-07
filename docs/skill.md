@@ -257,11 +257,12 @@ the same provider+scope; disambiguate with `auth_type` (`service_account` vs
 - `ping` — liveness (returns `pong from <agent>`)
 - **grantry** (system metadata, no SaaS credential required): `get_skill`,
   `get_providers`; plus capability discovery (token required): `list_scopes`,
-  `find_agent`, `route`, `delegate`; plus self-management (token with the
-  `selfManage` flag required — see the section below): `list_agents`,
-  `list_tenants`, `list_connections`, `create_tenant`, `create_agent`,
-  `update_agent`, `rotate_agent_token`, `grant_scope`, `revoke_scope`,
-  `create_connection`
+  `find_agent`, `route`, `delegate`
+- **grantry (admin)** (gn_adm_ admin API key from `/api-keys`, connected as a
+  normal `provider="grantry"` connection — see the Self-management section):
+  `list_agents`, `list_tenants`, `list_connections`, `create_tenant`,
+  `create_agent`, `update_agent`, `rotate_agent_token`, `grant_scope`,
+  `revoke_scope`, `create_connection`
 - **github** (PAT or OAuth; scopes `repo`, `read:user`):
   `list_repos`, `get_repo`, `get_file_contents`, `list_issues`, `create_issue`, `git_push_repo`, `create_repo`
 - **notion** (PAT): `list_dbs`, `get_page`, `query_db`, `create_page`,
@@ -723,44 +724,56 @@ plain `text` string is accepted and wrapped into a single text message.
 
 ## Self-management (grantry admin tools)
 
-An agent whose **`selfManage` flag** a human enabled on `/agents/:id` can manage
-grantry itself over the same `/mcp` endpoint — the building block for an
-"agent that creates agents". All operations are bounded to the calling agent's
-workspace (or owner). The flag is dashboard-only: none of these tools can
-create, modify, rotate, or grant to a `selfManage` agent, so a manager is
-always human-minted. These tools are refused on scope-locked MCP URLs.
+grantry manages itself the same way it manages any SaaS — grantry is just
+another **provider**. A human mints a `gn_adm_` **admin API key** on the
+dashboard (`/api-keys`), pastes it into a `provider="grantry"` connection at a
+scope (e.g. `grantry-admin`), and grants that connection to an agent like any
+credential. The granted agent can then manage the key's workspace over the
+same `/mcp` endpoint — the building block for an "agent that creates agents".
+Pass the connection's `scope` in `arguments` like any other tool call.
+
+The key is the capability, and it cannot self-replicate: key minting is
+dashboard-only (no tool can mint or list keys), agents never see connection
+plaintext so they cannot copy their own key, `create_connection` refuses
+`provider="grantry"`, and `grant_scope` skips grantry connections. Spreading
+admin access is always a human dashboard action; rotating or disabling the key
+on `/api-keys` instantly cuts off every connection using it.
 
 Read (safe, no confirmation needed):
 - `grantry_list_agents` — every agent with charter, status, token prefix, and
-  granted scopes.
+  granted scopes (`grantry_admin: true` marks admin-granted agents).
 - `grantry_list_tenants` — every tenant (scope) with its connected providers.
-- `grantry_list_connections` (`scope?`) — connections (id, provider, auth type,
-  scope, enabled). Credentials are never returned.
+- `grantry_list_connections` (`target_scope?`) — connections (id, provider,
+  auth type, scope, enabled). Credentials are never returned.
+
+In every admin call, `scope` selects the **admin connection itself** (e.g.
+`"grantry-admin"`), like any provider call. The scope an operation *acts on*
+is therefore passed as **`target_scope`** — the two must not be confused.
 
 Write (confirm before calling):
-- `grantry_create_tenant` (`scope`, `display_name?`) — idempotent; the slug is
-  the immutable wire key.
+- `grantry_create_tenant` (`target_scope`, `display_name?`) — idempotent; the
+  slug is the immutable wire key.
 - `grantry_create_agent` (`name`, `charter?`, `scopes?`) — mints a new agent
   and returns its `gn_agt_` token **once** — store it immediately; only the
-  hash is persisted. `scopes` grants every enabled connection at each scope.
-- `grantry_update_agent` (`agent_id`, `enabled?`, `charter?`) — cannot target
-  `selfManage` agents or yourself.
+  hash is persisted. `scopes` grants every enabled non-admin connection at
+  each scope.
+- `grantry_update_agent` (`agent_id`, `enabled?`, `charter?`).
 - `grantry_rotate_agent_token` (`agent_id`) — returns the new token once; the
-  old token dies immediately. Cannot target `selfManage` agents or yourself.
-- `grantry_grant_scope` / `grantry_revoke_scope` (`agent_id`, `scope`) — move
-  connection grants. Idempotent.
-- `grantry_create_connection` (`provider`, `scope`, `credential`, `auth_type?`,
-  `label?`) — registers a PAT/API-key credential (encrypted at rest; redacted
-  from audit logs). OAuth providers still require the dashboard consent flow.
+  old token dies immediately.
+- `grantry_grant_scope` / `grantry_revoke_scope` (`agent_id`, `target_scope`)
+  — move connection grants (grantry admin connections excluded). Idempotent.
+- `grantry_create_connection` (`provider`, `target_scope`, `credential`,
+  `auth_type?`, `label?`) — registers a PAT/API-key credential (encrypted at
+  rest; redacted from audit logs). OAuth providers still require the dashboard
+  consent flow; `provider="grantry"` is refused.
 
-Typical "create a worker agent" flow:
-1. `grantry_create_tenant {scope:"acme-prod"}`
-2. `grantry_create_connection {provider:"notion", scope:"acme-prod", credential:"ntn_…"}`
-3. `grantry_create_agent {name:"acme-notion-bot", charter:"…", scopes:["acme-prod"]}`
+Typical "create a worker agent" flow (admin connection at `grantry-admin`):
+1. `grantry_create_tenant {scope:"grantry-admin", target_scope:"acme-prod"}`
+2. `grantry_create_connection {scope:"grantry-admin", provider:"notion", target_scope:"acme-prod", credential:"ntn_…"}`
+3. `grantry_create_agent {scope:"grantry-admin", name:"acme-notion-bot", charter:"…", scopes:["acme-prod"]}`
    → hand the returned token to the new agent's runtime.
 
-Calling an admin tool without the flag returns `-32010` with a pointer to the
-dashboard. Every call is audited; minted tokens never appear in the audit log.
+Every call is audited; minted tokens and keys never appear in the audit log.
 
 ## Output contract
 When asked to act via grantry:
@@ -858,8 +871,9 @@ POST /mcp   Authorization: Bearer gn_agt_<token>
 - `/tenants`, `/tenants/new`, `/tenants/:scope/edit` — scope + connection wizard;
   the edit page also renames the scope's display name (slug is immutable)
 - `/agents`, `/agents/new` — agents; `/agents/new` creates a **cross-scope**
-  agent by granting selected scope connections; `/agents/:id` also holds the
-  **Self-management** toggle that enables the `grantry_*` admin tools
+  agent by granting selected scope connections
+- `/api-keys` — mint/disable `gn_adm_` admin API keys (the credential behind
+  `provider="grantry"` connections; workspace owner/admin only)
 - `/account` — signed-in identity (email shown in every page's nav), owned
   resource counts, change password
 - `/audit` — audit log (per-call scope, status, duration; request args are
@@ -876,6 +890,7 @@ POST /mcp   Authorization: Bearer gn_agt_<token>
 - Every call is audited with its `scope` (`/audit`); sensitive request args are
   masked before storage.
 - Token issuance/rotation is UI-first. The only API path is the `grantry_*`
-  self-management tools, gated on the dashboard-only `selfManage` agent flag,
-  and those can never mint or touch another `selfManage` agent.
+  admin tools behind a `provider="grantry"` connection whose credential is a
+  human-minted `gn_adm_` key (`/api-keys`); those tools can never mint keys or
+  spread admin connections, so admin capability always originates from a human.
 - `tools/call` is rate-limited per agent (default 120/min → `-32029`).

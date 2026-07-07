@@ -219,6 +219,22 @@ async function readJson(resp: Response) {
 export async function inspectCredential(provider: string, authType: string, token: string): Promise<CredentialMetadata> {
   const checkedAt = new Date().toISOString();
   try {
+    if (provider === "grantry") {
+      // grantry admin API key: validate against our own key table (no HTTP).
+      const { resolveAdminApiKey } = await import("./grantry_admin.js");
+      const identity = await resolveAdminApiKey(token);
+      if (!identity) {
+        return { provider, authType, status: "error", checkedAt, error: "not a valid enabled grantry admin API key (gn_adm_…) — mint one on /api-keys" };
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: { label: identity.label, workspaceId: identity.ctx.workspaceId },
+        notes: ["grantry admin key: grants workspace-level management via the grantry_* admin tools."],
+        checkedAt,
+      };
+    }
     if (provider === "github") {
       const resp = await fetchWithTimeout("https://api.github.com/user", {
         headers: {

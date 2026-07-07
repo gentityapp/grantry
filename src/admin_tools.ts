@@ -1,18 +1,23 @@
-// grantry self-management (control-plane) tools.
+// grantry self-management (control-plane) tools, dispatched as a normal
+// provider ("grantry") through the standard connection/grant policy path.
 //
-// These let an agent manage grantry itself over the same MCP endpoint —
-// create tenants, mint sibling agents, register PAT connections, and move
-// connection grants — so an "agent that creates agents" can be built without
-// touching the dashboard.
+// grantry dogfoods its own model: the credential behind a grantry connection
+// is a gn_adm_ admin API key that a human mints on the dashboard (/api-keys),
+// exactly like a GitHub PAT from github.com/settings. The key IS the admin
+// capability — its workspace decides what these tools can touch, regardless
+// of which agent presents it.
 //
-// Gate: Agent.selfManage, a dashboard-only toggle. Every operation is bounded
-// to the calling agent's workspace (or owner when workspaceless), the same
-// boundary checkPolicy uses. Privilege escalation is closed by construction:
-// none of these tools can create, modify, rotate, or grant to a selfManage
-// agent — a manager is always human-minted.
+// Anti-self-replication, by construction rather than by flag:
+//   - keys are minted on the dashboard only; no tool can mint or list keys
+//   - agents never see connection plaintext, so an admin-granted agent cannot
+//     copy its own key into new connections
+//   - create_connection refuses provider="grantry" and grant_scope skips
+//     grantry connections: placing/spreading the admin credential stays a
+//     human dashboard action
+//   - rotating/disabling the key on /api-keys kills every connection using it
 //
-// Tokens (gn_agt_) are returned exactly once in the tool result and must never
-// appear in audit logs; callers of callAdminTool audit `summary`, not payload.
+// Minted agent tokens (gn_agt_) are returned exactly once in the tool result
+// and must never appear in audit logs; callers audit `summary`, not payload.
 import { createHash, randomUUID } from "node:crypto";
 import { prisma } from "./db.js";
 import { encrypt } from "./crypto.js";
@@ -40,20 +45,8 @@ export function isAdminTool(name: string): name is AdminToolName {
   return (ADMIN_TOOLS as readonly string[]).includes(name);
 }
 
-// Tools that mutate state. Reads are safe to advertise as such for clients
-// that surface annotations.
-export const ADMIN_WRITE_TOOLS = new Set<string>([
-  "grantry/create_tenant",
-  "grantry/create_agent",
-  "grantry/update_agent",
-  "grantry/rotate_agent_token",
-  "grantry/grant_scope",
-  "grantry/revoke_scope",
-  "grantry/create_connection",
-]);
-
+/** The boundary the presented admin API key is authorized for. */
 export type AdminContext = {
-  agentId: string;
   ownerId: string;
   workspaceId: string | null;
 };
@@ -87,18 +80,12 @@ function requireString(args: Record<string, unknown>, key: string): string {
   return v.trim();
 }
 
-/**
- * Resolve a target agent inside the caller's boundary. selfManage targets are
- * off-limits to every mutating admin tool (anti-escalation / anti-lockout).
- */
+/** Resolve a target agent inside the key's boundary. */
 async function targetAgent(ctx: AdminContext, agentId: string) {
   const target = await prisma.agent.findFirst({
     where: { id: agentId, ...boundaryWhere(ctx) },
   });
-  if (!target) throw new Error(`agent not found in your workspace: ${agentId}`);
-  if (target.selfManage) {
-    throw new Error("selfManage agents can only be managed from the dashboard");
-  }
+  if (!target) throw new Error(`agent not found in this workspace: ${agentId}`);
   return target;
 }
 
@@ -108,6 +95,18 @@ async function agentScopes(agentId: string): Promise<string[]> {
     select: { connection: { select: { scope: true } } },
   });
   return Array.from(new Set(grants.map((g) => g.connection.scope))).sort();
+}
+
+/**
+ * Enabled connections at `scope` that admin tools may grant. grantry-provider
+ * connections are excluded: spreading the admin credential to more agents is
+ * a human dashboard action, not something admin tools can do to themselves.
+ */
+async function grantableConnectionsAtScope(ctx: AdminContext, scope: string) {
+  return prisma.connection.findMany({
+    where: { ...boundaryWhere(ctx), enabled: true, scope, provider: { not: "grantry" } },
+    select: { id: true, provider: true },
+  });
 }
 
 export async function callAdminTool(
@@ -121,9 +120,9 @@ export async function callAdminTool(
       orderBy: { createdAt: "asc" },
       select: {
         id: true, name: true, description: true, enabled: true,
-        fullScopeManager: true, selfManage: true, tokenPrefix: true,
+        fullScopeManager: true, tokenPrefix: true,
         expiresAt: true, lastUsedAt: true, createdAt: true,
-        connectionGrants: { select: { connection: { select: { scope: true } } } },
+        connectionGrants: { select: { connection: { select: { scope: true, provider: true } } } },
       },
     });
     const payload = {
@@ -133,7 +132,7 @@ export async function callAdminTool(
         charter: a.description,
         enabled: a.enabled,
         full_scope_manager: a.fullScopeManager,
-        self_manage: a.selfManage,
+        grantry_admin: a.connectionGrants.some((g) => g.connection.provider === "grantry"),
         token_prefix: a.tokenPrefix,
         expires_at: a.expiresAt?.toISOString() ?? null,
         last_used_at: a.lastUsedAt?.toISOString() ?? null,
@@ -169,7 +168,7 @@ export async function callAdminTool(
   }
 
   if (toolName === "grantry/list_connections") {
-    const scope = args.scope == null ? "" : String(args.scope).trim();
+    const scope = args.target_scope == null ? "" : String(args.target_scope).trim();
     const connections = await prisma.connection.findMany({
       where: { ...boundaryWhere(ctx), ...(scope ? { scope } : {}) },
       orderBy: [{ scope: "asc" }, { provider: "asc" }],
@@ -195,7 +194,7 @@ export async function callAdminTool(
   }
 
   if (toolName === "grantry/create_tenant") {
-    const slug = requireString(args, "scope").toLowerCase();
+    const slug = requireString(args, "target_scope").toLowerCase();
     if (!SLUG_RE.test(slug)) throw new Error(`invalid scope: must match ${SLUG_RE} (lowercase letters, digits, '-', '_')`);
     const displayName = args.display_name == null ? undefined : String(args.display_name).trim() || undefined;
     const existing = await prisma.tenant.findUnique({
@@ -219,8 +218,8 @@ export async function callAdminTool(
     if (!AGENT_NAME_RE.test(name)) throw new Error(`invalid name: must match ${AGENT_NAME_RE}`);
     const charter = args.charter == null ? null : String(args.charter).trim() || null;
     const scopes = Array.isArray(args.scopes) ? args.scopes.map((s) => String(s)) : [];
-    if ((args as any).full_scope_manager || (args as any).self_manage || (args as any).selfManage) {
-      throw new Error("full_scope_manager / self_manage agents can only be created from the dashboard");
+    if ((args as any).full_scope_manager) {
+      throw new Error("full_scope_manager agents can only be created from the dashboard");
     }
     const existing = await prisma.agent.findUnique({ where: { name }, select: { id: true } });
     if (existing) throw new Error(`agent name already exists: ${name} — pick another name`);
@@ -237,18 +236,14 @@ export async function callAdminTool(
       },
     });
     let granted = 0;
-    if (scopes.length) {
-      const conns = await prisma.connection.findMany({
-        where: { ...boundaryWhere(ctx), enabled: true, scope: { in: scopes } },
-        select: { id: true },
+    for (const scope of scopes) {
+      const conns = await grantableConnectionsAtScope(ctx, scope);
+      if (!conns.length) continue;
+      const res = await prisma.agentConnectionGrant.createMany({
+        data: conns.map((cn) => ({ agentId: agentRow.id, connectionId: cn.id })),
+        skipDuplicates: true,
       });
-      if (conns.length) {
-        const res = await prisma.agentConnectionGrant.createMany({
-          data: conns.map((cn) => ({ agentId: agentRow.id, connectionId: cn.id })),
-          skipDuplicates: true,
-        });
-        granted = res.count;
-      }
+      granted += res.count;
     }
     const grantedScopes = await agentScopes(agentRow.id);
     const missing = scopes.filter((s) => !grantedScopes.includes(s));
@@ -267,14 +262,13 @@ export async function callAdminTool(
 
   if (toolName === "grantry/update_agent") {
     const target = await targetAgent(ctx, requireString(args, "agent_id"));
-    if (target.id === ctx.agentId) throw new Error("cannot update yourself");
     const data: Record<string, unknown> = {};
     if (typeof args.enabled === "boolean") data.enabled = args.enabled;
     if (args.charter !== undefined) {
       data.description = args.charter == null ? null : String(args.charter).trim() || null;
     }
-    if ((args as any).self_manage !== undefined || (args as any).full_scope_manager !== undefined) {
-      throw new Error("self_manage / full_scope_manager can only be changed from the dashboard");
+    if ((args as any).full_scope_manager !== undefined) {
+      throw new Error("full_scope_manager can only be changed from the dashboard");
     }
     if (!Object.keys(data).length) throw new Error("nothing to update: pass 'enabled' and/or 'charter'");
     const updated = await prisma.agent.update({ where: { id: target.id }, data });
@@ -289,7 +283,6 @@ export async function callAdminTool(
 
   if (toolName === "grantry/rotate_agent_token") {
     const target = await targetAgent(ctx, requireString(args, "agent_id"));
-    if (target.id === ctx.agentId) throw new Error("cannot rotate your own token (you would lose access mid-flight); rotate from the dashboard");
     const { token, tokenHash, tokenPrefix } = mintAgentToken();
     await prisma.agent.update({
       where: { id: target.id },
@@ -306,12 +299,9 @@ export async function callAdminTool(
 
   if (toolName === "grantry/grant_scope") {
     const target = await targetAgent(ctx, requireString(args, "agent_id"));
-    const scope = requireString(args, "scope");
-    const conns = await prisma.connection.findMany({
-      where: { ...boundaryWhere(ctx), enabled: true, scope },
-      select: { id: true },
-    });
-    if (!conns.length) throw new Error(`no enabled connection at scope ${scope} — create one first (grantry_create_connection or dashboard)`);
+    const scope = requireString(args, "target_scope");
+    const conns = await grantableConnectionsAtScope(ctx, scope);
+    if (!conns.length) throw new Error(`no grantable enabled connection at scope ${scope} — create one first (grantry_create_connection or dashboard). Note: grantry admin connections can only be granted from the dashboard.`);
     const res = await prisma.agentConnectionGrant.createMany({
       data: conns.map((cn) => ({ agentId: target.id, connectionId: cn.id })),
       skipDuplicates: true,
@@ -329,7 +319,7 @@ export async function callAdminTool(
 
   if (toolName === "grantry/revoke_scope") {
     const target = await targetAgent(ctx, requireString(args, "agent_id"));
-    const scope = requireString(args, "scope");
+    const scope = requireString(args, "target_scope");
     const res = await prisma.agentConnectionGrant.deleteMany({
       where: { agentId: target.id, connection: { scope, ...boundaryWhere(ctx) } },
     });
@@ -345,9 +335,12 @@ export async function callAdminTool(
 
   if (toolName === "grantry/create_connection") {
     const provider = requireString(args, "provider").toLowerCase();
-    const scope = requireString(args, "scope").toLowerCase();
+    const scope = requireString(args, "target_scope").toLowerCase();
     const credential = requireString(args, "credential");
     if (!SLUG_RE.test(scope)) throw new Error(`invalid scope: must match ${SLUG_RE}`);
+    if (provider === "grantry") {
+      throw new Error("grantry admin connections are created from the dashboard only (mint a key on /api-keys and add it via the connection wizard) — admin access cannot be spread by admin tools");
+    }
     const providerDef = await getProviderForWorkspace(provider, ctx.workspaceId);
     if (!providerDef || providerDef.implemented === false) throw new Error(`provider not implemented: ${provider}`);
     const authType = args.auth_type ? String(args.auth_type) : (providerDef.authTypes.find((t) => t !== "oauth") ?? "pat");
@@ -360,8 +353,8 @@ export async function callAdminTool(
     const label = args.label ? String(args.label).trim() : `${provider}-${scope}-${authType}`;
 
     const tenant = await ensureTenant(ctx.ownerId, scope, undefined, ctx.workspaceId);
-    // Multiple connections per (provider, scope) are allowed since 0f90feb,
-    // but an agent-driven create refuses duplicates unless it labels them —
+    // Multiple connections per (provider, scope) are allowed, but an
+    // agent-driven create refuses duplicates unless it labels them —
     // unlabeled duplicates just make every call ambiguous (checkPolicy would
     // demand connection_id).
     const existing = await prisma.connection.findFirst({
@@ -406,21 +399,21 @@ export function adminToolDescriptor(toolName: AdminToolName): { description: str
   switch (toolName) {
     case "grantry/list_agents":
       return {
-        description: "grantry admin: list every agent in your workspace with its charter, status, and granted scopes. Requires the selfManage flag on your agent.",
+        description: "grantry admin: list every agent in the admin key's workspace with its charter, status, and granted scopes.",
         properties: {},
         required: [],
       };
     case "grantry/list_tenants":
       return {
-        description: "grantry admin: list every tenant (scope) in your workspace with its connected providers.",
+        description: "grantry admin: list every tenant (scope) in the workspace with its connected providers.",
         properties: {},
         required: [],
       };
     case "grantry/list_connections":
       return {
-        description: "grantry admin: list connections in your workspace (id, provider, scope, enabled). Credentials are never returned.",
+        description: "grantry admin: list connections in the workspace (id, provider, scope, enabled). Credentials are never returned.",
         properties: {
-          scope: { type: "string", description: "Optional: only list connections at this scope." },
+          target_scope: { type: "string", description: "Optional: only list connections at this scope. (Named target_scope because 'scope' selects the admin connection itself.)" },
         },
         required: [],
       };
@@ -428,24 +421,24 @@ export function adminToolDescriptor(toolName: AdminToolName): { description: str
       return {
         description: "grantry admin: create a tenant (scope). Idempotent — an existing tenant is returned untouched. The scope string is the immutable wire key agents pass in tools/call.",
         properties: {
-          scope: { type: "string", description: "Immutable tenant slug, e.g. 'acme-prod' (lowercase letters, digits, '-', '_')." },
-          display_name: { type: "string", description: "Optional human-readable name (renameable later). Defaults to the scope." },
+          target_scope: { type: "string", description: "Immutable slug of the scope to create, e.g. 'acme-prod' (lowercase letters, digits, '-', '_'). (Named target_scope because 'scope' selects the admin connection itself.)" },
+          display_name: { type: "string", description: "Optional human-readable name (renameable later). Defaults to the slug." },
         },
-        required: ["scope"],
+        required: ["target_scope"],
       };
     case "grantry/create_agent":
       return {
-        description: "grantry admin: create a new agent and mint its gn_agt_ token (returned once — store it immediately). Optionally grant it every enabled connection at the given scopes. Cannot create manager (full_scope_manager / self_manage) agents.",
+        description: "grantry admin: create a new agent and mint its gn_agt_ token (returned once — store it immediately). Optionally grant it every enabled connection at the given scopes (grantry admin connections are never auto-granted). Cannot create full_scope_manager agents.",
         properties: {
           name: { type: "string", description: "Globally unique agent name, e.g. 'acme-support-bot'." },
           charter: { type: "string", description: "What this agent is for, in plain language. Surfaced to grantry_find_agent for routing." },
-          scopes: { type: "array", items: { type: "string" }, description: "Tenant scopes to grant: the agent gets every enabled connection at each scope. Omit to create with no grants." },
+          scopes: { type: "array", items: { type: "string" }, description: "Tenant scopes to grant: the agent gets every enabled non-admin connection at each scope. Omit to create with no grants." },
         },
         required: ["name"],
       };
     case "grantry/update_agent":
       return {
-        description: "grantry admin: enable/disable an agent or update its charter. Cannot target selfManage agents or yourself.",
+        description: "grantry admin: enable/disable an agent or update its charter.",
         properties: {
           agent_id: { type: "string", description: "Agent id (from grantry_list_agents)." },
           enabled: { type: "boolean", description: "Enable or disable the agent's token." },
@@ -455,7 +448,7 @@ export function adminToolDescriptor(toolName: AdminToolName): { description: str
       };
     case "grantry/rotate_agent_token":
       return {
-        description: "grantry admin: rotate an agent's token. The new gn_agt_ token is returned once; the old token stops working immediately. Cannot target selfManage agents or yourself.",
+        description: "grantry admin: rotate an agent's token. The new gn_agt_ token is returned once; the old token stops working immediately.",
         properties: {
           agent_id: { type: "string", description: "Agent id (from grantry_list_agents)." },
         },
@@ -463,33 +456,33 @@ export function adminToolDescriptor(toolName: AdminToolName): { description: str
       };
     case "grantry/grant_scope":
       return {
-        description: "grantry admin: grant an agent every enabled connection at a scope. Idempotent. Cannot target selfManage agents.",
+        description: "grantry admin: grant an agent every enabled connection at a scope (grantry admin connections excluded — those are granted from the dashboard only). Idempotent.",
         properties: {
           agent_id: { type: "string", description: "Agent id (from grantry_list_agents)." },
-          scope: { type: "string", description: "Tenant scope whose connections to grant." },
+          target_scope: { type: "string", description: "Scope whose connections to grant. (Named target_scope because 'scope' selects the admin connection itself.)" },
         },
-        required: ["agent_id", "scope"],
+        required: ["agent_id", "target_scope"],
       };
     case "grantry/revoke_scope":
       return {
-        description: "grantry admin: remove an agent's connection grants at a scope. Cannot target selfManage agents.",
+        description: "grantry admin: remove an agent's connection grants at a scope.",
         properties: {
           agent_id: { type: "string", description: "Agent id (from grantry_list_agents)." },
-          scope: { type: "string", description: "Tenant scope whose grants to remove." },
+          target_scope: { type: "string", description: "Scope whose grants to remove. (Named target_scope because 'scope' selects the admin connection itself.)" },
         },
-        required: ["agent_id", "scope"],
+        required: ["agent_id", "target_scope"],
       };
     case "grantry/create_connection":
       return {
-        description: "grantry admin: register a PAT/API-key credential as a connection at a scope (creates the tenant if needed). The credential is encrypted at rest and never returned. OAuth providers must be connected via the dashboard.",
+        description: "grantry admin: register a PAT/API-key credential as a connection at a scope (creates the tenant if needed). The credential is encrypted at rest and never returned. OAuth providers and grantry admin keys must be connected via the dashboard.",
         properties: {
           provider: { type: "string", description: "Provider key, e.g. 'github', 'notion', 'attio' (see grantry_get_providers)." },
-          scope: { type: "string", description: "Tenant scope for the connection. Tenant is created if missing." },
+          target_scope: { type: "string", description: "Scope for the new connection; created if missing. (Named target_scope because 'scope' selects the admin connection itself.)" },
           credential: { type: "string", description: "The PAT / API key / token. Redacted from audit logs." },
           auth_type: { type: "string", description: "Optional auth type. Defaults to the provider's non-OAuth auth type (usually 'pat')." },
           label: { type: "string", description: "Optional display label." },
         },
-        required: ["provider", "scope", "credential"],
+        required: ["provider", "target_scope", "credential"],
       };
   }
 }

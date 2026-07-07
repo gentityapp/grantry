@@ -39,6 +39,9 @@ function oauthProviderKeys() {
 function patProviderKeys() {
   return listProviders()
     .filter((provider) => provider.authTypes.includes("pat"))
+    // grantry validates its admin API key against the local DB (AdminApiKey
+    // table), not a provider HTTP API, so the fetch-mock sweep cannot cover it.
+    .filter((provider) => provider.key !== "grantry")
     .map((provider) => provider.key)
     .sort();
 }

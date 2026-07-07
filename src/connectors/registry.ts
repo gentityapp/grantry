@@ -115,6 +115,30 @@ const META_ADS_PLATFORM_READ_TOOLS = META_ADS_READ_TOOLS.map((tool) =>
 );
 
 export const PROVIDERS: Record<string, ProviderDef> = {
+  // grantry itself as a provider (dogfooding): agent permission management is
+  // granted exactly like any external SaaS — a human mints a gn_adm_ API key
+  // on the dashboard, pastes it into a connection, and grants it to an agent.
+  // The key is the capability; issuance is dashboard-only and agents never see
+  // the plaintext, so admin access cannot self-replicate through these tools.
+  grantry: {
+    key: "grantry",
+    label: "grantry (admin)",
+    authTypes: ["pat"],
+    helpText: "Paste a grantry admin API key (gn_adm_…) minted on the /api-keys page. It lets the granted agent manage this workspace's tenants, agents, connections, and grants over MCP.",
+    tokenUrl: "https://app.grantry.ai/api-keys",
+    tools: [
+      "grantry/list_agents",
+      "grantry/list_tenants",
+      "grantry/list_connections",
+      "grantry/create_tenant",
+      "grantry/create_agent",
+      "grantry/update_agent",
+      "grantry/rotate_agent_token",
+      "grantry/grant_scope",
+      "grantry/revoke_scope",
+      "grantry/create_connection",
+    ],
+  },
   notion: {
     key: "notion",
     label: "Notion",
