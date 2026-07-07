@@ -1293,6 +1293,18 @@ export const PROVIDERS: Record<string, ProviderDef> = {
 };
 
 const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]>> = {
+  notion: {
+    baseUrl: "https://api.notion.com/v1",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "users_me", method: "GET", path: "/users/me" }],
+  },
+  zoom: {
+    baseUrl: "https://api.zoom.us/v2",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "me", method: "GET", path: "/users/me" }],
+  },
   github: {
     baseUrl: "https://api.github.com",
     defaultMethods: ["GET"],
@@ -1363,8 +1375,32 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
       },
     ],
   },
+  google_ads: {
+    baseUrl: "https://googleads.googleapis.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  yahoo_ads: {
+    baseUrl: "https://ads-search.yahooapis.jp",
+    baseUrls: {
+      search: "https://ads-search.yahooapis.jp",
+      display: "https://ads-display.yahooapis.jp",
+    },
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
   meta_ads: {
     baseUrl: "https://graph.facebook.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  meta_ads_platform: {
+    baseUrl: "https://graph.facebook.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  clarity: {
+    baseUrl: "https://www.clarity.ms",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
   },
@@ -1444,6 +1480,14 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/v1/"],
   },
+  apollo: {
+    baseUrl: "https://api.apollo.io",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    authScheme: "api_key",
+    apiKeyHeader: "X-Api-Key",
+    smokeTests: [{ id: "health", method: "GET", path: "/api/v1/auth/health" }],
+  },
   heyreach: {
     baseUrl: "https://api.heyreach.io",
     defaultMethods: ["GET"],
@@ -1467,6 +1511,26 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     authScheme: "api_key",
     apiKeyHeader: "X-ChatWorkToken",
     smokeTests: [{ id: "me", method: "GET", path: "/me" }],
+  },
+  channel_talk: {
+    baseUrl: "https://api.channel.io/open/v5",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  channel_talk_documents: {
+    baseUrl: "https://document-api.channel.io/open/v1",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  railway: {
+    baseUrl: "https://backboard.railway.app/graphql/v2",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  railway_api: {
+    baseUrl: "https://backboard.railway.app/graphql/v2",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
   },
   freee: {
     baseUrl: "https://api.freee.co.jp",
@@ -1558,10 +1622,40 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
   },
+  customerio: {
+    baseUrl: "credential.customerio_region",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "campaigns", method: "GET", path: "/v1/campaigns" }],
+  },
   mailchimp: {
     baseUrl: "https://us1.api.mailchimp.com/3.0",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
+  },
+  zendesk: {
+    baseUrl: "credential.zendesk_api_v2",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "me", method: "GET", path: "/users/me.json" }],
+  },
+  wordpress: {
+    baseUrl: "credential.wordpress_wp_v2",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "me", method: "GET", path: "/users/me", query: { context: "edit" } }],
+  },
+  shopify: {
+    baseUrl: "credential.shopify_admin",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "shop", method: "GET", path: "/shop.json" }],
+  },
+  jira: {
+    baseUrl: "credential.jira_api_v3",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "me", method: "GET", path: "/myself" }],
   },
   salesforce: {
     baseUrl: "credential.instance_url",
@@ -1575,6 +1669,11 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
   },
   tiktok_ads: {
     baseUrl: "https://business-api.tiktok.com/open_api",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  snowflake: {
+    baseUrl: "credential.snowflake_api_v2",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
   },

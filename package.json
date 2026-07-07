@@ -7,8 +7,9 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "check": "npm run audit:provider-scopes && npm run audit:generic-coverage && npm run build && DATABASE_URL=${DATABASE_URL:-postgresql://user:pass@localhost:5432/grantry} prisma validate",
+    "check": "npm run audit:provider-scopes && npm run audit:provider-request-coverage && npm run audit:generic-coverage && npm run build && DATABASE_URL=${DATABASE_URL:-postgresql://user:pass@localhost:5432/grantry} prisma validate",
     "audit:provider-scopes": "tsx scripts/audit-provider-scopes.ts",
+    "audit:provider-request-coverage": "tsx scripts/audit-provider-request-coverage.ts",
     "audit:generic-coverage": "tsx scripts/audit-generic-coverage.ts",
     "test:connections": "node --import tsx --test tests/connections/*.test.ts",
     "start": "node scripts/start-with-maintenance.mjs",

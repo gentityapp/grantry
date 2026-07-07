@@ -78,6 +78,20 @@ function normalizeBaseUrl(url: string) {
   return url.replace(/\/+$/, "");
 }
 
+function parsedCredentialObject(credential: string) {
+  const parsed = parseJsonMaybe(credential);
+  return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
+}
+
+function credentialField(credential: string, keys: string[]) {
+  const parsed = parsedCredentialObject(credential);
+  for (const key of keys) {
+    const value = parsed ? parsed[key] : undefined;
+    if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
+  }
+  return "";
+}
+
 function resolveBaseUrl(provider: string, manifest: GenericManifest, credential: string, baseUrlKeyValue?: unknown) {
   const baseUrlKey = String(baseUrlKeyValue ?? "").trim();
   if (baseUrlKey) {
@@ -94,6 +108,35 @@ function resolveBaseUrl(provider: string, manifest: GenericManifest, credential:
     if (!instanceUrl) throw new Error(`${provider}/request requires a JSON credential with instance_url`);
     return instanceUrl;
   }
+  if (manifest.baseUrl === "credential.customerio_region") {
+    const region = credentialField(credential, ["region"]).toLowerCase() || "us";
+    return region === "eu" ? "https://api-eu.customer.io" : "https://api.customer.io";
+  }
+  if (manifest.baseUrl === "credential.zendesk_api_v2") {
+    const subdomain = credentialField(credential, ["subdomain"]);
+    if (!subdomain) throw new Error(`${provider}/request requires a JSON credential with subdomain`);
+    return `https://${subdomain}.zendesk.com/api/v2`;
+  }
+  if (manifest.baseUrl === "credential.wordpress_wp_v2") {
+    const site = normalizeBaseUrl(credentialField(credential, ["site"]));
+    if (!site) throw new Error(`${provider}/request requires a JSON credential with site`);
+    return `${site}/wp-json/wp/v2`;
+  }
+  if (manifest.baseUrl === "credential.shopify_admin") {
+    const shop = credentialField(credential, ["shop"]);
+    if (!shop) throw new Error(`${provider}/request requires a JSON credential with shop`);
+    return `https://${shop}/admin/api/2024-10`;
+  }
+  if (manifest.baseUrl === "credential.jira_api_v3") {
+    const site = normalizeBaseUrl(credentialField(credential, ["site"]));
+    if (!site) throw new Error(`${provider}/request requires a JSON credential with site`);
+    return `${site}/rest/api/3`;
+  }
+  if (manifest.baseUrl === "credential.snowflake_api_v2") {
+    const account = credentialField(credential, ["account"]);
+    if (!account) throw new Error(`${provider}/request requires a JSON credential with account`);
+    return `https://${account}.snowflakecomputing.com/api/v2`;
+  }
   if (provider === "mailchimp") {
     const dc = credential.match(/-([a-z]{2,}\d+)$/i)?.[1];
     if (dc) return `https://${dc}.api.mailchimp.com/3.0`;
@@ -106,7 +149,108 @@ function credentialToken(provider: string, credential: string) {
   if (provider === "salesforce" && parsed) return String(parsed.token ?? parsed.access_token ?? credential);
   if (provider === "customerio" && parsed) return String(parsed.token ?? credential);
   if (provider === "microsoft_ads" && parsed) return String(parsed.access_token ?? credential);
+  if (provider === "openai" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
+  if (provider === "shopify" && parsed) return String(parsed.token ?? credential);
+  if (provider === "snowflake" && parsed) return String(parsed.token ?? credential);
   return credential;
+}
+
+function basicAuth(value: string) {
+  return `Basic ${Buffer.from(value).toString("base64")}`;
+}
+
+function applyProviderSpecificAuth(provider: string, credential: string, headers: Record<string, string>) {
+  if (provider === "channel_talk") {
+    const accessKey = credentialField(credential, ["accessKey", "access_key"]);
+    const accessSecret = credentialField(credential, ["accessSecret", "access_secret"]);
+    if (!accessKey || !accessSecret) throw new Error('channel_talk/request requires JSON credential {"accessKey","accessSecret"}');
+    headers["x-access-key"] = accessKey;
+    headers["x-access-secret"] = accessSecret;
+    return true;
+  }
+  if (provider === "channel_talk_documents") {
+    const raw = credential.trim();
+    const accessKey = credentialField(credential, ["accessKey", "access_key", "apiKey", "api_key"]);
+    const accessSecret = credentialField(credential, ["accessSecret", "access_secret"]);
+    const token = accessKey ? (accessSecret ? `${accessKey}:${accessSecret}` : accessKey) : raw;
+    if (!token) throw new Error("channel_talk_documents/request requires a Documents API credential");
+    headers.Authorization = basicAuth(token);
+    return true;
+  }
+  if (provider === "mailchimp") {
+    headers.Authorization = basicAuth(`anystring:${credential.trim()}`);
+    return true;
+  }
+  if (provider === "zendesk") {
+    const email = credentialField(credential, ["email"]);
+    const token = credentialField(credential, ["token"]);
+    if (!email || !token) throw new Error('zendesk/request requires JSON credential {"subdomain","email","token"}');
+    headers.Authorization = basicAuth(`${email}/token:${token}`);
+    return true;
+  }
+  if (provider === "wordpress") {
+    const username = credentialField(credential, ["username"]);
+    const appPassword = credentialField(credential, ["app_password", "appPassword"]);
+    if (!username || !appPassword) throw new Error('wordpress/request requires JSON credential {"site","username","app_password"}');
+    headers.Authorization = basicAuth(`${username}:${appPassword}`);
+    return true;
+  }
+  if (provider === "jira") {
+    const email = credentialField(credential, ["email"]);
+    const token = credentialField(credential, ["token"]);
+    if (!email || !token) throw new Error('jira/request requires JSON credential {"site","email","token"}');
+    headers.Authorization = basicAuth(`${email}:${token}`);
+    return true;
+  }
+  if (provider === "shopify") {
+    const token = credentialField(credential, ["token"]);
+    if (!token) throw new Error('shopify/request requires JSON credential {"shop","token"}');
+    headers["X-Shopify-Access-Token"] = token;
+    return true;
+  }
+  if (provider === "linear") {
+    headers.Authorization = credential.trim();
+    return true;
+  }
+  if (provider === "tiktok_ads") {
+    headers["Access-Token"] = credential.trim();
+    return true;
+  }
+  if (provider === "snowflake") {
+    const tokenType = credentialField(credential, ["token_type", "tokenType"]) || "PROGRAMMATIC_ACCESS_TOKEN";
+    headers.Authorization = `Bearer ${credentialToken(provider, credential)}`;
+    headers["X-Snowflake-Authorization-Token-Type"] = tokenType;
+    return true;
+  }
+  if (provider === "openai") {
+    const parsed = parsedCredentialObject(credential);
+    headers.Authorization = `Bearer ${credentialToken(provider, credential)}`;
+    if (parsed?.organization) headers["OpenAI-Organization"] = String(parsed.organization);
+    if (parsed?.project) headers["OpenAI-Project"] = String(parsed.project);
+    return true;
+  }
+  if (provider === "notion") {
+    headers.Authorization = `Bearer ${credential.trim()}`;
+    headers["Notion-Version"] = "2022-06-28";
+    return true;
+  }
+  if (provider === "railway" || provider === "railway_api") {
+    const parsed = parsedCredentialObject(credential);
+    const token = String(parsed?.token ?? credential).trim();
+    const tokenType = String(parsed?.token_type ?? parsed?.tokenType ?? (provider === "railway_api" ? "workspace" : "")).trim();
+    if (tokenType === "project") headers["Project-Access-Token"] = token;
+    else headers.Authorization = `Bearer ${token}`;
+    return true;
+  }
+  return false;
+}
+
+function applyProviderServerCredential(provider: string, serverCredential: string | null | undefined, headers: Record<string, string>) {
+  if (provider === "google_ads") {
+    const developerToken = String(serverCredential ?? "").trim();
+    if (!developerToken) throw new Error("google_ads/request requires the connection's Google Ads developer token server credential");
+    headers["developer-token"] = developerToken;
+  }
 }
 
 function assertAllowed(provider: string, manifest: GenericManifest, method: string, path: string) {
@@ -264,6 +408,7 @@ async function executeGenericRequest(args: {
   query?: Record<string, unknown>;
   body?: unknown;
   headers?: Record<string, string>;
+  serverCredential?: string | null;
   baseUrlKey?: unknown;
   logTool: string;
 }) {
@@ -278,7 +423,9 @@ async function executeGenericRequest(args: {
   const scheme = manifest.authScheme ?? "bearer";
   const queryRecord: Record<string, unknown> = { ...(args.query ?? {}) };
   const headers: Record<string, string> = { Accept: "application/json" };
-  if (scheme === "api_key_query") {
+  if (applyProviderSpecificAuth(args.provider.key, args.credential, headers)) {
+    // Provider-specific auth has already populated the correct headers.
+  } else if (scheme === "api_key_query") {
     // Credential travels as a query parameter (e.g. Smartlead's `api_key`), not a header.
     queryRecord[manifest.apiKeyQueryParam ?? "api_key"] = token;
   } else if (scheme === "api_key") {
@@ -292,6 +439,7 @@ async function executeGenericRequest(args: {
   if (args.provider.key === "github") headers["User-Agent"] = "grantry";
   if (args.provider.key === "reddit") headers["User-Agent"] = "grantry/1.0 (MCP connector)";
   if (args.provider.key === "stripe") headers["Stripe-Version"] = "2024-06-20";
+  applyProviderServerCredential(args.provider.key, args.serverCredential, headers);
   Object.assign(headers, args.headers ?? {});
 
   const init: RequestInit = { method, headers, signal: undefined };
@@ -352,6 +500,7 @@ export async function callGenericProviderRequest(args: {
   toolName: string;
   requestArgs: GenericRequestArgs;
   credential: string;
+  serverCredential?: string | null;
 }) {
   return executeGenericRequest({
     provider: args.provider,
@@ -363,6 +512,7 @@ export async function callGenericProviderRequest(args: {
       : {},
     body: requestBodyFromArgs(args.requestArgs),
     headers: headersFromArgs(args.requestArgs.headers),
+    serverCredential: args.serverCredential,
     baseUrlKey: args.requestArgs.base_url_key ?? args.requestArgs.baseUrlKey,
     logTool: args.toolName,
   });

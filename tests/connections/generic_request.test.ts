@@ -143,3 +143,53 @@ test("generic request supports API keys in query parameters without auth headers
   assert.equal((result.structuredContent as any).provider, "query_auth");
   assert.equal((result.structuredContent as any).status, 200);
 });
+
+test("generic request supports Channel Talk Open API credentials", async (t) => {
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const provider = getProvider("channel_talk");
+  assert.ok(provider?.genericRequest);
+
+  const calls = installFetchMock(() => jsonResponse({ userChats: [] }));
+  await callGenericProviderRequest({
+    provider,
+    toolName: "channel_talk/request",
+    credential: JSON.stringify({ accessKey: "ct-key", accessSecret: "ct-secret" }),
+    requestArgs: {
+      method: "GET",
+      path: "/user-chats",
+      query: { state: "opened" },
+    },
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://api.channel.io/open/v5/user-chats?state=opened");
+  assert.equal((calls[0].init?.headers as Record<string, string>)["x-access-key"], "ct-key");
+  assert.equal((calls[0].init?.headers as Record<string, string>)["x-access-secret"], "ct-secret");
+});
+
+test("generic request derives dynamic provider bases and auth headers from JSON credentials", async (t) => {
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const provider = getProvider("shopify");
+  assert.ok(provider?.genericRequest);
+
+  const calls = installFetchMock(() => jsonResponse({ shop: { name: "Root" } }));
+  await callGenericProviderRequest({
+    provider,
+    toolName: "shopify/request",
+    credential: JSON.stringify({ shop: "acme.myshopify.com", token: "shpat_test" }),
+    requestArgs: {
+      method: "GET",
+      path: "/shop.json",
+    },
+  });
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://acme.myshopify.com/admin/api/2024-10/shop.json");
+  assert.equal((calls[0].init?.headers as Record<string, string>)["X-Shopify-Access-Token"], "shpat_test");
+});

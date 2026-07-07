@@ -2868,7 +2868,13 @@ async function dispatchProviderTool(
   if (toolName === `${provider}/request`) {
     const providerDef = await getProviderForWorkspace(provider, conn.workspaceId);
     if (!providerDef) throw new Error(`provider not implemented: ${provider}`);
-    return callGenericProviderRequest({ provider: providerDef, toolName, requestArgs: args, credential: token });
+    return callGenericProviderRequest({
+      provider: providerDef,
+      toolName,
+      requestArgs: args,
+      credential: token,
+      serverCredential: conn.encryptedServerCredential ? decrypt(conn.encryptedServerCredential) : null,
+    });
   }
   if (toolName === `${provider}/check_connection`) {
     const providerDef = await getProviderForWorkspace(provider, conn.workspaceId);
