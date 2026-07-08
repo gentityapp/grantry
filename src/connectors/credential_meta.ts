@@ -798,6 +798,26 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "granola") {
+      if (!token.trim()) {
+        return { provider, authType, status: "error", checkedAt, error: "Granola API key is required" };
+      }
+      const notes = [
+        "Granola API keys are sent as Authorization: Bearer.",
+        "Read-only: the API only returns notes that already have a generated AI summary and transcript.",
+      ];
+      if (!token.trim().startsWith("grn_")) {
+        notes.push("Granola API keys commonly start with grn_; this key will be validated on first API call.");
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        notes,
+        checkedAt,
+      };
+    }
+
     if (provider === "railway" || provider === "railway_api") {
       let rawToken = token.trim();
       let tokenType = provider === "railway_api" ? "workspace" : "project";

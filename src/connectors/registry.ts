@@ -762,6 +762,19 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  granola: {
+    key: "granola",
+    label: "Granola",
+    authTypes: ["pat"],
+    helpText: "Paste a Granola API key (starts with grn_). Create one in the Granola desktop app: Settings > Connectors > API keys > Create new key, then select note access scopes. Workspace admins can create workspace keys via Settings > Workspace > General. The key is sent as Authorization: Bearer. Read-only: the API returns only notes that already have a generated AI summary and transcript.",
+    tokenUrl: "https://docs.granola.ai/api-reference/list-notes",
+    tools: [
+      "granola/list_notes",
+      "granola/get_note",
+      "granola/list_folders",
+    ],
+    implemented: true,
+  },
   cloudsign: {
     key: "cloudsign",
     label: "CloudSign",
@@ -1574,6 +1587,12 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
     smokeTests: [{ id: "domains", method: "GET", path: "/domains" }],
+  },
+  granola: {
+    baseUrl: "https://public-api.granola.ai",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/v1/"],
+    smokeTests: [{ id: "folders", method: "GET", path: "/v1/folders", query: { page_size: 1 } }],
   },
   slack: {
     baseUrl: "https://slack.com/api",

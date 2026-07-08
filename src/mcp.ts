@@ -33,6 +33,7 @@ import { callChatworkTool } from "./connectors/chatwork.js";
 import { callChannelTalkTool, callChannelTalkDocumentsTool } from "./connectors/channel_talk.js";
 import { callRailwayTool } from "./connectors/railway.js";
 import { callResendTool } from "./connectors/resend.js";
+import { callGranolaTool } from "./connectors/granola.js";
 import { callCloudSignTool } from "./connectors/cloudsign.js";
 import { callSlackTool } from "./connectors/slack.js";
 import { callFreeeTool } from "./connectors/freee.js";
@@ -1627,6 +1628,28 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "resend/list_api_keys") {
     return {};
   }
+  if (toolName === "granola/list_notes") {
+    return {
+      created_after: { type: "string", description: "Only notes created after this ISO 8601 timestamp." },
+      created_before: { type: "string", description: "Only notes created before this ISO 8601 timestamp." },
+      updated_after: { type: "string", description: "Only notes updated after this ISO 8601 timestamp." },
+      folder_id: { type: "string", description: "Restrict to notes in this folder and its child folders." },
+      cursor: { type: "string", description: "Pagination cursor from a previous list_notes response." },
+      page_size: { type: "integer", description: "Number of notes to return per page." },
+    };
+  }
+  if (toolName === "granola/get_note") {
+    return {
+      note_id: { type: "string", description: "Granola note ID." },
+      include: { type: "string", enum: ["transcript"], description: "Set to 'transcript' to include the meeting transcript in the response." },
+    };
+  }
+  if (toolName === "granola/list_folders") {
+    return {
+      cursor: { type: "string", description: "Pagination cursor from a previous list_folders response." },
+      page_size: { type: "integer", description: "Number of folders to return per page." },
+    };
+  }
   if (toolName === "slack/auth_test") {
     return {};
   }
@@ -2619,6 +2642,7 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "google_maps/distance_matrix") return ["origins", "destinations"];
   if (toolName === "resend/send_email") return ["from", "to", "subject"];
   if (toolName === "resend/get_email") return ["email_id"];
+  if (toolName === "granola/get_note") return ["note_id"];
   if (toolName === "resend/get_domain") return ["domain_id"];
   if (toolName === "slack/get_channel") return ["channel"];
   if (toolName === "slack/list_messages") return ["channel"];
@@ -2918,6 +2942,7 @@ async function dispatchProviderTool(
   }
   if (provider === "google_maps") return callGoogleMapsTool(toolName, args, token);
   if (provider === "resend") return callResendTool(toolName, args, token);
+  if (provider === "granola") return callGranolaTool(toolName, args, token);
   if (provider === "cloudsign") return callCloudSignTool(toolName, args, token);
   if (provider === "slack") return callSlackTool(toolName, args, token);
   if (provider === "freee") return callFreeeTool(toolName, args, token);

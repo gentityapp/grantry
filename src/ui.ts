@@ -92,6 +92,7 @@ function authTypeLabel(providerKey: string, authType: string): string {
   if (providerKey === "railway") return "Project token";
   if (providerKey === "railway_api") return "API token";
   if (providerKey === "resend") return "API key";
+  if (providerKey === "granola") return "API key";
   if (providerKey === "slack") return "Bot token";
   if (providerKey === "google_maps") return "API key";
   if (providerKey === "discord") return "Bot token";
@@ -121,6 +122,7 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
   if (providerKey === "railway") return "Paste your Railway Project Token from Project Settings > Tokens";
   if (providerKey === "railway_api") return "Paste your Railway Account or Workspace API Token from Account Settings > Tokens";
   if (providerKey === "resend") return "Paste your Resend API key";
+  if (providerKey === "granola") return "Paste your Granola API key (starts with grn_)";
   if (providerKey === "slack") return "Paste your Slack Bot User OAuth Token (starts with xoxb-)";
   if (providerKey === "google_maps") return "Paste your Google Maps Platform API key";
   if (providerKey === "discord") return "Paste your Discord Bot Token from the Developer Portal > Bot";
@@ -159,6 +161,7 @@ function tokenLinkLabel(providerKey: string, providerLabel: string): string {
   if (providerKey === "railway") return "🔗 Open Railway project tokens →";
   if (providerKey === "railway_api") return "🔗 Open Railway API tokens →";
   if (providerKey === "resend") return "🔗 Open Resend API keys →";
+  if (providerKey === "granola") return "🔗 Granola API docs (create a key in the desktop app) →";
   if (providerKey === "slack") return "🔗 Open Slack apps (create app / get Bot token) →";
   if (providerKey === "google_maps") return "🔗 Open Google Maps Platform credentials →";
   if (providerKey === "moneyforward") return "🔗 Open Money Forward App Portal →";
