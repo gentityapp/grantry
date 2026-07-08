@@ -2095,9 +2095,12 @@ dashboardApp.get("/providers", async (c) => {
 
       <h2>Custom providers</h2>
       <div class="card">
-        <p class="field-hint" style="margin-top:0;">Custom providers are workspace-level definitions. Once enabled here, they appear in each scope's Add service picker.</p>
-        ${customProviders.length ? `<div class="table-wrap" style="margin-bottom:18px;"><table><thead><tr><th>Provider</th><th>Base URL</th><th>Auth</th><th>Status</th><th>Action</th></tr></thead><tbody>${customProviders.map((p) => `<tr><td>${escapeHtml(p.label)}</td><td><code>${escapeHtml(p.baseUrl)}</code></td><td><code>${escapeHtml(p.authScheme)}</code>${p.apiKeyHeader ? `<br><code>${escapeHtml(p.apiKeyHeader)}</code>` : ""}</td><td>${p.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</td><td>${admin ? `<form method="post" action="/providers/custom/${p.id}/delete" onsubmit="return confirm(${jsString(`Delete custom provider ${p.key}? Existing connections keep their provider key but the catalog definition will be removed.`)});"><button type="submit" class="danger" style="font-size:12px;padding:4px 10px;">Delete</button></form>` : '<span style="color:#687385;">admin only</span>'}</td></tr>`).join("")}</tbody></table></div>` : '<div class="empty" style="margin-bottom:14px;">No custom providers in this workspace yet.</div>'}
-        ${admin ? customProviderForm("/providers/custom/new", "providers_custom") : '<p class="field-hint">Workspace admin required to add custom providers.</p>'}
+        <div class="row spread" style="gap:12px;align-items:flex-start;margin-bottom:12px;">
+          <p class="field-hint" style="margin:0;">Custom providers are workspace-level definitions. Once enabled here, they appear in each scope's Add service picker.</p>
+          ${admin ? '<a class="btn" href="/providers/custom/new" style="white-space:nowrap;">Add custom provider</a>' : ""}
+        </div>
+        ${customProviders.length ? `<div class="table-wrap"><table><thead><tr><th>Provider</th><th>Base URL</th><th>Auth</th><th>Status</th><th>Action</th></tr></thead><tbody>${customProviders.map((p) => `<tr><td>${escapeHtml(p.label)}</td><td><code>${escapeHtml(p.baseUrl)}</code></td><td><code>${escapeHtml(p.authScheme)}</code>${p.apiKeyHeader ? `<br><code>${escapeHtml(p.apiKeyHeader)}</code>` : ""}</td><td>${p.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</td><td>${admin ? `<form method="post" action="/providers/custom/${p.id}/delete" onsubmit="return confirm(${jsString(`Delete custom provider ${p.key}? Existing connections keep their provider key but the catalog definition will be removed.`)});"><button type="submit" class="danger" style="font-size:12px;padding:4px 10px;">Delete</button></form>` : '<span style="color:#687385;">admin only</span>'}</td></tr>`).join("")}</tbody></table></div>` : '<div class="empty">No custom providers in this workspace yet.</div>'}
+        ${admin ? "" : '<p class="field-hint">Workspace admin required to add custom providers.</p>'}
       </div>
     </main>
     <script>
@@ -2115,6 +2118,31 @@ dashboardApp.get("/providers", async (c) => {
       })();
     </script>
     </body></html>
+  `);
+});
+
+dashboardApp.get("/providers/custom/new", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+  const wsId = await getActiveWorkspaceId(c);
+  if (!wsId) return c.html("<h1>workspace required</h1>", 400);
+  const admin = await requireWsAdmin(c, wsId);
+  if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
+
+  return c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Add custom provider — grantry</title>
+    ${FAVICON}<style>${CSS}</style></head><body>
+    ${NAV("providers", user?.email)}
+    <main>
+      <p style="margin:0 0 12px;"><a href="/providers">&larr; Providers</a></p>
+      <h1>Add custom provider</h1>
+      <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
+        Define a workspace-level provider that can be added to scopes from the service picker.
+      </p>
+      <div class="card">
+        ${customProviderForm("/providers/custom/new", "providers_custom")}
+      </div>
+    </main></body></html>
   `);
 });
 
@@ -2268,9 +2296,9 @@ dashboardApp.post("/providers/custom/new", async (c) => {
   const admin = await requireWsAdmin(c, wsId);
   if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
   const body = await c.req.parseBody();
-  const errorResponse = await createWorkspaceCustomProvider(c, wsId, user.id, body, "/providers");
+  const errorResponse = await createWorkspaceCustomProvider(c, wsId, user.id, body, "/providers/custom/new");
   if (errorResponse) return errorResponse;
-  return c.redirect("/providers");
+  return c.redirect(`/providers?ok=${encodeURIComponent("Custom provider added.")}`);
 });
 
 dashboardApp.post("/providers/custom/:providerId/delete", async (c) => {

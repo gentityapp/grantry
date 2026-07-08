@@ -4,6 +4,7 @@ const EXPLICIT_NON_GENERIC_PROVIDERS: Record<string, string> = {
   grantry: "internal Grantry admin provider; use dedicated admin MCP tools, not provider API passthrough",
   aws: "AWS raw passthrough requires SigV4 signing from method/service/region/host/path/body, not plain provider/request",
   microsoft_ads: "Microsoft Ads is SOAP-based and requires generated SOAP envelopes with credential headers",
+  cloudsign: "CloudSign stores a Web API client_id and exchanges it for short-lived access tokens through its dedicated connector",
 };
 
 const REQUIRED_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE"];
