@@ -8,6 +8,8 @@ import { auth } from "./auth.js";
 import { mcpApp } from "./mcp.js";
 import { dashboardApp, oauthApp, mcpAuthorizeGate } from "./ui.js";
 import { startHealthSweepScheduler } from "./health_sweep.js";
+// Side-effect import: registers GET /usage on the dashboardApp exported by ui.ts.
+import "./usage.js";
 
 const app = new Hono();
 
