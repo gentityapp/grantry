@@ -4018,7 +4018,7 @@ dashboardApp.get("/tenants", async (c) => {
                     </span>
                   </td>
                   <td>${newest ? `<code>${newest.toISOString().slice(0, 10)}</code>` : '<span style="color:#687385;">-</span>'}</td>
-                  <td>${scope !== "(unscoped)" ? `<span class="scope-actions"><a href="/tenants/${encodeURIComponent(scope)}/edit" class="btn secondary">Add service</a><a href="/tenants/${encodeURIComponent(scope)}/edit" class="btn secondary">Edit</a></span>` : ""}</td>
+                  <td>${scope !== "(unscoped)" ? `<span class="scope-actions"><a href="/tenants/${encodeURIComponent(scope)}/edit" class="btn secondary">Edit</a></span>` : ""}</td>
                 </tr>
               `;
                 }).join("")}
