@@ -424,16 +424,20 @@ const CSS = `
   .conn-auth { flex-shrink: 0; min-width: 66px; text-align: center; }
   .conn-label { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .conn-meta { display: flex; align-items: center; gap: 10px; margin-left: auto; white-space: nowrap; }
-  .scope-card { padding: 16px 18px; }
-  .scope-row { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-  .scope-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-width: 0; }
-  .scope-title { display: inline-flex; align-items: center; gap: 8px; min-width: 0; flex: 1; white-space: nowrap; }
-  .scope-title-name { overflow: hidden; text-overflow: ellipsis; }
-  .scope-controls { display: inline-flex; align-items: center; gap: 10px; flex-shrink: 0; }
+  .scope-list-card { padding: 0; overflow: hidden; }
+  .scope-list-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .scope-list-toolbar label { font-size: 13px; color: var(--ink-2); cursor: pointer; }
+  .scope-table th, .scope-table td { padding: 10px 12px; }
+  .scope-table tr:last-child td { border-bottom: 0; }
+  .scope-name-cell { display: flex; align-items: center; gap: 8px; min-width: 180px; }
+  .scope-name-main { min-width: 0; }
+  .scope-name-main b { display: block; font-size: 14px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scope-name-main code { color: var(--muted); font-size: 12px; }
   .scope-actions { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
   .scope-actions .btn { font-size: 12px; padding: 4px 10px; }
-  .scope-services { display: flex; align-items: center; gap: 8px; min-width: 0; overflow-x: auto; white-space: nowrap; padding: 1px 0 2px; }
-  .scope-service-pill { display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 3px 8px; background: var(--bg); border-radius: 6px; color: var(--ink-2); }
+  .scope-services { display: flex; align-items: center; gap: 6px; min-width: 220px; max-width: 520px; flex-wrap: wrap; }
+  .scope-service-pill { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 160px; padding: 3px 7px; background: var(--bg); border-radius: 6px; color: var(--ink-2); font-size: 13px; }
+  .scope-service-pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .scope-service-pill code { white-space: nowrap; overflow-wrap: normal; }
   .scope-meta { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
   .badge.scoped { background: var(--accent-soft); color: var(--accent); }
@@ -3926,51 +3930,65 @@ dashboardApp.get("/tenants", async (c) => {
         <h1 style="margin:0;">Scopes</h1>
         <a href="/tenants/new" class="btn">+ New scope</a>
       </div>
-      <p style="color:#687385;margin-top:-8px;">API: <code>GET /api/scopes</code> returns your full wiring as JSON.</p>
+      <p style="color:#687385;margin-top:-8px;">${byScope.size} scope${byScope.size === 1 ? "" : "s"} in this workspace. API: <code>GET /api/scopes</code>.</p>
       <form method="post" action="/tenants/bulk-delete" id="bulkForm">
         <input type="hidden" name="scopes_csv" id="scopesCsv" value="">
         ${byScope.size === 0 ? '<div class="card"><div class="empty">No scopes yet. <a href="/tenants/new">Create your first one</a>.</div></div>' : `
-        <div class="row spread" style="margin-bottom:8px;">
-          <label style="font-size:13px;color:#3c4257;cursor:pointer;"><input type="checkbox" id="selectAll"> select all</label>
-          <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;" id="bulkDelBtn" disabled>🗑 Delete selected (0)</button>
-        </div>
-        ${Array.from(byScope.entries()).map(([scope, conns]) => {
-          const t = tenantBySlug.get(scope);
-          const showName = t && t.displayName && t.displayName !== t.slug;
-          const orphanCount = conns.filter(isOrphan).length;
-          const enabledCount = conns.filter((cn) => cn.enabled).length;
-          const newest = conns.map((cn) => cn.createdAt).sort((a, b) => b.getTime() - a.getTime())[0];
-          return `
-        <div class="card scope-card">
-          <div class="scope-row">
-            <div class="scope-head">
-              <span class="scope-title">
-                ${scope === "(unscoped)"
-                  ? '<span class="badge unscoped">unscoped</span> <span class="scope-title-name">Legacy connections</span>'
-                  : `<input type="checkbox" name="scopes" value="${escapeHtml(scope)}" class="rowCheck" style="margin:0;transform:scale(1.2);">${showName ? `<span class="scope-title-name">${escapeHtml(t!.displayName)}</span>` : ""}<span class="badge scoped">${escapeHtml(scope)}</span>`}
-              </span>
-              <span class="scope-controls">
-                <span class="scope-meta">
-                  <span class="badge ${enabledCount === conns.length ? "ok" : "unscoped"}">${enabledCount}/${conns.length} enabled</span>
-                  ${orphanCount ? `<span class="badge denied" title="Enabled, but no enabled agent has a grant to this connection.">no agent: ${orphanCount}</span>` : ""}
-                  ${newest ? `<code>${newest.toISOString().slice(0, 10)}</code>` : ""}
-                </span>
-                ${scope !== "(unscoped)" ? `<span class="scope-actions"><a href="/tenants/${encodeURIComponent(scope)}/edit" class="btn secondary">+ Add service</a><a href="/tenants/${encodeURIComponent(scope)}/edit" class="btn secondary">✎ Edit</a></span>` : ""}
-              </span>
-            </div>
-            <span class="scope-services">
-              ${conns.length === 0
-                ? `<span style="color:#687385;font-size:13px;">No connections yet</span>`
-                : conns.map((cn) => `
-                  <span class="scope-service-pill" title="${escapeHtml(cn.label)}">
-                    ${providerIcon(cn.provider)}<span>${escapeHtml(providerDisplayName(cn.provider))}</span>
-                  </span>
-                `).join("")}
-            </span>
+        <div class="card scope-list-card">
+          <div class="scope-list-toolbar">
+            <label><input type="checkbox" id="selectAll"> Select all</label>
+            <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;" id="bulkDelBtn" disabled>Delete selected (0)</button>
+          </div>
+          <div class="table-wrap">
+            <table class="scope-table">
+              <thead><tr><th>Scope</th><th>Services</th><th>Status</th><th>Latest</th><th>Action</th></tr></thead>
+              <tbody>
+                ${Array.from(byScope.entries()).map(([scope, conns]) => {
+                  const t = tenantBySlug.get(scope);
+                  const showName = t && t.displayName && t.displayName !== t.slug;
+                  const orphanCount = conns.filter(isOrphan).length;
+                  const enabledCount = conns.filter((cn) => cn.enabled).length;
+                  const newest = conns.map((cn) => cn.createdAt).sort((a, b) => b.getTime() - a.getTime())[0] ?? t?.createdAt;
+                  const visibleConns = conns.slice(0, 6);
+                  const hiddenCount = conns.length - visibleConns.length;
+                  return `
+                <tr>
+                  <td>
+                    <div class="scope-name-cell">
+                      ${scope === "(unscoped)" ? "" : `<input type="checkbox" name="scopes" value="${escapeHtml(scope)}" class="rowCheck" style="margin:0;">`}
+                      <div class="scope-name-main">
+                        <b>${scope === "(unscoped)" ? "Legacy connections" : escapeHtml(showName ? t!.displayName : scope)}</b>
+                        ${scope === "(unscoped)" ? '<span class="badge unscoped">unscoped</span>' : (showName ? `<code>${escapeHtml(scope)}</code>` : "")}
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <span class="scope-services">
+                      ${conns.length === 0
+                        ? `<span style="color:#687385;font-size:13px;">No services</span>`
+                        : visibleConns.map((cn) => `
+                          <span class="scope-service-pill" title="${escapeHtml(cn.label)}">
+                            ${providerIcon(cn.provider)}<span>${escapeHtml(providerDisplayName(cn.provider))}</span>
+                          </span>
+                        `).join("")}
+                      ${hiddenCount > 0 ? `<span class="badge unscoped">+${hiddenCount}</span>` : ""}
+                    </span>
+                  </td>
+                  <td>
+                    <span class="scope-meta">
+                      <span class="badge ${conns.length > 0 && enabledCount === conns.length ? "ok" : "unscoped"}">${enabledCount}/${conns.length}</span>
+                      ${orphanCount ? `<span class="badge denied" title="Enabled, but no enabled agent has a grant to this connection.">no agent ${orphanCount}</span>` : ""}
+                    </span>
+                  </td>
+                  <td>${newest ? `<code>${newest.toISOString().slice(0, 10)}</code>` : '<span style="color:#687385;">-</span>'}</td>
+                  <td>${scope !== "(unscoped)" ? `<span class="scope-actions"><a href="/tenants/${encodeURIComponent(scope)}/edit" class="btn secondary">Add service</a><a href="/tenants/${encodeURIComponent(scope)}/edit" class="btn secondary">Edit</a></span>` : ""}</td>
+                </tr>
+              `;
+                }).join("")}
+              </tbody>
+            </table>
           </div>
         </div>
-      `;
-        }).join("")}
         `}
       </form>
       <script>
