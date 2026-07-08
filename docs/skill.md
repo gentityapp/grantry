@@ -872,6 +872,14 @@ POST /mcp   Authorization: Bearer gn_agt_<token>
   the edit page also renames the scope's display name (slug is immutable)
 - `/agents`, `/agents/new` — agents; `/agents/new` creates a **cross-scope**
   agent by granting selected scope connections
+- `/providers` — provider catalog. Workspace admins can register a **custom
+  provider** for any HTTP API not in the built-in list. The add form posts to
+  **`/providers/custom/new`** (direct link to reach it: `https://app.grantry.ai/providers/custom/new`)
+  and takes: `key` (e.g. `one_webinar`), `label`, API `base_url`, auth style
+  (`bearer` = `Authorization: Bearer <key>`, `api_key` = header, `api_key_query`
+  = query param), `api_key_header` (when not bearer), allowed path prefixes,
+  optional smoke-test path, optional token settings URL. A custom provider
+  exposes generic request tools scoped to its allowed path prefixes.
 - `/api-keys` — mint/disable `gn_adm_` admin API keys (the credential behind
   `provider="grantry"` connections; workspace owner/admin only)
 - `/account` — signed-in identity (email shown in every page's nav), owned
