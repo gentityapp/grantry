@@ -22,6 +22,28 @@ app.use(
   }),
 );
 
+// Inject the "Usage" sidebar tab into dashboard HTML responses without editing
+// the ~400KB single-file ui.ts NAV. Outer middleware: it runs `next()` first,
+// then, only for text/html responses that already render the dashboard nav (the
+// Audit link) and don't yet have a Usage link, inserts the Usage anchor right
+// before Audit. No-op for JSON, redirects, public pages, and the /usage page
+// itself (its own NAV already includes the tab). Purely additive string edit.
+app.use("*", async (c, next) => {
+  await next();
+  const ct = c.res.headers.get("content-type") ?? "";
+  if (!ct.includes("text/html")) return;
+  const body = await c.res.text();
+  let out = body;
+  if (body.includes('href="/audit"') && !body.includes('href="/usage"')) {
+    const active = c.req.path === "/usage" ? "active" : "";
+    const link = `<a href="/usage" class="${active}">Usage</a>\n    `;
+    out = body.replace('<a href="/audit"', link + '<a href="/audit"');
+  }
+  const headers = new Headers(c.res.headers);
+  headers.delete("content-length");
+  c.res = new Response(out, { status: c.res.status, statusText: c.res.statusText, headers });
+});
+
 // Agent-binding gate for the MCP OAuth authorize flow. Registered before the
 // better-auth mount so it sees the request first; returning null passes the
 // request through to better-auth unchanged.
