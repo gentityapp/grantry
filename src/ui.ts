@@ -389,18 +389,6 @@ const CSS = `
     --ok: var(--success); --ok-soft: var(--success-soft); --danger: var(--danger-token); --danger-soft: var(--danger-soft-token);
     --sidebar-w: 256px;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --neutral-primary-soft: #111116; --neutral-primary: #0d0d12; --neutral-secondary-soft: #111116; --neutral-secondary-medium: #1a1a21; --neutral-secondary-strong: #2c2c35; --neutral-tertiary: #1a1a21; --neutral-quaternary: #2c2c35;
-      --brand-softer: #1a0f36; --brand-soft: #2d1b69; --brand: #7c5cff; --brand-medium: #2d1b69; --brand-strong: #6c47ff;
-      --success-soft: #052e1c; --success: #10b981; --success-medium: #064e3b; --success-strong: #059669;
-      --danger-soft-token: #450a0a; --danger-token: #ef4444; --danger-medium: #7f1d1d; --danger-strong: #dc2626;
-      --warning-soft: #451a03; --warning: #f59e0b; --warning-medium: #78350f; --warning-strong: #d97706;
-      --heading: #f5f5f7; --body: #9394a1; --body-subtle: #9394a1; --fg-brand: #a78bff; --fg-brand-strong: #d4c4ff; --fg-success-strong: #10b981; --fg-danger-strong: #fca5a5; --fg-warning: #fcd34d; --fg-disabled: #6b7280;
-      --border-default: #1f1f25; --border-default-medium: #2c2c35; --border-default-strong: #3f3f48; --border-brand: #a78bff; --border-brand-subtle: #2d1b69; --border-success-subtle: #064e3b; --border-danger-subtle: #7f1d1d; --border-warning-subtle: #78350f;
-      --disabled: #1a1a21; --dark-strong: #2c2c35; --color-1-400: rgba(255,255,255,0.08); --color-1-700: rgba(0,0,0,0.15);
-    }
-  }
   * { box-sizing: border-box; }
   body { font-family: "Lato", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--body); margin: 0; line-height: 1.55; -webkit-font-smoothing: antialiased; letter-spacing: 0; }
   a { color: var(--accent); text-decoration: none; }
@@ -614,9 +602,8 @@ const CSS = `
 `;
 
 // Favicon: same brand mark as the sidebar, inlined as an SVG data URI so it
-// ships on every page (including error pages) with no extra route. currentColor
-// flips with the OS theme so the mark stays visible on light and dark tab bars.
-const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 176 176"><style>svg{color:#0a2540}@media(prefers-color-scheme:dark){svg{color:#fff}}</style><circle cx="88" cy="88" r="76" stroke="currentColor" stroke-width="24" fill="none"/><line x1="100" y1="88" x2="100" y2="169" stroke="currentColor" stroke-width="24"/><line x1="76" y1="7" x2="76" y2="88" stroke="currentColor" stroke-width="24"/><rect x="64" y="75" width="48" height="24" fill="currentColor"/></svg>`;
+// ships on every page (including error pages) with no extra route.
+const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 176 176"><style>svg{color:#0a2540}</style><circle cx="88" cy="88" r="76" stroke="currentColor" stroke-width="24" fill="none"/><line x1="100" y1="88" x2="100" y2="169" stroke="currentColor" stroke-width="24"/><line x1="76" y1="7" x2="76" y2="88" stroke="currentColor" stroke-width="24"/><rect x="64" y="75" width="48" height="24" fill="currentColor"/></svg>`;
 const FAVICON = `<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,${encodeURIComponent(FAVICON_SVG)}">`;
 
 const NAV = (current: string, email?: string) => `
