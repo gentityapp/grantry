@@ -4046,16 +4046,15 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
       <h2 id="codex-mcp">Codex MCP</h2>
       <div class="card">
         <p style="font-size:13px;color:#687385;margin-top:0;">
-          Connect this scope to Codex as one MCP server. The generated config is locked to <code>${scope}</code>, so Codex cannot cross into another scope through this entry.
+          Manage the internal tokens that can access this scope through MCP.
         </p>
         ${codexAgents.length === 0 ? `
           <p>No Codex MCP token exists for this scope yet.</p>
           <form method="post" action="/tenants/${scope}/codex-mcp/create">
-            <button type="submit">Create Codex MCP config</button>
+            <button type="submit">Create Codex MCP token</button>
           </form>
         ` : `
-          <p>${codexAgents.length} token${codexAgents.length === 1 ? "" : "s"} can access this scope. Use the first one for the default Codex config.</p>
-          ${mcpConfigBlock(mcpOrigin(c), codexAgents[0].name, `${codexAgents[0].tokenPrefix}...ROTATE_TO_VIEW_FULL_TOKEN`, false, scope)}
+          <p>${codexAgents.length} token${codexAgents.length === 1 ? "" : "s"} can access this scope.</p>
           <div class="table-wrap">
             <table>
               <thead><tr><th>Internal token</th><th>Status</th><th>Last used</th><th>Created</th><th>Action</th></tr></thead>
@@ -4175,7 +4174,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
 
       <h2>Advanced: additional agent token</h2>
       <div class="card">
-        <p class="field-hint" style="margin-top:0;">Most users should use <b>Codex MCP</b> above. This creates an extra internal agent token with grants to this scope's enabled connections.</p>
+        <p class="field-hint" style="margin-top:0;">Create an extra internal agent token with grants to this scope's enabled connections.</p>
         <form method="post" action="/tenants/${scope}/agents/new" id="addAgentForm">
           <div class="field">
             <label for="agent">Agent name</label>
