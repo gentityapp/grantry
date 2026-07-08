@@ -165,6 +165,9 @@ function patSuccessResponse(call: FetchCall) {
   if (url === "https://api.cloudflare.com/client/v4/user/tokens/verify") {
     return jsonResponse({ success: true, result: { id: "cf-token", status: "active" } });
   }
+  if (url === "https://api.cloudsign.jp/token") {
+    return jsonResponse({ access_token: "cloudsign-access-token", token_type: "Bearer", expires_in: 3600 });
+  }
   if (url.startsWith("https://api.godaddy.com/v1/domains/available")) {
     return jsonResponse({ available: true, domain: "grantry-availability-check.com" });
   }

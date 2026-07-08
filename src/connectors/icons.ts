@@ -99,6 +99,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   heyreach: "#6A5CFF",
   smartlead: "#4F46E5", // Smartlead indigo
   chatwork: "#EA3C3C",
+  cloudsign: "#0087CB", // CloudSign blue
   channel_talk: "#3B5AFE", // Channel Talk blue
   channel_talk_documents: "#3B5AFE", // Channel Talk blue (Documents)
   yahoo_ads: "#FF0033", // Yahoo! JAPAN red

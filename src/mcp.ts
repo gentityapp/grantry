@@ -33,6 +33,7 @@ import { callChatworkTool } from "./connectors/chatwork.js";
 import { callChannelTalkTool, callChannelTalkDocumentsTool } from "./connectors/channel_talk.js";
 import { callRailwayTool } from "./connectors/railway.js";
 import { callResendTool } from "./connectors/resend.js";
+import { callCloudSignTool } from "./connectors/cloudsign.js";
 import { callSlackTool } from "./connectors/slack.js";
 import { callFreeeTool } from "./connectors/freee.js";
 import { callMoneyForwardTool } from "./connectors/moneyforward.js";
@@ -2917,6 +2918,7 @@ async function dispatchProviderTool(
   }
   if (provider === "google_maps") return callGoogleMapsTool(toolName, args, token);
   if (provider === "resend") return callResendTool(toolName, args, token);
+  if (provider === "cloudsign") return callCloudSignTool(toolName, args, token);
   if (provider === "slack") return callSlackTool(toolName, args, token);
   if (provider === "freee") return callFreeeTool(toolName, args, token);
   if (provider === "moneyforward") return callMoneyForwardTool(toolName, args, token);

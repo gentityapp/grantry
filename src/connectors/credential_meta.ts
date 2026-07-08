@@ -1,5 +1,6 @@
 import { callGenericCheckConnection, callGenericListCapabilities, classifyProviderError } from "./generic_request.js";
 import { getProvider } from "./registry.js";
+import { getAccessToken, parseCloudSignCredential } from "./cloudsign.js";
 
 const META_TIMEOUT_MS = 8_000;
 
@@ -322,6 +323,27 @@ export async function inspectCredential(provider: string, authType: string, toke
         notes: [
           "Microsoft Clarity Data Export API tokens are generated per project from Settings > Data Export.",
           "Clarity does not expose a reliable non-consuming token introspection endpoint here; the token is validated on first get_live_insights call.",
+        ],
+        checkedAt,
+      };
+    }
+
+    if (provider === "cloudsign") {
+      // Validate the client_id by performing the token exchange (non-consuming).
+      const cred = parseCloudSignCredential(token);
+      try {
+        await getAccessToken(cred);
+      } catch (e: any) {
+        return { provider, authType, status: "error", checkedAt, error: `CloudSign client_id check failed: ${String(e?.message ?? e).slice(0, 300)}` };
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: { environment: cred.environment },
+        notes: [
+          "CloudSign credential is a client_id; grantry exchanges it for a ~1h access token per call and caches it.",
+          "The client_id grants organization-wide API access — CloudSign does not scope it further.",
         ],
         checkedAt,
       };
