@@ -37,7 +37,13 @@ export const ADMIN_TOOLS = [
   "grantry/grant_scope",
   "grantry/revoke_scope",
   "grantry/create_connection",
+  "grantry/get_connect_url",
 ] as const;
+
+/** Public dashboard origin used to build human-facing connect links. */
+function dashboardOrigin(): string {
+  return String(process.env.BETTER_AUTH_URL || process.env.APP_ORIGIN || "https://app.grantry.ai").replace(/\/+$/, "");
+}
 
 export type AdminToolName = (typeof ADMIN_TOOLS)[number];
 
@@ -390,6 +396,52 @@ export async function callAdminTool(
     return { payload, summary: `created ${provider} (${authType}) connection at scope ${scope}` };
   }
 
+  if (toolName === "grantry/get_connect_url") {
+    const provider = requireString(args, "provider").toLowerCase();
+    const scope = requireString(args, "target_scope").toLowerCase();
+    if (!SLUG_RE.test(scope)) throw new Error(`invalid scope: must match ${SLUG_RE}`);
+    const origin = dashboardOrigin();
+
+    // grantry admin keys are minted + connected on the dashboard only.
+    if (provider === "grantry") {
+      return {
+        payload: {
+          provider,
+          scope,
+          url: `${origin}/api-keys`,
+          auth: "dashboard-only",
+          instructions: `Open ${origin}/api-keys, mint a gn_adm_ admin key, then add it as a connection at scope "${scope}" from the dashboard. grantry admin access is never wired up over MCP.`,
+        },
+        summary: `connect url (grantry admin) for scope ${scope}`,
+      };
+    }
+
+    const providerDef = await getProviderForWorkspace(provider, ctx.workspaceId);
+    if (!providerDef || providerDef.implemented === false) throw new Error(`provider not implemented: ${provider}`);
+
+    const url = `${origin}/tenants/${encodeURIComponent(scope)}/connect/${encodeURIComponent(provider)}`;
+    const supportsOauth = providerDef.authTypes.includes("oauth");
+    const supportsPat = providerDef.authTypes.includes("pat");
+    const primary = supportsPat ? "paste-credential" : "oauth-consent";
+    const instructions = supportsPat
+      ? `Send this URL to a human. They sign in to grantry (if needed), paste the ${providerDef.label} credential, and save. The connection is created at scope "${scope}" and auto-granted to that scope's agents.${supportsOauth ? ` (This provider also supports OAuth — append ?method=oauth to the URL to authorize instead of pasting.)` : ""}`
+      : `Send this URL to a human. They sign in to grantry (if needed) and click through the ${providerDef.label} authorization. On success the connection is created at scope "${scope}" and granted to that scope's agents.`;
+
+    return {
+      payload: {
+        provider,
+        scope,
+        url,
+        auth: primary,
+        auth_types: providerDef.authTypes,
+        token_url: providerDef.tokenUrl ?? null,
+        help_text: providerDef.helpText,
+        instructions,
+      },
+      summary: `connect url for ${provider} at scope ${scope}`,
+    };
+  }
+
   throw new Error(`Unknown admin tool: ${toolName}`);
 }
 
@@ -483,6 +535,15 @@ export function adminToolDescriptor(toolName: AdminToolName): { description: str
           label: { type: "string", description: "Optional display label." },
         },
         required: ["provider", "target_scope", "credential"],
+      };
+    case "grantry/get_connect_url":
+      return {
+        description: "grantry admin: get a human-facing dashboard URL to connect a provider at a scope. Hand the URL to a person who pastes the credential (PAT) or clicks through consent (OAuth); the connection is then created and auto-granted to the scope's agents. Use this instead of asking a human to paste secrets into chat.",
+        properties: {
+          provider: { type: "string", description: "Provider key, e.g. 'cloudsign', 'github' (see grantry_get_providers)." },
+          target_scope: { type: "string", description: "Scope the connection will be created at. (Named target_scope because 'scope' selects the admin connection itself.)" },
+        },
+        required: ["provider", "target_scope"],
       };
   }
 }

@@ -3965,6 +3965,100 @@ dashboardApp.get("/tenants", async (c) => {
   `);
 });
 
+// --- /tenants/:scope/connect/:provider — focused single-provider connect page ---
+// A deep link an agent can hand a human: it pre-selects the scope + provider so
+// the human only has to paste the credential (PAT) or click through consent
+// (OAuth). Reuses the same add_service POST, so the connection is created AND
+// auto-granted to the scope's agents exactly like the full edit page.
+dashboardApp.get("/tenants/:scope/connect/:provider", async (c) => {
+  const scope = c.req.param("scope");
+  const provider = c.req.param("provider");
+  const selfPath = `/tenants/${encodeURIComponent(scope)}/connect/${encodeURIComponent(provider)}`;
+
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect(`/login?next=${encodeURIComponent(selfPath)}`);
+
+  const tenantRow = await prisma.tenant.findUnique({
+    where: { ownerId_slug: { ownerId: user.id, slug: scope } },
+  });
+  const wsId = tenantRow?.workspaceId ?? (await getActiveWorkspaceId(c));
+
+  const providerDef = await getProviderForWorkspace(provider, wsId);
+  const connectShell = (title: string, inner: string, status = 200) =>
+    c.html(`
+      <!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)} — grantry</title>
+      ${FAVICON}<style>${CSS}</style></head><body>
+      ${NAV("tenants", user?.email)}
+      <main>${inner}</main>
+      </body></html>`, status as any);
+
+  if (!providerDef) {
+    return connectShell("Unknown provider", `<h1>Unknown provider <code>${escapeHtml(provider)}</code></h1><p><a href="/tenants/${encodeURIComponent(scope)}/edit">← Back to scope</a></p>`, 404);
+  }
+  if (providerDef.implemented === false) {
+    return connectShell("Provider not available", `<h1>${escapeHtml(providerDef.label)} is not available yet</h1><p><a href="/tenants/${encodeURIComponent(scope)}/edit">← Back to scope</a></p>`, 400);
+  }
+  if (!(await workspaceProviderEnabled(wsId, provider))) {
+    return connectShell("Provider disabled", `<h1>${escapeHtml(providerDef.label)} is disabled for this workspace</h1><p>Enable it from <a href="/providers">Providers</a> first.</p>`, 400);
+  }
+
+  const supportsOauth = providerDef.authTypes.includes("oauth");
+  const supportsPat = providerDef.authTypes.includes("pat");
+  const requested = String(c.req.query("method") ?? "").trim();
+  const useOauth = requested === "oauth" || (!requested && supportsOauth && !supportsPat);
+
+  // OAuth path: hand straight off to the existing consent flow.
+  if (useOauth) {
+    if (!supportsOauth) {
+      return connectShell("OAuth unavailable", `<h1>${escapeHtml(providerDef.label)} does not support OAuth</h1><p><a href="${selfPath}">← Paste a token instead</a></p>`, 400);
+    }
+    return c.redirect(`/oauth/${encodeURIComponent(provider)}/start?tenant=${encodeURIComponent(scope)}`);
+  }
+
+  // PAT path: minimal paste form that posts to the shared add_service handler.
+  const fields = providerDef.credentialFields;
+  const credentialInputs = fields && fields.length
+    ? fields.map((f) => `
+        <div class="field">
+          <label for="cf_${escapeHtml(f.key)}">${escapeHtml(f.label)}${f.required ? "" : " (optional)"}</label>
+          <input type="${f.secret ? "password" : "text"}" name="${escapeHtml(f.key)}" id="cf_${escapeHtml(f.key)}" autocomplete="off"${f.required ? " required" : ""} placeholder="${escapeHtml(f.placeholder ?? "")}">
+          ${f.hint ? `<div class="field-hint">${escapeHtml(f.hint)}</div>` : ""}
+        </div>`).join("")
+    : `<div class="field">
+         <label for="credential">Credential</label>
+         <textarea name="credential" id="credential" rows="3" required></textarea>
+       </div>`;
+
+  const tokenLink = providerDef.tokenUrl
+    ? `<p style="margin-top:6px;"><a href="${escapeHtml(providerDef.tokenUrl)}" target="_blank" rel="noopener" style="font-size:13px;">🔗 Get a token / credential here →</a></p>`
+    : "";
+  const oauthSwitch = supportsOauth
+    ? `<p class="field-hint" style="margin-top:14px;">Prefer to authorize instead? <a href="${selfPath}?method=oauth">Connect ${escapeHtml(providerDef.label)} with OAuth →</a></p>`
+    : "";
+
+  return connectShell(`Connect ${providerDef.label}`, `
+    <h1 style="display:flex;align-items:center;gap:10px;">${providerIcon(provider, 28)} Connect ${escapeHtml(providerDef.label)}</h1>
+    <p style="color:#687385;margin-top:-10px;margin-bottom:20px;">
+      This connects <code>${escapeHtml(provider)}</code> to scope <code>${escapeHtml(scope)}</code> and grants it to that scope's agents automatically.
+    </p>
+    <form method="post" action="/tenants/${encodeURIComponent(scope)}/edit">
+      <input type="hidden" name="_action" value="add_service">
+      <input type="hidden" name="provider" value="${escapeHtml(provider)}">
+      <input type="hidden" name="auth_method" value="pat">
+      <div class="step-card">
+        <p class="field-hint" style="margin-top:0;">${escapeHtml(providerDef.helpText)}</p>
+        ${credentialInputs}
+        ${tokenLink}
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button type="submit">Connect</button>
+        <a class="btn secondary" href="/tenants/${encodeURIComponent(scope)}/edit">Cancel</a>
+      </div>
+    </form>
+    ${oauthSwitch}
+  `);
+});
+
 // --- /tenants/:scope/edit (edit settings + add services) ---
 dashboardApp.get("/tenants/:scope/edit", async (c) => {
   const user = await getSessionUser(c);

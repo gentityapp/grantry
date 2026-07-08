@@ -137,6 +137,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "grantry/grant_scope",
       "grantry/revoke_scope",
       "grantry/create_connection",
+      "grantry/get_connect_url",
     ],
   },
   notion: {
