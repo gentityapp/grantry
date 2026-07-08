@@ -424,18 +424,38 @@ const CSS = `
   .conn-auth { flex-shrink: 0; min-width: 66px; text-align: center; }
   .conn-label { flex: 1; min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .conn-meta { display: flex; align-items: center; gap: 10px; margin-left: auto; white-space: nowrap; }
-  .scope-list-card { padding: 0; overflow: hidden; }
-  .scope-list-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
-  .scope-list-toolbar label { font-size: 13px; color: var(--ink-2); cursor: pointer; }
-  .scope-table th, .scope-table td { padding: 10px 12px; }
+  .scope-page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 18px; }
+  .scope-page-header h1 { margin: 0 0 8px; }
+  .scope-page-kicker { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--accent); font-size: 12px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
+  .scope-page-copy { color: var(--muted); margin: 0; max-width: 68ch; font-size: 14px; line-height: 1.5; }
+  .scope-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .scope-summary-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow-sm); }
+  .scope-summary-card span { display: block; color: var(--muted); font-size: 12px; font-weight: 600; }
+  .scope-summary-card strong { display: block; color: var(--ink); font-size: 22px; line-height: 1.2; margin-top: 4px; }
+  .scope-list-card { padding: 0; overflow: hidden; border-radius: 12px; box-shadow: var(--shadow-sm); }
+  .scope-list-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--surface); }
+  .scope-list-toolbar label { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: 13px; font-weight: 600; color: var(--ink-2); cursor: pointer; }
+  .scope-table { min-width: 920px; }
+  .scope-table thead th { padding: 12px 16px; background: var(--bg); color: var(--muted); font-size: 12px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
+  .scope-table tbody th { padding: 14px 16px; background: var(--surface); color: var(--ink); font-weight: 600; text-transform: none; letter-spacing: 0; }
+  .scope-table td { padding: 14px 16px; }
+  .scope-table tbody tr { background: var(--surface); transition: background .15s ease; }
+  .scope-table tbody tr:hover { background: var(--bg); }
+  .scope-table tbody tr:hover th { background: var(--bg); }
   .scope-table tr:last-child td { border-bottom: 0; }
-  .scope-name-cell { display: flex; align-items: center; gap: 8px; min-width: 180px; }
+  .scope-table td:first-child, .scope-table th:first-child { padding-left: 16px; }
+  .scope-table td:last-child, .scope-table th:last-child { padding-right: 16px; }
+  .scope-table .badge { border: 1px solid transparent; border-radius: 8px; }
+  .scope-table .badge.ok { border-color: var(--border); }
+  .scope-table .badge.denied { border-color: var(--border); }
+  .scope-table .badge.unscoped { border-color: var(--border); }
+  .scope-name-cell { display: flex; align-items: center; gap: 10px; min-width: 210px; }
   .scope-name-main { min-width: 0; }
   .scope-name-main b { display: block; font-size: 14px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .scope-name-main code { color: var(--muted); font-size: 12px; }
   .scope-actions { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
   .scope-actions .btn { font-size: 12px; padding: 4px 10px; }
-  .scope-services { display: flex; align-items: center; gap: 6px; min-width: 220px; max-width: 520px; flex-wrap: wrap; }
+  .scope-services { display: flex; align-items: center; gap: 6px; min-width: 240px; max-width: 520px; flex-wrap: wrap; }
   .scope-service-pill { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 160px; padding: 3px 7px; background: var(--bg); border-radius: 6px; color: var(--ink-2); font-size: 13px; }
   .scope-service-pill span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .scope-service-pill code { white-space: nowrap; overflow-wrap: normal; }
@@ -552,6 +572,10 @@ const CSS = `
     h1 { font-size: 24px; }
     .card { padding: 16px; }
     th, td { padding: 9px 10px; }
+    .scope-page-header { flex-direction: column; gap: 12px; }
+    .scope-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .scope-list-card { padding: 0; }
+    .scope-table { min-width: 820px; }
     .connection-table { min-width: 860px; }
     .connection-health-table { min-width: 1040px; }
     .public-topbar { align-items: flex-start; flex-direction: column; }
@@ -3920,17 +3944,30 @@ dashboardApp.get("/tenants", async (c) => {
     byScope.get(key)!.push(conn);
   }
   const tenantBySlug = new Map(tenants.map((t) => [t.slug, t]));
+  const scopeCount = byScope.size;
+  const serviceCount = connections.length;
+  const enabledServiceCount = connections.filter((cn) => cn.enabled).length;
+  const orphanServiceCount = connections.filter(isOrphan).length;
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Scopes — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
-      <div class="row spread" style="margin-bottom:16px;">
-        <h1 style="margin:0;">Scopes</h1>
+      <div class="scope-page-header">
+        <div>
+          <div class="scope-page-kicker">Workspace wiring</div>
+          <h1>Scopes</h1>
+          <p class="scope-page-copy">Manage each scope's connected services and agent-ready status. API wiring is available at <code>GET /api/scopes</code>.</p>
+        </div>
         <a href="/tenants/new" class="btn">+ New scope</a>
       </div>
-      <p style="color:#687385;margin-top:-8px;">${byScope.size} scope${byScope.size === 1 ? "" : "s"} in this workspace. API: <code>GET /api/scopes</code>.</p>
+      <div class="scope-summary-grid">
+        <div class="scope-summary-card"><span>Scopes</span><strong>${scopeCount}</strong></div>
+        <div class="scope-summary-card"><span>Services</span><strong>${serviceCount}</strong></div>
+        <div class="scope-summary-card"><span>Enabled services</span><strong>${enabledServiceCount}</strong></div>
+        <div class="scope-summary-card"><span>Needs agent grant</span><strong>${orphanServiceCount}</strong></div>
+      </div>
       <form method="post" action="/tenants/bulk-delete" id="bulkForm">
         <input type="hidden" name="scopes_csv" id="scopesCsv" value="">
         ${byScope.size === 0 ? '<div class="card"><div class="empty">No scopes yet. <a href="/tenants/new">Create your first one</a>.</div></div>' : `
@@ -3941,7 +3978,7 @@ dashboardApp.get("/tenants", async (c) => {
           </div>
           <div class="table-wrap">
             <table class="scope-table">
-              <thead><tr><th>Scope</th><th>Services</th><th>Status</th><th>Latest</th><th>Action</th></tr></thead>
+              <thead><tr><th scope="col">Scope</th><th scope="col">Services</th><th scope="col">Status</th><th scope="col">Latest</th><th scope="col">Action</th></tr></thead>
               <tbody>
                 ${Array.from(byScope.entries()).map(([scope, conns]) => {
                   const t = tenantBySlug.get(scope);
@@ -3953,7 +3990,7 @@ dashboardApp.get("/tenants", async (c) => {
                   const hiddenCount = conns.length - visibleConns.length;
                   return `
                 <tr>
-                  <td>
+                  <th scope="row">
                     <div class="scope-name-cell">
                       ${scope === "(unscoped)" ? "" : `<input type="checkbox" name="scopes" value="${escapeHtml(scope)}" class="rowCheck" style="margin:0;">`}
                       <div class="scope-name-main">
@@ -3961,7 +3998,7 @@ dashboardApp.get("/tenants", async (c) => {
                         ${scope === "(unscoped)" ? '<span class="badge unscoped">unscoped</span>' : (showName ? `<code>${escapeHtml(scope)}</code>` : "")}
                       </div>
                     </div>
-                  </td>
+                  </th>
                   <td>
                     <span class="scope-services">
                       ${conns.length === 0
@@ -3976,7 +4013,7 @@ dashboardApp.get("/tenants", async (c) => {
                   </td>
                   <td>
                     <span class="scope-meta">
-                      <span class="badge ${conns.length > 0 && enabledCount === conns.length ? "ok" : "unscoped"}">${enabledCount}/${conns.length}</span>
+                      <span class="badge ${conns.length > 0 && enabledCount === conns.length ? "ok" : "unscoped"}">${enabledCount}/${conns.length} enabled</span>
                       ${orphanCount ? `<span class="badge denied" title="Enabled, but no enabled agent has a grant to this connection.">no agent ${orphanCount}</span>` : ""}
                     </span>
                   </td>
@@ -3999,7 +4036,7 @@ dashboardApp.get("/tenants", async (c) => {
         function updateBtn() {
           const checked = Array.from(document.querySelectorAll('.rowCheck:checked')).map(c => c.value);
           if (csv) csv.value = checked.join(',');
-          if (btn) { btn.disabled = checked.length === 0; btn.textContent = '🗑 Delete selected (' + checked.length + ')'; }
+          if (btn) { btn.disabled = checked.length === 0; btn.textContent = 'Delete selected (' + checked.length + ')'; }
         }
         if (selAll) selAll.addEventListener('change', () => {
           checks.forEach(c => c.checked = selAll.checked);
