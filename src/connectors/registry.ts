@@ -1058,9 +1058,13 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "supabase",
     label: "Supabase",
     authTypes: ["pat"],
-    helpText: "Paste your Supabase service_role key (starts with eyJ) from Project Settings > API. The project URL is derived from the key, so you only need the key. The service role key bypasses RLS — restrict this connection to a dedicated data store.",
-    tokenUrl: "https://supabase.com/dashboard/project/_/settings/api",
+    helpText: "Enter your Supabase project URL and a secret key (new sb_secret_… or a legacy service_role JWT). Find both in Project Settings > API. The key bypasses RLS — restrict this connection to a dedicated data store.",
+    tokenUrl: "https://supabase.com/dashboard/project/_/settings/api-keys",
     tools: ["supabase/request", "supabase/check_connection", "supabase/list_capabilities"],
+    credentialFields: [
+      { key: "project_url", label: "Project URL", required: true, placeholder: "https://xxxx.supabase.co" },
+      { key: "secret_key", label: "Secret key", required: true, secret: true, placeholder: "sb_secret_… or eyJ…" },
+    ],
     implemented: true,
   },
   jira: {

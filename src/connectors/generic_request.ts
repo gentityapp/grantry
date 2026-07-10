@@ -95,7 +95,7 @@ function credentialField(credential: string, keys: string[]) {
 // Supabase legacy service_role/anon keys are JWTs whose payload carries the
 // project ref, so the REST host can be derived without a separate URL field.
 function supabaseKey(credential: string) {
-  return credentialField(credential, ["service_role_key", "service_role", "key", "apikey", "api_key"]) || credential.trim();
+  return credentialField(credential, ["secret_key", "service_role_key", "service_role", "key", "apikey", "api_key"]) || credential.trim();
 }
 
 function supabaseRefFromKey(credential: string) {
@@ -235,11 +235,14 @@ function applyProviderSpecificAuth(provider: string, credential: string, headers
   }
   if (provider === "supabase") {
     const key = supabaseKey(credential);
-    if (!key) throw new Error("supabase/request requires a service_role key");
-    // Supabase gateway requires the apikey header; the key is a role-bearing JWT,
-    // so the same value in Authorization: Bearer grants that role (service_role).
+    if (!key) throw new Error("supabase/request requires a secret key");
+    // The Supabase gateway authenticates on the apikey header. Legacy anon/
+    // service_role keys are JWTs and PostgREST also accepts them as a Bearer,
+    // but new sb_secret_/sb_publishable_ keys are NOT JWTs — sending one as a
+    // Bearer makes PostgREST fail JWT parsing (401), so only set Authorization
+    // for JWT-style keys.
     headers.apikey = key;
-    headers.Authorization = `Bearer ${key}`;
+    if (key.startsWith("eyJ")) headers.Authorization = `Bearer ${key}`;
     return true;
   }
   if (provider === "linear") {
