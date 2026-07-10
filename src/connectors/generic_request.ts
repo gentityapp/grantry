@@ -92,6 +92,24 @@ function credentialField(credential: string, keys: string[]) {
   return "";
 }
 
+// Supabase legacy service_role/anon keys are JWTs whose payload carries the
+// project ref, so the REST host can be derived without a separate URL field.
+function supabaseKey(credential: string) {
+  return credentialField(credential, ["service_role_key", "service_role", "key", "apikey", "api_key"]) || credential.trim();
+}
+
+function supabaseRefFromKey(credential: string) {
+  const key = supabaseKey(credential);
+  const payload = key.split(".")[1];
+  if (!payload) return "";
+  try {
+    const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    return String(decoded?.ref ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
 function resolveBaseUrl(provider: string, manifest: GenericManifest, credential: string, baseUrlKeyValue?: unknown) {
   const baseUrlKey = String(baseUrlKeyValue ?? "").trim();
   if (baseUrlKey) {
@@ -135,9 +153,9 @@ function resolveBaseUrl(provider: string, manifest: GenericManifest, credential:
   if (manifest.baseUrl === "credential.supabase_rest") {
     const projectUrl = normalizeBaseUrl(credentialField(credential, ["project_url", "projectUrl", "url"]));
     if (projectUrl) return `${projectUrl}/rest/v1`;
-    const ref = credentialField(credential, ["ref", "project_ref", "projectRef"]);
+    const ref = credentialField(credential, ["ref", "project_ref", "projectRef"]) || supabaseRefFromKey(credential);
     if (ref) return `https://${ref}.supabase.co/rest/v1`;
-    throw new Error(`${provider}/request requires a JSON credential with project_url (or ref)`);
+    throw new Error(`${provider}/request requires a JSON credential with project_url (or a service_role key that encodes its project ref)`);
   }
   if (manifest.baseUrl === "credential.snowflake_api_v2") {
     const account = credentialField(credential, ["account"]);
@@ -216,8 +234,8 @@ function applyProviderSpecificAuth(provider: string, credential: string, headers
     return true;
   }
   if (provider === "supabase") {
-    const key = credentialField(credential, ["service_role_key", "service_role", "key", "apikey", "api_key"]);
-    if (!key) throw new Error('supabase/request requires JSON credential {"project_url","service_role_key"}');
+    const key = supabaseKey(credential);
+    if (!key) throw new Error("supabase/request requires a service_role key");
     // Supabase gateway requires the apikey header; the key is a role-bearing JWT,
     // so the same value in Authorization: Bearer grants that role (service_role).
     headers.apikey = key;

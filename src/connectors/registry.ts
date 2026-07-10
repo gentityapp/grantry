@@ -762,19 +762,6 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
-  granola: {
-    key: "granola",
-    label: "Granola",
-    authTypes: ["pat"],
-    helpText: "Paste a Granola API key (starts with grn_). Create one in the Granola desktop app: Settings > Connectors > API keys > Create new key, then select note access scopes. Workspace admins can create workspace keys via Settings > Workspace > General. The key is sent as Authorization: Bearer. Read-only: the API returns only notes that already have a generated AI summary and transcript.",
-    tokenUrl: "https://docs.granola.ai/api-reference/list-notes",
-    tools: [
-      "granola/list_notes",
-      "granola/get_note",
-      "granola/list_folders",
-    ],
-    implemented: true,
-  },
   cloudsign: {
     key: "cloudsign",
     label: "CloudSign",
@@ -1071,13 +1058,9 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "supabase",
     label: "Supabase",
     authTypes: ["pat"],
-    helpText: "Enter your Supabase project URL and service role key. Find them in Project Settings > API. The service role key bypasses RLS — restrict this connection to a dedicated data store.",
+    helpText: "Paste your Supabase service_role key (starts with eyJ) from Project Settings > API. The project URL is derived from the key, so you only need the key. The service role key bypasses RLS — restrict this connection to a dedicated data store.",
     tokenUrl: "https://supabase.com/dashboard/project/_/settings/api",
     tools: ["supabase/request", "supabase/check_connection", "supabase/list_capabilities"],
-    credentialFields: [
-      { key: "project_url", label: "Project URL", required: true, placeholder: "https://xxxx.supabase.co" },
-      { key: "service_role_key", label: "Service role key", required: true, secret: true, placeholder: "eyJhbGci..." },
-    ],
     implemented: true,
   },
   jira: {
@@ -1600,12 +1583,6 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
     smokeTests: [{ id: "domains", method: "GET", path: "/domains" }],
-  },
-  granola: {
-    baseUrl: "https://public-api.granola.ai",
-    defaultMethods: ["GET"],
-    allowedPathPrefixes: ["/v1/"],
-    smokeTests: [{ id: "folders", method: "GET", path: "/v1/folders", query: { page_size: 1 } }],
   },
   slack: {
     baseUrl: "https://slack.com/api",
