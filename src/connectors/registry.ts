@@ -1067,6 +1067,19 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  supabase: {
+    key: "supabase",
+    label: "Supabase",
+    authTypes: ["pat"],
+    helpText: "Enter your Supabase project URL and service role key. Find them in Project Settings > API. The service role key bypasses RLS — restrict this connection to a dedicated data store.",
+    tokenUrl: "https://supabase.com/dashboard/project/_/settings/api",
+    tools: ["supabase/request", "supabase/check_connection", "supabase/list_capabilities"],
+    credentialFields: [
+      { key: "project_url", label: "Project URL", required: true, placeholder: "https://xxxx.supabase.co" },
+      { key: "service_role_key", label: "Service role key", required: true, secret: true, placeholder: "eyJhbGci..." },
+    ],
+    implemented: true,
+  },
   jira: {
     key: "jira",
     label: "Jira",
@@ -1683,6 +1696,14 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
     smokeTests: [{ id: "me", method: "GET", path: "/users/me", query: { context: "edit" } }],
+  },
+  supabase: {
+    baseUrl: "credential.supabase_rest",
+    defaultMethods: ["GET", "POST", "PATCH", "DELETE"],
+    allowedPathPrefixes: ["/"],
+    // PostgREST root returns the OpenAPI schema (200) regardless of which
+    // tables exist, so this works before any table is created.
+    smokeTests: [{ id: "root", method: "GET", path: "/" }],
   },
   shopify: {
     baseUrl: "credential.shopify_admin",

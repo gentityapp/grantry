@@ -132,6 +132,13 @@ function resolveBaseUrl(provider: string, manifest: GenericManifest, credential:
     if (!site) throw new Error(`${provider}/request requires a JSON credential with site`);
     return `${site}/rest/api/3`;
   }
+  if (manifest.baseUrl === "credential.supabase_rest") {
+    const projectUrl = normalizeBaseUrl(credentialField(credential, ["project_url", "projectUrl", "url"]));
+    if (projectUrl) return `${projectUrl}/rest/v1`;
+    const ref = credentialField(credential, ["ref", "project_ref", "projectRef"]);
+    if (ref) return `https://${ref}.supabase.co/rest/v1`;
+    throw new Error(`${provider}/request requires a JSON credential with project_url (or ref)`);
+  }
   if (manifest.baseUrl === "credential.snowflake_api_v2") {
     const account = credentialField(credential, ["account"]);
     if (!account) throw new Error(`${provider}/request requires a JSON credential with account`);
@@ -206,6 +213,15 @@ function applyProviderSpecificAuth(provider: string, credential: string, headers
     const token = credentialField(credential, ["token"]);
     if (!token) throw new Error('shopify/request requires JSON credential {"shop","token"}');
     headers["X-Shopify-Access-Token"] = token;
+    return true;
+  }
+  if (provider === "supabase") {
+    const key = credentialField(credential, ["service_role_key", "service_role", "key", "apikey", "api_key"]);
+    if (!key) throw new Error('supabase/request requires JSON credential {"project_url","service_role_key"}');
+    // Supabase gateway requires the apikey header; the key is a role-bearing JWT,
+    // so the same value in Authorization: Bearer grants that role (service_role).
+    headers.apikey = key;
+    headers.Authorization = `Bearer ${key}`;
     return true;
   }
   if (provider === "linear") {
