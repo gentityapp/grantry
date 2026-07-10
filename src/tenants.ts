@@ -17,8 +17,19 @@ import { prisma } from "./db.js";
  * existing tenant is left untouched (update is a no-op) so switching workspaces
  * never silently re-homes another workspace's data; null workspaceIds on legacy
  * rows are filled by the boot-time backfill, not here.
+ *
+ * Workspace-first resolution: when a tenant with this slug already exists in
+ * the target workspace — even one created by another member — reuse it instead
+ * of upserting a same-slug duplicate under the caller. The slug is the wire
+ * key agents send as `scope`, and the runtime matches connections per
+ * workspace, so two same-slug tenant rows in one workspace would be one scope
+ * with a split identity.
  */
 export async function ensureTenant(ownerId: string, slug: string, displayName?: string, workspaceId?: string | null) {
+  if (workspaceId) {
+    const existing = await prisma.tenant.findFirst({ where: { workspaceId, slug } });
+    if (existing) return existing;
+  }
   return prisma.tenant.upsert({
     where: { ownerId_slug: { ownerId, slug } },
     update: {},

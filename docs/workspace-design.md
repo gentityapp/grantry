@@ -114,6 +114,7 @@ OAuthのagent選択ゲート（ui.ts `mcpAuthorizeGate`）の検索条件を
 | 0（完了） | OAuth MCP + agent紐付けゲート | 済（2026-06-13） |
 | 1 | AgentAssignment + 招待メール。必要なら scope固定URL | 社員にagentを配布する日 |
 | 2 | Workspace + メンバーロール + 所有付け替え + WS固定URL | 自分以外の管理者が必要になる or 最初の社外顧客 |
+| 2.5（2026-07-10） | workspace admin のダッシュボード可視化: owner/admin は active workspace 内の全 tenant/connection/agent を閲覧・管理（一覧・詳細・grant・削除・reconnect）。member は従来どおり自分の行のみ。credential の**再利用**（他人の秘密情報を新 connection に複製する経路）は引き続き owner 限定。`ensureTenant` は workspace 内同 slug を優先解決し重複 tenant 行を防止 | 済 |
 | 3 | 人単位の監査ビュー、SSO、Workspace課金 | エンタープライズ商談 |
 
 ## オープン課題

@@ -16,7 +16,7 @@ import { credentialMetadataForProviderDef, recordRuntimeCallHealth } from "./con
 import { isSweepRunning, runConnectionHealthSweep } from "./health_sweep.js";
 import { credentialForConnection } from "./mcp.js";
 import { sendSystemEmail } from "./email.js";
-import { connectableAgentsFor, userMayUseAgent } from "./workspaces.js";
+import { adminWorkspacesFor, connectableAgentsFor, userMayUseAgent } from "./workspaces.js";
 import nodeCrypto from "node:crypto";
 
 export const dashboardApp = new Hono();
@@ -1099,11 +1099,8 @@ async function resolveOAuthWorkspaceId(c: any, userId: string, providerKey: stri
   }
   const tenant = String(payload.tenant || payload.tenant_select || "");
   if (tenant) {
-    const row = await prisma.tenant.findFirst({
-      where: { ownerId: userId, slug: tenant },
-      select: { workspaceId: true },
-    });
-    if (row?.workspaceId) return row.workspaceId;
+    const access = await scopeAccessFor(userId, tenant);
+    if (access?.tenant.workspaceId) return access.tenant.workspaceId;
   }
   return getActiveWorkspaceId(c);
 }
@@ -1451,6 +1448,75 @@ async function getActiveWorkspaceId(c: any): Promise<string | null> {
   if (!user?.id) return null;
   const { active } = await resolveActiveWorkspace(c, user.id);
   return active?.id ?? null;
+}
+
+// ---------- Workspace-admin visibility (docs/workspace-design.md phase 2) ----------
+// Owners/admins of a workspace see and manage every tenant/connection/agent in
+// it — management implies usage, the same rule connectableAgentsFor applies to
+// agents. Plain members (and users with no workspace) keep owner-only rows.
+// Credential *reuse* paths stay owner-scoped regardless: cloning another
+// member's secret into a new connection is never implied by admin visibility.
+
+type RowsWhere = { ownerId?: string; workspaceId?: string };
+type WsAccess = { wsId: string | null; wsAdmin: boolean };
+
+async function isWsAdmin(userId: string, workspaceId: string | null | undefined): Promise<boolean> {
+  if (!workspaceId) return false;
+  const m = await prisma.workspaceMember.findFirst({
+    where: { workspaceId, userId, role: { in: ["owner", "admin"] } },
+    select: { workspaceId: true },
+  });
+  return !!m;
+}
+
+async function getWorkspaceAccess(c: any, userId: string): Promise<WsAccess> {
+  const { memberships, active } = await resolveActiveWorkspace(c, userId);
+  if (!active) return { wsId: null, wsAdmin: false };
+  const role = memberships.find((m) => m.workspaceId === active.id)?.role;
+  return { wsId: active.id, wsAdmin: role === "owner" || role === "admin" };
+}
+
+// Where-fragment for list pages filtered to the active workspace: admins get
+// the whole workspace, members get their own rows (both stay pinned to the
+// active workspace when one exists, matching the previous behavior).
+function manageableWhere(userId: string, ws: WsAccess): RowsWhere {
+  if (ws.wsAdmin && ws.wsId) return { workspaceId: ws.wsId };
+  return { ownerId: userId, ...(ws.wsId ? { workspaceId: ws.wsId } : {}) };
+}
+
+// Resolve a tenant by slug for detail/mutation pages, independent of the
+// active-workspace cookie: the caller's own tenant first, then a same-slug
+// tenant in any workspace they administer. `rowsWhere` selects the
+// connection/agent rows the caller may manage within that scope.
+async function scopeAccessFor(
+  userId: string,
+  slug: string,
+): Promise<{ tenant: Awaited<ReturnType<typeof prisma.tenant.findFirst>> & {}; rowsWhere: RowsWhere } | null> {
+  const own = await prisma.tenant.findFirst({ where: { ownerId: userId, slug } });
+  if (own) {
+    const admin = await isWsAdmin(userId, own.workspaceId);
+    return { tenant: own, rowsWhere: admin && own.workspaceId ? { workspaceId: own.workspaceId } : { ownerId: userId } };
+  }
+  const adminWs = (await adminWorkspacesFor(userId)).map((m) => m.workspace.id);
+  if (!adminWs.length) return null;
+  const tenant = await prisma.tenant.findFirst({ where: { slug, workspaceId: { in: adminWs } } });
+  if (!tenant) return null;
+  return { tenant, rowsWhere: { workspaceId: tenant.workspaceId! } };
+}
+
+// Owner rows across all workspaces plus (for admins) the active workspace —
+// for the agent wizard, which historically spans the owner's workspaces
+// instead of pinning to the active one.
+function ownerOrAdminWsWhere(userId: string, ws: WsAccess) {
+  return ws.wsAdmin && ws.wsId ? { OR: [{ ownerId: userId }, { workspaceId: ws.wsId }] } : { ownerId: userId };
+}
+
+// Agent management (rotate/charter/grant/delete): the owner or an admin of
+// the agent's workspace. Assignment (AgentAssignment) grants usage, not
+// management, so it deliberately does not pass this check.
+async function userMayManageAgent(userId: string, agent: { ownerId: string; workspaceId: string | null }): Promise<boolean> {
+  if (agent.ownerId === userId) return true;
+  return isWsAdmin(userId, agent.workspaceId);
 }
 
 function setActiveWorkspaceCookie(c: any, workspaceId: string) {
@@ -2332,7 +2398,7 @@ dashboardApp.post("/providers/:providerKey/default-connection", async (c) => {
     });
   }
 
-  await grantConnectionToTenantAgents(user.id, DEFAULT_PROVIDER_SCOPE, conn.id);
+  await grantConnectionToTenantAgents({ ownerId: user.id }, DEFAULT_PROVIDER_SCOPE, conn.id, user.id);
   return c.redirect(`/providers?ok=${encodeURIComponent(`Added ${providerDef.label} default connection.`)}`);
 });
 
@@ -2577,16 +2643,14 @@ dashboardApp.get("/dashboard", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
 
-  const wsId = await getActiveWorkspaceId(c);
-  const wsWhere = wsId ? { workspaceId: wsId } : {};
+  const ws = await getWorkspaceAccess(c, user.id);
+  const wsId = ws.wsId;
+  const mw = manageableWhere(user.id, ws);
   const [connectionCount, agentCount, grantCount, recentAudits] = await Promise.all([
-    prisma.connection.count({ where: { ownerId: user.id, ...wsWhere } }),
-    prisma.agent.count({ where: { ownerId: user.id, ...wsWhere } }),
+    prisma.connection.count({ where: mw }),
+    prisma.agent.count({ where: mw }),
     prisma.agentConnectionGrant.count({
-      where: {
-        agent: { ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) },
-        connection: { ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) },
-      },
+      where: { agent: mw, connection: mw },
     }),
     prisma.auditLog.findMany({
       // Scope the feed to the active workspace so it never shows another
@@ -2595,7 +2659,7 @@ dashboardApp.get("/dashboard", async (c) => {
       // agent; only when there's no active workspace do we fall back to the
       // owner-wide view that also surfaces agent-less system events.
       where: wsId
-        ? { agent: { ownerId: user.id, workspaceId: wsId } }
+        ? { agent: mw }
         : { OR: [{ userId: user.id }, { agent: { ownerId: user.id } }] },
       take: 10,
       orderBy: { createdAt: "desc" },
@@ -3506,7 +3570,9 @@ dashboardApp.get("/connections", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
 
-  const wsId = await getActiveWorkspaceId(c);
+  const ws = await getWorkspaceAccess(c, user.id);
+  const wsId = ws.wsId;
+  const mw = manageableWhere(user.id, ws);
   const rawStatusFilter = String(c.req.query("status") ?? "all");
   const statusFilter = rawStatusFilter === "active" ? "ok" : rawStatusFilter;
   const q = String(c.req.query("q") ?? "").trim().toLowerCase();
@@ -3514,11 +3580,11 @@ dashboardApp.get("/connections", async (c) => {
   const noticeKind = c.req.query("err") ? "error" : "ok";
 
   const connections = await prisma.connection.findMany({
-    where: { ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) },
+    where: mw,
     include: {
       tenant: { select: { slug: true, displayName: true } },
       agentGrants: {
-        where: { agent: { enabled: true, ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) } },
+        where: { agent: { enabled: true, ...mw } },
         include: { agent: { select: { id: true, name: true, enabled: true } } },
       },
     },
@@ -3696,16 +3762,18 @@ dashboardApp.get("/connections/:connectionId/edit", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
 
-  const wsId = await getActiveWorkspaceId(c);
+  const ws = await getWorkspaceAccess(c, user.id);
+  const wsId = ws.wsId;
+  const mw = manageableWhere(user.id, ws);
   const connectionId = c.req.param("connectionId");
   const notice = c.req.query("ok") || c.req.query("err");
   const noticeKind = c.req.query("err") ? "error" : "ok";
   const conn = await prisma.connection.findFirst({
-    where: { id: connectionId, ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) },
+    where: { id: connectionId, ...mw },
     include: {
       tenant: { select: { slug: true, displayName: true } },
       agentGrants: {
-        where: { agent: { enabled: true, ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) } },
+        where: { agent: { enabled: true, ...mw } },
         include: { agent: { select: { id: true, name: true } } },
       },
     },
@@ -3840,10 +3908,11 @@ dashboardApp.post("/connections/:connectionId/edit", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
 
-  const wsId = await getActiveWorkspaceId(c);
+  const ws = await getWorkspaceAccess(c, user.id);
+  const wsId = ws.wsId;
   const connectionId = c.req.param("connectionId");
   const conn = await prisma.connection.findFirst({
-    where: { id: connectionId, ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) },
+    where: { id: connectionId, ...manageableWhere(user.id, ws) },
   });
   if (!conn) return c.html("<h1>connection not found</h1>", 404);
 
@@ -3928,21 +3997,21 @@ dashboardApp.get("/tenants", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
 
-  const wsId = await getActiveWorkspaceId(c);
-  const wsWhere = wsId ? { workspaceId: wsId } : {};
+  const ws = await getWorkspaceAccess(c, user.id);
+  const mw = manageableWhere(user.id, ws);
   const [tenants, connections, grants] = await Promise.all([
     prisma.tenant.findMany({
-      where: { ownerId: user.id, ...wsWhere },
+      where: mw,
       orderBy: { slug: "asc" },
     }),
     prisma.connection.findMany({
-      where: { ownerId: user.id, ...wsWhere },
+      where: mw,
       orderBy: [{ scope: "asc" }, { provider: "asc" }],
     }),
     prisma.agentConnectionGrant.findMany({
       where: {
-        agent: { ownerId: user.id, enabled: true, ...(wsId ? { workspaceId: wsId } : {}) },
-        connection: { ownerId: user.id, ...(wsId ? { workspaceId: wsId } : {}) },
+        agent: { enabled: true, ...mw },
+        connection: mw,
       },
       select: { connectionId: true },
     }),
@@ -4081,10 +4150,8 @@ dashboardApp.get("/tenants/:scope/connect/:provider", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.redirect(`/login?next=${encodeURIComponent(selfPath)}`);
 
-  const tenantRow = await prisma.tenant.findUnique({
-    where: { ownerId_slug: { ownerId: user.id, slug: scope } },
-  });
-  const wsId = tenantRow?.workspaceId ?? (await getActiveWorkspaceId(c));
+  const access = await scopeAccessFor(user.id, scope);
+  const wsId = access?.tenant.workspaceId ?? (await getActiveWorkspaceId(c));
 
   const providerDef = await getProviderForWorkspace(provider, wsId);
   const connectShell = (title: string, inner: string, status = 200) =>
@@ -4168,18 +4235,18 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
   if (!user) return c.redirect("/login");
 
   const scope = c.req.param("scope");
-  const tenantRow = await prisma.tenant.findUnique({
-    where: { ownerId_slug: { ownerId: user.id, slug: scope } },
-  });
+  const access = await scopeAccessFor(user.id, scope);
+  const tenantRow = access?.tenant ?? null;
+  const rowsWhere = access?.rowsWhere ?? { ownerId: user.id };
   const wsId = tenantRow?.workspaceId ?? (await getActiveWorkspaceId(c));
   const connections = await prisma.connection.findMany({
-    where: { scope, ownerId: user.id },
+    where: { scope, ...rowsWhere },
     orderBy: { createdAt: "asc" },
   });
   const codexAgents = await prisma.agent.findMany({
     where: {
-      ownerId: user.id,
-      connectionGrants: { some: { connection: { scope, ownerId: user.id } } },
+      ...rowsWhere,
+      connectionGrants: { some: { connection: { scope, ...rowsWhere } } },
     },
     orderBy: { createdAt: "asc" },
   });
@@ -4847,25 +4914,28 @@ async function grantConnectionsToAgent(agentId: string, connectionIds: string[],
   return granted;
 }
 
-async function grantTenantConnectionsToAgent(userId: string, agentId: string, scope: string) {
+// rowsWhere comes from scopeAccessFor/manageableWhere: owner-only for members,
+// workspace-wide for admins, so granting covers every connection/agent that
+// belongs to the scope the caller manages.
+async function grantTenantConnectionsToAgent(rowsWhere: RowsWhere, agentId: string, scope: string, createdById: string) {
   const connections = await prisma.connection.findMany({
-    where: { ownerId: userId, scope, enabled: true },
+    where: { ...rowsWhere, scope, enabled: true },
     select: { id: true },
   });
-  return grantConnectionsToAgent(agentId, connections.map((cn) => cn.id), userId);
+  return grantConnectionsToAgent(agentId, connections.map((cn) => cn.id), createdById);
 }
 
-async function grantConnectionToTenantAgents(userId: string, scope: string, connectionId: string) {
+async function grantConnectionToTenantAgents(rowsWhere: RowsWhere, scope: string, connectionId: string, createdById: string) {
   const agents = await prisma.agent.findMany({
     where: {
-      ownerId: userId,
+      ...rowsWhere,
       connectionGrants: { some: { connection: { scope } } },
     },
     select: { id: true },
   });
   let granted = 0;
   for (const agent of agents) {
-    granted += await grantConnectionsToAgent(agent.id, [connectionId], userId);
+    granted += await grantConnectionsToAgent(agent.id, [connectionId], createdById);
   }
   return granted;
 }
@@ -4877,11 +4947,12 @@ dashboardApp.post("/tenants/:scope/codex-mcp/create", async (c) => {
   const scope = c.req.param("scope");
   if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
 
-  const tw = await prisma.tenant.findFirst({ where: { ownerId: user.id, slug: scope }, select: { workspaceId: true } });
-  const wsId = tw?.workspaceId ?? (await getActiveWorkspaceId(c));
+  const access = await scopeAccessFor(user.id, scope);
+  const rowsWhere = access?.rowsWhere ?? { ownerId: user.id };
+  const wsId = access?.tenant.workspaceId ?? (await getActiveWorkspaceId(c));
   const existing = await prisma.agent.findFirst({
     where: {
-      ownerId: user.id,
+      ...rowsWhere,
       connectionGrants: { some: { connection: { scope } } },
     },
     orderBy: { createdAt: "asc" },
@@ -4901,7 +4972,7 @@ dashboardApp.post("/tenants/:scope/codex-mcp/create", async (c) => {
       workspaceId: wsId,
     },
   });
-  const granted = await grantTenantConnectionsToAgent(user.id, agent.id, scope);
+  const granted = await grantTenantConnectionsToAgent(rowsWhere, agent.id, scope, user.id);
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Codex MCP created — grantry</title>
@@ -4928,11 +4999,13 @@ dashboardApp.post("/tenants/:scope/codex-mcp/:agentId/rotate", async (c) => {
   const agentId = c.req.param("agentId");
   if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
 
+  const rotateAccess = await scopeAccessFor(user.id, scope);
+  const rotateRowsWhere = rotateAccess?.rowsWhere ?? { ownerId: user.id };
   const agent = await prisma.agent.findFirst({
     where: {
       id: agentId,
-      ownerId: user.id,
-      connectionGrants: { some: { connection: { scope, ownerId: user.id } } },
+      ...rotateRowsWhere,
+      connectionGrants: { some: { connection: { scope, ...rotateRowsWhere } } },
     },
   });
   if (!agent) return c.html("<h1>agent not found</h1>", 404);
@@ -4966,8 +5039,8 @@ dashboardApp.post("/tenants/:scope/custom-providers/new", async (c) => {
   if (!user) return c.json({ error: "not authenticated" }, 401);
   const scope = c.req.param("scope");
   const body = await c.req.parseBody();
-  const tenantRow = await prisma.tenant.findFirst({ where: { ownerId: user.id, slug: scope }, select: { workspaceId: true } });
-  const wsId = tenantRow?.workspaceId ?? (await getActiveWorkspaceId(c));
+  const access = await scopeAccessFor(user.id, scope);
+  const wsId = access?.tenant.workspaceId ?? (await getActiveWorkspaceId(c));
   if (!wsId) return c.html("<h1>workspace required</h1>", 400);
   const admin = await requireWsAdmin(c, wsId);
   if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
@@ -4981,8 +5054,8 @@ dashboardApp.post("/tenants/:scope/custom-providers/:providerId/delete", async (
   if (!user) return c.json({ error: "not authenticated" }, 401);
   const scope = c.req.param("scope");
   const providerId = c.req.param("providerId");
-  const tenantRow = await prisma.tenant.findFirst({ where: { ownerId: user.id, slug: scope }, select: { workspaceId: true } });
-  const wsId = tenantRow?.workspaceId ?? (await getActiveWorkspaceId(c));
+  const access = await scopeAccessFor(user.id, scope);
+  const wsId = access?.tenant.workspaceId ?? (await getActiveWorkspaceId(c));
   if (!wsId) return c.html("<h1>workspace required</h1>", 400);
   const admin = await requireWsAdmin(c, wsId);
   if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
@@ -5007,17 +5080,21 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
 
   // Connection updates belong to the tenant's own workspace, not
   // whatever workspace happens to be active in the cookie.
-  const tw = await prisma.tenant.findFirst({ where: { ownerId: user.id, slug: scope }, select: { workspaceId: true } });
-  const wsId = tw?.workspaceId ?? (await getActiveWorkspaceId(c));
+  const access = await scopeAccessFor(user.id, scope);
+  const rowsWhere = access?.rowsWhere ?? { ownerId: user.id };
+  const wsId = access?.tenant.workspaceId ?? (await getActiveWorkspaceId(c));
 
   // --- save_settings: update connection labels/enabled + role desc/tools/scopes ---
   if (action === "save_settings") {
     // Tenant display name/description. The slug itself is immutable (wire key).
     if (body.tenant_display_name !== undefined || body.tenant_description !== undefined) {
-      const tenantRow = await ensureTenant(user.id, scope, undefined, wsId);
+      const tenantRow = access?.tenant ?? (await ensureTenant(user.id, scope, undefined, wsId));
       const displayName = String(body.tenant_display_name ?? "").trim() || scope;
       const description = String(body.tenant_description ?? "").trim() || null;
-      if (displayName !== tenantRow.displayName || description !== tenantRow.description) {
+      // ensureTenant may resolve to another member's same-slug tenant in a
+      // shared workspace; renaming it is owner/workspace-admin only.
+      const mayRename = tenantRow.ownerId === user.id || (await isWsAdmin(user.id, tenantRow.workspaceId));
+      if (mayRename && (displayName !== tenantRow.displayName || description !== tenantRow.description)) {
         await prisma.tenant.update({
           where: { id: tenantRow.id },
           data: { displayName, description },
@@ -5026,7 +5103,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     }
 
     const connections = await prisma.connection.findMany({
-      where: { scope, ownerId: user.id },
+      where: { scope, ...rowsWhere },
     });
 
     // Update each connection's enabled state and provider-specific settings.
@@ -5125,7 +5202,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
       invalidateDwdToken(conn.id);
       await ensureProviderCredentialForConnection(conn, user.id);
       await syncProviderCredentialFromConnection(conn);
-      await grantConnectionToTenantAgents(user.id, scope, conn.id);
+      await grantConnectionToTenantAgents(rowsWhere, scope, conn.id, user.id);
 
       return c.redirect(tenantEditUrl(scope, `${providerDef.label} service account connected.`, "ok", "#connections"));
     }
@@ -5222,7 +5299,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
         createdById: user.id,
       });
     }
-    await grantConnectionToTenantAgents(user.id, scope, conn.id);
+    await grantConnectionToTenantAgents(rowsWhere, scope, conn.id, user.id);
 
     return c.redirect(tenantEditUrl(scope, `Service ${conn.label} added.`, "ok", "#connections"));
   }
@@ -5244,8 +5321,9 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/recheck", async (c)
       ? c.redirect(`/connections?${kind === "error" ? "err" : "ok"}=${encodeURIComponent(message)}`)
       : c.redirect(tenantEditUrl(scope, message, kind, "#connections"));
 
+  const recheckAccess = await scopeAccessFor(user.id, scope);
   const conn = await prisma.connection.findFirst({
-    where: { id: connectionId, scope, ownerId: user.id },
+    where: { id: connectionId, scope, ...(recheckAccess?.rowsWhere ?? { ownerId: user.id }) },
   });
   if (!conn) {
     return c.html(`<h1>connection not found</h1><p><a href="/tenants/${scope}/edit">← Back</a></p>`, 404);
@@ -5358,8 +5436,9 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/delete", async (c) 
   const connectionId = c.req.param("connectionId");
   if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
 
+  const deleteAccess = await scopeAccessFor(user.id, scope);
   const conn = await prisma.connection.findFirst({
-    where: { id: connectionId, scope, ownerId: user.id },
+    where: { id: connectionId, scope, ...(deleteAccess?.rowsWhere ?? { ownerId: user.id }) },
     select: { id: true, label: true, provider: true, scope: true },
   });
   if (!conn) {
@@ -5982,10 +6061,9 @@ dashboardApp.get("/agents", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
 
-  const wsId = await getActiveWorkspaceId(c);
-  const wsWhere = wsId ? { workspaceId: wsId } : {};
+  const ws = await getWorkspaceAccess(c, user.id);
   const agents = await prisma.agent.findMany({
-    where: { ownerId: user.id, ...wsWhere },
+    where: manageableWhere(user.id, ws),
     orderBy: { createdAt: "desc" },
     include: {
       connectionGrants: {
@@ -6080,10 +6158,12 @@ dashboardApp.get("/agents/new", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
 
+  const ws = await getWorkspaceAccess(c, user.id);
+  const vw = ownerOrAdminWsWhere(user.id, ws);
   const [tenants, connections] = await Promise.all([
-    prisma.tenant.findMany({ where: { ownerId: user.id }, orderBy: { slug: "asc" } }),
+    prisma.tenant.findMany({ where: vw, orderBy: { slug: "asc" } }),
     prisma.connection.findMany({
-      where: { ownerId: user.id, enabled: true, scope: { not: "" } },
+      where: { ...vw, enabled: true, scope: { not: "" } },
       select: { provider: true, scope: true },
       orderBy: { provider: "asc" },
     }),
@@ -6254,6 +6334,8 @@ dashboardApp.post("/agents/new", async (c) => {
 
   if (!agent || !/^[a-zA-Z0-9_-]+$/.test(agent)) return c.html("<h1>agent name required (alphanumeric, hyphens, underscores)</h1>", 400);
 
+  const ws = await getWorkspaceAccess(c, user.id);
+  const vw = ownerOrAdminWsWhere(user.id, ws);
   let grantableConnectionCount = 0;
   if (managerMode) {
     if (String(body.manager_confirm ?? "") !== "on") {
@@ -6261,26 +6343,27 @@ dashboardApp.post("/agents/new", async (c) => {
     }
     scopes = []; // any scope
     const conns = await prisma.connection.findMany({
-      where: { ownerId: user.id, enabled: true, scope: { not: "" } },
+      where: { ...vw, enabled: true, scope: { not: "" } },
       select: { id: true },
     });
     grantableConnectionCount = conns.length;
   } else {
     if (scopes.length === 0) return c.html("<h1>select at least one scope</h1>", 400);
 
-    // Every requested scope must be one of the caller's own tenants.
+    // Every requested scope must be a tenant the caller manages (their own,
+    // or any tenant in a workspace they administer).
     const ownTenants = await prisma.tenant.findMany({
-      where: { ownerId: user.id, slug: { in: scopes } },
+      where: { ...vw, slug: { in: scopes } },
       select: { slug: true },
     });
-    if (ownTenants.length !== scopes.length) {
+    if (new Set(ownTenants.map((t) => t.slug)).size !== scopes.length) {
       const owned = new Set(ownTenants.map((t) => t.slug));
       const missing = scopes.filter((s) => !owned.has(s));
       return c.html(`<h1>unknown scope(s): ${escapeHtml(missing.join(", "))}</h1>`, 400);
     }
 
     const conns = await prisma.connection.findMany({
-      where: { ownerId: user.id, enabled: true, scope: { in: scopes } },
+      where: { ...vw, enabled: true, scope: { in: scopes } },
       select: { id: true },
     });
     grantableConnectionCount = conns.length;
@@ -6292,7 +6375,7 @@ dashboardApp.post("/agents/new", async (c) => {
     return c.html(`<h1>⚠️ Agent name <code>${escapeHtml(agent)}</code> already exists</h1><p>Pick a different name, or <a href="/agents/${existingAgent.id}">reuse the existing agent</a>. <a href="/agents/new">← Back</a></p>`, 409);
   }
 
-  const wsId = await getActiveWorkspaceId(c);
+  const wsId = ws.wsId;
   const token = `gn_agt_${crypto.randomUUID().replace(/-/g, "")}`;
   const tokenHash = await import("node:crypto").then((m) => m.createHash("sha256").update(token).digest("hex"));
   const agentRow = await prisma.agent.create({
@@ -6309,13 +6392,13 @@ dashboardApp.post("/agents/new", async (c) => {
   let granted = 0;
   if (managerMode) {
     const conns = await prisma.connection.findMany({
-      where: { ownerId: user.id, enabled: true, scope: { not: "" } },
+      where: { ...vw, enabled: true, scope: { not: "" } },
       select: { id: true },
     });
     granted = await grantConnectionsToAgent(agentRow.id, conns.map((cn) => cn.id), user.id);
   } else {
     const conns = await prisma.connection.findMany({
-      where: { ownerId: user.id, enabled: true, scope: { in: scopes } },
+      where: { ...vw, enabled: true, scope: { in: scopes } },
       select: { id: true },
     });
     granted = await grantConnectionsToAgent(agentRow.id, conns.map((cn) => cn.id), user.id);
@@ -6357,7 +6440,8 @@ dashboardApp.get("/agents/:id", async (c) => {
     include: { connectionGrants: true },
   });
   if (!agent) return c.html("<h1>agent not found</h1>", 404);
-  if (agent.ownerId !== user.id) return c.html("<h1>not your agent</h1>", 403);
+  const wsAdminOfAgent = await isWsAdmin(user.id, agent.workspaceId);
+  if (agent.ownerId !== user.id && !wsAdminOfAgent) return c.html("<h1>not your agent</h1>", 403);
 
   const connections = await connectionsForAgent(agent.id);
   const scopeSet = new Set<string>();
@@ -6366,7 +6450,7 @@ dashboardApp.get("/agents/:id", async (c) => {
   }
   const scopes = Array.from(scopeSet).sort();
   const grantableConnectionWhere: any = {
-    ownerId: user.id,
+    ...(wsAdminOfAgent && agent.workspaceId ? {} : { ownerId: user.id }),
     enabled: true,
     scope: { not: "" },
   };
@@ -6479,7 +6563,8 @@ dashboardApp.post("/agents/:id/scopes/grant", async (c) => {
     select: { id: true, ownerId: true, workspaceId: true },
   });
   if (!agent) return c.html("<h1>agent not found</h1>", 404);
-  if (agent.ownerId !== user.id) return c.html("<h1>not your agent</h1>", 403);
+  const wsAdminOfAgent = await isWsAdmin(user.id, agent.workspaceId);
+  if (agent.ownerId !== user.id && !wsAdminOfAgent) return c.html("<h1>not your agent</h1>", 403);
 
   const body = await c.req.parseBody();
   const rawScopes = (body as any).scopes;
@@ -6490,7 +6575,7 @@ dashboardApp.post("/agents/:id/scopes/grant", async (c) => {
   if (scopes.length === 0) return c.html("<h1>select at least one scope</h1>", 400);
 
   const where: any = {
-    ownerId: user.id,
+    ...(wsAdminOfAgent && agent.workspaceId ? {} : { ownerId: user.id }),
     enabled: true,
     scope: { in: scopes },
   };
@@ -6514,7 +6599,7 @@ dashboardApp.post("/agents/:id/charter", async (c) => {
   const id = c.req.param("id");
   const agent = await prisma.agent.findUnique({ where: { id } });
   if (!agent) return c.html("<h1>agent not found</h1>", 404);
-  if (agent.ownerId !== user.id) return c.html("<h1>not your agent</h1>", 403);
+  if (!(await userMayManageAgent(user.id, agent))) return c.html("<h1>not your agent</h1>", 403);
 
   const body = await c.req.parseBody();
   const charter = String(body.charter ?? "").trim();
@@ -6531,7 +6616,7 @@ dashboardApp.post("/agents/:id/rotate", async (c) => {
   const id = c.req.param("id");
   const agent = await prisma.agent.findUnique({ where: { id } });
   if (!agent) return c.html("<h1>agent not found</h1>", 404);
-  if (agent.ownerId !== user.id) return c.html("<h1>not your agent</h1>", 403);
+  if (!(await userMayManageAgent(user.id, agent))) return c.html("<h1>not your agent</h1>", 403);
 
   // Generate new token
   const newToken = `gn_agt_${crypto.randomUUID().replace(/-/g, "")}`;
@@ -6593,11 +6678,12 @@ dashboardApp.get("/audit", async (c) => {
 
   // Scope the audit log to the active workspace too, so switching workspaces
   // changes the whole world consistently — you only see calls made by agents
-  // that live in the workspace you're currently in.
-  const wsId = await getActiveWorkspaceId(c);
+  // that live in the workspace you're currently in (all of them for admins).
+  const ws = await getWorkspaceAccess(c, user.id);
+  const wsId = ws.wsId;
   const logs = await prisma.auditLog.findMany({
     where: wsId
-      ? { agent: { ownerId: user.id, workspaceId: wsId } }
+      ? { agent: manageableWhere(user.id, ws) }
       : { OR: [{ userId: user.id }, { agent: { ownerId: user.id } }] },
     take: 100,
     orderBy: { createdAt: "desc" },
@@ -7008,6 +7094,12 @@ oauthApp.get("/:provider/callback", async (c) => {
   const activeWsId = await getActiveWorkspaceId(c);
   const tenantRow = await ensureTenant(user.id, effectiveTenant, undefined, activeWsId);
   const wsId = tenantRow.workspaceId ?? activeWsId;
+  // Owner-only rows unless the caller administers the tenant's workspace —
+  // then repairs/grants cover every member's rows in this scope.
+  const callbackRowsWhere: RowsWhere =
+    tenantRow.workspaceId && (await isWsAdmin(user.id, tenantRow.workspaceId))
+      ? { workspaceId: tenantRow.workspaceId }
+      : { ownerId: user.id };
 
   // --- Reconnect mode: refresh an existing connection's tokens in place. ---
   // No wizard, no agent: find the tenant's connection for this provider, update
@@ -7017,10 +7109,10 @@ oauthApp.get("/:provider/callback", async (c) => {
     const requestedConnectionId = String(payload.connection_id || "");
     const conn = requestedConnectionId
       ? await prisma.connection.findFirst({
-          where: { id: requestedConnectionId, provider: providerKey, authType: "oauth", scope: effectiveTenant, ownerId: user.id },
+          where: { id: requestedConnectionId, provider: providerKey, authType: "oauth", scope: effectiveTenant, ...callbackRowsWhere },
         })
       : await prisma.connection.findFirst({
-          where: { provider: providerKey, authType: "oauth", scope: effectiveTenant, ownerId: user.id },
+          where: { provider: providerKey, authType: "oauth", scope: effectiveTenant, ...callbackRowsWhere },
           orderBy: { createdAt: "desc" },
         });
     if (requestedConnectionId && !conn) {
@@ -7056,7 +7148,7 @@ oauthApp.get("/:provider/callback", async (c) => {
         },
       });
       await ensureProviderCredentialForConnection(created, user.id);
-      await grantConnectionToTenantAgents(user.id, effectiveTenant, created.id);
+      await grantConnectionToTenantAgents(callbackRowsWhere, effectiveTenant, created.id, user.id);
     }
     if (payload.popup) {
       return oauthPopupCompletePage(c, {
@@ -7092,7 +7184,7 @@ oauthApp.get("/:provider/callback", async (c) => {
     },
   });
   await ensureProviderCredentialForConnection(conn, user.id);
-  await grantConnectionToTenantAgents(user.id, effectiveTenant, conn.id);
+  await grantConnectionToTenantAgents(callbackRowsWhere, effectiveTenant, conn.id, user.id);
 
   // If more providers in the chain still need OAuth authorization, hand off
   // to the next one before minting the agent. Each callback attaches its own
@@ -7146,12 +7238,12 @@ oauthApp.get("/:provider/callback", async (c) => {
       workspaceId: wsId,
     },
   });
-  const granted = await grantTenantConnectionsToAgent(user.id, agentRow.id, effectiveTenant);
+  const granted = await grantTenantConnectionsToAgent(callbackRowsWhere, agentRow.id, effectiveTenant, user.id);
 
   // List every connection on this tenant so chained multi-provider setups
   // show all the services that were wired up, not just the last one.
   const allConns = await prisma.connection.findMany({
-    where: { scope: effectiveTenant, ownerId: user.id },
+    where: { scope: effectiveTenant, ...callbackRowsWhere },
     orderBy: [{ provider: "asc" }, { authType: "asc" }],
   });
   const googleAdsConnectionNeedsDeveloperToken = allConns.some((cn) =>
@@ -7211,19 +7303,21 @@ dashboardApp.get("/api/scopes", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
 
+  const ws = await getWorkspaceAccess(c, user.id);
+  const vw = ownerOrAdminWsWhere(user.id, ws);
   const [tenants, conns, agents] = await Promise.all([
     prisma.tenant.findMany({
-      where: { ownerId: user.id },
+      where: vw,
       select: { id: true, slug: true, displayName: true, description: true, createdAt: true },
       orderBy: { slug: "asc" },
     }),
     prisma.connection.findMany({
-      where: { ownerId: user.id },
+      where: vw,
       select: { id: true, provider: true, authType: true, scope: true, label: true, enabled: true, workspaceId: true, createdAt: true },
       orderBy: [{ scope: "asc" }, { provider: "asc" }, { authType: "asc" }],
     }),
     prisma.agent.findMany({
-      where: { ownerId: user.id },
+      where: vw,
       select: {
         id: true, name: true, tokenPrefix: true, enabled: true, createdAt: true, lastUsedAt: true,
         connectionGrants: {
@@ -7314,24 +7408,26 @@ dashboardApp.get("/tenants/:scope/agents/setup", async (c) => {
   const scope = c.req.param("scope");
   if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
 
-  const tenant = await prisma.tenant.findFirst({
-    where: { slug: scope, ownerId: user.id },
-    select: { displayName: true, slug: true, workspaceId: true },
-  });
-  if (!tenant) return c.html(`<h1>scope '${escapeHtml(scope)}' not found</h1>`, 404);
+  const access = await scopeAccessFor(user.id, scope);
+  if (!access) return c.html(`<h1>scope '${escapeHtml(scope)}' not found</h1>`, 404);
+  const { tenant, rowsWhere } = access;
 
   const [connections, agents] = await Promise.all([
     prisma.connection.findMany({
-      where: { scope, ownerId: user.id, enabled: true },
+      where: { scope, ...rowsWhere, enabled: true },
       select: { id: true, provider: true, authType: true, label: true },
       orderBy: [{ provider: "asc" }, { authType: "asc" }],
     }),
     prisma.agent.findMany({
-      where: {
-        ownerId: user.id,
-        enabled: true,
-        ...(tenant.workspaceId ? { OR: [{ workspaceId: tenant.workspaceId }, { workspaceId: null }] } : {}),
-      },
+      // Admin path: every agent in the tenant's workspace. Owner path: own
+      // agents in that workspace (or not yet backfilled), as before.
+      where: rowsWhere.workspaceId
+        ? { enabled: true, workspaceId: rowsWhere.workspaceId }
+        : {
+            ownerId: user.id,
+            enabled: true,
+            ...(tenant.workspaceId ? { OR: [{ workspaceId: tenant.workspaceId }, { workspaceId: null }] } : {}),
+          },
       select: {
         id: true,
         name: true,
@@ -7339,7 +7435,7 @@ dashboardApp.get("/tenants/:scope/agents/setup", async (c) => {
         tokenPrefix: true,
         createdAt: true,
         connectionGrants: {
-          where: { connection: { scope, ownerId: user.id } },
+          where: { connection: { scope, ...rowsWhere } },
           select: { connectionId: true },
         },
       },
@@ -7425,23 +7521,23 @@ dashboardApp.post("/tenants/:scope/agents/assign-existing", async (c) => {
   const agentId = String(body.agent_id ?? "").trim();
   if (!agentId) return c.html("<h1>agent required</h1>", 400);
 
-  const tenant = await prisma.tenant.findFirst({
-    where: { slug: scope, ownerId: user.id },
-    select: { workspaceId: true },
-  });
-  if (!tenant) return c.html(`<h1>scope '${escapeHtml(scope)}' not found</h1>`, 404);
+  const access = await scopeAccessFor(user.id, scope);
+  if (!access) return c.html(`<h1>scope '${escapeHtml(scope)}' not found</h1>`, 404);
+  const { tenant, rowsWhere } = access;
 
   const agent = await prisma.agent.findFirst({
-    where: {
-      id: agentId,
-      ownerId: user.id,
-      enabled: true,
-      ...(tenant.workspaceId ? { OR: [{ workspaceId: tenant.workspaceId }, { workspaceId: null }] } : {}),
-    },
+    where: rowsWhere.workspaceId
+      ? { id: agentId, enabled: true, workspaceId: rowsWhere.workspaceId }
+      : {
+          id: agentId,
+          ownerId: user.id,
+          enabled: true,
+          ...(tenant.workspaceId ? { OR: [{ workspaceId: tenant.workspaceId }, { workspaceId: null }] } : {}),
+        },
   });
   if (!agent) return c.html("<h1>agent not found</h1>", 404);
 
-  const granted = await grantTenantConnectionsToAgent(user.id, agent.id, scope);
+  const granted = await grantTenantConnectionsToAgent(rowsWhere, agent.id, scope, user.id);
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Agent assigned — grantry</title>
@@ -7477,11 +7573,9 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
     return c.html("<h1>invalid agent name (a-z, 0-9, hyphens, underscores)</h1>", 400);
   }
 
-  const tenant = await prisma.tenant.findFirst({
-    where: { slug: scope, ownerId: user.id },
-    select: { workspaceId: true },
-  });
-  if (!tenant) return c.html(`<h1>scope '${escapeHtml(scope)}' not found</h1>`, 404);
+  const access = await scopeAccessFor(user.id, scope);
+  if (!access) return c.html(`<h1>scope '${escapeHtml(scope)}' not found</h1>`, 404);
+  const { tenant, rowsWhere } = access;
 
   // Check for agent name conflict up front
   const existingAgent = await prisma.agent.findUnique({ where: { name: agent } });
@@ -7514,7 +7608,7 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
       workspaceId: wsId,
     },
   });
-  const granted = await grantTenantConnectionsToAgent(user.id, agentRow.id, scope);
+  const granted = await grantTenantConnectionsToAgent(rowsWhere, agentRow.id, scope, user.id);
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Agent created — grantry</title>
@@ -7555,19 +7649,15 @@ dashboardApp.post("/tenants/:scope/delete", async (c) => {
   const scope = c.req.param("scope");
   if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
 
-  // 1) Find user's connections + tenant row for this scope. A tenant with
+  // 1) Find manageable connections + tenant row for this scope. A tenant with
   //    zero connections is still deletable (the entity exists on its own).
-  const [conns, tenantRow] = await Promise.all([
-    prisma.connection.findMany({
-      where: { scope, ownerId: user.id },
-      select: { id: true, label: true },
-    }),
-    prisma.tenant.findUnique({
-      where: { ownerId_slug: { ownerId: user.id, slug: scope } },
-      select: { id: true },
-    }),
-  ]);
-  if (conns.length === 0 && !tenantRow) {
+  const access = await scopeAccessFor(user.id, scope);
+  const rowsWhere = access?.rowsWhere ?? { ownerId: user.id };
+  const conns = await prisma.connection.findMany({
+    where: { scope, ...rowsWhere },
+    select: { id: true, label: true },
+  });
+  if (conns.length === 0 && !access) {
     return c.html(`<h1>No scope or connections found for scope '${scope}' (yours)</h1>`, 404);
   }
 
@@ -7579,9 +7669,9 @@ dashboardApp.post("/tenants/:scope/delete", async (c) => {
     select: { id: true, name: true },
   });
 
-  // 3) Delete connections (this user only)
+  // 3) Delete connections the caller manages in this scope
   const connDelete = await prisma.connection.deleteMany({
-    where: { scope, ownerId: user.id },
+    where: { scope, ...rowsWhere },
   });
 
   // 4) Delete legacy role rows, if present. Connection grants are removed by
@@ -7590,8 +7680,10 @@ dashboardApp.post("/tenants/:scope/delete", async (c) => {
     where: { id: { in: roles.map((r) => r.id) } },
   });
 
-  // 5) Delete the tenant entity itself.
-  await prisma.tenant.deleteMany({ where: { slug: scope, ownerId: user.id } });
+  // 5) Delete the tenant entity itself. On the admin path this removes every
+  //    same-slug tenant row in the workspace — the scope is one wire key, so
+  //    leaving another member's duplicate row would resurrect the scope.
+  await prisma.tenant.deleteMany({ where: { slug: scope, ...rowsWhere } });
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Deleted — grantry</title>
@@ -7627,13 +7719,15 @@ dashboardApp.post("/tenants/bulk-delete", async (c) => {
   let conns = 0, legacyRoles = 0;
   const detail: string[] = [];
   for (const scope of scopes) {
-    const connDelete = await prisma.connection.deleteMany({ where: { scope, ownerId: user.id } });
+    const access = await scopeAccessFor(user.id, scope);
+    const rowsWhere = access?.rowsWhere ?? { ownerId: user.id };
+    const connDelete = await prisma.connection.deleteMany({ where: { scope, ...rowsWhere } });
     const roleList = await prisma.role.findMany({
       where: { ownerId: user.id, OR: [{ name: `${scope}-dev-${bulkUserIdShort}` }, { name: `${scope}-dev` }, { name: scope }] },
       select: { id: true },
     });
     const roleDelete = await prisma.role.deleteMany({ where: { id: { in: roleList.map((r) => r.id) } } });
-    await prisma.tenant.deleteMany({ where: { slug: scope, ownerId: user.id } });
+    await prisma.tenant.deleteMany({ where: { slug: scope, ...rowsWhere } });
     conns += connDelete.count;
     legacyRoles += roleDelete.count;
     detail.push(`<li><code>${escapeHtml(scope)}</code>: ${connDelete.count} connection(s)</li>`);
@@ -7659,9 +7753,9 @@ dashboardApp.post("/agents/:id/delete", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
   const id = c.req.param("id");
-  const agent = await prisma.agent.findUnique({ where: { id }, select: { id: true, name: true, ownerId: true } });
+  const agent = await prisma.agent.findUnique({ where: { id }, select: { id: true, name: true, ownerId: true, workspaceId: true } });
   if (!agent) return c.html("<h1>agent not found</h1>", 404);
-  if (agent.ownerId !== user.id) return c.html("<h1>not your agent</h1>", 403);
+  if (!(await userMayManageAgent(user.id, agent))) return c.html("<h1>not your agent</h1>", 403);
 
   // Cascade connection grants via onDelete: Cascade; the agent itself is then deleted.
   await prisma.agent.delete({ where: { id: agent.id } });
@@ -7683,9 +7777,14 @@ dashboardApp.post("/agents/bulk-delete", async (c) => {
   const ids = Array.from(new Set(collected));
   if (ids.length === 0) return c.html("<h1>no agents selected</h1>", 400);
 
-  // Only delete agents owned by this user.
+  // Only delete agents the caller manages: their own, or any in a workspace
+  // they administer.
+  const adminWs = (await adminWorkspacesFor(user.id)).map((m) => m.workspace.id);
   const result = await prisma.agent.deleteMany({
-    where: { id: { in: ids }, ownerId: user.id },
+    where: {
+      id: { in: ids },
+      OR: [{ ownerId: user.id }, ...(adminWs.length ? [{ workspaceId: { in: adminWs } }] : [])],
+    },
   });
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Bulk deleted — grantry</title>
