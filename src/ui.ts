@@ -5709,7 +5709,7 @@ dashboardApp.get("/tenants/new", async (c) => {
                 credInput.focus();
                 notice.style.display = "none";
               };
-            } else if (reusing) {
+            } else if (reusing && !reuseSelect) {
               credRow.querySelectorAll('a, .field-hint').forEach(el => el.style.display = "none");
               credInput.style.display = "none";
               notice.style.display = "";
