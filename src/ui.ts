@@ -480,6 +480,8 @@ const CSS = `
   .badge.ok { background: var(--success-soft); border-color: var(--border-success-subtle); color: var(--fg-success-strong); }
   .table-wrap { width: 100%; overflow-x: auto; background: var(--surface); border: 1px solid var(--border-default); border-radius: 12px; box-shadow: var(--shadow-xs); }
   table { width: 100%; border-collapse: collapse; }
+  .audit-table { min-width: 820px; }
+  .audit-table code { white-space: nowrap; overflow-wrap: normal; }
   th, td { text-align: left; padding: 16px 24px; border-bottom: 1px solid var(--border-default); font-size: 14px; vertical-align: middle; }
   th { color: var(--muted); background: var(--neutral-secondary-soft); font-weight: 600; }
   tbody tr { background: var(--neutral-primary); }
@@ -6699,9 +6701,9 @@ dashboardApp.get("/audit", async (c) => {
     <main>
       <h1>Audit log</h1>
       <p style="color:#687385;">Latest 100 events.</p>
-      <div class="card">
-        ${logs.length === 0 ? '<div class="empty">No events yet.</div>' : `
-        <table>
+      ${logs.length === 0 ? '<div class="card"><div class="empty">No events yet.</div></div>' : `
+      <div class="table-wrap">
+        <table class="audit-table">
           <thead><tr><th>When</th><th>Agent</th><th>Tool</th><th>Scope</th><th>Status</th><th>Duration</th><th>Error</th></tr></thead>
           <tbody>
           ${logs.map((l) => `
@@ -6716,8 +6718,8 @@ dashboardApp.get("/audit", async (c) => {
             </tr>
           `).join("")}
           </tbody>
-        </table>`}
-      </div>
+        </table>
+      </div>`}
     </main></body></html>
   `);
 });
