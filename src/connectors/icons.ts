@@ -137,6 +137,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   godaddy: "#1BDBDB", // GoDaddy teal
   openai: "#000000", // OpenAI black
   openai_ads: "#000000", // OpenAI black
+  higgsfield: "#000000", // Higgsfield black
 };
 
 /** Letter overrides where the label's first character is not the recognizable one. */

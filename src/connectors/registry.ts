@@ -1342,6 +1342,20 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  higgsfield: {
+    key: "higgsfield",
+    label: "Higgsfield",
+    authTypes: ["pat"],
+    helpText: "Create an API key at cloud.higgsfield.ai and paste it as KEY_ID:KEY_SECRET (the key id and secret joined with a colon). It is sent as Authorization: Key KEY_ID:KEY_SECRET against platform.higgsfield.ai. generate_image and generate_video submit an async job and poll it to completion (video jobs can take minutes — if still running they return a request_id; finish polling with get_request). Pick a model with model_id (e.g. higgsfield-ai/soul/standard for images, higgsfield-ai/dop/standard for video); browse the catalog at cloud.higgsfield.ai.",
+    tokenUrl: "https://cloud.higgsfield.ai",
+    tools: [
+      "higgsfield/generate_image",
+      "higgsfield/generate_video",
+      "higgsfield/get_request",
+      "higgsfield/cancel_request",
+    ],
+    implemented: true,
+  },
 };
 
 const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]>> = {

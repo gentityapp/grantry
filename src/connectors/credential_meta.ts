@@ -1330,6 +1330,21 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "higgsfield") {
+      const cred = token.trim();
+      if (!cred.includes(":")) return { provider, authType, status: "error", checkedAt, error: "Higgsfield credential must be in KEY_ID:KEY_SECRET format" };
+      return {
+        provider,
+        authType,
+        status: "unknown",
+        notes: [
+          "Higgsfield credentials are sent as Authorization: Key KEY_ID:KEY_SECRET against platform.higgsfield.ai.",
+          "The key is validated on the first generate call (Higgsfield has no lightweight introspection endpoint).",
+        ],
+        checkedAt,
+      };
+    }
+
     return {
       provider,
       authType,

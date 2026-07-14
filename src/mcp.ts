@@ -49,6 +49,7 @@ import { callLinearTool } from "./connectors/linear.js";
 import { callSendGridTool } from "./connectors/sendgrid.js";
 import { callOpenAITool } from "./connectors/openai.js";
 import { callOpenAIAdsTool } from "./connectors/openai_ads.js";
+import { callHiggsfieldTool } from "./connectors/higgsfield.js";
 import { callVercelTool } from "./connectors/vercel.js";
 import { callStripeTool } from "./connectors/stripe.js";
 import { callWebflowTool } from "./connectors/webflow.js";
@@ -2240,6 +2241,32 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       query: { type: "object", description: "Insights params, e.g. { time_granularity, fields: ['impressions','clicks','spend'], time_ranges, filters, sort, segments, limit }. Array values are repeated." },
     };
   }
+  // --- higgsfield ---
+  if (toolName === "higgsfield/generate_image") {
+    return {
+      prompt: { type: "string", description: "Text description of the image to generate." },
+      model_id: { type: "string", description: "Model to use. Default higgsfield-ai/soul/standard. Browse the catalog at cloud.higgsfield.ai (e.g. reve/text-to-image)." },
+      aspect_ratio: { type: "string", description: "Aspect ratio, e.g. 16:9, 4:3, 1:1, 9:16." },
+      resolution: { type: "string", description: "Output resolution, e.g. 480p | 720p | 1080p (model-dependent)." },
+      reference_image_urls: { type: "array", items: { type: "string" }, description: "Optional reference image URLs (Soul-style models) to guide style/content." },
+      seed: { type: "number", description: "Optional seed for reproducibility." },
+      params: { type: "object", description: "Any additional model-specific parameters, merged into the request body." },
+    };
+  }
+  if (toolName === "higgsfield/generate_video") {
+    return {
+      prompt: { type: "string", description: "Motion/scene description. Alone = text-to-video; with image_url = image-to-video." },
+      image_url: { type: "string", description: "Source image URL to animate (image-to-video). Optional if prompt is given." },
+      model_id: { type: "string", description: "Model to use. Default higgsfield-ai/dop/standard. Other options e.g. kling-video/v2.1/pro/image-to-video, bytedance/seedance/v1/pro/image-to-video." },
+      duration: { type: "number", description: "Video duration in seconds, e.g. 5 or 10 (model-dependent)." },
+      aspect_ratio: { type: "string", description: "Aspect ratio for text-to-video, e.g. 16:9, 4:3, 1:1, 9:21." },
+      resolution: { type: "string", description: "Output resolution, e.g. 480p | 720p | 1080p (model-dependent)." },
+      seed: { type: "number", description: "Optional seed for reproducibility." },
+      params: { type: "object", description: "Any additional model-specific parameters, merged into the request body." },
+    };
+  }
+  if (toolName === "higgsfield/get_request") { return { request_id: { type: "string", description: "The request_id returned by a generate call. Returns current status plus images/video when completed." } }; }
+  if (toolName === "higgsfield/cancel_request") { return { request_id: { type: "string", description: "The request_id to cancel. Only works while the job is still queued." } }; }
   // --- vercel ---
   if (toolName === "vercel/list_projects") { return { limit: { type: "number", description: "Projects to return." }, team_id: { type: "string", description: "Optional Vercel team id." } }; }
   if (toolName === "vercel/get_project") { return { project_id: { type: "string", description: "Vercel project id or name." } }; }
@@ -2728,6 +2755,9 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "sendgrid/get_template") return ["template_id"];
   if (toolName === "sendgrid/get_stats") return ["start_date"];
   if (toolName === "openai/generate_image") return ["prompt"];
+  if (toolName === "higgsfield/generate_image") return ["prompt"];
+  if (toolName === "higgsfield/get_request") return ["request_id"];
+  if (toolName === "higgsfield/cancel_request") return ["request_id"];
   if (toolName === "openai_ads/get_campaign") return ["campaign_id"];
   if (toolName === "openai_ads/get_ad_group") return ["ad_group_id"];
   if (toolName === "openai_ads/get_ad") return ["ad_id"];
@@ -2977,6 +3007,7 @@ async function dispatchProviderTool(
   if (provider === "sendgrid") return callSendGridTool(toolName, args, token);
   if (provider === "openai") return callOpenAITool(toolName, args, token);
   if (provider === "openai_ads") return callOpenAIAdsTool(toolName, args, token);
+  if (provider === "higgsfield") return callHiggsfieldTool(toolName, args, token);
   if (provider === "vercel") return callVercelTool(toolName, args, token);
   if (provider === "stripe") return callStripeTool(toolName, args, token);
   if (provider === "webflow") return callWebflowTool(toolName, args, token);

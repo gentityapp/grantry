@@ -98,7 +98,7 @@ function authTypeLabel(providerKey: string, authType: string): string {
   if (providerKey === "google_maps") return "API key";
   if (providerKey === "discord") return "Bot token";
   if (providerKey === "line") return "Channel access token";
-  if (["airtable", "linear", "sendgrid", "vercel", "stripe", "webflow", "intercom", "customerio", "mailchimp", "openai"].includes(providerKey)) return "API key";
+  if (["airtable", "linear", "sendgrid", "vercel", "stripe", "webflow", "intercom", "customerio", "mailchimp", "openai", "higgsfield"].includes(providerKey)) return "API key";
   if (providerKey === "linkedin_ads" || providerKey === "tiktok_ads") return "Access token";
   if (["zendesk", "wordpress", "shopify", "jira", "salesforce", "microsoft_ads", "aws", "snowflake", "channel_talk"].includes(providerKey)) return "JSON credential";
   return "paste token";
@@ -132,6 +132,7 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
   if (providerKey === "linear") return "Paste your Linear Personal API Key (lin_api_...)";
   if (providerKey === "sendgrid") return "Paste your SendGrid API key (SG....)";
   if (providerKey === "openai") return "Paste your OpenAI API key (sk-... or sk-proj-...)";
+  if (providerKey === "higgsfield") return "Paste your Higgsfield key as KEY_ID:KEY_SECRET";
   if (providerKey === "vercel") return "Paste your Vercel access token";
   if (providerKey === "stripe") return "Paste your Stripe secret key (sk_live_... or sk_test_...)";
   if (providerKey === "webflow") return "Paste your Webflow API token";
