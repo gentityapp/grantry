@@ -6453,6 +6453,7 @@ dashboardApp.get("/agents/:id", async (c) => {
     scopeSet.add(conn.scope);
   }
   const scopes = Array.from(scopeSet).sort();
+  const okNotice = c.req.query("ok");
   const grantableConnectionWhere: any = {
     ...(wsAdminOfAgent && agent.workspaceId ? {} : { ownerId: user.id }),
     enabled: true,
@@ -6482,6 +6483,7 @@ dashboardApp.get("/agents/:id", async (c) => {
     ${NAV("agents", user?.email)}
     <main>
       <h1>Agent <code>${escapeHtml(agent.name)}</code></h1>
+      ${okNotice ? `<div class="card" style="border-color:var(--accent);"><p style="margin:0;">${escapeHtml(okNotice)}</p></div>` : ""}
       <div class="card">
         <h2>Connection grants</h2>
         <p>Status: ${agent.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</p>
@@ -6510,6 +6512,23 @@ dashboardApp.get("/agents/:id", async (c) => {
           <button type="submit" class="secondary" style="margin-top:8px;">Add selected scopes</button>
         </form>`}
       </div>
+      ${agent.fullScopeManager
+        ? `<div class="card">
+        <h2>Remove scopes</h2>
+        <p style="color:#687385;">This agent is a <span class="badge denied">full-scope manager</span> — it reaches every scope in the workspace directly, not through per-scope grants. To narrow it, switch it to selected-scopes mode; individual scopes cannot be removed while it stays a manager.</p>
+      </div>`
+        : `<div class="card">
+        <h2>Remove scopes</h2>
+        ${scopes.length === 0 ? '<div class="empty">No scopes granted to this agent.</div>' : `
+        <p style="color:#687385;">Drops every connection grant at the selected scope. The agent loses those provider tools on its next request. Other agents and the connections themselves are unaffected.</p>
+        ${scopes.map((scope) => `
+          <form method="post" action="/agents/${escapeHtml(agent.id)}/scopes/revoke" style="display:flex;align-items:center;gap:10px;margin:8px 0;" onsubmit="return confirm('Remove scope ${escapeHtml(scope)} from agent ${escapeHtml(agent.name)}? The agent loses these tools on its next request.')">
+            <input type="hidden" name="scope" value="${escapeHtml(scope)}">
+            <span class="badge scoped" style="min-width:120px;">${escapeHtml(scope)}</span>
+            <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;">Remove</button>
+          </form>
+        `).join("")}`}
+      </div>`}
       <div class="card">
         <h2>Charter</h2>
         <p style="color:#687385;">What this agent is <em>for</em>, in plain language. Surfaced to <code>grantry_find_agent</code> so other agents route work here by purpose — not just by which tools you hold. Stored as the agent's description.</p>
@@ -6594,6 +6613,37 @@ dashboardApp.post("/agents/:id/scopes/grant", async (c) => {
 
   await grantConnectionsToAgent(agent.id, connections.map((conn) => conn.id), user.id);
   return c.redirect(`/agents/${agent.id}`);
+});
+
+// --- /agents/:id/scopes/revoke POST (remove all grants at a scope from an agent) ---
+dashboardApp.post("/agents/:id/scopes/revoke", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+  const id = c.req.param("id");
+  const agent = await prisma.agent.findUnique({
+    where: { id },
+    select: { id: true, ownerId: true, workspaceId: true },
+  });
+  if (!agent) return c.html("<h1>agent not found</h1>", 404);
+  const wsAdminOfAgent = await isWsAdmin(user.id, agent.workspaceId);
+  if (agent.ownerId !== user.id && !wsAdminOfAgent) return c.html("<h1>not your agent</h1>", 403);
+
+  const body = await c.req.parseBody();
+  const scope = String((body as any).scope ?? "").trim();
+  if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
+
+  // Mirror the grant boundary: members may only revoke grants to connections
+  // they own; workspace admins may revoke any grant within the workspace.
+  const connWhere: any = {
+    ...(wsAdminOfAgent && agent.workspaceId ? {} : { ownerId: user.id }),
+    scope,
+  };
+  if (agent.workspaceId) connWhere.workspaceId = agent.workspaceId;
+
+  await prisma.agentConnectionGrant.deleteMany({
+    where: { agentId: agent.id, connection: connWhere },
+  });
+  return c.redirect(`/agents/${agent.id}?ok=${encodeURIComponent(`Removed scope ${scope}`)}`);
 });
 
 // --- /agents/:id/charter POST (edit the agent's charter / description) ---
