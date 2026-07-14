@@ -48,6 +48,7 @@ import { callAirtableTool } from "./connectors/airtable.js";
 import { callLinearTool } from "./connectors/linear.js";
 import { callSendGridTool } from "./connectors/sendgrid.js";
 import { callOpenAITool } from "./connectors/openai.js";
+import { callOpenAIAdsTool } from "./connectors/openai_ads.js";
 import { callVercelTool } from "./connectors/vercel.js";
 import { callStripeTool } from "./connectors/stripe.js";
 import { callWebflowTool } from "./connectors/webflow.js";
@@ -2224,6 +2225,21 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       user: { type: "string", description: "Optional end-user identifier for abuse monitoring." },
     };
   }
+  // --- openai_ads ---
+  if (toolName === "openai_ads/get_ad_account") { return {}; }
+  if (toolName === "openai_ads/list_campaigns") { return { query: { type: "object", description: "Optional query params, e.g. { limit, after }." } }; }
+  if (toolName === "openai_ads/get_campaign") { return { campaign_id: { type: "string", description: "Campaign id." } }; }
+  if (toolName === "openai_ads/list_ad_groups") { return { query: { type: "object", description: "Optional query params, e.g. { campaign_id, limit, after }." } }; }
+  if (toolName === "openai_ads/get_ad_group") { return { ad_group_id: { type: "string", description: "Ad group id." } }; }
+  if (toolName === "openai_ads/list_ads") { return { query: { type: "object", description: "Optional query params, e.g. { ad_group_id, limit, after }." } }; }
+  if (toolName === "openai_ads/get_ad") { return { ad_id: { type: "string", description: "Ad id." } }; }
+  if (toolName === "openai_ads/get_insights") {
+    return {
+      level: { type: "string", enum: ["ad_account", "campaign", "ad_group", "ad"], description: "Aggregation level. Default ad_account." },
+      id: { type: "string", description: "Object id for campaign/ad_group/ad levels (not needed for ad_account)." },
+      query: { type: "object", description: "Insights params, e.g. { time_granularity, fields: ['impressions','clicks','spend'], time_ranges, filters, sort, segments, limit }. Array values are repeated." },
+    };
+  }
   // --- vercel ---
   if (toolName === "vercel/list_projects") { return { limit: { type: "number", description: "Projects to return." }, team_id: { type: "string", description: "Optional Vercel team id." } }; }
   if (toolName === "vercel/get_project") { return { project_id: { type: "string", description: "Vercel project id or name." } }; }
@@ -2712,6 +2728,9 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "sendgrid/get_template") return ["template_id"];
   if (toolName === "sendgrid/get_stats") return ["start_date"];
   if (toolName === "openai/generate_image") return ["prompt"];
+  if (toolName === "openai_ads/get_campaign") return ["campaign_id"];
+  if (toolName === "openai_ads/get_ad_group") return ["ad_group_id"];
+  if (toolName === "openai_ads/get_ad") return ["ad_id"];
   if (toolName === "vercel/get_project") return ["project_id"];
   if (toolName === "vercel/get_deployment") return ["deployment_id"];
   if (toolName === "stripe/get_customer") return ["customer_id"];
@@ -2957,6 +2976,7 @@ async function dispatchProviderTool(
   if (provider === "linear") return callLinearTool(toolName, args, token);
   if (provider === "sendgrid") return callSendGridTool(toolName, args, token);
   if (provider === "openai") return callOpenAITool(toolName, args, token);
+  if (provider === "openai_ads") return callOpenAIAdsTool(toolName, args, token);
   if (provider === "vercel") return callVercelTool(toolName, args, token);
   if (provider === "stripe") return callStripeTool(toolName, args, token);
   if (provider === "webflow") return callWebflowTool(toolName, args, token);

@@ -1323,6 +1323,24 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  openai_ads: {
+    key: "openai_ads",
+    label: "OpenAI Ads",
+    authTypes: ["pat"],
+    helpText: "Paste an OpenAI Ads API key from ads.openai.com. It is sent as Authorization: Bearer. Reads cover ad account, campaigns, ad groups, ads and insights; use openai_ads/request for writes (create/update/activate/pause/archive, uploads).",
+    tokenUrl: "https://ads.openai.com",
+    tools: [
+      "openai_ads/get_ad_account",
+      "openai_ads/list_campaigns",
+      "openai_ads/get_campaign",
+      "openai_ads/list_ad_groups",
+      "openai_ads/get_ad_group",
+      "openai_ads/list_ads",
+      "openai_ads/get_ad",
+      "openai_ads/get_insights",
+    ],
+    implemented: true,
+  },
 };
 
 const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]>> = {
@@ -1927,6 +1945,12 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
     smokeTests: [{ id: "models", method: "GET", path: "/models" }],
+  },
+  openai_ads: {
+    baseUrl: "https://api.ads.openai.com/v1",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "ad_account", method: "GET", path: "/ad_account" }],
   },
 };
 
