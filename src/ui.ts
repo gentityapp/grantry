@@ -1504,11 +1504,13 @@ async function scopeAccessFor(
   return { tenant, rowsWhere: { workspaceId: tenant.workspaceId! } };
 }
 
-// Owner rows across all workspaces plus (for admins) the active workspace —
-// for the agent wizard, which historically spans the owner's workspaces
-// instead of pinning to the active one.
+// Rows for the agent wizard and /api/scopes. Pinned to the active workspace so
+// they never surface or grant scopes/connections from the owner's *other*
+// workspaces (workspace = customer boundary). Admins see the whole active
+// workspace; members see their own rows within it.
 function ownerOrAdminWsWhere(userId: string, ws: WsAccess) {
-  return ws.wsAdmin && ws.wsId ? { OR: [{ ownerId: userId }, { workspaceId: ws.wsId }] } : { ownerId: userId };
+  if (!ws.wsId) return { ownerId: userId };
+  return ws.wsAdmin ? { workspaceId: ws.wsId } : { ownerId: userId, workspaceId: ws.wsId };
 }
 
 // Agent management (rotate/charter/grant/delete): the owner or an admin of
