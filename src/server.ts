@@ -3,6 +3,8 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { getCookie, setCookie } from "hono/cookie";
+import { detectLocale, runWithLocale, t, LANG_COOKIE, LOCALES, type Locale } from "./i18n.js";
 import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-auth/plugins";
 import { auth } from "./auth.js";
 import { mcpApp } from "./mcp.js";
@@ -22,6 +24,35 @@ app.use(
   }),
 );
 
+// Per-request locale. Runs the entire downstream chain (handlers + the HTML
+// post-processing middleware below) inside an AsyncLocalStorage store so the
+// synchronous render functions in ui.ts/auth.ts can resolve translations via
+// t()/currentLocale() without threading a locale parameter everywhere. Cookie
+// override (set by /lang/:locale) wins over the Accept-Language header.
+app.use("*", async (c, next) => {
+  const locale = detectLocale(
+    c.req.header("accept-language"),
+    getCookie(c, LANG_COOKIE),
+  );
+  await runWithLocale(locale, next);
+});
+
+// Language switcher target. Sets a 1-year cookie and returns to the referring
+// page (defaults to the dashboard). Only known locales are accepted.
+app.get("/lang/:locale", (c) => {
+  const requested = c.req.param("locale") as Locale;
+  if (LOCALES.includes(requested)) {
+    setCookie(c, LANG_COOKIE, requested, {
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
+      sameSite: "Lax",
+    });
+  }
+  const next = c.req.query("next");
+  const dest = next && next.startsWith("/") ? next : "/dashboard";
+  return c.redirect(dest, 302);
+});
+
 // Inject the "Usage" sidebar tab into dashboard HTML responses without editing
 // the ~400KB single-file ui.ts NAV. Outer middleware: it runs `next()` first,
 // then, only for text/html responses that already render the dashboard nav (the
@@ -36,7 +67,7 @@ app.use("*", async (c, next) => {
   let out = body;
   if (body.includes('href="/audit"') && !body.includes('href="/usage"')) {
     const active = c.req.path === "/usage" ? "active" : "";
-    const link = `<a href="/usage" class="${active}">Usage</a>\n    `;
+    const link = `<a href="/usage" class="${active}">${t("Usage")}</a>\n    `;
     out = body.replace('<a href="/audit"', link + '<a href="/audit"');
   }
   const headers = new Headers(c.res.headers);

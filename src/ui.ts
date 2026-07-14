@@ -17,6 +17,7 @@ import { isSweepRunning, runConnectionHealthSweep } from "./health_sweep.js";
 import { credentialForConnection } from "./mcp.js";
 import { sendSystemEmail } from "./email.js";
 import { adminWorkspacesFor, connectableAgentsFor, userMayUseAgent } from "./workspaces.js";
+import { t, htmlLang, currentLocale } from "./i18n.js";
 import nodeCrypto from "node:crypto";
 
 export const dashboardApp = new Hono();
@@ -419,6 +420,11 @@ const CSS = `
   .nav-foot { margin-top: auto; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 14px; }
   .nav-user { font-size: 12px; color: var(--muted); }
   .nav-user:hover { color: var(--ink); text-decoration: none; }
+  .lang-switch { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); }
+  .lang-switch .lang-opt { color: var(--muted); text-decoration: none; padding: 2px 4px; border-radius: 5px; }
+  .lang-switch a.lang-opt:hover { color: var(--ink); background: var(--border); }
+  .lang-switch .lang-opt.active { color: var(--ink); font-weight: 600; }
+  .lang-switch .lang-sep { color: var(--border); }
 
   main { box-sizing: border-box; margin-left: var(--sidebar-w); padding: 40px clamp(24px, 4vw, 56px) 96px; max-width: calc(var(--sidebar-w) + 1240px); }
   h1 { font-size: 32px; line-height: 1.1; margin: 0 0 24px; color: var(--ink); font-weight: 700; letter-spacing: 0; }
@@ -615,22 +621,22 @@ const NAV = (current: string, email?: string) => `
 <nav>
   <span class="brand"><svg class="brand-mark" viewBox="0 0 176 176" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><circle cx="88" cy="88" r="76" stroke="currentColor" stroke-width="24"/><line x1="100" y1="88" x2="100" y2="169" stroke="currentColor" stroke-width="24"/><line x1="76" y1="7" x2="76" y2="88" stroke="currentColor" stroke-width="24"/><rect x="64" y="75" width="48" height="24" fill="currentColor"/></svg>grantry</span>
   <div class="ws-switcher">
-    <label for="gnWs">Workspace</label>
+    <label for="gnWs">${t("Workspace")}</label>
     <select id="gnWs" aria-label="Active workspace"><option>…</option></select>
-    <button type="button" class="ws-new-btn" id="gnWsNew">+ New workspace</button>
+    <button type="button" class="ws-new-btn" id="gnWsNew">${t("+ New workspace")}</button>
   </div>
   <dialog id="gnWsDialog" class="ws-dialog">
     <form method="post" action="/workspaces">
-      <h2>Create a new workspace</h2>
-      <p class="ws-dialog-hint">A management wall — you become its owner. Invite teammates and assign agents afterward.</p>
-      <label for="gnWsName">Name</label>
+      <h2>${t("Create a new workspace")}</h2>
+      <p class="ws-dialog-hint">${t("A management wall — you become its owner. Invite teammates and assign agents afterward.")}</p>
+      <label for="gnWsName">${t("Name")}</label>
       <input type="text" id="gnWsName" name="displayName" placeholder="Acme Inc. workspace" required autocomplete="off">
-      <label for="gnWsSlug">Slug <span style="color:var(--muted);font-weight:400;">(optional)</span></label>
+      <label for="gnWsSlug">Slug <span style="color:var(--muted);font-weight:400;">${t("(optional)")}</span></label>
       <input type="text" id="gnWsSlug" name="slug" placeholder="acme" pattern="[A-Za-z0-9-]*" autocomplete="off">
-      <p class="ws-dialog-hint">Immutable; rides in the connector URL <code>/mcp/w/&lt;slug&gt;</code>. Leave blank to derive it from the name.</p>
+      <p class="ws-dialog-hint">${t("Immutable; rides in the connector URL")} <code>/mcp/w/&lt;slug&gt;</code>. ${t("Leave blank to derive it from the name.")}</p>
       <div class="ws-dialog-actions">
-        <button type="button" class="secondary" id="gnWsCancel">Cancel</button>
-        <button type="submit">Create</button>
+        <button type="button" class="secondary" id="gnWsCancel">${t("Cancel")}</button>
+        <button type="submit">${t("Create")}</button>
       </div>
     </form>
   </dialog>
@@ -666,49 +672,66 @@ const NAV = (current: string, email?: string) => `
   })();
   </script>
   <div class="nav-links">
-    <a href="/dashboard" class="${current === "dashboard" ? "active" : ""}">Dashboard</a>
-    <a href="/tenants" class="${current === "tenants" ? "active" : ""}">Scopes</a>
-    <a href="/connections" class="${current === "connections" ? "active" : ""}">Connections</a>
-    <a href="/providers" class="${current === "providers" ? "active" : ""}">Providers</a>
-    <a href="/agents" class="${current === "agents" ? "active" : ""}">Agents</a>
-    <a href="/workspaces" class="${current === "workspaces" ? "active" : ""}">Workspace</a>
-    <a href="/audit" class="${current === "audit" ? "active" : ""}">Audit</a>
-    <a href="/api-keys" class="${current === "api-keys" ? "active" : ""}">API keys</a>
-    <a href="/account" class="${current === "account" ? "active" : ""}">Account</a>
+    <a href="/dashboard" class="${current === "dashboard" ? "active" : ""}">${t("Dashboard")}</a>
+    <a href="/tenants" class="${current === "tenants" ? "active" : ""}">${t("Scopes")}</a>
+    <a href="/connections" class="${current === "connections" ? "active" : ""}">${t("Connections")}</a>
+    <a href="/providers" class="${current === "providers" ? "active" : ""}">${t("Providers")}</a>
+    <a href="/agents" class="${current === "agents" ? "active" : ""}">${t("Agents")}</a>
+    <a href="/workspaces" class="${current === "workspaces" ? "active" : ""}">${t("Workspace")}</a>
+    <a href="/audit" class="${current === "audit" ? "active" : ""}">${t("Audit")}</a>
+    <a href="/api-keys" class="${current === "api-keys" ? "active" : ""}">${t("API keys")}</a>
+    <a href="/account" class="${current === "account" ? "active" : ""}">${t("Account")}</a>
   </div>
   <div class="nav-foot">
-    ${email ? `<a href="/account" class="nav-user" title="Signed in as ${escapeHtml(email)}">\u{1F464} <code style="font-size:12px;">${escapeHtml(email)}</code></a>` : ""}
+    ${langSwitcher()}
+    ${email ? `<a href="/account" class="nav-user" title="${escapeHtml(t("Signed in as {email}", { email }))}">\u{1F464} <code style="font-size:12px;">${escapeHtml(email)}</code></a>` : ""}
     <form method="post" action="/logout" style="margin:0;">
-      <button type="submit" class="secondary" style="font-size:13px;padding:6px 10px;">Sign out</button>
+      <button type="submit" class="secondary" style="font-size:13px;padding:6px 10px;">${t("Sign out")}</button>
     </form>
   </div>
 </nav>
 `;
 
-const PUBLIC_HEADER = `
+// Compact en/ja language switcher. Links to /lang/<locale>?next=<current path>
+// so the choice persists via cookie and returns to the same page. The active
+// locale is rendered as a non-link label.
+function langSwitcher(): string {
+  const cur = currentLocale();
+  const link = (loc: "en" | "ja", label: string) =>
+    loc === cur
+      ? `<span class="lang-opt active" aria-current="true">${label}</span>`
+      : `<a class="lang-opt" href="/lang/${loc}?next=" data-lang-link>${label}</a>`;
+  return `<div class="lang-switch" role="group" aria-label="${escapeHtml(t("Language"))}">
+    ${link("en", "EN")}<span class="lang-sep">/</span>${link("ja", "日本語")}
+    <script>(function(){var p=encodeURIComponent(location.pathname+location.search);document.querySelectorAll('[data-lang-link]').forEach(function(a){a.href=a.getAttribute('href')+p;});})();</script>
+  </div>`;
+}
+
+const PUBLIC_HEADER = () => `
   <header class="public-topbar">
     <a class="public-brand" href="/"><svg class="brand-mark" viewBox="0 0 176 176" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><circle cx="88" cy="88" r="76" stroke="currentColor" stroke-width="24"/><line x1="100" y1="88" x2="100" y2="169" stroke="currentColor" stroke-width="24"/><line x1="76" y1="7" x2="76" y2="88" stroke="currentColor" stroke-width="24"/><rect x="64" y="75" width="48" height="24" fill="currentColor"/></svg>grantry</a>
     <div class="public-links">
-      <a href="/privacy">Privacy Policy</a>
-      <a href="/terms">Terms of Service</a>
-      <a class="btn secondary" href="/login">Sign in</a>
+      ${langSwitcher()}
+      <a href="/privacy">${t("Privacy Policy")}</a>
+      <a href="/terms">${t("Terms of Service")}</a>
+      <a class="btn secondary" href="/login">${t("Sign in")}</a>
     </div>
   </header>
 `;
 
-const PUBLIC_FOOTER = `
+const PUBLIC_FOOTER = () => `
   <footer class="public-footer">
     <span>&copy; ${new Date().getFullYear()} grantry.ai</span>
-    <span><a href="/privacy">Privacy Policy</a> &middot; <a href="/terms">Terms of Service</a> &middot; <a href="mailto:<運営者のメール>">Contact</a></span>
+    <span><a href="/privacy">${t("Privacy Policy")}</a> &middot; <a href="/terms">${t("Terms of Service")}</a> &middot; <a href="mailto:<運営者のメール>">${t("Contact")}</a></span>
   </footer>
 `;
 
 function publicPage(title: string, body: string): string {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} — grantry</title>
+  return `<!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(title)} — grantry</title>
   ${FAVICON}<style>${CSS}</style></head><body class="public-shell">
-  ${PUBLIC_HEADER}
+  ${PUBLIC_HEADER()}
   ${body}
-  ${PUBLIC_FOOTER}
+  ${PUBLIC_FOOTER()}
   </body></html>`;
 }
 
@@ -1737,7 +1760,7 @@ dashboardApp.get("/workspaces", async (c) => {
     const isAdmin = m.role === "owner" || m.role === "admin";
     if (!isAdmin) {
       sections.push(`<div class="card"><b>${escapeHtml(ws.displayName)}</b> <span class="badge unscoped">${escapeHtml(m.role)}</span>
-        <div style="color:#687385;font-size:13px;margin-top:6px;">Connector URL: <code>${escapeHtml(BASE_URL())}/mcp/w/${escapeHtml(ws.slug)}</code></div></div>`);
+        <div style="color:#687385;font-size:13px;margin-top:6px;">${t("Connector URL:")} <code>${escapeHtml(BASE_URL())}/mcp/w/${escapeHtml(ws.slug)}</code></div></div>`);
     } else {
 
     const [members, agents, assignments, invites] = await Promise.all([
@@ -1765,12 +1788,12 @@ dashboardApp.get("/workspaces", async (c) => {
     sections.push(`
     <div class="card">
       <h2 style="margin-top:0;">${escapeHtml(ws.displayName)} <span class="badge ok">${escapeHtml(m.role)}</span></h2>
-      <div style="color:#687385;font-size:13px;">Workspace-locked connector URL (parallel connectors per client):<br>
+      <div style="color:#687385;font-size:13px;">${t("Workspace-locked connector URL (parallel connectors per client):")}<br>
         <code>${escapeHtml(BASE_URL())}/mcp/w/${escapeHtml(ws.slug)}</code></div>
 
-      <h3>Members</h3>
+      <h3>${t("Members")}</h3>
       <table>
-        <thead><tr><th>Member</th><th>Role</th><th>Assigned agents</th><th></th></tr></thead>
+        <thead><tr><th>${t("Member")}</th><th>${t("Role")}</th><th>${t("Assigned agents")}</th><th></th></tr></thead>
         <tbody>
         ${members.map((mm) => {
           const mine = assignments.filter((a) => a.user.id === mm.user.id);
@@ -1780,12 +1803,12 @@ dashboardApp.get("/workspaces", async (c) => {
             <td>${mine.length ? mine.map((a) => `
               <form method="post" action="/workspaces/${ws.id}/unassign" style="display:inline-block;margin:0 6px 4px 0;">
                 <input type="hidden" name="agentId" value="${escapeHtml(a.agent.id)}"><input type="hidden" name="userId" value="${escapeHtml(mm.user.id)}">
-                <span class="badge scoped">${escapeHtml(a.agent.name)} <button type="submit" title="Unassign" style="all:unset;cursor:pointer;color:#df1b41;">&times;</button></span>
+                <span class="badge scoped">${escapeHtml(a.agent.name)} <button type="submit" title="${escapeHtml(t("Unassign"))}" style="all:unset;cursor:pointer;color:#df1b41;">&times;</button></span>
               </form>`).join("") : '<span style="color:#687385;">—</span>'}
             </td>
             <td>${mm.role !== "owner" ? `
-              <form method="post" action="/workspaces/${ws.id}/members/${mm.user.id}/remove" style="margin:0;" onsubmit="return confirm('Remove ${escapeHtml(mm.user.email)} from workspace? Their connector access is revoked immediately.')">
-                <button type="submit" class="secondary" style="font-size:12px;padding:4px 8px;">Remove</button>
+              <form method="post" action="/workspaces/${ws.id}/members/${mm.user.id}/remove" style="margin:0;" onsubmit="return confirm(${jsString(t("Remove {email} from workspace? Their connector access is revoked immediately.", { email: mm.user.email }))})">
+                <button type="submit" class="secondary" style="font-size:12px;padding:4px 8px;">${t("Remove")}</button>
               </form>` : ""}
             </td>
           </tr>`;
@@ -1793,62 +1816,62 @@ dashboardApp.get("/workspaces", async (c) => {
         </tbody>
       </table>
 
-      <h3>Assign an agent</h3>
+      <h3>${t("Assign an agent")}</h3>
       <form method="post" action="/workspaces/${ws.id}/assign" class="row" style="gap:8px;align-items:center;">
         <select name="userId" required>${members.map((mm) => `<option value="${escapeHtml(mm.user.id)}">${escapeHtml(mm.user.email)}</option>`).join("")}</select>
         <select name="agentId" required>${agents.map((a) => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name)}</option>`).join("")}</select>
-        <button type="submit">Assign</button>
+        <button type="submit">${t("Assign")}</button>
       </form>
 
-      <h3>Invite</h3>
+      <h3>${t("Invite")}</h3>
       <form method="post" action="/workspaces/${ws.id}/invite">
         <div class="row" style="gap:8px;align-items:center;">
           <input type="email" name="email" placeholder="teammate@example.com" required style="flex:1;">
-          <select name="role"><option value="member">member</option><option value="admin">admin</option></select>
-          <button type="submit">Send invite</button>
+          <select name="role"><option value="member">${t("member")}</option><option value="admin">${t("admin")}</option></select>
+          <button type="submit">${t("Send invite")}</button>
         </div>
-        <div style="margin-top:8px;color:#687385;font-size:13px;">Auto-assign agents on accept:</div>
+        <div style="margin-top:8px;color:#687385;font-size:13px;">${t("Auto-assign agents on accept:")}</div>
         <div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:4px;">
-          ${agents.map((a) => `<label style="font-size:13px;"><input type="checkbox" name="agentIds" value="${escapeHtml(a.id)}"> ${escapeHtml(a.name)}</label>`).join("") || '<span style="color:#687385;font-size:13px;">No agents in this workspace yet.</span>'}
+          ${agents.map((a) => `<label style="font-size:13px;"><input type="checkbox" name="agentIds" value="${escapeHtml(a.id)}"> ${escapeHtml(a.name)}</label>`).join("") || `<span style="color:#687385;font-size:13px;">${t("No agents in this workspace yet.")}</span>`}
         </div>
       </form>
 
-      ${invites.length ? `<h3>Pending invites</h3>
-      <table><thead><tr><th>Email</th><th>Role</th><th>Expires</th><th>Link</th><th></th></tr></thead><tbody>
+      ${invites.length ? `<h3>${t("Pending invites")}</h3>
+      <table><thead><tr><th>${t("Email")}</th><th>${t("Role")}</th><th>${t("Expires")}</th><th>${t("Link")}</th><th></th></tr></thead><tbody>
       ${invites.map((inv) => `<tr>
         <td>${escapeHtml(inv.email)}</td><td>${escapeHtml(inv.role)}</td>
         <td><code>${inv.expiresAt.toISOString().slice(0, 10)}</code></td>
         <td><code style="font-size:11px;">${escapeHtml(BASE_URL())}/invite/${escapeHtml(inv.token)}</code></td>
-        <td><form method="post" action="/workspaces/${ws.id}/invites/${inv.id}/revoke" style="margin:0;"><button type="submit" class="secondary" style="font-size:12px;padding:4px 8px;">Revoke</button></form></td>
+        <td><form method="post" action="/workspaces/${ws.id}/invites/${inv.id}/revoke" style="margin:0;"><button type="submit" class="secondary" style="font-size:12px;padding:4px 8px;">${t("Revoke")}</button></form></td>
       </tr>`).join("")}
       </tbody></table>` : ""}
 
       ${m.role === "owner" ? `
-      <h3>Danger zone</h3>
+      <h3>${t("Danger zone")}</h3>
       <div style="border:1px solid var(--danger);background:var(--danger-soft);border-radius:10px;padding:14px;">
-        <div style="font-weight:700;color:var(--danger);">Delete workspace</div>
-        <div style="color:#687385;font-size:13px;margin-top:4px;">This permanently deletes this workspace and its members, invites, agents, connections, tenants, provider settings, and credentials.</div>
+        <div style="font-weight:700;color:var(--danger);">${t("Delete workspace")}</div>
+        <div style="color:#687385;font-size:13px;margin-top:4px;">${t("This permanently deletes this workspace and its members, invites, agents, connections, tenants, provider settings, and credentials.")}</div>
         ${memberships.length > 1 ? `
         <form method="post" action="/workspaces/${escapeHtml(ws.id)}/delete" style="margin-top:12px;">
-          <label for="deleteWorkspaceConfirm" style="font-size:13px;">Type the workspace name to confirm</label>
+          <label for="deleteWorkspaceConfirm" style="font-size:13px;">${t("Type the workspace name to confirm")}</label>
           <div class="row" style="gap:8px;align-items:center;margin-top:6px;">
             <input id="deleteWorkspaceConfirm" type="text" name="confirmName" placeholder="${escapeHtml(ws.displayName)}" autocomplete="off" required style="flex:1;">
-            <button type="submit" class="danger">Delete workspace</button>
+            <button type="submit" class="danger">${t("Delete workspace")}</button>
           </div>
-        </form>` : `<div style="color:#687385;font-size:13px;margin-top:10px;">Create or join another workspace before deleting this one.</div>`}
+        </form>` : `<div style="color:#687385;font-size:13px;margin-top:10px;">${t("Create or join another workspace before deleting this one.")}</div>`}
       </div>` : ""}
     </div>`);
     }
   }
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Workspace — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Workspace")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("workspaces", user?.email)}
     <main>
-      <h1>Workspace</h1>
+      <h1>${t("Workspace")}</h1>
       ${flash ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">${escapeHtml(flash)}</div>` : ""}
-      ${sections.join("\n") || '<div class="card"><div class="empty">No workspace yet — use <b>+ New workspace</b> in the sidebar to create one.</div></div>'}
+      ${sections.join("\n") || `<div class="card"><div class="empty">${t("No workspace yet — use <b>+ New workspace</b> in the sidebar to create one.")}</div></div>`}
     </main></body></html>
   `);
 });
@@ -2015,28 +2038,28 @@ dashboardApp.get("/invite/:token", async (c) => {
     include: { workspace: true },
   });
   const page = (inner: string) => c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Workspace invite — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Workspace invite")} — grantry</title>
     ${FAVICON}<style>${CSS} body { max-width: 440px; margin: 80px auto; padding: 0 24px; }</style></head><body>
-    <h1>Workspace invite</h1><div class="card">${inner}</div></body></html>`);
+    <h1>${t("Workspace invite")}</h1><div class="card">${inner}</div></body></html>`);
 
-  if (!invite || invite.acceptedAt) return page("<p>This invite link is invalid or already used.</p>");
-  if (invite.expiresAt < new Date()) return page("<p>This invite has expired. Ask your admin to send a new one.</p>");
+  if (!invite || invite.acceptedAt) return page(`<p>${t("This invite link is invalid or already used.")}</p>`);
+  if (invite.expiresAt < new Date()) return page(`<p>${t("This invite has expired. Ask your admin to send a new one.")}</p>`);
 
   const user = await getSessionUser(c);
   if (!user) {
     const next = encodeURIComponent(`/invite/${token}`);
     return page(`
-      <p>You've been invited to the <b>${escapeHtml(invite.workspace.displayName)}</b> workspace (as ${escapeHtml(invite.role)}).</p>
-      <p>Sign in or create a grantry account with <b>${escapeHtml(invite.email)}</b> to accept.</p>
+      <p>${t("You've been invited to the <b>{workspace}</b> workspace (as {role}).", { workspace: escapeHtml(invite.workspace.displayName), role: escapeHtml(invite.role) })}</p>
+      <p>${t("Sign in or create a grantry account with <b>{email}</b> to accept.", { email: escapeHtml(invite.email) })}</p>
       <div class="row" style="gap:10px;">
-        <a href="/login?next=${next}"><button type="button" style="width:100%;">Sign in</button></a>
-        <a href="/register?next=${next}"><button type="button" class="secondary" style="width:100%;">Create account</button></a>
+        <a href="/login?next=${next}"><button type="button" style="width:100%;">${t("Sign in")}</button></a>
+        <a href="/register?next=${next}"><button type="button" class="secondary" style="width:100%;">${t("Create account")}</button></a>
       </div>`);
   }
 
   if (user.email.toLowerCase() !== invite.email.toLowerCase()) {
-    return page(`<p>This invite was issued to <b>${escapeHtml(invite.email)}</b>, but you are signed in as <b>${escapeHtml(user.email)}</b>.</p>
-      <p>Sign out and use the invited address.</p>`);
+    return page(`<p>${t("This invite was issued to <b>{invited}</b>, but you are signed in as <b>{current}</b>.", { invited: escapeHtml(invite.email), current: escapeHtml(user.email) })}</p>
+      <p>${t("Sign out and use the invited address.")}</p>`);
   }
 
   const agentIds = safeJsonArray(invite.agentIds);
@@ -2055,7 +2078,7 @@ dashboardApp.get("/invite/:token", async (c) => {
     ),
     prisma.workspaceInvite.update({ where: { id: invite.id }, data: { acceptedAt: new Date() } }),
   ]);
-  return c.redirect(`/workspaces?ok=${encodeURIComponent(`Joined ${invite.workspace.displayName}`)}`);
+  return c.redirect(`/workspaces?ok=${encodeURIComponent(t("Joined {workspace}", { workspace: invite.workspace.displayName }))}`);
 });
 
 // --- /providers — workspace-level provider catalog selection ---
@@ -2063,7 +2086,7 @@ dashboardApp.get("/providers", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
   const wsId = await getActiveWorkspaceId(c);
-  if (!wsId) return c.html("<h1>workspace required</h1>", 400);
+  if (!wsId) return c.html(`<h1>${t("workspace required")}</h1>`, 400);
   const admin = await requireWsAdmin(c, wsId);
   const catalog = await listWorkspaceProviderCatalog(wsId);
   const connectionCounts = await prisma.connection.groupBy({
@@ -2098,30 +2121,30 @@ dashboardApp.get("/providers", async (c) => {
   const oauthCatalog = catalog.filter(({ provider }) => provider.authTypes.includes("oauth") && provider.implemented !== false);
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Providers — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Providers")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("providers", user?.email)}
     <main>
-      <h1>Providers</h1>
+      <h1>${t("Providers")}</h1>
       <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
-        Choose which providers this workspace can add to scopes. Existing connections keep working; disabled providers are hidden from new scope connection pickers.
+        ${t("Choose which providers this workspace can add to scopes. Existing connections keep working; disabled providers are hidden from new scope connection pickers.")}
       </p>
       ${notice ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">${escapeHtml(notice)}</div>` : ""}
 
       <div class="row" style="gap:16px;flex-wrap:wrap;margin-bottom:24px;">
-        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">Catalog</div><div style="font-size:24px;font-weight:700;">${catalog.length}</div></div>
-        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">Enabled</div><div style="font-size:24px;font-weight:700;">${enabledCount}</div></div>
-        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">Hidden</div><div style="font-size:24px;font-weight:700;">${disabledCount}</div></div>
-        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">Custom</div><div style="font-size:24px;font-weight:700;">${customProviders.length}</div></div>
-        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">OAuth credentials</div><div style="font-size:24px;font-weight:700;">${oauthCredentials.length}</div></div>
+        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">${t("Catalog")}</div><div style="font-size:24px;font-weight:700;">${catalog.length}</div></div>
+        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">${t("Enabled")}</div><div style="font-size:24px;font-weight:700;">${enabledCount}</div></div>
+        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">${t("Hidden")}</div><div style="font-size:24px;font-weight:700;">${disabledCount}</div></div>
+        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">${t("Custom")}</div><div style="font-size:24px;font-weight:700;">${customProviders.length}</div></div>
+        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">${t("OAuth credentials")}</div><div style="font-size:24px;font-weight:700;">${oauthCredentials.length}</div></div>
       </div>
 
-      <h2>Workspace OAuth credentials</h2>
+      <h2>${t("Workspace OAuth credentials")}</h2>
       <div class="card">
-        <p class="field-hint" style="margin-top:0;">Connect a provider once at the workspace level, then reuse that credential from scopes without starting from a scope first.</p>
+        <p class="field-hint" style="margin-top:0;">${t("Connect a provider once at the workspace level, then reuse that credential from scopes without starting from a scope first.")}</p>
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Provider</th><th>OAuth app</th><th>Credentials</th><th>Action</th></tr></thead>
+            <thead><tr><th>${t("Provider")}</th><th>${t("OAuth app")}</th><th>${t("Credentials")}</th><th>${t("Action")}</th></tr></thead>
             <tbody>
               ${oauthCatalog.map(({ provider: p }) => {
                 const credentials = oauthCredentialsByProvider.get(p.key) ?? [];
@@ -2133,50 +2156,50 @@ dashboardApp.get("/providers", async (c) => {
                   <td><span class="provider-cell">${providerIcon(p.key)}<span>${escapeHtml(p.label)}</span></span><br><code>${escapeHtml(p.key)}</code></td>
                   <td>${requiresWorkspaceOAuthApp
                     ? (appCredential
-                      ? `<span class="badge ok">configured</span><br><span style="color:#687385;font-size:12px;">${escapeHtml(clientIdPreview(String(safeJsonObject(appCredential.credentialMetadata).oauthClientId || "")))}</span>`
+                      ? `<span class="badge ok">${t("configured")}</span><br><span style="color:#687385;font-size:12px;">${escapeHtml(clientIdPreview(String(safeJsonObject(appCredential.credentialMetadata).oauthClientId || "")))}</span>`
                       : (admin ? `<form method="post" action="/providers/${encodeURIComponent(p.key)}/oauth-app" style="min-width:260px;">
                           <div class="field" style="margin-bottom:8px;">
-                            <label>Redirect URI</label>
+                            <label>${t("Redirect URI")}</label>
                             <input type="text" readonly value="${escapeHtml(oauthCallbackUrl(c, p.key))}" style="font-family:monospace;font-size:12px;">
                           </div>
                           <div class="field" style="margin-bottom:8px;">
-                            <label>Client ID</label>
+                            <label>${t("Client ID")}</label>
                             <input type="text" name="oauth_client_id" autocomplete="off" required>
                           </div>
                           <div class="field" style="margin-bottom:8px;">
-                            <label>Client Secret</label>
+                            <label>${t("Client Secret")}</label>
                             <input type="password" name="oauth_client_secret" autocomplete="off" required>
                           </div>
                           <input type="hidden" name="oauth_client_auth_method" value="${escapeHtml(defaultClientAuthMethod)}">
-                          <button type="submit" style="font-size:12px;padding:4px 10px;">Save OAuth app</button>
-                        </form>` : '<span style="color:#687385;">admin only</span>'))
-                    : '<span class="badge unscoped">platform app</span>'}</td>
+                          <button type="submit" style="font-size:12px;padding:4px 10px;">${t("Save OAuth app")}</button>
+                        </form>` : `<span style="color:#687385;">${t("admin only")}</span>`))
+                    : `<span class="badge unscoped">${t("platform app")}</span>`}</td>
                   <td>${credentials.length ? credentials.map((credential) => `
                     <div style="margin-bottom:8px;">
                       ${renderProviderCredentialHealthBadge(credential)}
                       <b>${escapeHtml(credential.label)}</b>
                       ${oauthTokenStatus(credential)}
-                      <br><span style="color:#687385;font-size:12px;">Updated ${credential.updatedAt.toISOString().slice(0, 19).replace("T", " ")}</span>
-                      ${admin ? `<a class="btn secondary" href="/oauth/${encodeURIComponent(p.key)}/start?provider_credential=1&provider_credential_id=${encodeURIComponent(credential.id)}" style="font-size:12px;padding:4px 10px;margin-left:8px;">Reconnect</a>` : ""}
-                    </div>`).join("") : '<span class="badge unscoped">not connected</span>'}</td>
+                      <br><span style="color:#687385;font-size:12px;">${t("Updated")} ${credential.updatedAt.toISOString().slice(0, 19).replace("T", " ")}</span>
+                      ${admin ? `<a class="btn secondary" href="/oauth/${encodeURIComponent(p.key)}/start?provider_credential=1&provider_credential_id=${encodeURIComponent(credential.id)}" style="font-size:12px;padding:4px 10px;margin-left:8px;">${t("Reconnect")}</a>` : ""}
+                    </div>`).join("") : `<span class="badge unscoped">${t("not connected")}</span>`}</td>
                   <td>${admin
                     ? (requiresWorkspaceOAuthApp && !appCredential
-                      ? '<span style="color:#687385;">save OAuth app first</span>'
-                      : `<a class="btn" href="/oauth/${encodeURIComponent(p.key)}/start?provider_credential=1" style="font-size:12px;padding:4px 10px;">Connect OAuth</a>`)
-                    : '<span style="color:#687385;">admin only</span>'}</td>
+                      ? `<span style="color:#687385;">${t("save OAuth app first")}</span>`
+                      : `<a class="btn" href="/oauth/${encodeURIComponent(p.key)}/start?provider_credential=1" style="font-size:12px;padding:4px 10px;">${t("Connect OAuth")}</a>`)
+                    : `<span style="color:#687385;">${t("admin only")}</span>`}</td>
                 </tr>`;
-              }).join("") || '<tr><td colspan="4">No OAuth providers.</td></tr>'}
+              }).join("") || `<tr><td colspan="4">${t("No OAuth providers.")}</td></tr>`}
             </tbody>
           </table>
         </div>
       </div>
 
-      <h2>Workspace provider catalog</h2>
+      <h2>${t("Workspace provider catalog")}</h2>
       <div class="card">
-        <input type="text" id="providerCatalogSearch" placeholder="Search providers..." autocomplete="off" style="margin-bottom:12px;">
+        <input type="text" id="providerCatalogSearch" placeholder="${escapeHtml(t("Search providers..."))}" autocomplete="off" style="margin-bottom:12px;">
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Provider</th><th>Type</th><th>Auth</th><th>Connections</th><th>Workspace</th><th>Action</th></tr></thead>
+            <thead><tr><th>${t("Provider")}</th><th>${t("Type")}</th><th>${t("Auth")}</th><th>${t("Connections")}</th><th>${t("Workspace")}</th><th>${t("Action")}</th></tr></thead>
             <tbody>
               ${catalog.map(({ provider: p, enabled, pinned, explicit }) => {
                 const isCustom = customKeys.has(p.key);
@@ -2185,15 +2208,15 @@ dashboardApp.get("/providers", async (c) => {
                 return `
                 <tr class="provider-catalog-row" data-search="${escapeHtml((p.key + " " + p.label + " " + p.authTypes.join(" ")).toLowerCase())}">
                   <td><span class="provider-cell">${providerIcon(p.key)}<span>${escapeHtml(p.label)}</span></span></td>
-                  <td>${isCustom ? '<span class="badge scoped">custom</span>' : '<span class="badge unscoped">built-in</span>'} ${pinned ? '<span class="badge ok">pinned</span>' : ""}</td>
+                  <td>${isCustom ? `<span class="badge scoped">${t("custom")}</span>` : `<span class="badge unscoped">${t("built-in")}</span>`} ${pinned ? `<span class="badge ok">${t("pinned")}</span>` : ""}</td>
                   <td>${p.authTypes.map((a) => `<span class="tool-pill">${escapeHtml(authTypeLabel(p.key, a))}</span>`).join(" ")}</td>
                   <td>${countByProvider.get(p.key) ?? 0}</td>
-                  <td>${enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge unscoped">hidden from scopes</span>'}${explicit ? "" : '<br><span style="color:#687385;font-size:12px;">default</span>'}</td>
+                  <td>${enabled ? `<span class="badge ok">${t("enabled")}</span>` : `<span class="badge unscoped">${t("hidden from scopes")}</span>`}${explicit ? "" : `<br><span style="color:#687385;font-size:12px;">${t("default")}</span>`}</td>
                   <td><div class="stacked-actions">
                     ${admin ? `<form method="post" action="/providers/${encodeURIComponent(p.key)}/toggle" style="display:inline;">
                       <input type="hidden" name="enabled" value="${enabled ? "0" : "1"}">
-                      <button type="submit" class="${enabled ? "secondary" : ""}" style="font-size:12px;padding:4px 10px;">${enabled ? "Hide" : "Enable"}</button>
-                    </form>` : '<span style="color:#687385;">admin only</span>'}
+                      <button type="submit" class="${enabled ? "secondary" : ""}" style="font-size:12px;padding:4px 10px;">${enabled ? t("Hide") : t("Enable")}</button>
+                    </form>` : `<span style="color:#687385;">${t("admin only")}</span>`}
                     ${p.authTypes.map((authType) => defaultProviderConnectionAction(c, {
                       providerDef: p,
                       authType,
@@ -2211,14 +2234,14 @@ dashboardApp.get("/providers", async (c) => {
         </div>
       </div>
 
-      <h2>Custom providers</h2>
+      <h2>${t("Custom providers")}</h2>
       <div class="card">
         <div class="row spread" style="gap:12px;align-items:flex-start;margin-bottom:12px;">
-          <p class="field-hint" style="margin:0;">Custom providers are workspace-level definitions. Once enabled here, they appear in each scope's Add service picker.</p>
-          ${admin ? '<a class="btn" href="/providers/custom/new" style="white-space:nowrap;">Add custom provider</a>' : ""}
+          <p class="field-hint" style="margin:0;">${t("Custom providers are workspace-level definitions. Once enabled here, they appear in each scope's Add service picker.")}</p>
+          ${admin ? `<a class="btn" href="/providers/custom/new" style="white-space:nowrap;">${t("Add custom provider")}</a>` : ""}
         </div>
-        ${customProviders.length ? `<div class="table-wrap"><table><thead><tr><th>Provider</th><th>Base URL</th><th>Auth</th><th>Status</th><th>Action</th></tr></thead><tbody>${customProviders.map((p) => `<tr><td>${escapeHtml(p.label)}</td><td><code>${escapeHtml(p.baseUrl)}</code></td><td><code>${escapeHtml(p.authScheme)}</code>${p.apiKeyHeader ? `<br><code>${escapeHtml(p.apiKeyHeader)}</code>` : ""}</td><td>${p.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</td><td>${admin ? `<form method="post" action="/providers/custom/${p.id}/delete" onsubmit="return confirm(${jsString(`Delete custom provider ${p.key}? Existing connections keep their provider key but the catalog definition will be removed.`)});"><button type="submit" class="danger" style="font-size:12px;padding:4px 10px;">Delete</button></form>` : '<span style="color:#687385;">admin only</span>'}</td></tr>`).join("")}</tbody></table></div>` : '<div class="empty">No custom providers in this workspace yet.</div>'}
-        ${admin ? "" : '<p class="field-hint">Workspace admin required to add custom providers.</p>'}
+        ${customProviders.length ? `<div class="table-wrap"><table><thead><tr><th>${t("Provider")}</th><th>${t("Base URL")}</th><th>${t("Auth")}</th><th>${t("Status")}</th><th>${t("Action")}</th></tr></thead><tbody>${customProviders.map((p) => `<tr><td>${escapeHtml(p.label)}</td><td><code>${escapeHtml(p.baseUrl)}</code></td><td><code>${escapeHtml(p.authScheme)}</code>${p.apiKeyHeader ? `<br><code>${escapeHtml(p.apiKeyHeader)}</code>` : ""}</td><td>${p.enabled ? `<span class="badge ok">${t("enabled")}</span>` : `<span class="badge denied">${t("disabled")}</span>`}</td><td>${admin ? `<form method="post" action="/providers/custom/${p.id}/delete" onsubmit="return confirm(${jsString(t("Delete custom provider {key}? Existing connections keep their provider key but the catalog definition will be removed.", { key: p.key }))});"><button type="submit" class="danger" style="font-size:12px;padding:4px 10px;">${t("Delete")}</button></form>` : `<span style="color:#687385;">${t("admin only")}</span>`}</td></tr>`).join("")}</tbody></table></div>` : `<div class="empty">${t("No custom providers in this workspace yet.")}</div>`}
+        ${admin ? "" : `<p class="field-hint">${t("Workspace admin required to add custom providers.")}</p>`}
       </div>
     </main>
     <script>
@@ -2243,9 +2266,9 @@ dashboardApp.get("/providers/custom/new", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
   const wsId = await getActiveWorkspaceId(c);
-  if (!wsId) return c.html("<h1>workspace required</h1>", 400);
+  if (!wsId) return c.html(`<h1>${t("workspace required")}</h1>`, 400);
   const admin = await requireWsAdmin(c, wsId);
-  if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
+  if (!admin) return c.html(`<h1>${t("workspace admin required")}</h1>`, 403);
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>Add custom provider — grantry</title>
@@ -2268,9 +2291,9 @@ dashboardApp.post("/providers/:providerKey/toggle", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
   const wsId = await getActiveWorkspaceId(c);
-  if (!wsId) return c.html("<h1>workspace required</h1>", 400);
+  if (!wsId) return c.html(`<h1>${t("workspace required")}</h1>`, 400);
   const admin = await requireWsAdmin(c, wsId);
-  if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
+  if (!admin) return c.html(`<h1>${t("workspace admin required")}</h1>`, 403);
   const providerKey = c.req.param("providerKey");
   const providerDef = await getProviderForWorkspace(providerKey, wsId);
   if (!providerDef) return c.html(`<h1>unknown provider: ${escapeHtml(providerKey)}</h1>`, 404);
@@ -2288,9 +2311,9 @@ dashboardApp.post("/providers/:providerKey/oauth-app", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
   const wsId = await getActiveWorkspaceId(c);
-  if (!wsId) return c.html("<h1>workspace required</h1>", 400);
+  if (!wsId) return c.html(`<h1>${t("workspace required")}</h1>`, 400);
   const admin = await requireWsAdmin(c, wsId);
-  if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
+  if (!admin) return c.html(`<h1>${t("workspace admin required")}</h1>`, 403);
   const providerKey = c.req.param("providerKey");
   const providerDef = await getProviderForWorkspace(providerKey, wsId);
   if (!providerDef || !providerDef.authTypes.includes("oauth")) return c.html(`<h1>unknown OAuth provider: ${escapeHtml(providerKey)}</h1>`, 404);
@@ -2314,9 +2337,9 @@ dashboardApp.post("/providers/:providerKey/default-connection", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
   const wsId = await getActiveWorkspaceId(c);
-  if (!wsId) return c.html("<h1>workspace required</h1>", 400);
+  if (!wsId) return c.html(`<h1>${t("workspace required")}</h1>`, 400);
   const admin = await requireWsAdmin(c, wsId);
-  if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
+  if (!admin) return c.html(`<h1>${t("workspace admin required")}</h1>`, 403);
 
   const providerKey = c.req.param("providerKey");
   const providerDef = await getProviderForWorkspace(providerKey, wsId);
@@ -2410,9 +2433,9 @@ dashboardApp.post("/providers/custom/new", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
   const wsId = await getActiveWorkspaceId(c);
-  if (!wsId) return c.html("<h1>workspace required</h1>", 400);
+  if (!wsId) return c.html(`<h1>${t("workspace required")}</h1>`, 400);
   const admin = await requireWsAdmin(c, wsId);
-  if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
+  if (!admin) return c.html(`<h1>${t("workspace admin required")}</h1>`, 403);
   const body = await c.req.parseBody();
   const errorResponse = await createWorkspaceCustomProvider(c, wsId, user.id, body, "/providers/custom/new");
   if (errorResponse) return errorResponse;
@@ -2423,9 +2446,9 @@ dashboardApp.post("/providers/custom/:providerId/delete", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
   const wsId = await getActiveWorkspaceId(c);
-  if (!wsId) return c.html("<h1>workspace required</h1>", 400);
+  if (!wsId) return c.html(`<h1>${t("workspace required")}</h1>`, 400);
   const admin = await requireWsAdmin(c, wsId);
-  if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
+  if (!admin) return c.html(`<h1>${t("workspace admin required")}</h1>`, 403);
   const providerId = c.req.param("providerId");
   const row = await prisma.customProvider.findFirst({ where: { id: providerId, workspaceId: wsId } });
   if (row) {
@@ -2542,29 +2565,29 @@ function envStatus(names: string[]): { present: boolean; variable: string; candi
 }
 
 // --- Public pages required for OAuth app review ---
-dashboardApp.get("/", (c) => c.html(publicPage("OAuth credential broker for AI agents", `
+dashboardApp.get("/", (c) => c.html(publicPage(t("OAuth credential broker for AI agents"), `
   <main class="public-main">
     <section class="public-hero">
-      <h1>OAuth credential broker for AI agents.</h1>
-      <p>grantry lets teams connect third-party services such as Google Analytics, Google Ads, Google Search Console, GitHub, Slack, HubSpot, and other business tools, then grant specific AI agents access to only the connections they are allowed to use.</p>
+      <h1>${t("OAuth credential broker for AI agents.")}</h1>
+      <p>${t("grantry lets teams connect third-party services such as Google Analytics, Google Ads, Google Search Console, GitHub, Slack, HubSpot, and other business tools, then grant specific AI agents access to only the connections they are allowed to use.")}</p>
       <div class="row">
-        <a class="btn" href="/login">Open dashboard</a>
-        <a class="btn secondary" href="/privacy">Read privacy policy</a>
+        <a class="btn" href="/login">${t("Open dashboard")}</a>
+        <a class="btn secondary" href="/privacy">${t("Read privacy policy")}</a>
       </div>
     </section>
     <section class="public-band">
       <div class="public-grid">
         <div class="public-feature">
-          <h2>Connection control</h2>
-          <p>Workspace owners decide which provider connections each agent can use.</p>
+          <h2>${t("Connection control")}</h2>
+          <p>${t("Workspace owners decide which provider connections each agent can use.")}</p>
         </div>
         <div class="public-feature">
-          <h2>Provider-backed access</h2>
-          <p>Provider APIs continue to enforce their own account permissions and scopes.</p>
+          <h2>${t("Provider-backed access")}</h2>
+          <p>${t("Provider APIs continue to enforce their own account permissions and scopes.")}</p>
         </div>
         <div class="public-feature">
-          <h2>Audit visibility</h2>
-          <p>Agent tool calls and connection usage are logged so teams can review activity.</p>
+          <h2>${t("Audit visibility")}</h2>
+          <p>${t("Agent tool calls and connection usage are logged so teams can review activity.")}</p>
         </div>
       </div>
     </section>
@@ -2672,21 +2695,21 @@ dashboardApp.get("/dashboard", async (c) => {
   ]);
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("dashboard", user?.email)}
     <main>
-      <h1>Dashboard</h1>
+      <h1>${t("Dashboard")}</h1>
       <div class="row" style="gap:16px; margin-bottom:24px;">
-        <div class="card" style="flex:1;"><div style="color:#687385;font-size:12px;">Connections</div><div style="font-size:24px;font-weight:700;">${connectionCount}</div></div>
-        <div class="card" style="flex:1;"><div style="color:#687385;font-size:12px;">Agents</div><div style="font-size:24px;font-weight:700;">${agentCount}</div></div>
-        <div class="card" style="flex:1;"><div style="color:#687385;font-size:12px;">Connection grants</div><div style="font-size:24px;font-weight:700;">${grantCount}</div></div>
+        <div class="card" style="flex:1;"><div style="color:#687385;font-size:12px;">${t("Connections")}</div><div style="font-size:24px;font-weight:700;">${connectionCount}</div></div>
+        <div class="card" style="flex:1;"><div style="color:#687385;font-size:12px;">${t("Agents")}</div><div style="font-size:24px;font-weight:700;">${agentCount}</div></div>
+        <div class="card" style="flex:1;"><div style="color:#687385;font-size:12px;">${t("Connection grants")}</div><div style="font-size:24px;font-weight:700;">${grantCount}</div></div>
       </div>
-      <h2>Recent activity</h2>
+      <h2>${t("Recent activity")}</h2>
       <div class="card">
-        ${recentAudits.length === 0 ? '<div class="empty">No activity yet. Create your first scope → <a href="/tenants/new">+ New scope</a></div>' : `
+        ${recentAudits.length === 0 ? `<div class="empty">${t("No activity yet. Create your first scope")} → <a href="/tenants/new">${t("+ New scope")}</a></div>` : `
         <table>
-          <thead><tr><th>When</th><th>Agent</th><th>Tool</th><th>Scope</th><th>Status</th><th>Duration</th></tr></thead>
+          <thead><tr><th>${t("When")}</th><th>${t("Agent")}</th><th>${t("Tool")}</th><th>${t("Scope")}</th><th>${t("Status")}</th><th>${t("Duration")}</th></tr></thead>
           <tbody>
           ${recentAudits.map((a) => `
             <tr>
@@ -3085,7 +3108,7 @@ dashboardApp.post("/_ops/promote-self", async (c) => {
   if (!dbUser) return c.redirect("/login");
   if (!isOpsDomain(dbUser.email)) return c.html(`<h1>restricted to ${escapeHtml(OPS_DOMAIN)}</h1>`, 403);
   const adminCount = await prisma.user.count({ where: { role: "admin" } });
-  if (adminCount > 0 && dbUser.role !== "admin") return c.html("<h1>admin already exists</h1>", 403);
+  if (adminCount > 0 && dbUser.role !== "admin") return c.html(`<h1>${t("admin already exists")}</h1>`, 403);
   await prisma.user.update({ where: { id: dbUser.id }, data: { role: "admin" } });
   return c.redirect("/_ops");
 });
@@ -3095,7 +3118,7 @@ dashboardApp.post("/_ops/oauth-states/prune", async (c) => {
   if (!dbUser) return c.redirect("/login");
   if (!isOpsDomain(dbUser.email)) return c.html(`<h1>restricted to ${escapeHtml(OPS_DOMAIN)}</h1>`, 403);
   const adminCount = await prisma.user.count({ where: { role: "admin" } });
-  if (dbUser.role !== "admin" && adminCount > 0) return c.html("<h1>admin required</h1>", 403);
+  if (dbUser.role !== "admin" && adminCount > 0) return c.html(`<h1>${t("admin required")}</h1>`, 403);
   const result = await prisma.oAuthState.deleteMany({ where: { expiresAt: { lt: new Date() } } });
   return c.redirect(`/_ops?pruned=${result.count}`);
 });
@@ -3105,7 +3128,7 @@ dashboardApp.post("/_ops/platform-oauth-apps/disable", async (c) => {
   if (!dbUser) return c.redirect("/login");
   if (!isOpsDomain(dbUser.email)) return c.html(`<h1>restricted to ${escapeHtml(OPS_DOMAIN)}</h1>`, 403);
   const adminCount = await prisma.user.count({ where: { role: "admin" } });
-  if (dbUser.role !== "admin" && adminCount > 0) return c.html("<h1>admin required</h1>", 403);
+  if (dbUser.role !== "admin" && adminCount > 0) return c.html(`<h1>${t("admin required")}</h1>`, 403);
   const platformOAuthProviderKeys = Object.values(PROVIDERS)
     .filter((p) => p.authTypes.includes("oauth") && !providerUsesWorkspaceOAuthApp(p))
     .map((p) => p.key);
@@ -3142,25 +3165,25 @@ dashboardApp.get("/login", async (c) => {
   if (user) return c.redirect(dest);
   const resetDone = c.req.query("reset") === "1";
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Sign in — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Sign in")} — grantry</title>
     ${FAVICON}<style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
-    <h1>Sign in to grantry</h1>
-    ${resetDone ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">✓ Password updated. Sign in with your new password.</div>` : ""}
+    <h1>${t("Sign in to grantry")}</h1>
+    ${resetDone ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">✓ ${t("Password updated. Sign in with your new password.")}</div>` : ""}
     <div class="card">
       <form id="loginForm">
         <div class="field">
-          <label for="email">Email</label>
+          <label for="email">${t("Email")}</label>
           <input type="email" name="email" id="email" required>
         </div>
         <div class="field">
-          <label for="password">Password</label>
+          <label for="password">${t("Password")}</label>
           <input type="password" name="password" id="password" required minlength="8">
         </div>
-        <button type="submit" style="width:100%;">Sign in</button>
+        <button type="submit" style="width:100%;">${t("Sign in")}</button>
         <div id="err" style="color:#df1b41;margin-top:8px;font-size:13px;"></div>
       </form>
     </div>
-    <p style="text-align:center;color:#687385;font-size:13px;">No account? <a href="/register${oauthQuery ? escapeHtml(`?${oauthQuery}`) : ""}">Create one</a> · <a href="/forgot-password">Forgot password?</a></p>
+    <p style="text-align:center;color:#687385;font-size:13px;">${t("No account?")} <a href="/register${oauthQuery ? escapeHtml(`?${oauthQuery}`) : ""}">${t("Create one")}</a> · <a href="/forgot-password">${t("Forgot password?")}</a></p>
     <script>
       document.getElementById('loginForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -3171,7 +3194,7 @@ dashboardApp.get("/login", async (c) => {
           body: JSON.stringify({ email: fd.get('email'), password: fd.get('password') })
         });
         if (r.ok) { location.href = ${jsString(dest)}; }
-        else { document.getElementById('err').textContent = 'Invalid email or password'; }
+        else { document.getElementById('err').textContent = ${jsString(t("Invalid email or password"))}; }
       });
     </script>
     </body></html>
@@ -3185,24 +3208,24 @@ dashboardApp.post("/logout", async (c) => signOutAndRedirect(c));
 dashboardApp.get("/register", async (c) => {
   const { dest, oauthQuery } = postAuthDestination(c);
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Create account — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Create account")} — grantry</title>
     ${FAVICON}<style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
-    <h1>Create account</h1>
+    <h1>${t("Create account")}</h1>
     <div class="card">
       <form id="regForm">
         <div class="field">
-          <label for="email">Email</label>
+          <label for="email">${t("Email")}</label>
           <input type="email" name="email" id="email" required>
         </div>
         <div class="field">
-          <label for="password">Password</label>
+          <label for="password">${t("Password")}</label>
           <input type="password" name="password" id="password" required minlength="8">
         </div>
-        <button type="submit" style="width:100%;">Create account</button>
+        <button type="submit" style="width:100%;">${t("Create account")}</button>
         <div id="err" style="color:#df1b41;margin-top:8px;font-size:13px;"></div>
       </form>
     </div>
-    <p style="text-align:center;color:#687385;font-size:13px;">Already have one? <a href="/login${oauthQuery ? escapeHtml(`?${oauthQuery}`) : ""}">Sign in</a></p>
+    <p style="text-align:center;color:#687385;font-size:13px;">${t("Already have one?")} <a href="/login${oauthQuery ? escapeHtml(`?${oauthQuery}`) : ""}">${t("Sign in")}</a></p>
     <script>
       document.getElementById('regForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -3217,7 +3240,7 @@ dashboardApp.get("/register", async (c) => {
           body: JSON.stringify({ name: name, email: email, password: fd.get('password') })
         });
         if (r.ok) { location.href = ${jsString(dest)}; }
-        else { const j = await r.json().catch(()=>({})); document.getElementById('err').textContent = j.message || 'Sign up failed'; }
+        else { const j = await r.json().catch(()=>({})); document.getElementById('err').textContent = j.message || ${jsString(t("Sign up failed"))}; }
       });
     </script>
     </body></html>
@@ -3228,25 +3251,25 @@ dashboardApp.get("/register", async (c) => {
 dashboardApp.get("/forgot-password", async (c) => {
   const sent = c.req.query("sent") === "1";
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Forgot password — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Forgot password")} — grantry</title>
     ${FAVICON}<style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
-    <h1>Forgot password</h1>
+    <h1>${t("Forgot password")}</h1>
     ${sent ? `
     <div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">
-      ✓ If an account exists for that address, a reset link is on its way. The link is valid for 1 hour.
+      ✓ ${t("If an account exists for that address, a reset link is on its way. The link is valid for 1 hour.")}
     </div>
-    <p style="text-align:center;color:#687385;font-size:13px;"><a href="/login">← Back to sign in</a></p>
+    <p style="text-align:center;color:#687385;font-size:13px;"><a href="/login">← ${t("Back to sign in")}</a></p>
     ` : `
     <div class="card">
       <form method="post" action="/forgot-password">
         <div class="field">
-          <label for="email">Email</label>
+          <label for="email">${t("Email")}</label>
           <input type="email" name="email" id="email" required autofocus>
         </div>
-        <button type="submit" style="width:100%;">Send reset link</button>
+        <button type="submit" style="width:100%;">${t("Send reset link")}</button>
       </form>
     </div>
-    <p style="text-align:center;color:#687385;font-size:13px;"><a href="/login">← Back to sign in</a></p>
+    <p style="text-align:center;color:#687385;font-size:13px;"><a href="/login">← ${t("Back to sign in")}</a></p>
     `}
     </body></html>
   `);
@@ -3277,32 +3300,32 @@ dashboardApp.get("/reset-password", async (c) => {
   const err = c.req.query("err");
   if (!token || error) {
     return c.html(`
-      <!doctype html><html><head><meta charset="utf-8"><title>Reset password — grantry</title>
+      <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Reset password")} — grantry</title>
       ${FAVICON}<style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
-      <h1>Reset password</h1>
+      <h1>${t("Reset password")}</h1>
       <div class="card" style="border-color:#df1b41;background:rgba(255,107,107,0.08);">
-        ⚠️ This reset link is invalid or has expired. <a href="/forgot-password">Request a new one</a>.
+        ⚠️ ${t("This reset link is invalid or has expired.")} <a href="/forgot-password">${t("Request a new one")}</a>.
       </div>
       </body></html>
     `, 400);
   }
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Reset password — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Reset password")} — grantry</title>
     ${FAVICON}<style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
-    <h1>Choose a new password</h1>
+    <h1>${t("Choose a new password")}</h1>
     ${err ? `<div class="card" style="border-color:#df1b41;background:rgba(255,107,107,0.08);">⚠️ ${escapeHtml(String(err))}</div>` : ""}
     <div class="card">
       <form method="post" action="/reset-password">
         <input type="hidden" name="token" value="${escapeHtml(token)}">
         <div class="field">
-          <label for="new_password">New password</label>
+          <label for="new_password">${t("New password")}</label>
           <input type="password" name="new_password" id="new_password" required minlength="8" autocomplete="new-password" autofocus>
         </div>
         <div class="field">
-          <label for="new_password2">New password (again)</label>
+          <label for="new_password2">${t("New password (again)")}</label>
           <input type="password" name="new_password2" id="new_password2" required minlength="8" autocomplete="new-password">
         </div>
-        <button type="submit" style="width:100%;">Set new password</button>
+        <button type="submit" style="width:100%;">${t("Set new password")}</button>
       </form>
     </div>
     </body></html>
@@ -3315,13 +3338,13 @@ dashboardApp.post("/reset-password", async (c) => {
   const newPassword = String(body.new_password ?? "");
   const newPassword2 = String(body.new_password2 ?? "");
   if (!token) return c.redirect("/forgot-password");
-  if (newPassword.length < 8) return c.redirect(`/reset-password?token=${encodeURIComponent(token)}&err=${encodeURIComponent("Password must be at least 8 characters")}`);
-  if (newPassword !== newPassword2) return c.redirect(`/reset-password?token=${encodeURIComponent(token)}&err=${encodeURIComponent("Passwords do not match")}`);
+  if (newPassword.length < 8) return c.redirect(`/reset-password?token=${encodeURIComponent(token)}&err=${encodeURIComponent(t("Password must be at least 8 characters"))}`);
+  if (newPassword !== newPassword2) return c.redirect(`/reset-password?token=${encodeURIComponent(token)}&err=${encodeURIComponent(t("Passwords do not match"))}`);
 
   try {
     await auth.api.resetPassword({ body: { newPassword, token } });
   } catch (e: any) {
-    const message = e?.body?.message ?? e?.message ?? "Reset failed";
+    const message = e?.body?.message ?? e?.message ?? t("Reset failed");
     return c.redirect(`/reset-password?token=${encodeURIComponent(token)}&err=${encodeURIComponent(message)}`);
   }
   return c.redirect("/login?reset=1");
@@ -3336,12 +3359,12 @@ async function requireWorkspaceAdmin(c: any): Promise<{ user: any; workspaceId: 
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
   const workspaceId = await getActiveWorkspaceId(c);
-  if (!workspaceId) return c.html("<h1>workspace required</h1>", 400);
+  if (!workspaceId) return c.html(`<h1>${t("workspace required")}</h1>`, 400);
   const member = await prisma.workspaceMember.findUnique({
     where: { workspaceId_userId: { workspaceId, userId: user.id } },
   });
   if (!member || !["owner", "admin"].includes(member.role)) {
-    return c.html("<h1>workspace owner/admin required</h1><p>Only workspace owners and admins can manage grantry admin API keys.</p>", 403);
+    return c.html(`<h1>${t("workspace owner/admin required")}</h1><p>${t("Only workspace owners and admins can manage grantry admin API keys.")}</p>`, 403);
   }
   return { user, workspaceId };
 }
@@ -3372,24 +3395,24 @@ dashboardApp.get("/api-keys", async (c) => {
   });
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Admin API keys — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Admin API keys")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("api-keys", user?.email)}
     <main>
-      <h1>grantry admin API keys</h1>
+      <h1>${t("grantry admin API keys")}</h1>
       <div class="card">
-        <p style="color:#687385;margin-top:0;">grantry manages itself the same way it manages any SaaS: mint an admin API key here, paste it into a <b>grantry</b> connection in the <a href="/tenants/new">connection wizard</a>, and grant that connection to an agent. The agent can then manage this workspace's scopes, agents, connections, and grants over MCP (<code>grantry_create_agent</code>, <code>grantry_grant_scope</code>, …). The key is shown once at mint time; disabling or deleting it immediately cuts off every connection that uses it.</p>
+        <p style="color:#687385;margin-top:0;">${t("grantry manages itself the same way it manages any SaaS: mint an admin API key here, paste it into a <b>grantry</b> connection in the <a href=\"/tenants/new\">connection wizard</a>, and grant that connection to an agent. The agent can then manage this workspace's scopes, agents, connections, and grants over MCP (<code>grantry_create_agent</code>, <code>grantry_grant_scope</code>, …). The key is shown once at mint time; disabling or deleting it immediately cuts off every connection that uses it.")}</p>
         <form method="post" action="/api-keys/new" style="display:flex;gap:8px;align-items:center;">
-          <input type="text" name="label" placeholder="e.g. agent-factory key" required style="flex:1;">
-          <button type="submit">Mint new key</button>
+          <input type="text" name="label" placeholder="${escapeHtml(t("e.g. agent-factory key"))}" required style="flex:1;">
+          <button type="submit">${t("Mint new key")}</button>
         </form>
       </div>
       <div class="card">
-        <h2>Keys in this workspace</h2>
-        ${keys.length === 0 ? '<div class="empty">No admin API keys yet.</div>' : `
+        <h2>${t("Keys in this workspace")}</h2>
+        ${keys.length === 0 ? `<div class="empty">${t("No admin API keys yet.")}</div>` : `
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Label</th><th>Key</th><th>Status</th><th>Last used</th><th>Created</th><th></th></tr></thead>
+            <thead><tr><th>${t("Label")}</th><th>${t("Key")}</th><th>${t("Status")}</th><th>${t("Last used")}</th><th>${t("Created")}</th><th></th></tr></thead>
             <tbody>${keys.map(apiKeyRow).join("")}</tbody>
           </table>
         </div>`}
@@ -3405,7 +3428,7 @@ dashboardApp.post("/api-keys/new", async (c) => {
 
   const body = await c.req.parseBody();
   const label = String(body.label ?? "").trim();
-  if (!label) return c.html("<h1>label required</h1>", 400);
+  if (!label) return c.html(`<h1>${t("label required")}</h1>`, 400);
 
   const key = `gn_adm_${crypto.randomUUID().replace(/-/g, "")}`;
   const hashedKey = await import("node:crypto").then((m) => m.createHash("sha256").update(key).digest("hex"));
@@ -3420,21 +3443,21 @@ dashboardApp.post("/api-keys/new", async (c) => {
   });
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Admin API key minted — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Admin API key minted")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("api-keys", user?.email)}
     <main>
-      <h1>✓ Admin API key minted</h1>
+      <h1>✓ ${t("Admin API key minted")}</h1>
       <div class="card">
         <h2>${escapeHtml(label)}</h2>
-        <p><b>Copy it now — it is shown only once.</b> Only its hash is stored.</p>
+        <p><b>${t("Copy it now — it is shown only once.")}</b> ${t("Only its hash is stored.")}</p>
         <pre style="user-select:all;">${escapeHtml(key)}</pre>
       </div>
       <div class="card">
-        <h2>Next step</h2>
-        <p>Add it as a <b>grantry</b> connection in the <a href="/tenants/new">connection wizard</a> (pick a scope such as <code>grantry-admin</code>), then grant that connection to the agent that should manage this workspace.</p>
+        <h2>${t("Next step")}</h2>
+        <p>${t("Add it as a <b>grantry</b> connection in the <a href=\"/tenants/new\">connection wizard</a> (pick a scope such as <code>grantry-admin</code>), then grant that connection to the agent that should manage this workspace.")}</p>
       </div>
-      <p><a href="/api-keys">← Back to API keys</a></p>
+      <p><a href="/api-keys">← ${t("Back to API keys")}</a></p>
     </main></body></html>
   `);
 });
@@ -3445,7 +3468,7 @@ dashboardApp.post("/api-keys/:id/toggle", async (c) => {
   const { workspaceId } = gate;
   const id = c.req.param("id");
   const key = await prisma.adminApiKey.findFirst({ where: { id, workspaceId } });
-  if (!key) return c.html("<h1>key not found</h1>", 404);
+  if (!key) return c.html(`<h1>${t("key not found")}</h1>`, 404);
   await prisma.adminApiKey.update({ where: { id: key.id }, data: { enabled: !key.enabled } });
   return c.redirect("/api-keys");
 });
@@ -3456,7 +3479,7 @@ dashboardApp.post("/api-keys/:id/delete", async (c) => {
   const { workspaceId } = gate;
   const id = c.req.param("id");
   const key = await prisma.adminApiKey.findFirst({ where: { id, workspaceId } });
-  if (!key) return c.html("<h1>key not found</h1>", 404);
+  if (!key) return c.html(`<h1>${t("key not found")}</h1>`, 404);
   await prisma.adminApiKey.delete({ where: { id: key.id } });
   return c.redirect("/api-keys");
 });
@@ -3477,67 +3500,66 @@ dashboardApp.get("/account", async (c) => {
   const ok = c.req.query("ok");
   const err = c.req.query("err");
   const banner = ok
-    ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);margin-bottom:20px;">✓ Password updated. Other sessions have been signed out.</div>`
+    ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);margin-bottom:20px;">✓ ${t("Password updated. Other sessions have been signed out.")}</div>`
     : err
       ? `<div class="card" style="border-color:#df1b41;background:rgba(255,107,107,0.08);margin-bottom:20px;">⚠️ ${escapeHtml(err)}</div>`
       : "";
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Account — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Account")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("account", user?.email)}
     <main>
-      <h1>Account</h1>
+      <h1>${t("Account")}</h1>
       ${banner}
       <div class="card">
-        <h2>Signed in as</h2>
+        <h2>${t("Signed in as")}</h2>
         <p style="font-size:18px;margin:4px 0 12px;"><code>${escapeHtml(user.email)}</code></p>
         <table>
           <tbody>
-            <tr><td style="color:#687385;">Name</td><td>${escapeHtml(user.name || "—")}</td></tr>
-            <tr><td style="color:#687385;">User ID</td><td><code>${escapeHtml(user.id)}</code></td></tr>
-            <tr><td style="color:#687385;">Role</td><td><code>${escapeHtml(user.role)}</code></td></tr>
-            <tr><td style="color:#687385;">Registered</td><td><code>${user.createdAt.toISOString().slice(0, 10)}</code></td></tr>
-            <tr><td style="color:#687385;">Active sessions</td><td>${sessionCount}</td></tr>
+            <tr><td style="color:#687385;">${t("Name")}</td><td>${escapeHtml(user.name || "—")}</td></tr>
+            <tr><td style="color:#687385;">${t("User ID")}</td><td><code>${escapeHtml(user.id)}</code></td></tr>
+            <tr><td style="color:#687385;">${t("Role")}</td><td><code>${escapeHtml(user.role)}</code></td></tr>
+            <tr><td style="color:#687385;">${t("Registered")}</td><td><code>${user.createdAt.toISOString().slice(0, 10)}</code></td></tr>
+            <tr><td style="color:#687385;">${t("Active sessions")}</td><td>${sessionCount}</td></tr>
           </tbody>
         </table>
         <p class="field-hint" style="margin-bottom:0;">
-          Everything below is owned by this account. If a scope or agent you expect is missing,
-          it probably belongs to a different account — sign out and back in with that one.
+          ${t("Everything below is owned by this account. If a scope or agent you expect is missing, it probably belongs to a different account — sign out and back in with that one.")}
         </p>
       </div>
       <div class="card">
-        <h2>Owned by this account</h2>
+        <h2>${t("Owned by this account")}</h2>
         <p>
-          <a href="/tenants">${tenantCount} scope${tenantCount === 1 ? "" : "s"}</a> ·
-          ${connectionCount} connection${connectionCount === 1 ? "" : "s"} ·
-          <a href="/agents">${agentCount} agent${agentCount === 1 ? "" : "s"}</a> ·
-          ${grantCount} connection grant${grantCount === 1 ? "" : "s"}
+          <a href="/tenants">${t("{n} scopes", { n: tenantCount })}</a> ·
+          ${t("{n} connections", { n: connectionCount })} ·
+          <a href="/agents">${t("{n} agents", { n: agentCount })}</a> ·
+          ${t("{n} connection grants", { n: grantCount })}
         </p>
       </div>
       <div class="card">
-        <h2>Change password</h2>
+        <h2>${t("Change password")}</h2>
         <form method="post" action="/account/password">
           <div class="field">
-            <label for="current_password">Current password</label>
+            <label for="current_password">${t("Current password")}</label>
             <input type="password" name="current_password" id="current_password" required minlength="8" autocomplete="current-password">
           </div>
           <div class="field">
-            <label for="new_password">New password</label>
+            <label for="new_password">${t("New password")}</label>
             <input type="password" name="new_password" id="new_password" required minlength="8" autocomplete="new-password">
           </div>
           <div class="field">
-            <label for="new_password2">New password (again)</label>
+            <label for="new_password2">${t("New password (again)")}</label>
             <input type="password" name="new_password2" id="new_password2" required minlength="8" autocomplete="new-password">
           </div>
-          <button type="submit">Change password</button>
-          <p class="field-hint">Changing the password signs out every other session.</p>
+          <button type="submit">${t("Change password")}</button>
+          <p class="field-hint">${t("Changing the password signs out every other session.")}</p>
         </form>
       </div>
       <div class="card">
-        <h2>Locked out?</h2>
+        <h2>${t("Locked out?")}</h2>
         <p class="field-hint" style="margin:0;">
-          If you can't sign in at all, an operator can reset any account's password from the server:
+          ${t("If you can't sign in at all, an operator can reset any account's password from the server:")}
           <code>railway run npm run user:reset-password -- &lt;email&gt; &lt;new-password&gt;</code>
         </p>
       </div>
@@ -3633,59 +3655,59 @@ dashboardApp.get("/connections", async (c) => {
   const filterHref = (status: string) => `/connections?status=${encodeURIComponent(status)}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Connections — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Connections")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("connections", user?.email)}
     <main>
       <div class="row spread" style="margin-bottom:16px;">
-        <h1 style="margin:0;">Connections</h1>
+        <h1 style="margin:0;">${t("Connections")}</h1>
         <span class="row" style="gap:8px;">
           <form method="post" action="/connections/check-all" style="margin:0;">
-            <button type="submit" class="secondary"${isSweepRunning() ? ' disabled title="A health check is already running."' : ""}>Check all now</button>
+            <button type="submit" class="secondary"${isSweepRunning() ? ` disabled title="${escapeHtml(t("A health check is already running."))}"` : ""}>${t("Check all now")}</button>
           </form>
-          <a href="/tenants/new" class="btn">+ New scope connection</a>
+          <a href="/tenants/new" class="btn">${t("+ New scope connection")}</a>
         </span>
       </div>
-      <p style="color:#687385;margin-top:-8px;">Workspace-wide health view for scope connections. Provider app and token settings are linked from each row's actions.</p>
+      <p style="color:#687385;margin-top:-8px;">${t("Workspace-wide health view for scope connections. Provider app and token settings are linked from each row's actions.")}</p>
       ${notice ? noticeBanner(String(notice), noticeKind) : ""}
 
       <div class="row" style="gap:16px;flex-wrap:wrap;margin-bottom:24px;">
-        <a class="card" href="${filterHref("all")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">Total</div><div style="font-size:24px;font-weight:700;">${connections.length}</div></a>
-        <a class="card" href="${filterHref("ok")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">Active</div><div style="font-size:24px;font-weight:700;">${counts.ok ?? 0}</div></a>
-        <a class="card" href="${filterHref("problem")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">Needs attention</div><div style="font-size:24px;font-weight:700;">${problemCount}</div></a>
-        <a class="card" href="${filterHref("unchecked")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">Not checked</div><div style="font-size:24px;font-weight:700;">${uncheckedCount}</div></a>
-        <a class="card" href="${filterHref("orphan")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">No agent grant</div><div style="font-size:24px;font-weight:700;">${counts.orphan ?? 0}</div></a>
-        <a class="card" href="${filterHref("disabled")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">Disabled</div><div style="font-size:24px;font-weight:700;">${counts.disabled ?? 0}</div></a>
+        <a class="card" href="${filterHref("all")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">${t("Total")}</div><div style="font-size:24px;font-weight:700;">${connections.length}</div></a>
+        <a class="card" href="${filterHref("ok")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">${t("Active")}</div><div style="font-size:24px;font-weight:700;">${counts.ok ?? 0}</div></a>
+        <a class="card" href="${filterHref("problem")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">${t("Needs attention")}</div><div style="font-size:24px;font-weight:700;">${problemCount}</div></a>
+        <a class="card" href="${filterHref("unchecked")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">${t("Not checked")}</div><div style="font-size:24px;font-weight:700;">${uncheckedCount}</div></a>
+        <a class="card" href="${filterHref("orphan")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">${t("No agent grant")}</div><div style="font-size:24px;font-weight:700;">${counts.orphan ?? 0}</div></a>
+        <a class="card" href="${filterHref("disabled")}" style="flex:1;min-width:140px;text-decoration:none;"><div style="color:#687385;font-size:12px;">${t("Disabled")}</div><div style="font-size:24px;font-weight:700;">${counts.disabled ?? 0}</div></a>
       </div>
 
       <div class="card">
         <form method="get" action="/connections" class="row" style="gap:8px;align-items:end;flex-wrap:wrap;margin-bottom:12px;">
           <div class="field" style="margin:0;min-width:220px;flex:1;">
-            <label for="q">Search</label>
-            <input type="text" id="q" name="q" value="${escapeHtml(q)}" placeholder="provider, scope, label">
+            <label for="q">${t("Search")}</label>
+            <input type="text" id="q" name="q" value="${escapeHtml(q)}" placeholder="${escapeHtml(t("provider, scope, label"))}">
           </div>
           <div class="field" style="margin:0;min-width:180px;">
-            <label for="status">Status</label>
+            <label for="status">${t("Status")}</label>
             <select id="status" name="status">
               ${[
-                ["all", "All"],
-                ["problem", "Needs attention"],
-                ["ok", "Active"],
-                ["warn", "Partial"],
-                ["error", "Broken"],
-                ["unchecked", "Not checked"],
-                ["orphan", "No agent grant"],
-                ["disabled", "Disabled"],
+                ["all", t("All")],
+                ["problem", t("Needs attention")],
+                ["ok", t("Active")],
+                ["warn", t("Partial")],
+                ["error", t("Broken")],
+                ["unchecked", t("Not checked")],
+                ["orphan", t("No agent grant")],
+                ["disabled", t("Disabled")],
               ].map(([value, label]) => `<option value="${value}" ${statusFilter === value ? "selected" : ""}>${label}</option>`).join("")}
             </select>
           </div>
-          <button type="submit">Apply</button>
-          <a href="/connections" class="btn secondary">Reset</a>
+          <button type="submit">${t("Apply")}</button>
+          <a href="/connections" class="btn secondary">${t("Reset")}</a>
         </form>
 
         <div class="table-wrap">
           <table class="connection-table connection-health-table">
-            <thead><tr><th>Connection</th><th>Scope</th><th>Health</th><th>Agents</th><th>Updated</th><th>Action</th></tr></thead>
+            <thead><tr><th>${t("Connection")}</th><th>${t("Scope")}</th><th>${t("Health")}</th><th>${t("Agents")}</th><th>${t("Updated")}</th><th>${t("Action")}</th></tr></thead>
             <tbody>
               ${rows.length ? rows.map(({ cn, health, providerName }) => {
                 const scope = cn.scope || "";
@@ -3703,36 +3725,36 @@ dashboardApp.get("/connections", async (c) => {
                     <br><code>${escapeHtml(cn.provider)}</code> <span class="tool-pill">${escapeHtml(authTypeLabel(cn.provider, cn.authType))}</span>
                     <br><span style="color:#687385;font-size:12px;">${escapeHtml(cn.label)}</span>
                   </td>
-                  <td>${scope ? `<a href="/tenants/${encodeURIComponent(scope)}/edit#connections"><span class="badge scoped">${escapeHtml(cn.tenant?.displayName && cn.tenant.displayName !== scope ? cn.tenant.displayName : scope)}</span></a><br><code>${escapeHtml(scope)}</code>` : '<span class="badge unscoped">legacy unscoped</span>'}</td>
+                  <td>${scope ? `<a href="/tenants/${encodeURIComponent(scope)}/edit#connections"><span class="badge scoped">${escapeHtml(cn.tenant?.displayName && cn.tenant.displayName !== scope ? cn.tenant.displayName : scope)}</span></a><br><code>${escapeHtml(scope)}</code>` : `<span class="badge unscoped">${t("legacy unscoped")}</span>`}</td>
                   <td>
                     ${renderCredentialHealthBadge(cn)}
                     ${oauthTokenStatus(cn)}
                     ${requiresWorkspaceOAuthApp ? `<br>${oauthAppConfiguredBadge(oauthAppConfigured)}` : ""}
-                    ${showHealthTimestamp && health.checkedAt ? `<br><span style="color:#687385;font-size:12px;">Checked ${health.checkedAt.toISOString().slice(0, 16).replace("T", " ")}</span>` : ""}
-                    ${!cn.enabled ? '<br><span class="badge denied">disabled</span>' : ""}
-                    ${needsReconnect ? '<br><span class="badge denied">needs reconnect</span>' : ""}
+                    ${showHealthTimestamp && health.checkedAt ? `<br><span style="color:#687385;font-size:12px;">${escapeHtml(t("Checked {ts}", { ts: health.checkedAt.toISOString().slice(0, 16).replace("T", " ") }))}</span>` : ""}
+                    ${!cn.enabled ? `<br><span class="badge denied">${t("disabled")}</span>` : ""}
+                    ${needsReconnect ? `<br><span class="badge denied">${t("needs reconnect")}</span>` : ""}
                   </td>
                   <td>${cn.agentGrants.length
                     ? cn.agentGrants.map((g) => `<a href="/agents/${encodeURIComponent(g.agent.id)}"><code>${escapeHtml(g.agent.name)}</code></a>`).join("<br>")
-                    : '<span class="badge denied">no agent grant</span>'}</td>
+                    : `<span class="badge denied">${t("no agent grant")}</span>`}</td>
                   <td><code>${cn.updatedAt.toISOString().slice(0, 10)}</code></td>
                   <td><span class="stacked-actions">
                     ${cn.authType === "oauth" && canScopeAction && oauthAppConfigured
-                      ? `<a href="/oauth/${encodeURIComponent(cn.provider)}/start?tenant=${encodeURIComponent(scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}&return_to=connections" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Reconnect</a>`
+                      ? `<a href="/oauth/${encodeURIComponent(cn.provider)}/start?tenant=${encodeURIComponent(scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}&return_to=connections" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">${t("Reconnect")}</a>`
                       : cn.authType === "oauth" && canScopeAction
-                        ? `<a href="/connections/${encodeURIComponent(cn.id)}/edit?err=${encodeURIComponent("Save this provider's OAuth app settings before reconnecting.")}" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Set up OAuth app</a>`
+                        ? `<a href="/connections/${encodeURIComponent(cn.id)}/edit?err=${encodeURIComponent(t("Save this provider's OAuth app settings before reconnecting."))}" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">${t("Set up OAuth app")}</a>`
                       : canScopeAction
                         ? ""
-                        : '<span style="color:#687385;font-size:12px;">Open scope to repair</span>'}
+                        : `<span style="color:#687385;font-size:12px;">${t("Open scope to repair")}</span>`}
                     ${canScopeAction
-                      ? `<button type="submit" form="recheck_connection_${cn.id}" class="secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;"${cn.authType === "oauth" ? ' title="Verify the saved token against the provider without re-authorizing"' : ""}>Check now</button>`
+                      ? `<button type="submit" form="recheck_connection_${cn.id}" class="secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;"${cn.authType === "oauth" ? ` title="${escapeHtml(t("Verify the saved token against the provider without re-authorizing"))}"` : ""}>${t("Check now")}</button>`
                       : ""}
-                    <a href="/connections/${encodeURIComponent(cn.id)}/edit" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Edit connection</a>
-                    ${canScopeAction ? `<a href="/tenants/${encodeURIComponent(scope)}/edit#connections" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">Open scope</a>` : ""}
+                    <a href="/connections/${encodeURIComponent(cn.id)}/edit" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">${t("Edit connection")}</a>
+                    ${canScopeAction ? `<a href="/tenants/${encodeURIComponent(scope)}/edit#connections" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;">${t("Open scope")}</a>` : ""}
                     ${credentialSettingsLink}
                   </span></td>
                 </tr>`;
-              }).join("") : '<tr><td colspan="6"><div class="empty">No connections match this filter.</div></td></tr>'}
+              }).join("") : `<tr><td colspan="6"><div class="empty">${t("No connections match this filter.")}</div></td></tr>`}
             </tbody>
           </table>
         </div>
@@ -3749,16 +3771,16 @@ dashboardApp.post("/connections/check-all", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
   const wsId = await getActiveWorkspaceId(c);
-  if (!wsId) return c.redirect("/connections?err=" + encodeURIComponent("No active workspace."));
+  if (!wsId) return c.redirect("/connections?err=" + encodeURIComponent(t("No active workspace.")));
   if (isSweepRunning()) {
-    return c.redirect("/connections?err=" + encodeURIComponent("A health check is already running — reload in a minute to see fresh results."));
+    return c.redirect("/connections?err=" + encodeURIComponent(t("A health check is already running — reload in a minute to see fresh results.")));
   }
   // Checking ~dozens of provider APIs takes minutes; run it in the background
   // and let the badge/timestamp columns pick up the results on reload.
   runConnectionHealthSweep({ workspaceId: wsId, force: true })
     .then((stats) => console.log(`[health-sweep] manual check-all done: checked=${stats.checked} updated=${stats.updated} failed=${stats.failed}`))
     .catch((e) => console.error("[health-sweep] manual check-all crashed:", e));
-  return c.redirect("/connections?ok=" + encodeURIComponent("Health check started for all connections in this workspace. It runs in the background — reload in a few minutes."));
+  return c.redirect("/connections?ok=" + encodeURIComponent(t("Health check started for all connections in this workspace. It runs in the background — reload in a few minutes.")));
 });
 
 // --- /connections/:connectionId/edit — direct repair/edit for one connection ---
@@ -3782,7 +3804,7 @@ dashboardApp.get("/connections/:connectionId/edit", async (c) => {
       },
     },
   });
-  if (!conn) return c.html("<h1>connection not found</h1>", 404);
+  if (!conn) return c.html(`<h1>${t("connection not found")}</h1>`, 404);
 
   const providerDef = getProvider(conn.provider);
   const oauthAppCredential = conn.authType === "oauth" && providerDef && providerRequiresWorkspaceOAuthApp(conn.provider, providerDef) && wsId
@@ -3800,22 +3822,22 @@ dashboardApp.get("/connections/:connectionId/edit", async (c) => {
   const oauthAppConfigured = !requiresWorkspaceOAuthApp || !!existingOauthClientId;
   const canReconnect = conn.authType === "oauth" && /^[a-z0-9_-]+$/.test(scope) && oauthAppConfigured;
   const canRotateSecret = ["pat", "private_app"].includes(conn.authType);
-  const tokenLabel = conn.authType === "private_app" ? "private app token" : "token";
+  const tokenLabel = conn.authType === "private_app" ? t("private app token") : t("token");
   const credentialSettingsLink = providerCredentialSettingsLink(conn.provider, conn.authType);
   const health = healthStatusFromConnection(conn);
   const showHealthTimestamp = ["ok", "warn", "error"].includes(String(health.status));
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Edit connection — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Edit connection")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("connections", user?.email)}
     <main>
       <div class="row spread" style="margin-bottom:16px;">
         <div>
-          <h1 style="margin:0;">Edit connection</h1>
-          <p style="color:#687385;margin:6px 0 0;">Update the saved connection record and repair its credential when possible.</p>
+          <h1 style="margin:0;">${t("Edit connection")}</h1>
+          <p style="color:#687385;margin:6px 0 0;">${t("Update the saved connection record and repair its credential when possible.")}</p>
         </div>
-        <a href="/connections" class="btn secondary">Back to connections</a>
+        <a href="/connections" class="btn secondary">${t("Back to connections")}</a>
       </div>
       ${notice ? noticeBanner(String(notice), noticeKind) : ""}
 
@@ -3825,84 +3847,84 @@ dashboardApp.get("/connections/:connectionId/edit", async (c) => {
             <span class="provider-cell">${providerIcon(conn.provider)}<span>${escapeHtml(providerName)}</span></span>
             <br><code>${escapeHtml(conn.provider)}</code> <span class="tool-pill">${escapeHtml(authTypeLabel(conn.provider, conn.authType))}</span>
             <p style="color:#687385;margin:10px 0 0;">
-              Scope:
-              ${scope ? `<a href="/tenants/${encodeURIComponent(scope)}/edit#connections"><span class="badge scoped">${escapeHtml(conn.tenant?.displayName && conn.tenant.displayName !== scope ? conn.tenant.displayName : scope)}</span></a> <code>${escapeHtml(scope)}</code>` : '<span class="badge unscoped">legacy unscoped</span>'}
+              ${t("Scope:")}
+              ${scope ? `<a href="/tenants/${encodeURIComponent(scope)}/edit#connections"><span class="badge scoped">${escapeHtml(conn.tenant?.displayName && conn.tenant.displayName !== scope ? conn.tenant.displayName : scope)}</span></a> <code>${escapeHtml(scope)}</code>` : `<span class="badge unscoped">${t("legacy unscoped")}</span>`}
             </p>
           </div>
           <div>
             ${renderCredentialHealthBadge(conn)}
             ${oauthTokenStatus(conn)}
             ${requiresWorkspaceOAuthApp ? `<br>${oauthAppConfiguredBadge(oauthAppConfigured)}` : ""}
-            ${showHealthTimestamp && health.checkedAt ? `<br><span style="color:#687385;font-size:12px;">Checked ${health.checkedAt.toISOString().slice(0, 16).replace("T", " ")}</span>` : ""}
+            ${showHealthTimestamp && health.checkedAt ? `<br><span style="color:#687385;font-size:12px;">${escapeHtml(t("Checked {ts}", { ts: health.checkedAt.toISOString().slice(0, 16).replace("T", " ") }))}</span>` : ""}
           </div>
         </div>
       </div>
 
       <div class="card">
-        <h2>Connection settings</h2>
+        <h2>${t("Connection settings")}</h2>
         <form method="post" action="/connections/${encodeURIComponent(conn.id)}/edit">
-          <label for="label">Label</label>
+          <label for="label">${t("Label")}</label>
           <input type="text" name="label" id="label" value="${escapeHtml(conn.label)}" required>
-          <label style="font-weight:normal;margin-top:12px;"><input type="checkbox" name="enabled" ${conn.enabled ? "checked" : ""}> enabled</label>
+          <label style="font-weight:normal;margin-top:12px;"><input type="checkbox" name="enabled" ${conn.enabled ? "checked" : ""}> ${t("enabled")}</label>
           ${canRotateSecret ? `
             <hr style="border:none;border-top:1px solid #e3e8ee;margin:18px 0;">
-            <label for="credential">Replace ${escapeHtml(tokenLabel)}</label>
+            <label for="credential">${escapeHtml(t("Replace {token}", { token: tokenLabel }))}</label>
             ${providerDef && conn.authType === "pat" && renderCredentialFieldsHtml(providerDef)
               ? renderCredentialFieldsHtml(providerDef)
-              : `<textarea name="credential" id="credential" rows="5" placeholder="${escapeHtml(providerDef ? credentialPlaceholder(conn.provider, providerDef.label, conn.authType) : `Paste new ${tokenLabel}`)}"></textarea>`}
-            <p class="field-hint">Leave blank to keep the saved credential. Pasting a new value validates it and updates any shared provider credential snapshot.</p>
+              : `<textarea name="credential" id="credential" rows="5" placeholder="${escapeHtml(providerDef ? credentialPlaceholder(conn.provider, providerDef.label, conn.authType) : t("Paste new {token}", { token: tokenLabel }))}"></textarea>`}
+            <p class="field-hint">${t("Leave blank to keep the saved credential. Pasting a new value validates it and updates any shared provider credential snapshot.")}</p>
             ${credentialSettingsLink ? `<p style="margin-top:8px;">${credentialSettingsLink}</p>` : ""}
           ` : ""}
-          <button type="submit" style="margin-top:14px;">Save connection</button>
+          <button type="submit" style="margin-top:14px;">${t("Save connection")}</button>
         </form>
       </div>
 
       ${conn.authType === "oauth" ? `
         <div class="card">
-          <h2>OAuth repair</h2>
-          <p class="field-hint" style="margin-top:0;">Use Reconnect when the OAuth token is expired, revoked, or missing scopes. If the provider app's Client ID or Client Secret changed, save the OAuth app settings here first.</p>
+          <h2>${t("OAuth repair")}</h2>
+          <p class="field-hint" style="margin-top:0;">${t("Use Reconnect when the OAuth token is expired, revoked, or missing scopes. If the provider app's Client ID or Client Secret changed, save the OAuth app settings here first.")}</p>
           ${providerDef && providerRequiresWorkspaceOAuthApp(conn.provider, providerDef) ? `
             <form method="post" action="/connections/${encodeURIComponent(conn.id)}/edit" style="margin:14px 0 18px;padding:14px;border:1px solid #e3e8ee;border-radius:8px;">
               <input type="hidden" name="oauth_app_update" value="1">
               <input type="hidden" name="label" value="${escapeHtml(conn.label)}">
               ${conn.enabled ? '<input type="hidden" name="enabled" value="on">' : ""}
               <div class="field-hint" style="margin-top:0;">
-                Current Client ID: ${existingOauthClientId ? `<code>${escapeHtml(clientIdPreview(existingOauthClientId))}</code>` : '<span class="badge unscoped">not configured</span>'}
+                ${t("Current Client ID:")} ${existingOauthClientId ? `<code>${escapeHtml(clientIdPreview(existingOauthClientId))}</code>` : `<span class="badge unscoped">${t("not configured")}</span>`}
               </div>
-              <label for="oauth_client_id">Client ID</label>
-              <input type="text" name="oauth_client_id" id="oauth_client_id" value="${escapeHtml(existingOauthClientId)}" placeholder="Paste Client ID from ${escapeHtml(providerName)}">
-              <label for="oauth_client_secret" style="margin-top:10px;">Client Secret</label>
-              <input type="password" name="oauth_client_secret" id="oauth_client_secret" placeholder="Paste Client Secret">
-              <label for="oauth_client_auth_method" style="margin-top:10px;">Client authentication method</label>
+              <label for="oauth_client_id">${t("Client ID")}</label>
+              <input type="text" name="oauth_client_id" id="oauth_client_id" value="${escapeHtml(existingOauthClientId)}" placeholder="${escapeHtml(t("Paste Client ID from {provider}", { provider: providerName }))}">
+              <label for="oauth_client_secret" style="margin-top:10px;">${t("Client Secret")}</label>
+              <input type="password" name="oauth_client_secret" id="oauth_client_secret" placeholder="${escapeHtml(t("Paste Client Secret"))}">
+              <label for="oauth_client_auth_method" style="margin-top:10px;">${t("Client authentication method")}</label>
               <select name="oauth_client_auth_method" id="oauth_client_auth_method">
                 <option value="CLIENT_SECRET_BASIC" ${existingOauthClientAuthMethod === "CLIENT_SECRET_BASIC" ? "selected" : ""}>CLIENT_SECRET_BASIC</option>
                 <option value="CLIENT_SECRET_POST" ${existingOauthClientAuthMethod === "CLIENT_SECRET_POST" ? "selected" : ""}>CLIENT_SECRET_POST</option>
               </select>
-              <label for="oauth_redirect_uri" style="margin-top:10px;">Redirect URI</label>
+              <label for="oauth_redirect_uri" style="margin-top:10px;">${t("Redirect URI")}</label>
               <input type="text" id="oauth_redirect_uri" value="${escapeHtml(oauthCallbackUrl(c, conn.provider))}" readonly onclick="this.select()">
-              <p class="field-hint">Copy this Redirect URI into the provider app. For security, Grantry cannot show the existing Client Secret; paste it again when updating app settings.</p>
+              <p class="field-hint">${t("Copy this Redirect URI into the provider app. For security, Grantry cannot show the existing Client Secret; paste it again when updating app settings.")}</p>
               <span class="stacked-actions" style="margin-top:10px;">
-                <button type="submit">Save OAuth app settings</button>
+                <button type="submit">${t("Save OAuth app settings")}</button>
                 ${credentialSettingsLink}
               </span>
             </form>
           ` : ""}
           <span class="stacked-actions">
             ${canReconnect
-              ? `<a href="/oauth/${encodeURIComponent(conn.provider)}/start?tenant=${encodeURIComponent(scope)}&reauth=1&connection_id=${encodeURIComponent(conn.id)}&return_to=connections" class="btn">Reconnect</a>`
+              ? `<a href="/oauth/${encodeURIComponent(conn.provider)}/start?tenant=${encodeURIComponent(scope)}&reauth=1&connection_id=${encodeURIComponent(conn.id)}&return_to=connections" class="btn">${t("Reconnect")}</a>`
               : conn.authType === "oauth" && requiresWorkspaceOAuthApp && !oauthAppConfigured
-                ? '<span class="badge denied">Save OAuth app settings before reconnecting</span>'
-                : '<span class="badge denied">Reconnect requires a scoped connection</span>'}
+                ? `<span class="badge denied">${t("Save OAuth app settings before reconnecting")}</span>`
+                : `<span class="badge denied">${t("Reconnect requires a scoped connection")}</span>`}
             ${providerDef && providerRequiresWorkspaceOAuthApp(conn.provider, providerDef) ? "" : credentialSettingsLink}
           </span>
         </div>
       ` : ""}
 
       <div class="card">
-        <h2>Granted agents</h2>
+        <h2>${t("Granted agents")}</h2>
         ${conn.agentGrants.length
           ? conn.agentGrants.map((g) => `<a href="/agents/${encodeURIComponent(g.agent.id)}"><code>${escapeHtml(g.agent.name)}</code></a>`).join("<br>")
-          : '<span class="badge denied">no agent grant</span>'}
+          : `<span class="badge denied">${t("no agent grant")}</span>`}
       </div>
     </main></body></html>
   `);
@@ -3918,11 +3940,11 @@ dashboardApp.post("/connections/:connectionId/edit", async (c) => {
   const conn = await prisma.connection.findFirst({
     where: { id: connectionId, ...manageableWhere(user.id, ws) },
   });
-  if (!conn) return c.html("<h1>connection not found</h1>", 404);
+  if (!conn) return c.html(`<h1>${t("connection not found")}</h1>`, 404);
 
   const body = await c.req.parseBody();
   const label = String(body.label ?? "").trim();
-  if (!label) return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent("Label is required")}`);
+  if (!label) return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent(t("Label is required"))}`);
 
   const enabled = body.enabled !== undefined;
   const wantsOAuthAppUpdate = body.oauth_app_update === "1";
@@ -3934,11 +3956,11 @@ dashboardApp.post("/connections/:connectionId/edit", async (c) => {
 
   if (wantsOAuthAppUpdate) {
     if (conn.authType !== "oauth" || !providerDef || !providerRequiresWorkspaceOAuthApp(conn.provider, providerDef)) {
-      return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent("OAuth app settings are not used by this connection")}`);
+      return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent(t("OAuth app settings are not used by this connection"))}`);
     }
     const rawCredential = oauthAppCredentialFromStructuredFields(body, "", defaultOAuthClientAuthMethod(conn.provider, providerDef));
     if (!rawCredential) {
-      return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent("Client ID and Client Secret are required")}`);
+      return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent(t("Client ID and Client Secret are required"))}`);
     }
     try {
       await upsertWorkspaceOAuthAppCredential({
@@ -3951,13 +3973,13 @@ dashboardApp.post("/connections/:connectionId/edit", async (c) => {
       await prisma.connection.update({ where: { id: conn.id }, data: baseUpdate });
     } catch (e: any) {
       const message = String(e?.message ?? e);
-      return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent(`OAuth app settings failed: ${message}`)}`);
+      return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent(t("OAuth app settings failed: {message}", { message }))}`);
     }
-    return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?ok=${encodeURIComponent("OAuth app settings saved. Reconnect this connection to refresh the token.")}`);
+    return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?ok=${encodeURIComponent(t("OAuth app settings saved. Reconnect this connection to refresh the token."))}`);
   }
 
   if (newCredential && !["pat", "private_app"].includes(conn.authType)) {
-    return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent("This connection type is repaired with Reconnect, not by pasting a credential")}`);
+    return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent(t("This connection type is repaired with Reconnect, not by pasting a credential"))}`);
   }
 
   if (!newCredential) {
@@ -3965,17 +3987,17 @@ dashboardApp.post("/connections/:connectionId/edit", async (c) => {
     if (updated.credentialId) {
       await prisma.providerCredential.update({ where: { id: updated.credentialId }, data: { label: updated.label } });
     }
-    return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?ok=${encodeURIComponent("Connection settings saved.")}`);
+    return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?ok=${encodeURIComponent(t("Connection settings saved."))}`);
   }
 
-  if (!providerDef) return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent("Unknown provider")}`);
+  if (!providerDef) return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent(t("Unknown provider"))}`);
 
   let credentialMeta;
   try {
     credentialMeta = await credentialMetadataForStorage(conn.provider, conn.authType, newCredential);
   } catch (e: any) {
     const message = String(e?.message ?? e);
-    return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent(`Credential validation failed: ${message}`)}`);
+    return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent(t("Credential validation failed: {message}", { message }))}`);
   }
 
   await rotateSharedCredential({
@@ -3993,7 +4015,7 @@ dashboardApp.post("/connections/:connectionId/edit", async (c) => {
     await prisma.providerCredential.update({ where: { id: conn.credentialId }, data: { label } });
   }
 
-  return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?ok=${encodeURIComponent("Connection credential updated and checked.")}`);
+  return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?ok=${encodeURIComponent(t("Connection credential updated and checked."))}`);
 });
 
 // --- /tenants ---
@@ -4042,36 +4064,46 @@ dashboardApp.get("/tenants", async (c) => {
   const enabledServiceCount = connections.filter((cn) => cn.enabled).length;
   const orphanServiceCount = connections.filter(isOrphan).length;
 
+  // Precompute translations used inside the scope loop, where `t` is shadowed
+  // by the per-row tenant variable (`const t = tenantBySlug.get(scope)`).
+  const T_LEGACY = t("Legacy connections");
+  const T_UNSCOPED = t("unscoped");
+  const T_NO_SERVICES = t("No services");
+  const T_ENABLED = t("enabled");
+  const T_NO_AGENT = t("no agent");
+  const T_NO_AGENT_TITLE = t("Enabled, but no enabled agent has a grant to this connection.");
+  const T_EDIT = t("Edit");
+
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Scopes — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Scopes")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
       <div class="scope-page-header">
         <div>
-          <div class="scope-page-kicker">Workspace wiring</div>
-          <h1>Scopes</h1>
-          <p class="scope-page-copy">Manage each scope's connected services and agent-ready status. API wiring is available at <code>GET /api/scopes</code>.</p>
+          <div class="scope-page-kicker">${t("Workspace wiring")}</div>
+          <h1>${t("Scopes")}</h1>
+          <p class="scope-page-copy">${t("Manage each scope's connected services and agent-ready status. API wiring is available at <code>GET /api/scopes</code>.")}</p>
         </div>
-        <a href="/tenants/new" class="btn">+ New scope</a>
+        <a href="/tenants/new" class="btn">${t("+ New scope")}</a>
       </div>
       <div class="scope-summary-grid">
-        <div class="scope-summary-card"><span>Scopes</span><strong>${scopeCount}</strong></div>
-        <div class="scope-summary-card"><span>Services</span><strong>${serviceCount}</strong></div>
-        <div class="scope-summary-card"><span>Enabled services</span><strong>${enabledServiceCount}</strong></div>
-        <div class="scope-summary-card"><span>Needs agent grant</span><strong>${orphanServiceCount}</strong></div>
+        <div class="scope-summary-card"><span>${t("Scopes")}</span><strong>${scopeCount}</strong></div>
+        <div class="scope-summary-card"><span>${t("Services")}</span><strong>${serviceCount}</strong></div>
+        <div class="scope-summary-card"><span>${t("Enabled services")}</span><strong>${enabledServiceCount}</strong></div>
+        <div class="scope-summary-card"><span>${t("Needs agent grant")}</span><strong>${orphanServiceCount}</strong></div>
       </div>
       <form method="post" action="/tenants/bulk-delete" id="bulkForm">
         <input type="hidden" name="scopes_csv" id="scopesCsv" value="">
-        ${byScope.size === 0 ? '<div class="card"><div class="empty">No scopes yet. <a href="/tenants/new">Create your first one</a>.</div></div>' : `
+        ${byScope.size === 0 ? `<div class="card"><div class="empty">${t('No scopes yet. <a href="/tenants/new">Create your first one</a>.')}</div></div>` : `
         <div class="card scope-list-card">
           <div class="scope-list-toolbar">
-            <label><input type="checkbox" id="selectAll"> Select all</label>
-            <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;" id="bulkDelBtn" disabled>Delete selected (0)</button>
+            <label><input type="checkbox" id="selectAll"> ${t("Select all")}</label>
+            <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;" id="bulkDelBtn" disabled>${escapeHtml(t("Delete selected"))} (0)</button>
           </div>
           <div class="table-wrap">
             <table class="scope-table">
-              <thead><tr><th scope="col">Scope</th><th scope="col">Services</th><th scope="col">Status</th><th scope="col">Latest</th><th scope="col">Action</th></tr></thead>
+              <thead><tr><th scope="col">${t("Scope")}</th><th scope="col">${t("Services")}</th><th scope="col">${t("Status")}</th><th scope="col">${t("Latest")}</th><th scope="col">${t("Action")}</th></tr></thead>
               <tbody>
                 ${Array.from(byScope.entries()).map(([scope, conns]) => {
                   const t = tenantBySlug.get(scope);
@@ -4087,15 +4119,15 @@ dashboardApp.get("/tenants", async (c) => {
                     <div class="scope-name-cell">
                       ${scope === "(unscoped)" ? "" : `<input type="checkbox" name="scopes" value="${escapeHtml(scope)}" class="rowCheck" style="margin:0;">`}
                       <div class="scope-name-main">
-                        <b>${scope === "(unscoped)" ? "Legacy connections" : escapeHtml(showName ? t!.displayName : scope)}</b>
-                        ${scope === "(unscoped)" ? '<span class="badge unscoped">unscoped</span>' : (showName ? `<code>${escapeHtml(scope)}</code>` : "")}
+                        <b>${scope === "(unscoped)" ? T_LEGACY : escapeHtml(showName ? t!.displayName : scope)}</b>
+                        ${scope === "(unscoped)" ? `<span class="badge unscoped">${T_UNSCOPED}</span>` : (showName ? `<code>${escapeHtml(scope)}</code>` : "")}
                       </div>
                     </div>
                   </th>
                   <td>
                     <span class="scope-services">
                       ${conns.length === 0
-                        ? `<span style="color:#687385;font-size:13px;">No services</span>`
+                        ? `<span style="color:#687385;font-size:13px;">${T_NO_SERVICES}</span>`
                         : visibleConns.map((cn) => `
                           <span class="scope-service-pill" title="${escapeHtml(cn.label)}">
                             ${providerIcon(cn.provider)}<span>${escapeHtml(providerDisplayName(cn.provider))}</span>
@@ -4106,12 +4138,12 @@ dashboardApp.get("/tenants", async (c) => {
                   </td>
                   <td>
                     <span class="scope-meta">
-                      <span class="badge ${conns.length > 0 && enabledCount === conns.length ? "ok" : "unscoped"}">${enabledCount}/${conns.length} enabled</span>
-                      ${orphanCount ? `<span class="badge denied" title="Enabled, but no enabled agent has a grant to this connection.">no agent ${orphanCount}</span>` : ""}
+                      <span class="badge ${conns.length > 0 && enabledCount === conns.length ? "ok" : "unscoped"}">${enabledCount}/${conns.length} ${T_ENABLED}</span>
+                      ${orphanCount ? `<span class="badge denied" title="${escapeHtml(T_NO_AGENT_TITLE)}">${T_NO_AGENT} ${orphanCount}</span>` : ""}
                     </span>
                   </td>
                   <td>${newest ? `<code>${newest.toISOString().slice(0, 10)}</code>` : '<span style="color:#687385;">-</span>'}</td>
-                  <td>${scope !== "(unscoped)" ? `<span class="scope-actions"><a href="/tenants/${encodeURIComponent(scope)}/edit" class="btn secondary">Edit</a></span>` : ""}</td>
+                  <td>${scope !== "(unscoped)" ? `<span class="scope-actions"><a href="/tenants/${encodeURIComponent(scope)}/edit" class="btn secondary">${T_EDIT}</a></span>` : ""}</td>
                 </tr>
               `;
                 }).join("")}
@@ -4129,7 +4161,7 @@ dashboardApp.get("/tenants", async (c) => {
         function updateBtn() {
           const checked = Array.from(document.querySelectorAll('.rowCheck:checked')).map(c => c.value);
           if (csv) csv.value = checked.join(',');
-          if (btn) { btn.disabled = checked.length === 0; btn.textContent = 'Delete selected (' + checked.length + ')'; }
+          if (btn) { btn.disabled = checked.length === 0; btn.textContent = ${jsString(t("Delete selected"))} + ' (' + checked.length + ')'; }
         }
         if (selAll) selAll.addEventListener('change', () => {
           checks.forEach(c => c.checked = selAll.checked);
@@ -4160,20 +4192,20 @@ dashboardApp.get("/tenants/:scope/connect/:provider", async (c) => {
   const providerDef = await getProviderForWorkspace(provider, wsId);
   const connectShell = (title: string, inner: string, status = 200) =>
     c.html(`
-      <!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(title)} — grantry</title>
+      <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${escapeHtml(title)} — grantry</title>
       ${FAVICON}<style>${CSS}</style></head><body>
       ${NAV("tenants", user?.email)}
       <main>${inner}</main>
       </body></html>`, status as any);
 
   if (!providerDef) {
-    return connectShell("Unknown provider", `<h1>Unknown provider <code>${escapeHtml(provider)}</code></h1><p><a href="/tenants/${encodeURIComponent(scope)}/edit">← Back to scope</a></p>`, 404);
+    return connectShell(t("Unknown provider"), `<h1>${t("Unknown provider")} <code>${escapeHtml(provider)}</code></h1><p><a href="/tenants/${encodeURIComponent(scope)}/edit">${t("← Back to scope")}</a></p>`, 404);
   }
   if (providerDef.implemented === false) {
-    return connectShell("Provider not available", `<h1>${escapeHtml(providerDef.label)} is not available yet</h1><p><a href="/tenants/${encodeURIComponent(scope)}/edit">← Back to scope</a></p>`, 400);
+    return connectShell(t("Provider not available"), `<h1>${escapeHtml(t("{provider} is not available yet", { provider: providerDef.label }))}</h1><p><a href="/tenants/${encodeURIComponent(scope)}/edit">${t("← Back to scope")}</a></p>`, 400);
   }
   if (!(await workspaceProviderEnabled(wsId, provider))) {
-    return connectShell("Provider disabled", `<h1>${escapeHtml(providerDef.label)} is disabled for this workspace</h1><p>Enable it from <a href="/providers">Providers</a> first.</p>`, 400);
+    return connectShell(t("Provider disabled"), `<h1>${escapeHtml(t("{provider} is disabled for this workspace", { provider: providerDef.label }))}</h1><p>${t('Enable it from <a href="/providers">Providers</a> first.')}</p>`, 400);
   }
 
   const supportsOauth = providerDef.authTypes.includes("oauth");
@@ -4184,7 +4216,7 @@ dashboardApp.get("/tenants/:scope/connect/:provider", async (c) => {
   // OAuth path: hand straight off to the existing consent flow.
   if (useOauth) {
     if (!supportsOauth) {
-      return connectShell("OAuth unavailable", `<h1>${escapeHtml(providerDef.label)} does not support OAuth</h1><p><a href="${selfPath}">← Paste a token instead</a></p>`, 400);
+      return connectShell(t("OAuth unavailable"), `<h1>${escapeHtml(t("{provider} does not support OAuth", { provider: providerDef.label }))}</h1><p><a href="${selfPath}">${t("← Paste a token instead")}</a></p>`, 400);
     }
     return c.redirect(`/oauth/${encodeURIComponent(provider)}/start?tenant=${encodeURIComponent(scope)}`);
   }
@@ -4194,26 +4226,26 @@ dashboardApp.get("/tenants/:scope/connect/:provider", async (c) => {
   const credentialInputs = fields && fields.length
     ? fields.map((f) => `
         <div class="field">
-          <label for="cf_${escapeHtml(f.key)}">${escapeHtml(f.label)}${f.required ? "" : " (optional)"}</label>
+          <label for="cf_${escapeHtml(f.key)}">${escapeHtml(f.label)}${f.required ? "" : ` ${t("(optional)")}`}</label>
           <input type="${f.secret ? "password" : "text"}" name="${escapeHtml(f.key)}" id="cf_${escapeHtml(f.key)}" autocomplete="off"${f.required ? " required" : ""} placeholder="${escapeHtml(f.placeholder ?? "")}">
           ${f.hint ? `<div class="field-hint">${escapeHtml(f.hint)}</div>` : ""}
         </div>`).join("")
     : `<div class="field">
-         <label for="credential">Credential</label>
+         <label for="credential">${t("Credential")}</label>
          <textarea name="credential" id="credential" rows="3" required></textarea>
        </div>`;
 
   const tokenLink = providerDef.tokenUrl
-    ? `<p style="margin-top:6px;"><a href="${escapeHtml(providerDef.tokenUrl)}" target="_blank" rel="noopener" style="font-size:13px;">🔗 Get a token / credential here →</a></p>`
+    ? `<p style="margin-top:6px;"><a href="${escapeHtml(providerDef.tokenUrl)}" target="_blank" rel="noopener" style="font-size:13px;">${t("🔗 Get a token / credential here →")}</a></p>`
     : "";
   const oauthSwitch = supportsOauth
-    ? `<p class="field-hint" style="margin-top:14px;">Prefer to authorize instead? <a href="${selfPath}?method=oauth">Connect ${escapeHtml(providerDef.label)} with OAuth →</a></p>`
+    ? `<p class="field-hint" style="margin-top:14px;">${t("Prefer to authorize instead?")} <a href="${selfPath}?method=oauth">${escapeHtml(t("Connect {provider} with OAuth →", { provider: providerDef.label }))}</a></p>`
     : "";
 
-  return connectShell(`Connect ${providerDef.label}`, `
-    <h1 style="display:flex;align-items:center;gap:10px;">${providerIcon(provider, 28)} Connect ${escapeHtml(providerDef.label)}</h1>
+  return connectShell(t("Connect {provider}", { provider: providerDef.label }), `
+    <h1 style="display:flex;align-items:center;gap:10px;">${providerIcon(provider, 28)} ${escapeHtml(t("Connect {provider}", { provider: providerDef.label }))}</h1>
     <p style="color:#687385;margin-top:-10px;margin-bottom:20px;">
-      This connects <code>${escapeHtml(provider)}</code> to scope <code>${escapeHtml(scope)}</code> and grants it to that scope's agents automatically.
+      ${t("This connects <code>{provider}</code> to scope <code>{scope}</code> and grants it to that scope's agents automatically.", { provider: escapeHtml(provider), scope: escapeHtml(scope) })}
     </p>
     <form method="post" action="/tenants/${encodeURIComponent(scope)}/edit">
       <input type="hidden" name="_action" value="add_service">
@@ -4225,8 +4257,8 @@ dashboardApp.get("/tenants/:scope/connect/:provider", async (c) => {
         ${tokenLink}
       </div>
       <div style="display:flex;gap:8px;">
-        <button type="submit">Connect</button>
-        <a class="btn secondary" href="/tenants/${encodeURIComponent(scope)}/edit">Cancel</a>
+        <button type="submit">${t("Connect")}</button>
+        <a class="btn secondary" href="/tenants/${encodeURIComponent(scope)}/edit">${t("Cancel")}</a>
       </div>
     </form>
     ${oauthSwitch}
@@ -4293,20 +4325,20 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
   const reauthed = c.req.query("reauthed");
   const reauthBanner = reauthed
     ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);margin-bottom:20px;">
-         ✓ Re-authorized <code>${escapeHtml(reauthed)}</code>. The connection's access token (and refresh token) have been refreshed.
+         ✓ ${t("Re-authorized")} <code>${escapeHtml(reauthed)}</code>. ${t("The connection's access token (and refresh token) have been refreshed.")}
        </div>`
     : "";
   const notice = c.req.query("notice");
   const noticeKind = c.req.query("notice_kind") === "error" ? "error" : "ok";
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Edit ${scope} — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${escapeHtml(t("Edit {scope}", { scope }))} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
-      <h1>Edit scope ${tenantRow && tenantRow.displayName !== tenantRow.slug ? `${escapeHtml(tenantRow.displayName)} ` : ""}<code>${scope}</code></h1>
+      <h1>${t("Edit scope")} ${tenantRow && tenantRow.displayName !== tenantRow.slug ? `${escapeHtml(tenantRow.displayName)} ` : ""}<code>${scope}</code></h1>
       <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
-        Edit the scope's display labels and provider connections. To add a new service, scroll down.
+        ${t("Edit the scope's display labels and provider connections. To add a new service, scroll down.")}
       </p>
       ${reauthBanner}
       ${noticeBanner(notice, noticeKind)}
@@ -4314,28 +4346,28 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
       <h2 id="codex-mcp">Codex MCP</h2>
       <div class="card">
         <p style="font-size:13px;color:#687385;margin-top:0;">
-          Manage the internal tokens that can access this scope through MCP.
+          ${t("Manage the internal tokens that can access this scope through MCP.")}
         </p>
         ${codexAgents.length === 0 ? `
-          <p>No Codex MCP token exists for this scope yet.</p>
+          <p>${t("No Codex MCP token exists for this scope yet.")}</p>
           <form method="post" action="/tenants/${scope}/codex-mcp/create">
-            <button type="submit">Create Codex MCP token</button>
+            <button type="submit">${t("Create Codex MCP token")}</button>
           </form>
         ` : `
-          <p>${codexAgents.length} token${codexAgents.length === 1 ? "" : "s"} can access this scope.</p>
+          <p>${t("{count} token(s) can access this scope.", { count: codexAgents.length })}</p>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>Internal token</th><th>Status</th><th>Last used</th><th>Created</th><th>Action</th></tr></thead>
+              <thead><tr><th>${t("Internal token")}</th><th>${t("Status")}</th><th>${t("Last used")}</th><th>${t("Created")}</th><th>${t("Action")}</th></tr></thead>
               <tbody>
                 ${codexAgents.map((a) => `
                   <tr>
                     <td><code>${escapeHtml(a.name)}</code><br><span style="color:#687385;font-size:12px;"><code>${escapeHtml(a.tokenPrefix)}...</code></span></td>
-                    <td>${a.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</td>
+                    <td>${a.enabled ? `<span class="badge ok">${t("enabled")}</span>` : `<span class="badge denied">${t("disabled")}</span>`}</td>
                     <td>${a.lastUsedAt ? a.lastUsedAt.toISOString().slice(0, 16) : "—"}</td>
                     <td>${a.createdAt.toISOString().slice(0, 10)}</td>
                     <td>
-                      <form method="post" action="/tenants/${scope}/codex-mcp/${a.id}/rotate" style="display:inline;" onsubmit="return confirm('Rotate Codex MCP token for ${scope}?\\n\\nThe old token will stop working immediately.')">
-                        <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;">Rotate token</button>
+                      <form method="post" action="/tenants/${scope}/codex-mcp/${a.id}/rotate" style="display:inline;" onsubmit="return confirm('${t("Rotate Codex MCP token for {scope}?\\n\\nThe old token will stop working immediately.", { scope })}')">
+                        <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;">${t("Rotate token")}</button>
                       </form>
                     </td>
                   </tr>
@@ -4349,24 +4381,23 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
       <form method="post" action="/tenants/${scope}/edit" id="settingsForm">
         <input type="hidden" name="_action" value="save_settings">
 
-        <h2>Scope</h2>
+        <h2>${t("Scope")}</h2>
         <div class="card">
           <p class="field-hint" style="margin-top:0;">
-            The slug <code>${scope}</code> is the wire key agents send as <code>scope</code> / <code>X-Grantry-Scope</code> — it cannot be changed.
-            The display name is only for dashboards and can be renamed freely.
+            ${t("The slug <code>{scope}</code> is the wire key agents send as <code>scope</code> / <code>X-Grantry-Scope</code> — it cannot be changed. The display name is only for dashboards and can be renamed freely.", { scope })}
           </p>
-          <label for="tenant_display_name">Display name</label>
+          <label for="tenant_display_name">${t("Display name")}</label>
           <input type="text" name="tenant_display_name" id="tenant_display_name" value="${escapeHtml(tenantRow?.displayName ?? scope)}" placeholder="${scope}">
-          <label for="tenant_description" style="margin-top:8px;">Description</label>
-          <input type="text" name="tenant_description" id="tenant_description" value="${escapeHtml(tenantRow?.description ?? "")}" placeholder="What this scope is for">
+          <label for="tenant_description" style="margin-top:8px;">${t("Description")}</label>
+          <input type="text" name="tenant_description" id="tenant_description" value="${escapeHtml(tenantRow?.description ?? "")}" placeholder="${escapeHtml(t("What this scope is for"))}">
         </div>
 
-        <h2 id="connections">Connections (${connections.length})</h2>
-        ${connections.length === 0 ? '<div class="card"><div class="empty">No connections yet. Add one below.</div></div>' : `
+        <h2 id="connections">${t("Connections")} (${connections.length})</h2>
+        ${connections.length === 0 ? `<div class="card"><div class="empty">${t("No connections yet. Add one below.")}</div></div>` : `
         <div class="card">
           <div class="table-wrap">
           <table class="connection-table">
-            <thead><tr><th>Provider</th><th>Auth</th><th>Scope</th><th>Credential</th><th>Enabled</th><th>Created</th><th>Action</th></tr></thead>
+            <thead><tr><th>${t("Provider")}</th><th>${t("Auth")}</th><th>${t("Scope")}</th><th>${t("Credential")}</th><th>${t("Enabled")}</th><th>${t("Created")}</th><th>${t("Action")}</th></tr></thead>
             <tbody>
             ${connections.map((cn) => {
               const canReconnect = cn.authType === "oauth";
@@ -4389,93 +4420,93 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                   ${cn.provider === "google_ads" ? `
                     <div style="margin-top:10px;padding-top:10px;border-top:1px dashed #e3e8ee;">
                       <div class="field-hint" style="margin-bottom:6px;">
-                        Google Ads Developer token:
+                        ${t("Google Ads Developer token:")}
                         ${cn.encryptedServerCredential || process.env.GOOGLE_ADS_DEVELOPER_TOKEN
-                          ? '<span class="badge ok">set</span>'
-                          : '<span class="badge denied">missing</span>'}
+                          ? `<span class="badge ok">${t("set")}</span>`
+                          : `<span class="badge denied">${t("missing")}</span>`}
                       </div>
                       <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;">
-                        <input type="password" name="conn_server_credential_${cn.id}" placeholder="Paste Developer token from Google Ads API Center" style="font-size:13px;margin-bottom:0;">
-                        <button type="submit" style="font-size:13px;white-space:nowrap;">Save token</button>
+                        <input type="password" name="conn_server_credential_${cn.id}" placeholder="${escapeHtml(t("Paste Developer token from Google Ads API Center"))}" style="font-size:13px;margin-bottom:0;">
+                        <button type="submit" style="font-size:13px;white-space:nowrap;">${t("Save token")}</button>
                       </div>
                       <div class="field-hint">
                         OAuth user tokenとは別です。Google Ads API Center の Developer token をここに保存します。
                         <a href="https://ads.google.com/aw/apicenter" target="_blank" rel="noopener">Open API Center →</a>
                       </div>
-                      ${cn.encryptedServerCredential ? `<label style="font-weight:normal;font-size:12px;margin-top:6px;"><input type="checkbox" name="conn_clear_server_credential_${cn.id}"> clear saved developer token</label>` : ""}
+                      ${cn.encryptedServerCredential ? `<label style="font-weight:normal;font-size:12px;margin-top:6px;"><input type="checkbox" name="conn_clear_server_credential_${cn.id}"> ${t("clear saved developer token")}</label>` : ""}
                     </div>
                   ` : ""}
                 </td>
-                <td><label style="font-weight:normal;font-size:13px;"><input type="checkbox" name="conn_enabled_${cn.id}" ${cn.enabled ? "checked" : ""}> on</label></td>
+                <td><label style="font-weight:normal;font-size:13px;"><input type="checkbox" name="conn_enabled_${cn.id}" ${cn.enabled ? "checked" : ""}> ${t("on")}</label></td>
                 <td><code>${cn.createdAt.toISOString().slice(0, 10)}</code></td>
                 <td><span class="stacked-actions">${canReconnect
                   ? (oauthAppConfigured
-                    ? `<a href="/oauth/${cn.provider}/start?tenant=${encodeURIComponent(cn.scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}&popup=1" class="btn secondary oauth-popup-link" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run the OAuth consent flow and refresh this exact connection's tokens">↻ Reconnect</a>${needsReconnect ? '<span class="badge denied">needs reconnect</span>' : ""}`
-                    : `<a href="/connections/${encodeURIComponent(cn.id)}/edit?err=${encodeURIComponent("Save this provider's OAuth app settings before reconnecting.")}" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Save this provider's OAuth app settings before reconnecting">Set up OAuth app</a>`)
-                  : `<button type="submit" form="recheck_connection_${cn.id}" class="secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Re-run credential validation without showing the saved token">Recheck</button>`}
+                    ? `<a href="/oauth/${cn.provider}/start?tenant=${encodeURIComponent(cn.scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}&popup=1" class="btn secondary oauth-popup-link" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="${escapeHtml(t("Re-run the OAuth consent flow and refresh this exact connection's tokens"))}">↻ ${t("Reconnect")}</a>${needsReconnect ? `<span class="badge denied">${t("needs reconnect")}</span>` : ""}`
+                    : `<a href="/connections/${encodeURIComponent(cn.id)}/edit?err=${encodeURIComponent(t("Save this provider's OAuth app settings before reconnecting."))}" class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="${escapeHtml(t("Save this provider's OAuth app settings before reconnecting"))}">${t("Set up OAuth app")}</a>`)
+                  : `<button type="submit" form="recheck_connection_${cn.id}" class="secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="${escapeHtml(t("Re-run credential validation without showing the saved token"))}">${t("Recheck")}</button>`}
                   ${credentialSettingsLink}
-                  <button type="submit" form="delete_connection_${cn.id}" class="danger" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="Delete only this connection">Delete</button>
+                  <button type="submit" form="delete_connection_${cn.id}" class="danger" style="font-size:12px;padding:4px 10px;white-space:nowrap;" title="${escapeHtml(t("Delete only this connection"))}">${t("Delete")}</button>
                 </span></td>
               </tr>
             `;}).join("")}
             </tbody>
           </table>
           </div>
-          <p class="field-hint">↻ <b>Reconnect</b> re-runs the provider's OAuth consent screen and refreshes this connection's access/refresh tokens in place. <b>Delete</b> removes only that credential connection; agents remain.</p>
+          <p class="field-hint">${t("↻ <b>Reconnect</b> re-runs the provider's OAuth consent screen and refreshes this connection's access/refresh tokens in place. <b>Delete</b> removes only that credential connection; agents remain.")}</p>
         </div>`}
 
-        <h2>Connection grants</h2>
+        <h2>${t("Connection grants")}</h2>
         <div class="card">
-          <p class="field-hint" style="margin-top:0;">Agents use explicit connection grants. Provider permissions come from each credential itself; Grantry does not maintain separate per-tool switches here.</p>
-          ${connections.length === 0 ? '<div class="empty">No provider connections yet.</div>' : `<p>${connections.length} connection(s) available for this scope.</p>`}
+          <p class="field-hint" style="margin-top:0;">${t("Agents use explicit connection grants. Provider permissions come from each credential itself; Grantry does not maintain separate per-tool switches here.")}</p>
+          ${connections.length === 0 ? `<div class="empty">${t("No provider connections yet.")}</div>` : `<p>${t("{count} connection(s) available for this scope.", { count: connections.length })}</p>`}
         </div>
 
         <div style="display:flex;gap:8px;margin-bottom:32px;">
-          <button type="submit">Save settings</button>
-          <a href="/tenants" class="btn secondary">Cancel</a>
+          <button type="submit">${t("Save settings")}</button>
+          <a href="/tenants" class="btn secondary">${t("Cancel")}</a>
         </div>
       </form>
       ${connections.map((cn) => `
         <form id="recheck_connection_${cn.id}" method="post" action="/tenants/${scope}/connections/${cn.id}/recheck"></form>
-        <form id="delete_connection_${cn.id}" method="post" action="/tenants/${scope}/connections/${cn.id}/delete" onsubmit="return confirm(${jsString(`Delete connection ${cn.label}?\n\nProvider: ${cn.provider}\nScope: ${cn.scope}\n\nRelated agent connection grants will be removed automatically.`)});"></form>
+        <form id="delete_connection_${cn.id}" method="post" action="/tenants/${scope}/connections/${cn.id}/delete" onsubmit="return confirm(${jsString(t("Delete connection {label}?\n\nProvider: {provider}\nScope: {scope}\n\nRelated agent connection grants will be removed automatically.", { label: cn.label, provider: cn.provider, scope: cn.scope }))});"></form>
       `).join("")}
 
-      <h2>Advanced: additional agent token</h2>
+      <h2>${t("Advanced: additional agent token")}</h2>
       <div class="card">
-        <p class="field-hint" style="margin-top:0;">Create an extra internal agent token with grants to this scope's enabled connections.</p>
+        <p class="field-hint" style="margin-top:0;">${t("Create an extra internal agent token with grants to this scope's enabled connections.")}</p>
         <form method="post" action="/tenants/${scope}/agents/new" id="addAgentForm">
           <div class="field">
-            <label for="agent">Agent name</label>
-            <input type="text" name="agent" id="agent" pattern="[a-zA-Z0-9_-]+" placeholder="e.g. ${escapeHtml(scope)}-read-bot" required>
-            <div class="field-hint">Globally unique. Suggestions: <code>${escapeHtml(scope)}-read</code>, <code>${escapeHtml(scope)}-write</code>, <code>${escapeHtml(scope)}-ci</code>.</div>
+            <label for="agent">${t("Agent name")}</label>
+            <input type="text" name="agent" id="agent" pattern="[a-zA-Z0-9_-]+" placeholder="${escapeHtml(t("e.g. {scope}-read-bot", { scope }))}" required>
+            <div class="field-hint">${t("Globally unique. Suggestions: <code>{scope}-read</code>, <code>{scope}-write</code>, <code>{scope}-ci</code>.", { scope: escapeHtml(scope) })}</div>
           </div>
           <div class="field">
-            <label for="agent_desc">Description <span style="color:#687385;">(optional)</span></label>
-            <input type="text" name="agent_desc" id="agent_desc" placeholder="What this agent is for">
+            <label for="agent_desc">${t("Description")} <span style="color:#687385;">${t("(optional)")}</span></label>
+            <input type="text" name="agent_desc" id="agent_desc" placeholder="${escapeHtml(t("What this agent is for"))}">
           </div>
-          <p class="field-hint">Tool visibility is derived from this scope's granted connections. Provider credentials may still reject calls if their own permissions are narrower.</p>
+          <p class="field-hint">${t("Tool visibility is derived from this scope's granted connections. Provider credentials may still reject calls if their own permissions are narrower.")}</p>
           <div style="display:flex;gap:8px;">
-            <button type="submit" class="secondary">Create additional token</button>
+            <button type="submit" class="secondary">${t("Create additional token")}</button>
           </div>
         </form>
       </div>
 
-      <h2 style="color:#df1b41;">Danger zone</h2>
+      <h2 style="color:#df1b41;">${t("Danger zone")}</h2>
       <div class="card" style="border-color:#df1b41;">
-        <p>Delete this scope entirely. This removes <b>all your connections</b> for scope <code>${scope}</code>; related agent connection grants are removed automatically.</p>
-        <form method="post" action="/tenants/${scope}/delete" onsubmit="return confirm('Delete scope ${scope}?\\n\\nThis removes all YOUR connections for this scope and related grants. This action cannot be undone.');">
-          <button type="submit" style="background:#df1b41;color:#ffffff;">🗑 Delete scope ${scope}</button>
+        <p>${t("Delete this scope entirely. This removes <b>all your connections</b> for scope <code>{scope}</code>; related agent connection grants are removed automatically.", { scope })}</p>
+        <form method="post" action="/tenants/${scope}/delete" onsubmit="return confirm('${t("Delete scope {scope}?\\n\\nThis removes all YOUR connections for this scope and related grants. This action cannot be undone.", { scope })}');">
+          <button type="submit" style="background:#df1b41;color:#ffffff;">🗑 ${t("Delete scope {scope}", { scope })}</button>
         </form>
       </div>
 
-      <h2 id="add-service">Add a service</h2>
+      <h2 id="add-service">${t("Add a service")}</h2>
       ${availableToAdd.length === 0 ? `
       <div class="card">
-        <div class="empty">No enabled providers are available for this workspace.</div>
-        <p class="field-hint" style="text-align:center;margin-top:14px;">Enable or add providers from <a href="/providers">Providers</a>.</p>
+        <div class="empty">${t("No enabled providers are available for this workspace.")}</div>
+        <p class="field-hint" style="text-align:center;margin-top:14px;">${t("Enable or add providers from <a href=\"/providers\">Providers</a>.")}</p>
         ${comingSoonProviders.length > 0 ? `
           <p class="field-hint" style="text-align:center;margin-top:14px;">
-            Coming soon: ${comingSoonProviders.map((p) => `<code>${p.key}</code>`).join(", ")}
+            ${t("Coming soon:")} ${comingSoonProviders.map((p) => `<code>${p.key}</code>`).join(", ")}
           </p>
         ` : ""}
       </div>` : `
@@ -4483,9 +4514,9 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         <input type="hidden" name="_action" value="add_service">
         <input type="hidden" name="oauth_popup" id="oauthPopup" value="">
         <div class="step-card">
-          <h2><span class="num">+</span> New service</h2>
+          <h2><span class="num">+</span> ${t("New service")}</h2>
           <div class="field">
-            <label for="providerBtn">Provider</label>
+            <label for="providerBtn">${t("Provider")}</label>
             <div class="combo" id="providerCombo">
               <input type="hidden" name="provider" id="provider" value="${availableToAdd[0].provider.key}" required>
               <input type="hidden" id="providerAuth" value="${availableToAdd[0].authType}">
@@ -4495,69 +4526,69 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                 <span class="combo-caret" aria-hidden="true">▾</span>
               </button>
               <ul class="combo-list" id="providerList" role="listbox" hidden>
-                <li class="combo-search-row" role="presentation"><input type="text" id="providerSearch" placeholder="Search providers…" autocomplete="off" aria-label="Search providers"></li>
+                <li class="combo-search-row" role="presentation"><input type="text" id="providerSearch" placeholder="${escapeHtml(t("Search providers…"))}" autocomplete="off" aria-label="${escapeHtml(t("Search providers"))}"></li>
                 ${availableToAdd.map(({ provider: p, authType }, i) => `<li class="combo-opt" role="option" data-value="${p.key}" data-auth-type="${authType}" data-search="${escapeHtml((p.label + " " + p.key + " " + authType).toLowerCase())}" aria-selected="${i === 0 ? "true" : "false"}"><span class="combo-icon">${providerIcon(p.key, 24)}</span><span class="combo-opt-text">${p.label} (${authTypeLabel(p.key, authType)})</span></li>`).join("")}
-                <li class="combo-empty" role="presentation" id="providerSearchEmpty" hidden>No providers match.</li>
+                <li class="combo-empty" role="presentation" id="providerSearchEmpty" hidden>${t("No providers match.")}</li>
               </ul>
             </div>
           </div>
           <input type="hidden" name="auth_method" id="authMethodHidden" value="">
           <div class="field" id="reuseConnectionRow" style="display:none;">
-            <label for="reuseConnectionId">Connection</label>
+            <label for="reuseConnectionId">${t("Connection")}</label>
             <select name="reuse_connection_id" id="reuseConnectionId"></select>
-            <div class="field-hint">Creates a new scope-scoped connection using the selected workspace credential.</div>
+            <div class="field-hint">${t("Creates a new scope-scoped connection using the selected workspace credential.")}</div>
           </div>
           <div class="field" id="credFieldRow">
-            <label for="credential">Credential</label>
+            <label for="credential">${t("Credential")}</label>
             <textarea name="credential" id="credential" rows="3"></textarea>
             <div id="credStructured" style="display:none;"></div>
             <div class="field-hint" id="credHint"></div>
             <div id="patLinkRow" style="margin-top:6px;display:none;">
-              <a id="patLink" href="#" target="_blank" rel="noopener" style="font-size:13px;">🔗 Get a new token here →</a>
+              <a id="patLink" href="#" target="_blank" rel="noopener" style="font-size:13px;">${t("🔗 Get a new token here →")}</a>
             </div>
             <div id="oauthSetupLinkRow" style="margin-top:6px;display:none;">
-              <a id="oauthSetupLink" href="#" target="_blank" rel="noopener" style="font-size:13px;">🔗 Register/manage OAuth app here →</a>
+              <a id="oauthSetupLink" href="#" target="_blank" rel="noopener" style="font-size:13px;">${t("🔗 Register/manage OAuth app here →")}</a>
             </div>
           </div>
           <div class="field" id="oauthAppFieldRow" style="display:none;">
-            <label>OAuth app settings</label>
-            <div class="field-hint" style="margin-top:0;">Create the OAuth app in the provider console, copy the redirect URI below into that app, then paste the issued Client ID and Client Secret here.</div>
+            <label>${t("OAuth app settings")}</label>
+            <div class="field-hint" style="margin-top:0;">${t("Create the OAuth app in the provider console, copy the redirect URI below into that app, then paste the issued Client ID and Client Secret here.")}</div>
             <div class="field" style="margin-bottom:10px;">
-              <label for="oauthRedirectUri">Redirect URI</label>
+              <label for="oauthRedirectUri">${t("Redirect URI")}</label>
               <div style="display:flex;gap:8px;align-items:center;">
                 <input type="text" id="oauthRedirectUri" readonly value="" style="font-family:monospace;">
-                <button type="button" class="secondary" id="copyOauthRedirectUri" style="white-space:nowrap;">Copy</button>
+                <button type="button" class="secondary" id="copyOauthRedirectUri" style="white-space:nowrap;">${t("Copy")}</button>
               </div>
             </div>
             <div class="field" style="margin-bottom:10px;">
-              <label for="oauthClientId">Client ID</label>
-              <input type="text" name="oauth_client_id" id="oauthClientId" autocomplete="off" placeholder="Client ID">
+              <label for="oauthClientId">${t("Client ID")}</label>
+              <input type="text" name="oauth_client_id" id="oauthClientId" autocomplete="off" placeholder="${escapeHtml(t("Client ID"))}">
             </div>
             <div class="field" style="margin-bottom:10px;">
-              <label for="oauthClientSecret">Client Secret</label>
-              <input type="password" name="oauth_client_secret" id="oauthClientSecret" autocomplete="off" placeholder="Client Secret">
+              <label for="oauthClientSecret">${t("Client Secret")}</label>
+              <input type="password" name="oauth_client_secret" id="oauthClientSecret" autocomplete="off" placeholder="${escapeHtml(t("Client Secret"))}">
             </div>
             <div class="field" style="margin-bottom:0;">
-              <label for="oauthClientAuthMethod">Client authentication method</label>
+              <label for="oauthClientAuthMethod">${t("Client authentication method")}</label>
               <select name="oauth_client_auth_method" id="oauthClientAuthMethod">
                 <option value="CLIENT_SECRET_BASIC">CLIENT_SECRET_BASIC</option>
                 <option value="CLIENT_SECRET_POST">CLIENT_SECRET_POST</option>
               </select>
             </div>
             <div id="oauthAppSetupLinkRow" style="margin-top:8px;display:none;">
-              <a id="oauthAppSetupLink" href="#" target="_blank" rel="noopener" style="font-size:13px;">🔗 Register/manage OAuth app here →</a>
+              <a id="oauthAppSetupLink" href="#" target="_blank" rel="noopener" style="font-size:13px;">${t("🔗 Register/manage OAuth app here →")}</a>
             </div>
           </div>
           <div class="field-hint" id="serverCredentialHint"></div>
           <div class="field" id="subjectFieldRow" style="display:none;">
-            <label for="subject">Impersonate admin email (subject)</label>
+            <label for="subject">${t("Impersonate admin email (subject)")}</label>
             <input type="text" name="subject" id="subject" autocomplete="off" placeholder="admin@customer-domain.com">
-            <div class="field-hint">The Workspace admin whose authority the service account acts as (Domain-Wide Delegation). Must be a real admin in the customer's domain.</div>
+            <div class="field-hint">${t("The Workspace admin whose authority the service account acts as (Domain-Wide Delegation). Must be a real admin in the customer's domain.")}</div>
           </div>
-          <p class="field-hint">This creates a provider connection. Agents get access when this connection is granted to them; provider permissions are enforced by the credential itself.</p>
+          <p class="field-hint">${t("This creates a provider connection. Agents get access when this connection is granted to them; provider permissions are enforced by the credential itself.")}</p>
         </div>
         <div style="display:flex;gap:8px;">
-          <button type="submit" id="addServiceButton">Add service</button>
+          <button type="submit" id="addServiceButton">${t("Add service")}</button>
         </div>
       </form>
       <script>
@@ -4616,7 +4647,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           if (event.origin !== window.location.origin) return;
           const data = event.data || {};
           if (data.type !== 'grantry:oauth-complete') return;
-          window.location.href = data.url || (${jsString(tenantEditUrl(scope, "OAuth connection updated.", "ok", "#connections"))});
+          window.location.href = data.url || (${jsString(tenantEditUrl(scope, t("OAuth connection updated."), "ok", "#connections"))});
         });
         document.querySelectorAll('.oauth-popup-link').forEach((link) => {
           link.addEventListener('click', (event) => {
@@ -4667,7 +4698,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             const previousReuseConnectionId = reuseConnectionId.value;
             reuseConnectionRow.style.display = usePat && reusable.length ? "" : "none";
             reuseConnectionId.innerHTML = usePat && reusable.length
-              ? reusable.map(c => '<option value="' + escapeText(c.id) + '">Use existing: ' + escapeText(c.label) + ' (' + escapeText(c.scope) + ')</option>').join('') + '<option value="">Paste a new credential instead</option>'
+              ? reusable.map(c => '<option value="' + escapeText(c.id) + '">' + ${jsString(t("Use existing:") + " ")} + escapeText(c.label) + ' (' + escapeText(c.scope) + ')</option>').join('') + '<option value="">' + ${jsString(t("Paste a new credential instead"))} + '</option>'
               : '';
             if (usePat && reusable.some(c => c.id === previousReuseConnectionId)) reuseConnectionId.value = previousReuseConnectionId;
             if (usePat && previousReuseConnectionId === "") reuseConnectionId.value = "";
@@ -4675,7 +4706,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           if (serverCredentialHint) {
             if (sel.value === "google_ads") {
               const envSet = ${JSON.stringify(!!process.env.GOOGLE_ADS_DEVELOPER_TOKEN)};
-              serverCredentialHint.innerHTML = (envSet ? '<span class="badge ok">set</span>' : '<span class="badge denied">missing</span>') + ' Google Ads Developer token is separate from OAuth. After OAuth, paste the API Center token into the Google Ads connection row. <a href="https://ads.google.com/aw/apicenter" target="_blank" rel="noopener">Open API Center →</a>';
+              serverCredentialHint.innerHTML = (envSet ? ${jsString('<span class="badge ok">' + t("set") + '</span>')} : ${jsString('<span class="badge denied">' + t("missing") + '</span>')}) + ${jsString(' ' + t("Google Ads Developer token is separate from OAuth. After OAuth, paste the API Center token into the Google Ads connection row.") + ' <a href="https://ads.google.com/aw/apicenter" target="_blank" rel="noopener">' + t("Open API Center →") + '</a>')};
             } else {
               serverCredentialHint.innerHTML = "";
             }
@@ -4696,7 +4727,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
                         ? "Resend API key"
                         : (sel.value === "google_maps" ? "Google Maps Platform API key" : p.label + " token")))))));
           credField.placeholder = useSa
-            ? "Paste the full service account JSON key file ({ \\"type\\": \\"service_account\\", ... })"
+            ? ${jsString(t('Paste the full service account JSON key file ({ "type": "service_account", ... })'))}
             : "Paste your " + tokenLabel + (sel.value === "hubspot" ? " here (starts with pat-)" : " here");
           credField.disabled = false;
           const reusingExisting = usePat && reusable.length > 0 && reuseConnectionId && reuseConnectionId.value;
@@ -4744,11 +4775,11 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
               if (oauthClientSecret) oauthClientSecret.value = "";
             }
           }
-          addServiceButton.textContent = useOauth ? "Connect with OAuth" : "Add service";
+          addServiceButton.textContent = useOauth ? ${jsString(t("Connect with OAuth"))} : ${jsString(t("Add service"))};
           if (!usePat && !useSa && !useOauth) credField.value = "";
           if (subjectFieldRow) subjectFieldRow.style.display = useSa ? "" : "none";
           if (subjectField) { subjectField.required = useSa; if (!useSa) subjectField.value = ""; }
-          if (useSa) credHint.textContent = "Domain-Wide Delegation: the customer's Workspace admin authorizes this service account's client ID + scopes once in their Admin console. No per-user OAuth, no 7-day token expiry.";
+          if (useSa) credHint.textContent = ${jsString(t("Domain-Wide Delegation: the customer's Workspace admin authorizes this service account's client ID + scopes once in their Admin console. No per-user OAuth, no 7-day token expiry."))};
           if (usePat && p.tokenUrl) {
             patLink.href = p.tokenUrl;
             patLink.textContent = sel.value === "hubspot"
@@ -4801,8 +4832,8 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             if (!oauthRedirectUri) return;
             try {
               await navigator.clipboard.writeText(oauthRedirectUri.value);
-              copyOauthRedirectUri.textContent = "Copied";
-              setTimeout(() => { copyOauthRedirectUri.textContent = "Copy"; }, 1200);
+              copyOauthRedirectUri.textContent = ${jsString(t("Copied"))};
+              setTimeout(() => { copyOauthRedirectUri.textContent = ${jsString(t("Copy"))}; }, 1200);
             } catch {
               oauthRedirectUri.select();
               document.execCommand('copy');
@@ -5012,7 +5043,7 @@ dashboardApp.post("/tenants/:scope/codex-mcp/:agentId/rotate", async (c) => {
       connectionGrants: { some: { connection: { scope, ...rotateRowsWhere } } },
     },
   });
-  if (!agent) return c.html("<h1>agent not found</h1>", 404);
+  if (!agent) return c.html(`<h1>${t("agent not found")}</h1>`, 404);
 
   const token = `gn_agt_${crypto.randomUUID().replace(/-/g, "")}`;
   const tokenHash = await import("node:crypto").then(c => c.createHash("sha256").update(token).digest("hex"));
@@ -5045,9 +5076,9 @@ dashboardApp.post("/tenants/:scope/custom-providers/new", async (c) => {
   const body = await c.req.parseBody();
   const access = await scopeAccessFor(user.id, scope);
   const wsId = access?.tenant.workspaceId ?? (await getActiveWorkspaceId(c));
-  if (!wsId) return c.html("<h1>workspace required</h1>", 400);
+  if (!wsId) return c.html(`<h1>${t("workspace required")}</h1>`, 400);
   const admin = await requireWsAdmin(c, wsId);
-  if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
+  if (!admin) return c.html(`<h1>${t("workspace admin required")}</h1>`, 403);
   const errorResponse = await createWorkspaceCustomProvider(c, wsId, user.id, body, `/tenants/${scope}/edit`);
   if (errorResponse) return errorResponse;
   return c.redirect("/providers");
@@ -5060,9 +5091,9 @@ dashboardApp.post("/tenants/:scope/custom-providers/:providerId/delete", async (
   const providerId = c.req.param("providerId");
   const access = await scopeAccessFor(user.id, scope);
   const wsId = access?.tenant.workspaceId ?? (await getActiveWorkspaceId(c));
-  if (!wsId) return c.html("<h1>workspace required</h1>", 400);
+  if (!wsId) return c.html(`<h1>${t("workspace required")}</h1>`, 400);
   const admin = await requireWsAdmin(c, wsId);
-  if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
+  if (!admin) return c.html(`<h1>${t("workspace admin required")}</h1>`, 403);
   const row = await prisma.customProvider.findFirst({ where: { id: providerId, workspaceId: wsId } });
   if (row) {
     await prisma.$transaction([
@@ -5146,11 +5177,11 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     const reuseConnectionId = String(body.reuse_connection_id ?? "").trim();
 
     const providerDef = await getProviderForWorkspace(provider, wsId);
-    if (!providerDef) return c.html("<h1>unknown provider</h1>", 400);
+    if (!providerDef) return c.html(`<h1>${t("unknown provider")}</h1>`, 400);
     if (!(await workspaceProviderEnabled(wsId, provider))) {
       return c.html(`<h1>provider disabled for this workspace</h1><p>Enable <code>${escapeHtml(provider)}</code> from <a href="/providers">Providers</a> before adding it to a scope.</p>`, 400);
     }
-    if (providerDef.implemented === false) return c.html("<h1>provider not implemented</h1>", 400);
+    if (providerDef.implemented === false) return c.html(`<h1>${t("provider not implemented")}</h1>`, 400);
     // Structured JSON-credential providers post one input per field; assemble.
     const structuredCredential = patCredentialFromStructuredFields(body, providerDef);
     if (structuredCredential) credential = structuredCredential;
@@ -5160,10 +5191,10 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     const wantsOauth = authMethod === "oauth" || (!authMethod && providerDef.authTypes.includes("oauth") && !providerDef.authTypes.includes("pat") && !providerDef.authTypes.includes("service_account"));
     const wantsPat = authMethod === "pat" || (!authMethod && providerDef.authTypes.includes("pat") && !providerDef.authTypes.includes("oauth"));
     if (reuseConnectionId && !wantsPat) {
-      return c.html("<h1>existing connection reuse is only supported for paste-token providers</h1>", 400);
+      return c.html(`<h1>${t("existing connection reuse is only supported for paste-token providers")}</h1>`, 400);
     }
     if (reuseConnectionId && credential) {
-      return c.html("<h1>choose an existing connection or paste a new credential, not both</h1>", 400);
+      return c.html(`<h1>${t("choose an existing connection or paste a new credential, not both")}</h1>`, 400);
     }
     if (wantsOauth) {
       const structuredOAuthAppCredential = oauthAppCredentialFromStructuredFields(body, "", defaultOAuthClientAuthMethod(provider, providerDef));
@@ -5172,7 +5203,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
 
     // --- service_account (Domain-Wide Delegation) ---
     if (wantsSa) {
-      if (!providerDef.authTypes.includes("service_account")) return c.html("<h1>service account is not supported for this provider</h1>", 400);
+      if (!providerDef.authTypes.includes("service_account")) return c.html(`<h1>${t("service account is not supported for this provider")}</h1>`, 400);
       const subject = String(body.subject ?? "").trim();
       let saCred;
       try {
@@ -5212,10 +5243,10 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     }
 
     if (!wantsPat && !wantsSa && !wantsOauth && credential) {
-      return c.html("<h1>pasted credentials are not accepted for this OAuth-only provider</h1>", 400);
+      return c.html(`<h1>${t("pasted credentials are not accepted for this OAuth-only provider")}</h1>`, 400);
     }
     if (wantsOauth) {
-      if (!providerDef.authTypes.includes("oauth")) return c.html("<h1>OAuth is not supported for this provider</h1>", 400);
+      if (!providerDef.authTypes.includes("oauth")) return c.html(`<h1>${t("OAuth is not supported for this provider")}</h1>`, 400);
       let oauthAppCredentialId = "";
       if (credential) {
         try {
@@ -5236,7 +5267,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
       if (oauthAppCredentialId) params.set("oauth_app_credential_id", oauthAppCredentialId);
       return c.redirect(`/oauth/${provider}/start?${params.toString()}`);
     }
-    if (!wantsPat || !providerDef.authTypes.includes("pat")) return c.html("<h1>paste token is not supported for this provider</h1>", 400);
+    if (!wantsPat || !providerDef.authTypes.includes("pat")) return c.html(`<h1>${t("paste token is not supported for this provider")}</h1>`, 400);
 
     // 1) Add a PAT connection for this provider/auth type, or reuse a selected
     // workspace credential. Existing same-scope connections are edited from
@@ -5308,7 +5339,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     return c.redirect(tenantEditUrl(scope, `Service ${conn.label} added.`, "ok", "#connections"));
   }
 
-  return c.html("<h1>unknown action</h1>", 400);
+  return c.html(`<h1>${t("unknown action")}</h1>`, 400);
 });
 
 // --- /tenants/:scope/connections/:connectionId/recheck (POST) — validate saved PAT-like credential ---
@@ -5459,9 +5490,9 @@ dashboardApp.post("/tenants/new/custom-providers", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
   const wsId = await getActiveWorkspaceId(c);
-  if (!wsId) return c.html("<h1>workspace required</h1>", 400);
+  if (!wsId) return c.html(`<h1>${t("workspace required")}</h1>`, 400);
   const admin = await requireWsAdmin(c, wsId);
-  if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
+  if (!admin) return c.html(`<h1>${t("workspace admin required")}</h1>`, 403);
 
   const body = await c.req.parseBody();
   const errorResponse = await createWorkspaceCustomProvider(c, wsId, user.id, body, "/providers");
@@ -5507,36 +5538,36 @@ dashboardApp.get("/tenants/new", async (c) => {
   }
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>New scope — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("New scope")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
-      <h1>+ New scope</h1>
+      <h1>${t("+ New scope")}</h1>
       <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
-        Step 1 creates a scope and its provider connections. Step 2 assigns or creates the agent that can use this scope.
+        ${t("Step 1 creates a scope and its provider connections. Step 2 assigns or creates the agent that can use this scope.")}
       </p>
       <form method="post" action="/tenants/new" id="wizForm">
         <div class="step-card">
-          <h2><span class="num">1</span> Scope</h2>
+          <h2><span class="num">1</span> ${t("Scope")}</h2>
           <div class="field field-primary">
-            <label for="tenant">Scope key</label>
-            <input type="text" name="tenant" id="tenant" pattern="[a-z0-9_-]+" placeholder="backoffice" title="Lowercase letters, numbers, hyphens and underscores only (a-z 0-9 - _). Use the Display name field below for Japanese or other names." autofocus required>
-            <div class="field-hint">lowercase, alphanumeric, hyphens, underscores. Agents send this as <b>scope</b> in API calls — it cannot be changed later, so pick carefully.</div>
+            <label for="tenant">${t("Scope key")}</label>
+            <input type="text" name="tenant" id="tenant" pattern="[a-z0-9_-]+" placeholder="backoffice" title="${escapeHtml(t("Lowercase letters, numbers, hyphens and underscores only (a-z 0-9 - _). Use the Display name field below for Japanese or other names."))}" autofocus required>
+            <div class="field-hint">${t("lowercase, alphanumeric, hyphens, underscores. Agents send this as <b>scope</b> in API calls — it cannot be changed later, so pick carefully.")}</div>
             <div class="field-hint" id="tenantWarn" style="display:none;color:#df1b41;"></div>
           </div>
           <div class="field">
-            <label for="display_name">Display name (optional)</label>
+            <label for="display_name">${t("Display name (optional)")}</label>
             <input type="text" name="display_name" id="display_name" placeholder="e.g. Grantry 開発環境">
-            <div class="field-hint">Human-facing label shown in dashboards. Unlike the scope key, you can rename this anytime.</div>
+            <div class="field-hint">${t("Human-facing label shown in dashboards. Unlike the scope key, you can rename this anytime.")}</div>
           </div>
         </div>
 
         <div class="step-card">
-          <h2><span class="num">2</span> Connections</h2>
-          <p class="field-hint" style="margin-top:0;">Pick one or more services to wire into this scope. If this workspace already has a matching connection, leaving the credential blank reuses that existing provider credential for the new scope.</p>
-          <p class="field-hint" style="margin-top:-4px;">Only providers enabled in <a href="/providers">Providers</a> are shown here.</p>
-          <input type="text" id="providerSearch" placeholder="Search providers… (e.g. notion, github, oauth)" autocomplete="off" style="margin-bottom:12px;">
-          <p class="field-hint" id="providerSearchEmpty" style="display:none;margin-top:0;">No providers match your search.</p>
+          <h2><span class="num">2</span> ${t("Connections")}</h2>
+          <p class="field-hint" style="margin-top:0;">${t("Pick one or more services to wire into this scope. If this workspace already has a matching connection, leaving the credential blank reuses that existing provider credential for the new scope.")}</p>
+          <p class="field-hint" style="margin-top:-4px;">${t("Only providers enabled in <a href=\"/providers\">Providers</a> are shown here.")}</p>
+          <input type="text" id="providerSearch" placeholder="${escapeHtml(t("Search providers… (e.g. notion, github, oauth)"))}" autocomplete="off" style="margin-bottom:12px;">
+          <p class="field-hint" id="providerSearchEmpty" style="display:none;margin-top:0;">${t("No providers match your search.")}</p>
           ${providerAuthOptions.map(({ provider: p, authType }) => {
             const authLabel = authTypeLabel(p.key, authType);
             const hasPat = p.authTypes.includes("pat");
@@ -5552,8 +5583,8 @@ dashboardApp.get("/tenants/new", async (c) => {
             <label style="font-weight:600;display:flex;align-items:center;gap:8px;cursor:${isImplemented ? "pointer" : "not-allowed"};margin:0;">
               <input type="checkbox" class="provider-check" value="${optionKey}" ${isImplemented ? "" : "disabled"}> ${providerIcon(p.key)} ${p.label}
               <span style="color:#687385;font-weight:normal;font-size:13px;">(${authLabel})</span>
-              ${reusableOptions.length ? `<span class="badge ok" style="margin-left:auto;">existing connection</span>` : ""}
-              ${isImplemented ? "" : '<span class="badge unscoped" style="margin-left:auto;">Coming soon</span>'}
+              ${reusableOptions.length ? `<span class="badge ok" style="margin-left:auto;">${t("existing connection")}</span>` : ""}
+              ${isImplemented ? "" : `<span class="badge unscoped" style="margin-left:auto;">${t("Coming soon")}</span>`}
             </label>
             ${isImplemented ? `
             <div class="provider-detail" style="display:none;margin-top:12px;padding-left:24px;">
@@ -5567,7 +5598,7 @@ dashboardApp.get("/tenants/new", async (c) => {
                 </select>
                 <div class="field-hint">Creates a new scope-scoped connection that uses the selected workspace credential.</div>
                 ` : ""}
-                <label>Credential</label>
+                <label>${t("Credential")}</label>
                 ${renderCredentialFieldsHtml(p, { suffix: `${p.key}_${authType}` })
                   ? `<div class="cred-input">${renderCredentialFieldsHtml(p, { suffix: `${p.key}_${authType}` })}</div>`
                   : `<textarea name="credential_${p.key}_${authType}" class="cred-input" rows="2" placeholder="${escapeHtml(credentialPlaceholder(p.key, p.label, authType))}"></textarea>`}
@@ -5579,16 +5610,16 @@ dashboardApp.get("/tenants/new", async (c) => {
               </div>` : ""}
               ${authType === "oauth" ? `
               <div class="field oauth-row">
-                <div class="field-hint" style="margin-top:0;">${escapeHtml(p.helpText)} You'll be redirected to authorize after clicking <b>Create scope</b>.</div>
+                <div class="field-hint" style="margin-top:0;">${escapeHtml(p.helpText)} ${t("You'll be redirected to authorize after clicking <b>Create scope</b>.")}</div>
                 ${requiresWorkspaceOAuthApp ? `
-                <label>OAuth app settings</label>
+                <label>${t("OAuth app settings")}</label>
                 <div class="field" style="margin-bottom:10px;">
                   <label for="oauth_redirect_${p.key}_${authType}">Redirect URI</label>
                   <div style="display:flex;gap:8px;align-items:center;">
                     <input type="text" id="oauth_redirect_${p.key}_${authType}" class="oauth-redirect-uri" readonly value="${escapeHtml(redirectUri)}" style="font-family:monospace;">
                     <button type="button" class="secondary copy-oauth-redirect" data-copy-target="oauth_redirect_${p.key}_${authType}" style="white-space:nowrap;">Copy</button>
                   </div>
-                  <div class="field-hint">Copy this redirect URI into the OAuth application settings in ${escapeHtml(p.label)}.</div>
+                  <div class="field-hint">${t("Copy this redirect URI into the OAuth application settings in {provider}.", { provider: escapeHtml(p.label) })}</div>
                 </div>
                 <div class="field" style="margin-bottom:10px;">
                   <label for="oauth_client_id_${p.key}_${authType}">Client ID</label>
@@ -5605,15 +5636,15 @@ dashboardApp.get("/tenants/new", async (c) => {
                     <option value="CLIENT_SECRET_POST" ${defaultClientAuthMethod === "CLIENT_SECRET_POST" ? "selected" : ""}>CLIENT_SECRET_POST</option>
                   </select>
                 </div>
-                <div class="field-hint">Stored on this workspace and used for this provider's OAuth redirects and token refreshes.</div>
+                <div class="field-hint">${t("Stored on this workspace and used for this provider's OAuth redirects and token refreshes.")}</div>
                 ${serverCredentialHint(p.key)}
                 ${p.oauthSetupUrl ? `<div style="margin-top:4px;"><a href="${p.oauthSetupUrl}" target="_blank" rel="noopener" style="font-size:13px;">${p.key === "google_ads" ? "🔗 Register/manage Google OAuth client here →" : p.key === "yahoo_ads" ? "🔗 Register/manage LINE Yahoo Ads application here →" : `🔗 Register/manage your ${p.label} OAuth app here →`}</a></div>` : ""}
                 ` : ""}
               </div>` : ""}
-              <p class="field-hint" style="margin-bottom:0;">This connection exposes provider tools according to the credential's own permissions.</p>
+              <p class="field-hint" style="margin-bottom:0;">${t("This connection exposes provider tools according to the credential's own permissions.")}</p>
             </div>
             ` : `
-            <div class="field-hint" style="margin:8px 0 0 34px;">Provider registration is defined, but MCP tools and dispatch are not enabled yet.</div>
+            <div class="field-hint" style="margin:8px 0 0 34px;">${t("Provider registration is defined, but MCP tools and dispatch are not enabled yet.")}</div>
             `}
           </div>`;
           }).join("")}
@@ -5622,8 +5653,8 @@ dashboardApp.get("/tenants/new", async (c) => {
         </div>
 
         <div style="display:flex;gap:8px;">
-          <button type="submit">Create scope</button>
-          <a href="/tenants" class="btn secondary">Cancel</a>
+          <button type="submit">${t("Create scope")}</button>
+          <a href="/tenants" class="btn secondary">${t("Cancel")}</a>
         </div>
       </form>
       <script>
@@ -5919,8 +5950,8 @@ dashboardApp.post("/tenants/new", async (c) => {
       </main></body></html>
     `, 400);
   }
-  if (providers.length === 0) return c.html("<h1>select at least one provider</h1>", 400);
-  if (providerAuths.length === 0) return c.html("<h1>select at least one provider</h1>", 400);
+  if (providers.length === 0) return c.html(`<h1>${t("select at least one provider")}</h1>`, 400);
+  if (providerAuths.length === 0) return c.html(`<h1>${t("select at least one provider")}</h1>`, 400);
   for (const item of providerAuths) {
     const providerDef = await getProviderForWorkspace(item.provider, wsId);
     if (!providerDef) return c.html(`<h1>unknown provider: ${escapeHtml(item.provider)}</h1>`, 400);
@@ -6078,35 +6109,35 @@ dashboardApp.get("/agents", async (c) => {
   });
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Agents — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Agents")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("agents", user?.email)}
     <main>
       <div class="row spread" style="margin-bottom:16px;">
-        <h1 style="margin:0;">Agents</h1>
-        <a href="/agents/new" class="btn">+ New agent</a>
+        <h1 style="margin:0;">${t("Agents")}</h1>
+        <a href="/agents/new" class="btn">${t("+ New agent")}</a>
       </div>
       <form method="post" action="/agents/bulk-delete" id="bulkAgentForm">
         <input type="hidden" name="agent_ids_csv" id="agentIdsCsv" value="">
         <div class="row spread" style="margin-bottom:8px;">
-          <label style="font-size:13px;color:#3c4257;cursor:pointer;"><input type="checkbox" id="selAllAgents"> select all</label>
-          <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;" id="bulkAgentBtn" disabled>🗑 Delete selected (0)</button>
+          <label style="font-size:13px;color:#3c4257;cursor:pointer;"><input type="checkbox" id="selAllAgents"> ${t("select all")}</label>
+          <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;" id="bulkAgentBtn" disabled>🗑 ${t("Delete selected")} (0)</button>
         </div>
       </form>
-      ${agents.length === 0 ? '<div class="card"><div class="empty">No agents yet. <a href="/tenants/new">Create one via the scope wizard</a>.</div></div>' : `
+      ${agents.length === 0 ? `<div class="card"><div class="empty">${t("No agents yet.")} <a href="/tenants/new">${t("Create one via the scope wizard")}</a>.</div></div>` : `
       <div class="card">
         <table>
-          <thead><tr><th></th><th>Name</th><th>Token prefix</th><th>Granted connections</th><th>Accessible scopes</th><th>Status</th><th>Last used</th><th>Created</th><th>Actions</th></tr></thead>
+          <thead><tr><th></th><th>${t("Name")}</th><th>${t("Token prefix")}</th><th>${t("Granted connections")}</th><th>${t("Accessible scopes")}</th><th>${t("Status")}</th><th>${t("Last used")}</th><th>${t("Created")}</th><th>${t("Actions")}</th></tr></thead>
           <tbody>
           ${agents.map((a) => {
             const allScopes = new Set<string>();
             const liveGrants = a.connectionGrants.filter((g) => g.connection.enabled);
             for (const g of liveGrants) allScopes.add(g.connection.scope);
             const scopesDisplay = allScopes.size === 0
-              ? '<span class="badge denied">none</span>'
+              ? `<span class="badge denied">${t("none")}</span>`
               : Array.from(allScopes).map((s) => `<span class="badge scoped">${s}</span>`).join(" ");
             const grantsDisplay = liveGrants.length === 0
-              ? '<em style="color:#df1b41;">no granted connections</em>'
+              ? `<em style="color:#df1b41;">${t("no granted connections")}</em>`
               : `<span class="badge ok">${liveGrants.length}</span>`;
             return `
             <tr>
@@ -6115,15 +6146,15 @@ dashboardApp.get("/agents", async (c) => {
               <td><code>${a.tokenPrefix}...</code></td>
               <td>${grantsDisplay}</td>
               <td>${scopesDisplay}</td>
-              <td>${a.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</td>
+              <td>${a.enabled ? `<span class="badge ok">${t("enabled")}</span>` : `<span class="badge denied">${t("disabled")}</span>`}</td>
               <td>${a.lastUsedAt ? a.lastUsedAt.toISOString().slice(0, 16) : "—"}</td>
               <td>${a.createdAt.toISOString().slice(0, 10)}</td>
               <td style="position:relative;white-space:nowrap;">
-                <form method="post" action="/agents/${a.id}/rotate" style="display:inline;" onsubmit="return confirm('Rotate token for ${a.name}?\\n\\nThe OLD token will be invalidated immediately. The NEW token will be shown ONCE on the next page.')">
-                  <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;">Rotate</button>
+                <form method="post" action="/agents/${a.id}/rotate" style="display:inline;" onsubmit="return confirm('${t("Rotate token for {name}?\\n\\nThe OLD token will be invalidated immediately. The NEW token will be shown ONCE on the next page.", { name: a.name })}')">
+                  <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;">${t("Rotate")}</button>
                 </form>
-                <a href="/agents/${a.id}" class="btn secondary" style="font-size:12px;padding:4px 10px;">Details</a>
-                <form method="post" action="/agents/${a.id}/delete" style="display:inline;" onsubmit="return confirm('Delete agent ${a.name}?\\n\\nThis permanently destroys its token and connection grants.')">
+                <a href="/agents/${a.id}" class="btn secondary" style="font-size:12px;padding:4px 10px;">${t("Details")}</a>
+                <form method="post" action="/agents/${a.id}/delete" style="display:inline;" onsubmit="return confirm('${t("Delete agent {name}?\\n\\nThis permanently destroys its token and connection grants.", { name: a.name })}')">
                   <button type="submit" style="font-size:12px;padding:4px 10px;background:#df1b41;color:#ffffff;">🗑</button>
                 </form>
               </td>
@@ -6142,7 +6173,7 @@ dashboardApp.get("/agents", async (c) => {
         function updateABtn() {
           const checked = Array.from(document.querySelectorAll('.agentCheck:checked')).map(c => c.value);
           if (aCsv) aCsv.value = checked.join(',');
-          if (aBtn) { aBtn.disabled = checked.length === 0; aBtn.textContent = '🗑 Delete selected (' + checked.length + ')'; }
+          if (aBtn) { aBtn.disabled = checked.length === 0; aBtn.textContent = '🗑 ' + ${jsString(t("Delete selected"))} + ' (' + checked.length + ')'; }
         }
         if (selAllA) selAllA.addEventListener('change', () => {
           aChecks.forEach(c => c.checked = selAllA.checked);
@@ -6189,26 +6220,29 @@ dashboardApp.get("/agents/new", async (c) => {
   }
   allProviders.sort();
 
+  // Precomputed here because the `tenants.map((t) => …)` below shadows the
+  // imported t() translation helper with the tenant row.
+  const noScopeConnLabel = t("No enabled connections — selecting this scope grants nothing.");
+
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>New agent — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("New agent")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("agents")}
     <main>
-      <h1>+ New agent</h1>
+      <h1>${t("+ New agent")}</h1>
       <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
-        Create an agent that spans <b>existing</b> scopes — e.g. a manager that reads several business areas with one token.
-        To create a new scope, use the <a href="/tenants/new">scope wizard</a> instead.
+        ${t('Create an agent that spans <b>existing</b> scopes — e.g. a manager that reads several business areas with one token. To create a new scope, use the <a href="/tenants/new">scope wizard</a> instead.')}
       </p>
-      ${tenants.length === 0 ? `<div class="card"><div class="empty">No scopes yet. <a href="/tenants/new">Create one first</a>.</div></div>` : `
+      ${tenants.length === 0 ? `<div class="card"><div class="empty">${t("No scopes yet.")} <a href="/tenants/new">${t("Create one first")}</a>.</div></div>` : `
       <form method="post" action="/agents/new" id="agentForm">
         <input type="hidden" name="scopes_json" id="scopesJson" value="[]">
         <input type="hidden" name="manager_mode" id="managerModeInput" value="0">
 
         <div class="card">
-          <h2>Agent</h2>
-          <label for="agent">Agent name</label>
+          <h2>${t("Agent")}</h2>
+          <label for="agent">${t("Agent name")}</label>
           <input type="text" name="agent" id="agent" pattern="[a-zA-Z0-9_-]+" placeholder="manager-ai" autofocus required>
-          <label for="agent_desc" style="margin-top:8px;">Description</label>
+          <label for="agent_desc" style="margin-top:8px;">${t("Description")}</label>
           <input type="text" name="agent_desc" id="agent_desc" placeholder="e.g. 経営横断レポート用">
         </div>
 
@@ -6216,19 +6250,18 @@ dashboardApp.get("/agents/new", async (c) => {
           <label style="cursor:pointer;display:flex;align-items:flex-start;gap:10px;font-weight:600;">
             <input type="checkbox" id="managerToggle" style="transform:scale(1.3);margin-top:3px;">
             <span>
-              Full-scope manager
+              ${t("Full-scope manager")}
               <div class="field-hint" style="margin-top:4px;font-weight:normal;">
-                Reach <b>all</b> your scopes with one token — including scopes you create later.
-                Grants every enabled scope connection you own. Owner-bounded: only ever your own connections.
+                ${t("Reach <b>all</b> your scopes with one token — including scopes you create later. Grants every enabled scope connection you own. Owner-bounded: only ever your own connections.")}
               </div>
             </span>
           </label>
         </div>
 
         <div id="tenantSection">
-          <h2>Scope access</h2>
+          <h2>${t("Scope access")}</h2>
           <p class="field-hint" style="margin-top:-8px;">
-            Check the scopes this agent may reach. The agent receives grants to each enabled connection in the selected scopes. Provider permissions still come from the credential itself.
+            ${t("Check the scopes this agent may reach. The agent receives grants to each enabled connection in the selected scopes. Provider permissions still come from the credential itself.")}
           </p>
           ${tenants.map((t) => {
             const providers = providersByScope.get(t.slug) ?? [];
@@ -6241,7 +6274,7 @@ dashboardApp.get("/agents/new", async (c) => {
                 ${showName ? `${escapeHtml(t.displayName)} ` : ""}<span class="badge scoped">${t.slug}</span>
               </label>
             </h2>
-            ${providers.length === 0 ? `<div class="empty" style="padding:8px 0;">No enabled connections — selecting this scope grants nothing.</div>` : providers.map((p) => `
+            ${providers.length === 0 ? `<div class="empty" style="padding:8px 0;">${noScopeConnLabel}</div>` : providers.map((p) => `
             <div style="margin:10px 0 0 28px;">
               <code>${p}</code>
             </div>`).join("")}
@@ -6251,29 +6284,28 @@ dashboardApp.get("/agents/new", async (c) => {
 
         <div id="managerSection" style="display:none;">
           <div class="card" style="background:rgba(229,83,75,0.10);border:1px solid rgba(229,83,75,0.5);">
-            <h2 style="color:#e5534b;margin-top:0;">⚠ Full-scope access</h2>
+            <h2 style="color:#e5534b;margin-top:0;">⚠ ${t("Full-scope access")}</h2>
             <p style="margin-top:0;">
-              This token can use <b>every enabled scope connection you own</b>, including scopes created later.
-              If it leaks, your granted footprint is exposed at once.
+              ${t("This token can use <b>every enabled scope connection you own</b>, including scopes created later. If it leaks, your granted footprint is exposed at once.")}
             </p>
             <label style="cursor:pointer;display:flex;align-items:center;gap:8px;font-weight:600;">
               <input type="checkbox" id="managerConfirm" name="manager_confirm" style="transform:scale(1.2);">
-              I understand this agent reaches all my scopes, present and future.
+              ${t("I understand this agent reaches all my scopes, present and future.")}
             </label>
           </div>
           <div class="card">
-            <h2>Connections</h2>
-            ${allProviders.length === 0 ? '<div class="empty">No enabled connections in any scope.</div>' : `<p>${connections.length} enabled connection(s) across ${providersByScope.size} scope(s) will be granted.</p>`}
+            <h2>${t("Connections")}</h2>
+            ${allProviders.length === 0 ? `<div class="empty">${t("No enabled connections in any scope.")}</div>` : `<p>${t("{count} enabled connection(s) across {scopes} scope(s) will be granted.", { count: connections.length, scopes: providersByScope.size })}</p>`}
           </div>
         </div>
 
         <div class="card" style="background:rgba(99,91,255,0.08);">
-          <h2>👁 What this agent will be able to do</h2>
-          <p id="previewText" style="margin-bottom:0;color:#687385;">Select at least one scope above.</p>
+          <h2>👁 ${t("What this agent will be able to do")}</h2>
+          <p id="previewText" style="margin-bottom:0;color:#687385;">${t("Select at least one scope above.")}</p>
         </div>
 
-        <button type="submit" id="createBtn" disabled>🔑 Create agent &amp; mint token</button>
-        <p class="field-hint">Connection grants are created for this agent automatically. The token is shown once, right after creation.</p>
+        <button type="submit" id="createBtn" disabled>🔑 ${t("Create agent & mint token")}</button>
+        <p class="field-hint">${t("Connection grants are created for this agent automatically. The token is shown once, right after creation.")}</p>
       </form>
       <script>
         const managerToggle = document.getElementById('managerToggle');
@@ -6292,24 +6324,24 @@ dashboardApp.get("/agents/new", async (c) => {
           managerSection.style.display = manager ? '' : 'none';
           if (manager) {
             scopesJson.value = '[]';
-            createBtn.textContent = '🔑 Create full-scope manager & mint token';
+            createBtn.textContent = '🔑 ' + ${jsString(t("Create full-scope manager & mint token"))};
             if (!managerConfirm.checked) {
-              previewText.textContent = 'Tick the confirmation above to enable creation.';
+              previewText.textContent = ${jsString(t("Tick the confirmation above to enable creation."))};
               createBtn.disabled = true;
             } else {
-              previewText.innerHTML = '<b>Full-scope manager</b> — all enabled scope connections, including scopes created later. The MCP config has no scope lock; pass <code>scope</code> per call.';
+              previewText.innerHTML = ${jsString(t("<b>Full-scope manager</b> — all enabled scope connections, including scopes created later."))} + ' ' + ${jsString(t("The MCP config has no scope lock; pass <code>scope</code> per call."))};
               createBtn.disabled = false;
             }
             return;
           }
-          createBtn.textContent = '🔑 Create agent & mint token';
+          createBtn.textContent = '🔑 ' + ${jsString(t("Create agent & mint token"))};
           const scopes = tenantChecks.filter(c => c.checked).map(c => c.value);
           scopesJson.value = JSON.stringify(scopes);
           if (scopes.length === 0) {
-            previewText.textContent = 'Select at least one scope above.';
+            previewText.textContent = ${jsString(t("Select at least one scope above."))};
             createBtn.disabled = true;
           } else {
-            previewText.innerHTML = 'Scopes: ' + scopes.join(' · ') + '. The MCP config has no scope lock; pass <code>scope</code> per call.';
+            previewText.innerHTML = ${jsString(t("Scopes"))} + ': ' + scopes.join(' · ') + '. ' + ${jsString(t("The MCP config has no scope lock; pass <code>scope</code> per call."))};
             createBtn.disabled = false;
           }
         }
@@ -6319,7 +6351,7 @@ dashboardApp.get("/agents/new", async (c) => {
         updateAgentPreview();
       </script>
       `}
-      <p><a href="/agents">← Back to agents</a></p>
+      <p><a href="/agents">← ${t("Back to agents")}</a></p>
     </main></body></html>
   `);
 });
@@ -6336,14 +6368,14 @@ dashboardApp.post("/agents/new", async (c) => {
   try { scopes = (JSON.parse(String(body.scopes_json ?? "[]")) as unknown[]).map(String); } catch { scopes = []; }
   scopes = Array.from(new Set(scopes.filter((s) => /^[a-z0-9_-]+$/.test(s))));
 
-  if (!agent || !/^[a-zA-Z0-9_-]+$/.test(agent)) return c.html("<h1>agent name required (alphanumeric, hyphens, underscores)</h1>", 400);
+  if (!agent || !/^[a-zA-Z0-9_-]+$/.test(agent)) return c.html(`<h1>${t("agent name required (alphanumeric, hyphens, underscores)")}</h1>`, 400);
 
   const ws = await getWorkspaceAccess(c, user.id);
   const vw = ownerOrAdminWsWhere(user.id, ws);
   let grantableConnectionCount = 0;
   if (managerMode) {
     if (String(body.manager_confirm ?? "") !== "on") {
-      return c.html("<h1>confirm full-scope access to create a manager</h1>", 400);
+      return c.html(`<h1>${t("confirm full-scope access to create a manager")}</h1>`, 400);
     }
     scopes = []; // any scope
     const conns = await prisma.connection.findMany({
@@ -6352,7 +6384,7 @@ dashboardApp.post("/agents/new", async (c) => {
     });
     grantableConnectionCount = conns.length;
   } else {
-    if (scopes.length === 0) return c.html("<h1>select at least one scope</h1>", 400);
+    if (scopes.length === 0) return c.html(`<h1>${t("select at least one scope")}</h1>`, 400);
 
     // Every requested scope must be a tenant the caller manages (their own,
     // or any tenant in a workspace they administer).
@@ -6363,7 +6395,7 @@ dashboardApp.post("/agents/new", async (c) => {
     if (new Set(ownTenants.map((t) => t.slug)).size !== scopes.length) {
       const owned = new Set(ownTenants.map((t) => t.slug));
       const missing = scopes.filter((s) => !owned.has(s));
-      return c.html(`<h1>unknown scope(s): ${escapeHtml(missing.join(", "))}</h1>`, 400);
+      return c.html(`<h1>${t("unknown scope(s): {scopes}", { scopes: escapeHtml(missing.join(", ")) })}</h1>`, 400);
     }
 
     const conns = await prisma.connection.findMany({
@@ -6372,11 +6404,11 @@ dashboardApp.post("/agents/new", async (c) => {
     });
     grantableConnectionCount = conns.length;
   }
-  if (grantableConnectionCount === 0) return c.html("<h1>select at least one scope with an enabled connection</h1>", 400);
+  if (grantableConnectionCount === 0) return c.html(`<h1>${t("select at least one scope with an enabled connection")}</h1>`, 400);
 
   const existingAgent = await prisma.agent.findUnique({ where: { name: agent } });
   if (existingAgent) {
-    return c.html(`<h1>⚠️ Agent name <code>${escapeHtml(agent)}</code> already exists</h1><p>Pick a different name, or <a href="/agents/${existingAgent.id}">reuse the existing agent</a>. <a href="/agents/new">← Back</a></p>`, 409);
+    return c.html(`<h1>${t("⚠️ Agent name <code>{name}</code> already exists", { name: escapeHtml(agent) })}</h1><p>${t('Pick a different name, or <a href="{href}">reuse the existing agent</a>.', { href: `/agents/${existingAgent.id}` })} <a href="/agents/new">← ${t("Back")}</a></p>`, 409);
   }
 
   const wsId = ws.wsId;
@@ -6409,26 +6441,26 @@ dashboardApp.post("/agents/new", async (c) => {
   }
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Agent created — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Agent created")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("agents")}
     <main>
-      <h1>✓ Agent <code>${escapeHtml(agentRow.name)}</code> created</h1>
+      <h1>${t("✓ Agent <code>{name}</code> created", { name: escapeHtml(agentRow.name) })}</h1>
       <div class="card">
-        <h2>Access</h2>
-        <p>${managerMode ? `<span class="badge denied">all present and future scope connections</span>` : `Scopes: ${scopes.map((s) => `<span class="badge scoped">${s}</span>`).join(" ")}`} · granted ${granted} current connection(s)</p>
+        <h2>${t("Access")}</h2>
+        <p>${managerMode ? `<span class="badge denied">${t("all present and future scope connections")}</span>` : `${t("Scopes")}: ${scopes.map((s) => `<span class="badge scoped">${s}</span>`).join(" ")}`} · ${t("granted {count} current connection(s)", { count: granted })}</p>
       </div>
       ${agentTokenCard(token)}
       ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true)}
       <div class="card">
-        <h2>Cross-scope calls</h2>
-        <p class="field-hint" style="margin-top:0;">This config has <b>no</b> <code>X-Grantry-Scope</code> lock. Pass the target scope per call:</p>
+        <h2>${t("Cross-scope calls")}</h2>
+        <p class="field-hint" style="margin-top:0;">${t("This config has <b>no</b> <code>X-Grantry-Scope</code> lock. Pass the target scope per call:")}</p>
         <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
   -H "Authorization: Bearer ${token}" \\
   -H "Content-Type: application/json" \\
   -d '{"jsonrpc":"2.0","id":1,"method":"connections/list","params":{}}'</pre>
       </div>
-      <p><a href="/agents">← Back to agents</a></p>
+      <p><a href="/agents">← ${t("Back to agents")}</a></p>
     </main></body></html>
   `);
 });
@@ -6443,9 +6475,9 @@ dashboardApp.get("/agents/:id", async (c) => {
     where: { id },
     include: { connectionGrants: true },
   });
-  if (!agent) return c.html("<h1>agent not found</h1>", 404);
+  if (!agent) return c.html(`<h1>${t("agent not found")}</h1>`, 404);
   const wsAdminOfAgent = await isWsAdmin(user.id, agent.workspaceId);
-  if (agent.ownerId !== user.id && !wsAdminOfAgent) return c.html("<h1>not your agent</h1>", 403);
+  if (agent.ownerId !== user.id && !wsAdminOfAgent) return c.html(`<h1>${t("not your agent")}</h1>`, 403);
 
   const connections = await connectionsForAgent(agent.id);
   const scopeSet = new Set<string>();
@@ -6478,71 +6510,71 @@ dashboardApp.get("/agents/:id", async (c) => {
   const tokenPlaceholder = `${agent.tokenPrefix}...ROTATE_TO_VIEW_FULL_TOKEN`;
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>${escapeHtml(agent.name)} — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${escapeHtml(agent.name)} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("agents", user?.email)}
     <main>
-      <h1>Agent <code>${escapeHtml(agent.name)}</code></h1>
+      <h1>${t("Agent")} <code>${escapeHtml(agent.name)}</code></h1>
       ${okNotice ? `<div class="card" style="border-color:var(--accent);"><p style="margin:0;">${escapeHtml(okNotice)}</p></div>` : ""}
       <div class="card">
-        <h2>Connection grants</h2>
-        <p>Status: ${agent.enabled ? '<span class="badge ok">enabled</span>' : '<span class="badge denied">disabled</span>'}</p>
-        <p>Token prefix: <code>${escapeHtml(agent.tokenPrefix)}...</code></p>
-        <p>Mode: ${agent.fullScopeManager ? '<span class="badge denied">full-scope manager</span>' : '<span class="badge scoped">selected scopes</span>'}</p>
-        <p>Granted connections: ${connections.length
+        <h2>${t("Connection grants")}</h2>
+        <p>${t("Status")}: ${agent.enabled ? `<span class="badge ok">${t("enabled")}</span>` : `<span class="badge denied">${t("disabled")}</span>`}</p>
+        <p>${t("Token prefix")}: <code>${escapeHtml(agent.tokenPrefix)}...</code></p>
+        <p>${t("Mode")}: ${agent.fullScopeManager ? `<span class="badge denied">${t("full-scope manager")}</span>` : `<span class="badge scoped">${t("selected scopes")}</span>`}</p>
+        <p>${t("Granted connections")}: ${connections.length
           ? `<span class="badge ok">${connections.length}</span>`
-          : '<span class="badge denied">none</span>'}</p>
-        <p>Accessible scopes: ${scopeSet.size
+          : `<span class="badge denied">${t("none")}</span>`}</p>
+        <p>${t("Accessible scopes")}: ${scopeSet.size
           ? Array.from(scopeSet).sort().map((s) => `<span class="badge scoped">${escapeHtml(s)}</span>`).join(" ")
-          : '<span class="badge denied">none</span>'}</p>
+          : `<span class="badge denied">${t("none")}</span>`}</p>
       </div>
       <div class="card">
-        <h2>Add existing scopes</h2>
-        ${addableScopes.length === 0 ? '<div class="empty">No ungranted scopes with enabled connections are available for this agent.</div>' : `
+        <h2>${t("Add existing scopes")}</h2>
+        ${addableScopes.length === 0 ? `<div class="empty">${t("No ungranted scopes with enabled connections are available for this agent.")}</div>` : `
         <form method="post" action="/agents/${escapeHtml(agent.id)}/scopes/grant">
           ${addableScopes.map((item) => `
             <label style="display:flex;align-items:flex-start;gap:10px;margin:10px 0;cursor:pointer;">
               <input type="checkbox" name="scopes" value="${escapeHtml(item.scope)}" style="margin-top:3px;transform:scale(1.15);">
               <span>
                 <span class="badge scoped">${escapeHtml(item.scope)}</span>
-                <span style="color:#687385;font-size:13px;">${item.count} connection(s): ${Array.from(item.providers).sort().map(escapeHtml).join(", ")}</span>
+                <span style="color:#687385;font-size:13px;">${t("{count} connection(s):", { count: item.count })} ${Array.from(item.providers).sort().map(escapeHtml).join(", ")}</span>
               </span>
             </label>
           `).join("")}
-          <button type="submit" class="secondary" style="margin-top:8px;">Add selected scopes</button>
+          <button type="submit" class="secondary" style="margin-top:8px;">${t("Add selected scopes")}</button>
         </form>`}
       </div>
       ${agent.fullScopeManager
         ? `<div class="card">
-        <h2>Remove scopes</h2>
-        <p style="color:#687385;">This agent is a <span class="badge denied">full-scope manager</span> — it reaches every scope in the workspace directly, not through per-scope grants. To narrow it, switch it to selected-scopes mode; individual scopes cannot be removed while it stays a manager.</p>
+        <h2>${t("Remove scopes")}</h2>
+        <p style="color:#687385;">${t('This agent is a <span class="badge denied">full-scope manager</span> — it reaches every scope in the workspace directly, not through per-scope grants. To narrow it, switch it to selected-scopes mode; individual scopes cannot be removed while it stays a manager.')}</p>
       </div>`
         : `<div class="card">
-        <h2>Remove scopes</h2>
-        ${scopes.length === 0 ? '<div class="empty">No scopes granted to this agent.</div>' : `
-        <p style="color:#687385;">Drops every connection grant at the selected scope. The agent loses those provider tools on its next request. Other agents and the connections themselves are unaffected.</p>
+        <h2>${t("Remove scopes")}</h2>
+        ${scopes.length === 0 ? `<div class="empty">${t("No scopes granted to this agent.")}</div>` : `
+        <p style="color:#687385;">${t("Drops every connection grant at the selected scope. The agent loses those provider tools on its next request. Other agents and the connections themselves are unaffected.")}</p>
         ${scopes.map((scope) => `
-          <form method="post" action="/agents/${escapeHtml(agent.id)}/scopes/revoke" style="display:flex;align-items:center;gap:10px;margin:8px 0;" onsubmit="return confirm('Remove scope ${escapeHtml(scope)} from agent ${escapeHtml(agent.name)}? The agent loses these tools on its next request.')">
+          <form method="post" action="/agents/${escapeHtml(agent.id)}/scopes/revoke" style="display:flex;align-items:center;gap:10px;margin:8px 0;" onsubmit="return confirm('${t("Remove scope {scope} from agent {name}? The agent loses these tools on its next request.", { scope: escapeHtml(scope), name: escapeHtml(agent.name) })}')">
             <input type="hidden" name="scope" value="${escapeHtml(scope)}">
             <span class="badge scoped" style="min-width:120px;">${escapeHtml(scope)}</span>
-            <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;">Remove</button>
+            <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;">${t("Remove")}</button>
           </form>
         `).join("")}`}
       </div>`}
       <div class="card">
-        <h2>Charter</h2>
-        <p style="color:#687385;">What this agent is <em>for</em>, in plain language. Surfaced to <code>grantry_find_agent</code> so other agents route work here by purpose — not just by which tools you hold. Stored as the agent's description.</p>
+        <h2>${t("Charter")}</h2>
+        <p style="color:#687385;">${t("What this agent is <em>for</em>, in plain language. Surfaced to <code>grantry_find_agent</code> so other agents route work here by purpose — not just by which tools you hold. Stored as the agent's description.")}</p>
         <form method="post" action="/agents/${escapeHtml(agent.id)}/charter">
           <textarea name="charter" rows="3" style="width:100%;box-sizing:border-box;" placeholder="e.g. 曖昧なGitHub issueを取得し、不足情報を補って具体化する係">${escapeHtml(agent.description ?? "")}</textarea>
-          <button type="submit" style="margin-top:8px;">Save charter</button>
+          <button type="submit" style="margin-top:8px;">${t("Save charter")}</button>
         </form>
       </div>
       <div class="card">
-        <h2>Callable connections</h2>
-        ${connections.length === 0 ? '<div class="empty">No enabled connection is callable by this agent. Grant at least one connection to enable provider tools.</div>' : `
+        <h2>${t("Callable connections")}</h2>
+        ${connections.length === 0 ? `<div class="empty">${t("No enabled connection is callable by this agent. Grant at least one connection to enable provider tools.")}</div>` : `
         <div class="table-wrap">
           <table>
-            <thead><tr><th>Scope</th><th>Provider</th><th>Auth</th><th>Label</th><th>Tools</th></tr></thead>
+            <thead><tr><th>${t("Scope")}</th><th>${t("Provider")}</th><th>${t("Auth")}</th><th>${t("Label")}</th><th>${t("Tools")}</th></tr></thead>
             <tbody>
               ${connections.map((conn) => `
                 <tr>
@@ -6561,7 +6593,7 @@ dashboardApp.get("/agents/:id", async (c) => {
         ? scopes.map((scope) => mcpConfigCard(mcpOrigin(c), agent.name, tokenPlaceholder, false, scope)).join("")
         : mcpConfigCard(mcpOrigin(c), agent.name, tokenPlaceholder, false)}
       <div class="card">
-        <h2>Quick checks</h2>
+        <h2>${t("Quick checks")}</h2>
         <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
   -H "Authorization: Bearer YOUR_FULL_AGENT_TOKEN" \\
   -H "Content-Type: application/json" \\
@@ -6571,7 +6603,7 @@ dashboardApp.get("/agents/:id", async (c) => {
   -H "Content-Type: application/json" \\
   -d '{"jsonrpc":"2.0","id":2,"method":"connections/list"}'</pre>
       </div>
-      <p><a href="/agents">← Back to agents</a></p>
+      <p><a href="/agents">← ${t("Back to agents")}</a></p>
     </main></body></html>
   `);
 });
@@ -6585,9 +6617,9 @@ dashboardApp.post("/agents/:id/scopes/grant", async (c) => {
     where: { id },
     select: { id: true, ownerId: true, workspaceId: true },
   });
-  if (!agent) return c.html("<h1>agent not found</h1>", 404);
+  if (!agent) return c.html(`<h1>${t("agent not found")}</h1>`, 404);
   const wsAdminOfAgent = await isWsAdmin(user.id, agent.workspaceId);
-  if (agent.ownerId !== user.id && !wsAdminOfAgent) return c.html("<h1>not your agent</h1>", 403);
+  if (agent.ownerId !== user.id && !wsAdminOfAgent) return c.html(`<h1>${t("not your agent")}</h1>`, 403);
 
   const body = await c.req.parseBody();
   const rawScopes = (body as any).scopes;
@@ -6595,7 +6627,7 @@ dashboardApp.post("/agents/:id/scopes/grant", async (c) => {
     .map((scope) => String(scope ?? "").trim())
     .filter((scope) => /^[a-z0-9_-]+$/.test(scope));
   const scopes = Array.from(new Set(selectedScopes));
-  if (scopes.length === 0) return c.html("<h1>select at least one scope</h1>", 400);
+  if (scopes.length === 0) return c.html(`<h1>${t("select at least one scope")}</h1>`, 400);
 
   const where: any = {
     ...(wsAdminOfAgent && agent.workspaceId ? {} : { ownerId: user.id }),
@@ -6608,7 +6640,7 @@ dashboardApp.post("/agents/:id/scopes/grant", async (c) => {
     select: { id: true },
   });
   if (connections.length === 0) {
-    return c.html("<h1>no enabled connections found for selected scopes</h1>", 400);
+    return c.html(`<h1>${t("no enabled connections found for selected scopes")}</h1>`, 400);
   }
 
   await grantConnectionsToAgent(agent.id, connections.map((conn) => conn.id), user.id);
@@ -6624,13 +6656,13 @@ dashboardApp.post("/agents/:id/scopes/revoke", async (c) => {
     where: { id },
     select: { id: true, ownerId: true, workspaceId: true },
   });
-  if (!agent) return c.html("<h1>agent not found</h1>", 404);
+  if (!agent) return c.html(`<h1>${t("agent not found")}</h1>`, 404);
   const wsAdminOfAgent = await isWsAdmin(user.id, agent.workspaceId);
-  if (agent.ownerId !== user.id && !wsAdminOfAgent) return c.html("<h1>not your agent</h1>", 403);
+  if (agent.ownerId !== user.id && !wsAdminOfAgent) return c.html(`<h1>${t("not your agent")}</h1>`, 403);
 
   const body = await c.req.parseBody();
   const scope = String((body as any).scope ?? "").trim();
-  if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
+  if (!/^[a-z0-9_-]+$/.test(scope)) return c.html(`<h1>${t("invalid scope")}</h1>`, 400);
 
   // Mirror the grant boundary: members may only revoke grants to connections
   // they own; workspace admins may revoke any grant within the workspace.
@@ -6643,7 +6675,7 @@ dashboardApp.post("/agents/:id/scopes/revoke", async (c) => {
   await prisma.agentConnectionGrant.deleteMany({
     where: { agentId: agent.id, connection: connWhere },
   });
-  return c.redirect(`/agents/${agent.id}?ok=${encodeURIComponent(`Removed scope ${scope}`)}`);
+  return c.redirect(`/agents/${agent.id}?ok=${encodeURIComponent(t("Removed scope {scope}", { scope }))}`);
 });
 
 // --- /agents/:id/charter POST (edit the agent's charter / description) ---
@@ -6652,8 +6684,8 @@ dashboardApp.post("/agents/:id/charter", async (c) => {
   if (!user) return c.redirect("/login");
   const id = c.req.param("id");
   const agent = await prisma.agent.findUnique({ where: { id } });
-  if (!agent) return c.html("<h1>agent not found</h1>", 404);
-  if (!(await userMayManageAgent(user.id, agent))) return c.html("<h1>not your agent</h1>", 403);
+  if (!agent) return c.html(`<h1>${t("agent not found")}</h1>`, 404);
+  if (!(await userMayManageAgent(user.id, agent))) return c.html(`<h1>${t("not your agent")}</h1>`, 403);
 
   const body = await c.req.parseBody();
   const charter = String(body.charter ?? "").trim();
@@ -6669,8 +6701,8 @@ dashboardApp.post("/agents/:id/rotate", async (c) => {
 
   const id = c.req.param("id");
   const agent = await prisma.agent.findUnique({ where: { id } });
-  if (!agent) return c.html("<h1>agent not found</h1>", 404);
-  if (!(await userMayManageAgent(user.id, agent))) return c.html("<h1>not your agent</h1>", 403);
+  if (!agent) return c.html(`<h1>${t("agent not found")}</h1>`, 404);
+  if (!(await userMayManageAgent(user.id, agent))) return c.html(`<h1>${t("not your agent")}</h1>`, 403);
 
   // Generate new token
   const newToken = `gn_agt_${crypto.randomUUID().replace(/-/g, "")}`;
@@ -6690,32 +6722,32 @@ dashboardApp.post("/agents/:id/rotate", async (c) => {
   const rotatedScopes = Array.from(new Set(rotatedConnections.map((conn) => conn.scope))).sort();
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Token rotated — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Token rotated")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("agents", user?.email)}
     <main>
-      <h1>✓ Token rotated for <code>${agent.name}</code></h1>
+      <h1>${t("✓ Token rotated for <code>{name}</code>", { name: agent.name })}</h1>
       <div class="card" style="background:rgba(255,107,107,0.08); border-color:#df1b41;">
-        <h2>⚠️  Old token invalidated</h2>
-        <p>The old token (prefix <code>${oldPrefix}...</code>) is no longer valid. Any system still using it will get <code>401 authentication required</code>.</p>
+        <h2>⚠️  ${t("Old token invalidated")}</h2>
+        <p>${t("The old token (prefix <code>{prefix}...</code>) is no longer valid. Any system still using it will get <code>401 authentication required</code>.", { prefix: oldPrefix })}</p>
       </div>
       <div class="card" style="background:rgba(99,91,255,0.08); border-color:#635bff;">
-        <h2>🔑 New token (save this — shown once!)</h2>
+        <h2>🔑 ${t("New token (save this — shown once!)")}</h2>
         <pre style="background:#f6f9fc;border:1px solid #635bff;">${newToken}</pre>
-        <p style="font-size:13px;color:#687385;margin-bottom:0;">Use as <code>Authorization: Bearer ${newToken}</code> when calling <code>/mcp</code>.</p>
-        <p style="font-size:13px;color:#df1b41;margin-top:8px;">⚠️  Save this token now. If you lose it, you'll need to rotate again.</p>
+        <p style="font-size:13px;color:#687385;margin-bottom:0;">${t("Use as <code>Authorization: Bearer {token}</code> when calling <code>/mcp</code>.", { token: newToken })}</p>
+        <p style="font-size:13px;color:#df1b41;margin-top:8px;">⚠️  ${t("Save this token now. If you lose it, you'll need to rotate again.")}</p>
       </div>
       ${rotatedScopes.length
         ? rotatedScopes.map((scope) => mcpConfigCard(mcpOrigin(c), agent.name, newToken, true, scope)).join("")
         : mcpConfigCard(mcpOrigin(c), agent.name, newToken, true)}
       <div class="card">
-        <h2>Test the new token</h2>
+        <h2>${t("Test the new token")}</h2>
         <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
   -H "Authorization: Bearer ${newToken}" \\
   -H "Content-Type: application/json" \\
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping"}}'</pre>
       </div>
-      <p><a href="/agents">← Back to agents</a></p>
+      <p><a href="/agents">← ${t("Back to agents")}</a></p>
     </main></body></html>
   `);
 });
@@ -6745,16 +6777,16 @@ dashboardApp.get("/audit", async (c) => {
   });
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Audit — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Audit")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("audit", user?.email)}
     <main>
-      <h1>Audit log</h1>
-      <p style="color:#687385;">Latest 100 events.</p>
-      ${logs.length === 0 ? '<div class="card"><div class="empty">No events yet.</div></div>' : `
+      <h1>${t("Audit log")}</h1>
+      <p style="color:#687385;">${t("Latest 100 events.")}</p>
+      ${logs.length === 0 ? `<div class="card"><div class="empty">${t("No events yet.")}</div></div>` : `
       <div class="table-wrap">
         <table class="audit-table">
-          <thead><tr><th>When</th><th>Agent</th><th>Tool</th><th>Scope</th><th>Status</th><th>Duration</th><th>Error</th></tr></thead>
+          <thead><tr><th>${t("When")}</th><th>${t("Agent")}</th><th>${t("Tool")}</th><th>${t("Scope")}</th><th>${t("Status")}</th><th>${t("Duration")}</th><th>${t("Error")}</th></tr></thead>
           <tbody>
           ${logs.map((l) => `
             <tr>
@@ -6832,7 +6864,7 @@ oauthApp.get("/:provider/start", async (c) => {
   if (providerCredentialMode) {
     if (!workspaceId) return c.html(`<h1>workspace required</h1><p><a href="/providers">Back</a></p>`, 400);
     const admin = await requireWsAdmin(c, workspaceId);
-    if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
+    if (!admin) return c.html(`<h1>${t("workspace admin required")}</h1>`, 403);
     if (payload.provider_credential_id) {
       const existing = await prisma.providerCredential.findFirst({
         where: { id: String(payload.provider_credential_id), workspaceId, provider: providerKey, authType: "oauth" },
@@ -7090,7 +7122,7 @@ oauthApp.get("/:provider/callback", async (c) => {
       return c.html(`<h1>workspace required</h1><p><a href="/providers">Back</a></p>`, 400);
     }
     const admin = await requireWsAdmin(c, workspaceIdForOAuth);
-    if (!admin) return c.html("<h1>workspace admin required</h1>", 403);
+    if (!admin) return c.html(`<h1>${t("workspace admin required")}</h1>`, 403);
 
     const credentialId = String(payload.provider_credential_id || "");
     const credentialMeta = await credentialMetadataForStorage(providerKey, "oauth", accessToken);
@@ -7460,10 +7492,10 @@ dashboardApp.get("/tenants/:scope/agents/setup", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
   const scope = c.req.param("scope");
-  if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
+  if (!/^[a-z0-9_-]+$/.test(scope)) return c.html(`<h1>${t("invalid scope")}</h1>`, 400);
 
   const access = await scopeAccessFor(user.id, scope);
-  if (!access) return c.html(`<h1>scope '${escapeHtml(scope)}' not found</h1>`, 404);
+  if (!access) return c.html(`<h1>${escapeHtml(t("scope '{scope}' not found", { scope }))}</h1>`, 404);
   const { tenant, rowsWhere } = access;
 
   const [connections, agents] = await Promise.all([
@@ -7503,21 +7535,21 @@ dashboardApp.get("/tenants/:scope/agents/setup", async (c) => {
   const showName = tenant.displayName && tenant.displayName !== tenant.slug;
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Set up agents — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Set up agents")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
-      <h1>Set up agents for ${showName ? `${escapeHtml(tenant.displayName)} ` : ""}<code>${escapeHtml(scope)}</code></h1>
+      <h1>${t("Set up agents for")} ${showName ? `${escapeHtml(tenant.displayName)} ` : ""}<code>${escapeHtml(scope)}</code></h1>
       <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
-        Step 2: create an agent for this scope, or assign an existing agent to this scope's enabled connections.
+        ${t("Step 2: create an agent for this scope, or assign an existing agent to this scope's enabled connections.")}
       </p>
-      ${created ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">✓ Scope <code>${escapeHtml(scope)}</code> is ready.${connected ? ` Connected <code>${escapeHtml(connected)}</code>.` : ""}</div>` : ""}
-      ${assigned ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">✓ Existing agent granted ${escapeHtml(assigned)} connection(s).</div>` : ""}
+      ${created ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">${t("✓ Scope <code>{scope}</code> is ready.", { scope: escapeHtml(scope) })}${connected ? ` ${t("Connected <code>{connected}</code>.", { connected: escapeHtml(connected) })}` : ""}</div>` : ""}
+      ${assigned ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">${t("✓ Existing agent granted {count} connection(s).", { count: escapeHtml(assigned) })}</div>` : ""}
 
       <div class="card">
-        <h2>Scope</h2>
-        <p><span class="badge scoped">${escapeHtml(scope)}</span> · ${connections.length} enabled connection(s)</p>
-        ${connections.length === 0 ? `<div class="empty">No enabled connections yet. <a href="/tenants/${scope}/edit">Add a service</a> before this scope can be used by an agent.</div>` : `
+        <h2>${t("Scope")}</h2>
+        <p><span class="badge scoped">${escapeHtml(scope)}</span> · ${t("{count} enabled connection(s)", { count: connections.length })}</p>
+        ${connections.length === 0 ? `<div class="empty">${t("No enabled connections yet. {link} before this scope can be used by an agent.", { link: `<a href="/tenants/${scope}/edit">${t("Add a service")}</a>` })}</div>` : `
           <ul class="conn-list">
             ${connections.map((cn) => `
               <li class="conn-item">
@@ -7531,36 +7563,36 @@ dashboardApp.get("/tenants/:scope/agents/setup", async (c) => {
       </div>
 
       <div class="card">
-        <h2>Create new agent</h2>
+        <h2>${t("Create new agent")}</h2>
         <form method="post" action="/tenants/${scope}/agents/new" id="addAgentForm">
           <div class="field">
-            <label for="agent">Agent name</label>
-            <input type="text" name="agent" id="agent" pattern="[a-zA-Z0-9_-]+" placeholder="e.g. ${escapeHtml(scope)}-agent" required>
-            <div class="field-hint">Globally unique. This creates a new token and grants this scope's enabled connections.</div>
+            <label for="agent">${t("Agent name")}</label>
+            <input type="text" name="agent" id="agent" pattern="[a-zA-Z0-9_-]+" placeholder="${escapeHtml(t("e.g. {scope}-agent", { scope }))}" required>
+            <div class="field-hint">${t("Globally unique. This creates a new token and grants this scope's enabled connections.")}</div>
           </div>
           <div class="field">
-            <label for="agent_desc">Description <span style="color:#687385;">(optional)</span></label>
-            <input type="text" name="agent_desc" id="agent_desc" placeholder="What this agent is for">
+            <label for="agent_desc">${t("Description")} <span style="color:#687385;">${t("(optional)")}</span></label>
+            <input type="text" name="agent_desc" id="agent_desc" placeholder="${escapeHtml(t("What this agent is for"))}">
           </div>
-          <button type="submit">Create agent &amp; mint token</button>
+          <button type="submit">${t("Create agent & mint token")}</button>
         </form>
       </div>
 
       <div class="card">
-        <h2>Assign existing agent</h2>
-        ${assignableAgents.length === 0 ? `<div class="empty">No unassigned agents are available in this workspace. Create a new agent above.</div>` : `
+        <h2>${t("Assign existing agent")}</h2>
+        ${assignableAgents.length === 0 ? `<div class="empty">${t("No unassigned agents are available in this workspace. Create a new agent above.")}</div>` : `
         <form method="post" action="/tenants/${scope}/agents/assign-existing">
-          <label for="agent_id">Agent</label>
+          <label for="agent_id">${t("Agent")}</label>
           <select name="agent_id" id="agent_id" required>
             ${assignableAgents.map((agent) => `<option value="${escapeHtml(agent.id)}">${escapeHtml(agent.name)}${agent.description ? ` — ${escapeHtml(agent.description)}` : ""}</option>`).join("")}
           </select>
-          <p class="field-hint">The selected agent keeps its existing token. Grantry only adds connection grants for this scope.</p>
-          <button type="submit" class="secondary">Grant this scope</button>
+          <p class="field-hint">${t("The selected agent keeps its existing token. Grantry only adds connection grants for this scope.")}</p>
+          <button type="submit" class="secondary">${t("Grant this scope")}</button>
         </form>
         `}
       </div>
 
-      <p><a href="/tenants/${scope}/edit">Edit scope</a> · <a href="/tenants">Back to scopes</a></p>
+      <p><a href="/tenants/${scope}/edit">${t("Edit scope")}</a> · <a href="/tenants">${t("Back to scopes")}</a></p>
     </main></body></html>
   `);
 });
@@ -7573,7 +7605,7 @@ dashboardApp.post("/tenants/:scope/agents/assign-existing", async (c) => {
   if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
   const body = await c.req.parseBody();
   const agentId = String(body.agent_id ?? "").trim();
-  if (!agentId) return c.html("<h1>agent required</h1>", 400);
+  if (!agentId) return c.html(`<h1>${t("agent required")}</h1>`, 400);
 
   const access = await scopeAccessFor(user.id, scope);
   if (!access) return c.html(`<h1>scope '${escapeHtml(scope)}' not found</h1>`, 404);
@@ -7589,7 +7621,7 @@ dashboardApp.post("/tenants/:scope/agents/assign-existing", async (c) => {
           ...(tenant.workspaceId ? { OR: [{ workspaceId: tenant.workspaceId }, { workspaceId: null }] } : {}),
         },
   });
-  if (!agent) return c.html("<h1>agent not found</h1>", 404);
+  if (!agent) return c.html(`<h1>${t("agent not found")}</h1>`, 404);
 
   const granted = await grantTenantConnectionsToAgent(rowsWhere, agent.id, scope, user.id);
 
@@ -7622,7 +7654,7 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
   const body = await c.req.parseBody();
   const agent = String(body.agent ?? "").trim();
   const agentDesc = String(body.agent_desc ?? "").trim();
-  if (!agent) return c.html("<h1>agent name required</h1>", 400);
+  if (!agent) return c.html(`<h1>${t("agent name required")}</h1>`, 400);
   if (!/^[a-zA-Z0-9_-]+$/.test(agent)) {
     return c.html("<h1>invalid agent name (a-z, 0-9, hyphens, underscores)</h1>", 400);
   }
@@ -7808,8 +7840,8 @@ dashboardApp.post("/agents/:id/delete", async (c) => {
   if (!user) return c.json({ error: "not authenticated" }, 401);
   const id = c.req.param("id");
   const agent = await prisma.agent.findUnique({ where: { id }, select: { id: true, name: true, ownerId: true, workspaceId: true } });
-  if (!agent) return c.html("<h1>agent not found</h1>", 404);
-  if (!(await userMayManageAgent(user.id, agent))) return c.html("<h1>not your agent</h1>", 403);
+  if (!agent) return c.html(`<h1>${t("agent not found")}</h1>`, 404);
+  if (!(await userMayManageAgent(user.id, agent))) return c.html(`<h1>${t("not your agent")}</h1>`, 403);
 
   // Cascade connection grants via onDelete: Cascade; the agent itself is then deleted.
   await prisma.agent.delete({ where: { id: agent.id } });
@@ -7829,7 +7861,7 @@ dashboardApp.post("/agents/bulk-delete", async (c) => {
   else if (idsRaw) collected.push(String(idsRaw));
   if (idsCsv) collected.push(...idsCsv.split(",").map((s) => s.trim()).filter(Boolean));
   const ids = Array.from(new Set(collected));
-  if (ids.length === 0) return c.html("<h1>no agents selected</h1>", 400);
+  if (ids.length === 0) return c.html(`<h1>${t("no agents selected")}</h1>`, 400);
 
   // Only delete agents the caller manages: their own, or any in a workspace
   // they administer.
@@ -7841,13 +7873,13 @@ dashboardApp.post("/agents/bulk-delete", async (c) => {
     },
   });
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Bulk deleted — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Bulk deleted")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("agents", user?.email)}
     <main>
-      <h1>✓ Bulk deleted ${result.count} agent(s)</h1>
-      <p>${result.count < ids.length ? `(${ids.length - result.count} skipped — not yours or not found)` : ""}</p>
-      <p><a href="/agents">← Back to all agents</a></p>
+      <h1>${t("✓ Bulk deleted {count} agent(s)", { count: result.count })}</h1>
+      <p>${result.count < ids.length ? `(${t("{count} skipped — not yours or not found", { count: ids.length - result.count })})` : ""}</p>
+      <p><a href="/agents">← ${t("Back to all agents")}</a></p>
     </main></body></html>
   `);
 });

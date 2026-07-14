@@ -5,6 +5,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { mcp } from "better-auth/plugins";
 import { prisma } from "./db.js";
 import { sendSystemEmail } from "./email.js";
+import { t, htmlLang } from "./i18n.js";
 
 const googleSignInClientId =
   process.env.AUTH_GOOGLE_CLIENT_ID
@@ -32,11 +33,11 @@ function consentHTML(props: {
 }): string {
   const esc = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  const clientName = esc(props.clientName || "Unknown MCP client");
+  const clientName = esc(props.clientName || t("Unknown MCP client"));
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"/>
+<html lang="${htmlLang()}"><head><meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Authorize ${clientName} — grantry</title>
+<title>${esc(t("{client} wants to connect", { client: clientName }))} — grantry</title>
 <style>
   body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f6f7f9;margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center}
   .card{background:#fff;border:1px solid #e3e5e8;border-radius:12px;padding:32px;max-width:440px;width:100%;box-shadow:0 1px 3px rgba(0,0,0,.06)}
@@ -54,15 +55,15 @@ function consentHTML(props: {
   .err{color:#b42318;font-size:13px;margin-top:12px;display:none}
 </style></head>
 <body><div class="card">
-  <h1>${clientName} wants to connect</h1>
-  <p>This MCP client is asking to access your grantry tools. It will act as the agent you choose below, using that agent's granted connections exactly as configured in your dashboard (changes there apply immediately).</p>
-  <div class="scopes">Requested scopes: ${esc(props.scopes.join(", ") || "(default)")}</div>
-  <label for="agent">Act as agent</label>
-  <select id="agent" disabled><option>Loading agents…</option></select>
-  <p class="note">The connector gets this agent's permissions — nothing more. You can revoke access anytime from the grantry dashboard.</p>
+  <h1>${esc(t("{client} wants to connect", { client: clientName }))}</h1>
+  <p>${esc(t("This MCP client is asking to access your grantry tools. It will act as the agent you choose below, using that agent's granted connections exactly as configured in your dashboard (changes there apply immediately)."))}</p>
+  <div class="scopes">${esc(t("Requested scopes: {scopes}", { scopes: props.scopes.join(", ") || t("(default)") }))}</div>
+  <label for="agent">${esc(t("Act as agent"))}</label>
+  <select id="agent" disabled><option>${esc(t("Loading agents…"))}</option></select>
+  <p class="note">${esc(t("The connector gets this agent's permissions — nothing more. You can revoke access anytime from the grantry dashboard."))}</p>
   <div class="row">
-    <button class="deny" id="deny">Deny</button>
-    <button class="approve" id="approve" disabled>Approve</button>
+    <button class="deny" id="deny">${esc(t("Deny"))}</button>
+    <button class="approve" id="approve" disabled>${esc(t("Approve"))}</button>
   </div>
   <p class="err" id="err"></p>
 </div>
@@ -75,10 +76,10 @@ function consentHTML(props: {
   const err = document.getElementById("err");
   function fail(msg){ err.textContent = msg; err.style.display = "block"; }
   fetch("/oauth-consent/agents", { credentials: "include" })
-    .then(r => r.ok ? r.json() : Promise.reject(new Error("Could not load your agents — are you logged in?")))
+    .then(r => r.ok ? r.json() : Promise.reject(new Error(${JSON.stringify(t("Could not load your agents — are you logged in?"))})))
     .then(d => {
       const agents = d.agents || [];
-      if (!agents.length) { fail("You have no enabled agents. Create one in the dashboard first."); return; }
+      if (!agents.length) { fail(${JSON.stringify(t("You have no enabled agents. Create one in the dashboard first."))}); return; }
       sel.innerHTML = agents.map(a => '<option value="' + a.id + '">' + a.name.replace(/</g,"&lt;") + '</option>').join("");
       sel.disabled = false; approve.disabled = false;
     })
@@ -92,17 +93,17 @@ function consentHTML(props: {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ clientId, agentId: sel.value }),
         });
-        if (!bind.ok) throw new Error("Failed to bind agent");
+        if (!bind.ok) throw new Error(${JSON.stringify(t("Failed to bind agent"))});
       }
       const res = await fetch("/api/auth/oauth2/consent", {
         method: "POST", credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ accept, consent_code: code }),
       });
-      if (!res.ok) throw new Error("Consent request failed");
+      if (!res.ok) throw new Error(${JSON.stringify(t("Consent request failed"))});
       const data = await res.json();
       if (data.redirectURI) { window.location.href = data.redirectURI; return; }
-      throw new Error("No redirect URI returned");
+      throw new Error(${JSON.stringify(t("No redirect URI returned"))});
     } catch (e) {
       approve.disabled = false; deny.disabled = false;
       fail(e.message);
