@@ -4569,6 +4569,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
               <a id="oauthSetupLink" href="#" target="_blank" rel="noopener" style="font-size:13px;">${t("🔗 Register/manage OAuth app here →")}</a>
             </div>
           </div>
+          <div id="configVarsRow"></div>
           <div class="field" id="oauthAppFieldRow" style="display:none;">
             <label>${t("OAuth app settings")}</label>
             <div class="field-hint" style="margin-top:0;">${t("Create the OAuth app in the provider console, copy the redirect URI below into that app, then paste the issued Client ID and Client Secret here.")}</div>
@@ -4633,6 +4634,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
         const credField = document.getElementById('credential');
         const credStructured = document.getElementById('credStructured');
         const credFieldRow = document.getElementById('credFieldRow');
+        const configVarsRow = document.getElementById('configVarsRow');
         const serverCredentialHint = document.getElementById('serverCredentialHint');
         const authMethodHidden = document.getElementById('authMethodHidden');
         const patLinkRow = document.getElementById('patLinkRow');
@@ -4713,6 +4715,18 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           const needsWorkspaceOAuthApp = useOauth && WORKSPACE_OAUTH_APP_PROVIDERS.has(sel.value);
           const reusable = REUSABLE_BY_PROVIDER_AUTH[sel.value + ':' + authType] || [];
           credHint.textContent = p.helpText;
+          if (configVarsRow) {
+            const cfgBaseUrl = (p.genericRequest && p.genericRequest.baseUrl) || '';
+            const cfgNames = [];
+            const cfgRe = /\{([a-zA-Z0-9_]+)\}/g;
+            let cfgMatch;
+            while ((cfgMatch = cfgRe.exec(cfgBaseUrl)) !== null) {
+              if (cfgNames.indexOf(cfgMatch[1]) < 0) cfgNames.push(cfgMatch[1]);
+            }
+            configVarsRow.innerHTML = cfgNames.length
+              ? '<div class="step-card"><p class="field-hint" style="margin-top:0;">' + ${jsString(t("This provider's API is scoped per connection. Values are stored with this connection (not secret) and filled into the request path automatically."))} + '</p>' + cfgNames.map(n => '<div class="field"><label for="cfg_' + escapeText(n) + '">' + escapeText(n) + '</label><input type="text" name="cfg_' + escapeText(n) + '" id="cfg_' + escapeText(n) + '" autocomplete="off" required placeholder="' + escapeText(n) + '"></div>').join('') + '</div>'
+              : '';
+          }
           if (reuseConnectionRow && reuseConnectionId) {
             const previousReuseConnectionId = reuseConnectionId.value;
             reuseConnectionRow.style.display = usePat && reusable.length ? "" : "none";
