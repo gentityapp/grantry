@@ -687,5 +687,7 @@ export const ja: Record<string, string> = {
   "The selected agent keeps its existing token. Grantry only adds connection grants for this scope.":
     "選択したエージェントは既存のトークンを維持します。grantry はこのスコープの接続付与を追加するだけです。",
   "Grant this scope": "このスコープを付与",
+  "No unassigned agents to add.": "追加できる未割り当てのエージェントがありません。",
+  "Need a brand-new agent instead?": "新しいエージェントを作りたいですか？",
   "Back to scopes": "スコープ一覧に戻る",
 };

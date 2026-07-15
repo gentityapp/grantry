@@ -4305,6 +4305,27 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
     },
     orderBy: { createdAt: "asc" },
   });
+  // Existing agents in this workspace that do NOT yet have a grant for this
+  // scope — candidates for the "Assign existing agent" form below. Mirrors the
+  // agent-visibility logic used by /tenants/:scope/agents/setup.
+  const assignableAgents = await prisma.agent.findMany({
+    where: rowsWhere.workspaceId
+      ? {
+          enabled: true,
+          workspaceId: rowsWhere.workspaceId,
+          connectionGrants: { none: { connection: { scope, ...rowsWhere } } },
+        }
+      : {
+          ownerId: user.id,
+          enabled: true,
+          ...(tenantRow?.workspaceId
+            ? { OR: [{ workspaceId: tenantRow.workspaceId }, { workspaceId: null }] }
+            : {}),
+          connectionGrants: { none: { connection: { scope, ...rowsWhere } } },
+        },
+    select: { id: true, name: true, description: true },
+    orderBy: { createdAt: "asc" },
+  });
   const providers = await listConnectionCandidateProviders(wsId);
   const knownProviders = Object.values(PROVIDERS);
   const oauthAppCredentials = wsId
@@ -4394,6 +4415,25 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
               </tbody>
             </table>
           </div>
+        `}
+      </div>
+
+      <h2 id="assign-agent">${t("Assign existing agent")}</h2>
+      <div class="card">
+        <p style="font-size:13px;color:#687385;margin-top:0;">
+          ${t("The selected agent keeps its existing token. Grantry only adds connection grants for this scope.")}
+        </p>
+        ${assignableAgents.length === 0 ? `
+          <div class="empty">${t("No unassigned agents to add.")} <a href="/tenants/${scope}/agents/setup">${t("Set up agents")}</a></div>
+        ` : `
+          <form method="post" action="/tenants/${scope}/agents/assign-existing">
+            <label for="assign_agent_id">${t("Agent")}</label>
+            <select name="agent_id" id="assign_agent_id" required>
+              ${assignableAgents.map((a) => `<option value="${escapeHtml(a.id)}">${escapeHtml(a.name)}${a.description ? ` — ${escapeHtml(a.description)}` : ""}</option>`).join("")}
+            </select>
+            <div style="margin-top:10px;"><button type="submit" class="secondary">${t("Grant this scope")}</button></div>
+          </form>
+          <p class="field-hint" style="margin-bottom:0;">${t("Need a brand-new agent instead?")} <a href="/tenants/${scope}/agents/setup">${t("Set up agents")}</a></p>
         `}
       </div>
 
