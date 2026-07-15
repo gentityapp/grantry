@@ -1,4 +1,5 @@
 // grantry UI — login, dashboard, tenant wizard, audit log
+import { unzipSync } from "fflate";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { auth } from "./auth.js";
@@ -6495,6 +6496,28 @@ dashboardApp.post("/agents/new", async (c) => {
   `);
 });
 
+// Render the current skill-bundle status (filename + file list) for the Runbook
+// card. Empty string when no bundle is attached.
+function runbookBundleStatusHtml(raw: string | null | undefined, agentId: string): string {
+  if (!raw) return "";
+  let bundle: { filename?: string; files?: { path: string; size: number }[] } | null = null;
+  try { bundle = JSON.parse(raw); } catch { return ""; }
+  if (!bundle || !Array.isArray(bundle.files)) return "";
+  const rows = bundle.files
+    .map((f) => `<li><code>${escapeHtml(f.path)}</code> <span style="color:#9aa2ad;">${f.size} B</span></li>`)
+    .join("");
+  return `
+    <div style="border:1px solid #dfe3e8;border-radius:8px;padding:12px;margin-bottom:12px;background:#f7f9fc;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+        <strong>📦 ${escapeHtml(bundle.filename ?? "skill bundle")}</strong>
+        <form method="post" action="/agents/${escapeHtml(agentId)}/runbook-bundle/clear" style="margin:0;" onsubmit="return confirm('${t("Remove the uploaded skill bundle?")}')">
+          <button type="submit" class="secondary" style="font-size:12px;padding:3px 10px;">${t("Remove bundle")}</button>
+        </form>
+      </div>
+      <ul style="margin:8px 0 0;padding-left:20px;font-size:13px;">${rows}</ul>
+    </div>`;
+}
+
 // --- /agents/:id — agent detail + Codex MCP config ---
 dashboardApp.get("/agents/:id", async (c) => {
   const user = await getSessionUser(c);
@@ -6601,9 +6624,16 @@ dashboardApp.get("/agents/:id", async (c) => {
       </div>
       <div class="card">
         <h2>${t("Runbook")}</h2>
-        <p style="color:#687385;">${t("The instructions that define what this agent does and how — a Markdown SKILL.md, in the agent's own voice. Served over MCP via <code>grantry_get_runbook</code>, so whoever holds this agent's token can run it by connecting the MCP alone — no repo handoff. Distinct from the grantry platform manual (<code>grantry_get_skill</code>).")}</p>
+        <p style="color:#687385;">${t("The instructions that define what this agent does and how. Served over MCP via <code>grantry_get_runbook</code>, so whoever holds this agent's token can run it by connecting the MCP alone — no repo handoff. Distinct from the grantry platform manual (<code>grantry_get_skill</code>).")}</p>
+        ${runbookBundleStatusHtml((agent as any).runbookBundle, agent.id)}
+        <p style="color:#687385;margin-bottom:6px;"><strong>${t("Upload a skill bundle")}</strong> — ${t("a <code>.skill</code> or <code>.zip</code> (SKILL.md + references/ + scripts/ + assets/). Recipients fetch the files via <code>grantry_get_runbook_file</code> and reconstruct the skill directory.")}</p>
+        <form method="post" action="/agents/${escapeHtml(agent.id)}/runbook-bundle" enctype="multipart/form-data" style="margin-bottom:16px;">
+          <input type="file" name="skillfile" accept=".skill,.zip,application/zip" required>
+          <button type="submit" style="margin-top:8px;">${t("Upload skill bundle")}</button>
+        </form>
+        <p style="color:#687385;margin:0 0 6px;"><strong>${t("Or a single SKILL.md")}</strong> — ${t("for a self-contained runbook with no bundled files.")}</p>
         <form method="post" action="/agents/${escapeHtml(agent.id)}/runbook">
-          <textarea name="runbook" rows="14" style="width:100%;box-sizing:border-box;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;" placeholder="---&#10;name: my-agent&#10;description: ...&#10;---&#10;&#10;# What I do&#10;...">${escapeHtml((agent as any).runbookMarkdown ?? "")}</textarea>
+          <textarea name="runbook" rows="12" style="width:100%;box-sizing:border-box;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;" placeholder="---&#10;name: my-agent&#10;description: ...&#10;---&#10;&#10;# What I do&#10;...">${escapeHtml((agent as any).runbookMarkdown ?? "")}</textarea>
           <button type="submit" style="margin-top:8px;">${t("Save runbook")}</button>
         </form>
       </div>
@@ -6745,6 +6775,62 @@ dashboardApp.post("/agents/:id/runbook", async (c) => {
   const runbook = String(body.runbook ?? "").trim();
   await prisma.agent.update({ where: { id: agent.id }, data: { runbookMarkdown: runbook || null } });
 
+  return c.redirect(`/agents/${agent.id}`);
+});
+
+// --- /agents/:id/runbook-bundle POST (upload a .skill / .zip skill bundle) ---
+dashboardApp.post("/agents/:id/runbook-bundle", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+  const id = c.req.param("id");
+  const agent = await prisma.agent.findUnique({ where: { id } });
+  if (!agent) return c.html(`<h1>${t("agent not found")}</h1>`, 404);
+  if (!(await userMayManageAgent(user.id, agent))) return c.html(`<h1>${t("not your agent")}</h1>`, 403);
+
+  const body = await c.req.parseBody();
+  const file = body.skillfile;
+  if (!(file instanceof File) || file.size === 0) {
+    return c.html(`<h1>${t("No file uploaded")}</h1><p><a href="/agents/${agent.id}">← ${t("Back")}</a></p>`, 400);
+  }
+
+  let entries: Record<string, Uint8Array>;
+  try {
+    entries = unzipSync(new Uint8Array(await file.arrayBuffer()));
+  } catch {
+    return c.html(`<h1>${t("Could not read the file as a .zip/.skill archive")}</h1><p><a href="/agents/${agent.id}">← ${t("Back")}</a></p>`, 400);
+  }
+
+  // Keep files only (fflate omits pure directories, but guard trailing-slash keys).
+  const files = Object.entries(entries)
+    .filter(([path]) => !path.endsWith("/"))
+    .map(([path, bytes]) => ({ path, size: bytes.length, content_b64: Buffer.from(bytes).toString("base64") }));
+
+  // A skill must carry a SKILL.md; use its text for preview + get_runbook inline.
+  const skillEntry = Object.entries(entries).find(([path]) => path === "SKILL.md" || path.endsWith("/SKILL.md"));
+  if (!skillEntry) {
+    return c.html(`<h1>${t("No SKILL.md found in the bundle")}</h1><p>${t("A skill bundle must contain a SKILL.md at its root.")} <a href="/agents/${agent.id}">← ${t("Back")}</a></p>`, 400);
+  }
+  const skillMd = Buffer.from(skillEntry[1]).toString("utf8");
+  const bundleJson = JSON.stringify({ filename: file.name || "skill.zip", files });
+
+  await prisma.agent.update({
+    where: { id: agent.id },
+    data: { runbookBundle: bundleJson, runbookMarkdown: skillMd || null },
+  });
+
+  return c.redirect(`/agents/${agent.id}`);
+});
+
+// --- /agents/:id/runbook-bundle/clear POST (remove the uploaded skill bundle) ---
+dashboardApp.post("/agents/:id/runbook-bundle/clear", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+  const id = c.req.param("id");
+  const agent = await prisma.agent.findUnique({ where: { id } });
+  if (!agent) return c.html(`<h1>${t("agent not found")}</h1>`, 404);
+  if (!(await userMayManageAgent(user.id, agent))) return c.html(`<h1>${t("not your agent")}</h1>`, 403);
+
+  await prisma.agent.update({ where: { id: agent.id }, data: { runbookBundle: null } });
   return c.redirect(`/agents/${agent.id}`);
 });
 

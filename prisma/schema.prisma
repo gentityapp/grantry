@@ -121,7 +121,15 @@ model Agent {
   // nature from the platform skill (docs/skill.md): that explains how to
   // operate grantry, this defines what THIS agent does. Served over MCP via
   // grantry/get_runbook so an agent can be shared by its MCP token alone.
+  // Holds the SKILL.md text: either the whole runbook (single-file case) or,
+  // when a .skill bundle is uploaded, the extracted SKILL.md for preview.
   runbookMarkdown String?
+  // Full skill bundle (a .skill / .zip: SKILL.md + references/ + scripts/ +
+  // assets/). Stored as JSON {filename, files:[{path, size, content_b64}]} so
+  // reads need no unzip lib. Served over MCP as a manifest (grantry/get_runbook)
+  // plus per-file fetch (grantry/get_runbook_file); the recipient reconstructs
+  // the skill directory. Null when only a single-file SKILL.md was provided.
+  runbookBundle String?
   hashedToken   String   // sha256 of the high-entropy agent token (gn_agt_...)
   tokenPrefix   String   // first 12 chars of plaintext (for UI display)
   ownerId       String
