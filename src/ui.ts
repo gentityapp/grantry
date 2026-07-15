@@ -569,6 +569,20 @@ const CSS = `
   .connection-health-table th:nth-child(6), .connection-health-table td:nth-child(6) { width: 188px; }
   .connection-health-table td:nth-child(5) code { white-space: nowrap; }
   .connection-health-table td:nth-child(6) .stacked-actions { align-items: flex-start; gap: 6px; }
+  .agent-table { table-layout: fixed; min-width: 1040px; }
+  .agent-table th:nth-child(1), .agent-table td:nth-child(1) { width: 44px; }
+  .agent-table th:nth-child(2), .agent-table td:nth-child(2) { width: 210px; }
+  .agent-table th:nth-child(3), .agent-table td:nth-child(3) { width: 128px; }
+  .agent-table th:nth-child(4), .agent-table td:nth-child(4) { width: auto; }
+  .agent-table th:nth-child(5), .agent-table td:nth-child(5) { width: 100px; }
+  .agent-table th:nth-child(6), .agent-table td:nth-child(6) { width: 132px; }
+  .agent-table th:nth-child(7), .agent-table td:nth-child(7) { width: 108px; }
+  .agent-table th:nth-child(8), .agent-table td:nth-child(8) { width: 224px; }
+  .agent-table .agent-name { display: block; font-family: ui-monospace, monospace; font-size: 13px; color: var(--ink); background: none; padding: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .agent-table td:nth-child(4) .scope-services { min-width: 0; max-width: none; }
+  .agent-table .scope-actions { flex-wrap: wrap; row-gap: 6px; justify-content: flex-end; }
+  .agent-table .scope-actions form { margin: 0; display: inline-flex; }
+  .agent-table .scope-actions .btn, .agent-table .scope-actions button { font-size: 12px; padding: 4px 10px; }
   .credential-summary { max-width: 100%; }
   .credential-summary code { display: inline-block; max-width: 100%; white-space: normal; word-break: break-all; }
   .stacked-actions { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -1872,7 +1886,12 @@ dashboardApp.get("/workspaces", async (c) => {
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("workspaces", user?.email)}
     <main>
-      <h1>${t("Workspace")}</h1>
+      <div class="scope-page-header">
+        <div>
+          <div class="scope-page-kicker">${t("Settings")}</div>
+          <h1>${t("Workspace")}</h1>
+        </div>
+      </div>
       ${flash ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">${escapeHtml(flash)}</div>` : ""}
       ${sections.join("\n") || `<div class="card"><div class="empty">${t("No workspace yet — use <b>+ New workspace</b> in the sidebar to create one.")}</div></div>`}
     </main></body></html>
@@ -2128,18 +2147,21 @@ dashboardApp.get("/providers", async (c) => {
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("providers", user?.email)}
     <main>
-      <h1>${t("Providers")}</h1>
-      <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
-        ${t("Choose which providers this workspace can add to scopes. Existing connections keep working; disabled providers are hidden from new scope connection pickers.")}
-      </p>
+      <div class="scope-page-header">
+        <div>
+          <div class="scope-page-kicker">${t("Workspace wiring")}</div>
+          <h1>${t("Providers")}</h1>
+          <p class="scope-page-copy">${t("Choose which providers this workspace can add to scopes. Existing connections keep working; disabled providers are hidden from new scope connection pickers.")}</p>
+        </div>
+      </div>
       ${notice ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">${escapeHtml(notice)}</div>` : ""}
 
-      <div class="row" style="gap:16px;flex-wrap:wrap;margin-bottom:24px;">
-        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">${t("Catalog")}</div><div style="font-size:24px;font-weight:700;">${catalog.length}</div></div>
-        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">${t("Enabled")}</div><div style="font-size:24px;font-weight:700;">${enabledCount}</div></div>
-        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">${t("Hidden")}</div><div style="font-size:24px;font-weight:700;">${disabledCount}</div></div>
-        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">${t("Custom")}</div><div style="font-size:24px;font-weight:700;">${customProviders.length}</div></div>
-        <div class="card" style="flex:1;min-width:160px;"><div style="color:#687385;font-size:12px;">${t("OAuth credentials")}</div><div style="font-size:24px;font-weight:700;">${oauthCredentials.length}</div></div>
+      <div class="scope-summary-grid" style="grid-template-columns:repeat(5,minmax(0,1fr));">
+        <div class="scope-summary-card"><span>${t("Catalog")}</span><strong>${catalog.length}</strong></div>
+        <div class="scope-summary-card"><span>${t("Enabled")}</span><strong>${enabledCount}</strong></div>
+        <div class="scope-summary-card"><span>${t("Hidden")}</span><strong>${disabledCount}</strong></div>
+        <div class="scope-summary-card"><span>${t("Custom")}</span><strong>${customProviders.length}</strong></div>
+        <div class="scope-summary-card"><span>${t("OAuth credentials")}</span><strong>${oauthCredentials.length}</strong></div>
       </div>
 
       <h2>${t("Workspace OAuth credentials")}</h2>
@@ -2702,11 +2724,16 @@ dashboardApp.get("/dashboard", async (c) => {
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("dashboard", user?.email)}
     <main>
-      <h1>${t("Dashboard")}</h1>
-      <div class="row" style="gap:16px; margin-bottom:24px;">
-        <div class="card" style="flex:1;"><div style="color:#687385;font-size:12px;">${t("Connections")}</div><div style="font-size:24px;font-weight:700;">${connectionCount}</div></div>
-        <div class="card" style="flex:1;"><div style="color:#687385;font-size:12px;">${t("Agents")}</div><div style="font-size:24px;font-weight:700;">${agentCount}</div></div>
-        <div class="card" style="flex:1;"><div style="color:#687385;font-size:12px;">${t("Connection grants")}</div><div style="font-size:24px;font-weight:700;">${grantCount}</div></div>
+      <div class="scope-page-header">
+        <div>
+          <div class="scope-page-kicker">${t("Overview")}</div>
+          <h1>${t("Dashboard")}</h1>
+        </div>
+      </div>
+      <div class="scope-summary-grid" style="grid-template-columns:repeat(3,minmax(0,1fr));">
+        <div class="scope-summary-card"><span>${t("Connections")}</span><strong>${connectionCount}</strong></div>
+        <div class="scope-summary-card"><span>${t("Agents")}</span><strong>${agentCount}</strong></div>
+        <div class="scope-summary-card"><span>${t("Connection grants")}</span><strong>${grantCount}</strong></div>
       </div>
       <h2>${t("Recent activity")}</h2>
       <div class="card">
@@ -3402,7 +3429,12 @@ dashboardApp.get("/api-keys", async (c) => {
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("api-keys", user?.email)}
     <main>
-      <h1>${t("grantry admin API keys")}</h1>
+      <div class="scope-page-header">
+        <div>
+          <div class="scope-page-kicker">${t("Self-management")}</div>
+          <h1>${t("grantry admin API keys")}</h1>
+        </div>
+      </div>
       <div class="card">
         <p style="color:#687385;margin-top:0;">${t("grantry manages itself the same way it manages any SaaS: mint an admin API key here, paste it into a <b>grantry</b> connection in the <a href=\"/tenants/new\">connection wizard</a>, and grant that connection to an agent. The agent can then manage this workspace's scopes, agents, connections, and grants over MCP (<code>grantry_create_agent</code>, <code>grantry_grant_scope</code>, …). The key is shown once at mint time; disabling or deleting it immediately cuts off every connection that uses it.")}</p>
         <form method="post" action="/api-keys/new" style="display:flex;gap:8px;align-items:center;">
@@ -3513,7 +3545,12 @@ dashboardApp.get("/account", async (c) => {
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("account", user?.email)}
     <main>
-      <h1>${t("Account")}</h1>
+      <div class="scope-page-header">
+        <div>
+          <div class="scope-page-kicker">${t("Settings")}</div>
+          <h1>${t("Account")}</h1>
+        </div>
+      </div>
       ${banner}
       <div class="card">
         <h2>${t("Signed in as")}</h2>
@@ -3662,8 +3699,12 @@ dashboardApp.get("/connections", async (c) => {
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("connections", user?.email)}
     <main>
-      <div class="row spread" style="margin-bottom:16px;">
-        <h1 style="margin:0;">${t("Connections")}</h1>
+      <div class="scope-page-header">
+        <div>
+          <div class="scope-page-kicker">${t("Workspace wiring")}</div>
+          <h1>${t("Connections")}</h1>
+          <p class="scope-page-copy">${t("Workspace-wide health view for scope connections. Provider app and token settings are linked from each row's actions.")}</p>
+        </div>
         <span class="row" style="gap:8px;">
           <form method="post" action="/connections/check-all" style="margin:0;">
             <button type="submit" class="secondary"${isSweepRunning() ? ` disabled title="${escapeHtml(t("A health check is already running."))}"` : ""}>${t("Check all now")}</button>
@@ -3671,7 +3712,6 @@ dashboardApp.get("/connections", async (c) => {
           <a href="/tenants/new" class="btn">${t("+ New scope connection")}</a>
         </span>
       </div>
-      <p style="color:#687385;margin-top:-8px;">${t("Workspace-wide health view for scope connections. Provider app and token settings are linked from each row's actions.")}</p>
       ${notice ? noticeBanner(String(notice), noticeKind) : ""}
 
       <div class="row" style="gap:16px;flex-wrap:wrap;margin-bottom:24px;">
@@ -6194,59 +6234,78 @@ dashboardApp.get("/agents", async (c) => {
     },
   });
 
+  const agentCount = agents.length;
+  const enabledCount = agents.filter((a) => a.enabled).length;
+  const withGrantsCount = agents.filter((a) => a.connectionGrants.some((g) => g.connection.enabled)).length;
+  const needsGrantCount = agentCount - withGrantsCount;
+
   return c.html(`
     <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Agents")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("agents", user?.email)}
     <main>
-      <div class="row spread" style="margin-bottom:16px;">
-        <h1 style="margin:0;">${t("Agents")}</h1>
+      <div class="scope-page-header">
+        <div>
+          <div class="scope-page-kicker">${t("Automation")}</div>
+          <h1>${t("Agents")}</h1>
+          <p class="scope-page-copy">${t("Every agent that can call this workspace over MCP, the connections granted to it, and the scopes it can reach.")}</p>
+        </div>
         <a href="/agents/new" class="btn">${t("+ New agent")}</a>
+      </div>
+      <div class="scope-summary-grid">
+        <div class="scope-summary-card"><span>${t("Agents")}</span><strong>${agentCount}</strong></div>
+        <div class="scope-summary-card"><span>${t("Enabled")}</span><strong>${enabledCount}</strong></div>
+        <div class="scope-summary-card"><span>${t("With grants")}</span><strong>${withGrantsCount}</strong></div>
+        <div class="scope-summary-card"><span>${t("Needs grant")}</span><strong>${needsGrantCount}</strong></div>
       </div>
       <form method="post" action="/agents/bulk-delete" id="bulkAgentForm">
         <input type="hidden" name="agent_ids_csv" id="agentIdsCsv" value="">
-        <div class="row spread" style="margin-bottom:8px;">
-          <label style="font-size:13px;color:#3c4257;cursor:pointer;"><input type="checkbox" id="selAllAgents"> ${t("select all")}</label>
-          <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;" id="bulkAgentBtn" disabled>🗑 ${t("Delete selected")} (0)</button>
-        </div>
       </form>
       ${agents.length === 0 ? `<div class="card"><div class="empty">${t("No agents yet.")} <a href="/tenants/new">${t("Create one via the scope wizard")}</a>.</div></div>` : `
-      <div class="card">
-        <table>
-          <thead><tr><th></th><th>${t("Name")}</th><th>${t("Granted connections")}</th><th>${t("Accessible scopes")}</th><th>${t("Status")}</th><th>${t("Last used")}</th><th>${t("Created")}</th><th>${t("Actions")}</th></tr></thead>
-          <tbody>
-          ${agents.map((a) => {
-            const allScopes = new Set<string>();
-            const liveGrants = a.connectionGrants.filter((g) => g.connection.enabled);
-            for (const g of liveGrants) allScopes.add(g.connection.scope);
-            const scopesDisplay = allScopes.size === 0
-              ? `<span class="badge denied">${t("none")}</span>`
-              : Array.from(allScopes).map((s) => `<span class="badge scoped">${s}</span>`).join(" ");
-            const grantsDisplay = liveGrants.length === 0
-              ? `<em style="color:#df1b41;">${t("no granted connections")}</em>`
-              : `<span class="badge ok">${liveGrants.length}</span>`;
-            return `
-            <tr>
-              <td><input type="checkbox" form="bulkAgentForm" name="agent_ids" value="${a.id}" class="agentCheck"></td>
-              <td><code>${a.name}</code></td>
-              <td>${grantsDisplay}</td>
-              <td>${scopesDisplay}</td>
-              <td>${a.enabled ? `<span class="badge ok">${t("enabled")}</span>` : `<span class="badge denied">${t("disabled")}</span>`}</td>
-              <td>${a.lastUsedAt ? a.lastUsedAt.toISOString().slice(0, 16) : "—"}</td>
-              <td>${a.createdAt.toISOString().slice(0, 10)}</td>
-              <td style="position:relative;white-space:nowrap;">
-                <form method="post" action="/agents/${a.id}/rotate" style="display:inline;" onsubmit="return confirm('${t("Rotate token for {name}?\\n\\nThe OLD token will be invalidated immediately. The NEW token will be shown ONCE on the next page.", { name: a.name })}')">
-                  <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;">${t("Rotate")}</button>
-                </form>
-                <a href="/agents/${a.id}" class="btn secondary" style="font-size:12px;padding:4px 10px;">${t("Details")}</a>
-                <form method="post" action="/agents/${a.id}/delete" style="display:inline;" onsubmit="return confirm('${t("Delete agent {name}?\\n\\nThis permanently destroys its token and connection grants.", { name: a.name })}')">
-                  <button type="submit" style="font-size:12px;padding:4px 10px;background:#df1b41;color:#ffffff;">🗑</button>
-                </form>
-              </td>
-            </tr>
-          `;}).join("")}
-          </tbody>
-        </table>
+      <div class="card scope-list-card">
+        <div class="scope-list-toolbar">
+          <label><input type="checkbox" id="selAllAgents"> ${t("Select all")}</label>
+          <button type="submit" form="bulkAgentForm" class="secondary" style="font-size:12px;padding:4px 10px;" id="bulkAgentBtn" disabled>🗑 ${escapeHtml(t("Delete selected"))} (0)</button>
+        </div>
+        <div class="table-wrap">
+          <table class="scope-table agent-table">
+            <thead><tr><th scope="col"></th><th scope="col">${t("Name")}</th><th scope="col">${t("Granted connections")}</th><th scope="col">${t("Accessible scopes")}</th><th scope="col">${t("Status")}</th><th scope="col">${t("Last used")}</th><th scope="col">${t("Created")}</th><th scope="col">${t("Actions")}</th></tr></thead>
+            <tbody>
+            ${agents.map((a) => {
+              const allScopes = new Set<string>();
+              const liveGrants = a.connectionGrants.filter((g) => g.connection.enabled);
+              for (const g of liveGrants) allScopes.add(g.connection.scope);
+              const scopesDisplay = allScopes.size === 0
+                ? `<span class="badge denied">${t("none")}</span>`
+                : `<span class="scope-services">${Array.from(allScopes).map((s) => `<span class="badge scoped">${escapeHtml(s)}</span>`).join("")}</span>`;
+              const grantsDisplay = liveGrants.length === 0
+                ? `<span class="badge denied" title="${escapeHtml(t("no granted connections"))}">${t("none")}</span>`
+                : `<span class="badge ok">${liveGrants.length}</span>`;
+              return `
+              <tr>
+                <td><input type="checkbox" form="bulkAgentForm" name="agent_ids" value="${a.id}" class="agentCheck" style="margin:0;"></td>
+                <th scope="row"><code class="agent-name" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</code></th>
+                <td>${grantsDisplay}</td>
+                <td>${scopesDisplay}</td>
+                <td>${a.enabled ? `<span class="badge ok">${t("enabled")}</span>` : `<span class="badge denied">${t("disabled")}</span>`}</td>
+                <td>${a.lastUsedAt ? `<code>${a.lastUsedAt.toISOString().slice(0, 16).replace("T", " ")}</code>` : '<span style="color:var(--muted);">—</span>'}</td>
+                <td>${`<code>${a.createdAt.toISOString().slice(0, 10)}</code>`}</td>
+                <td>
+                  <span class="scope-actions">
+                    <a href="/agents/${a.id}" class="btn secondary">${t("Details")}</a>
+                    <form method="post" action="/agents/${a.id}/rotate" onsubmit="return confirm('${t("Rotate token for {name}?\\n\\nThe OLD token will be invalidated immediately. The NEW token will be shown ONCE on the next page.", { name: a.name })}')">
+                      <button type="submit" class="secondary">${t("Rotate")}</button>
+                    </form>
+                    <form method="post" action="/agents/${a.id}/delete" onsubmit="return confirm('${t("Delete agent {name}?\\n\\nThis permanently destroys its token and connection grants.", { name: a.name })}')">
+                      <button type="submit" class="danger" title="${escapeHtml(t("Delete"))}">🗑</button>
+                    </form>
+                  </span>
+                </td>
+              </tr>
+            `;}).join("")}
+            </tbody>
+          </table>
+        </div>
       </div>
       `}
       <script>
@@ -6978,8 +7037,13 @@ dashboardApp.get("/audit", async (c) => {
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("audit", user?.email)}
     <main>
-      <h1>${t("Audit log")}</h1>
-      <p style="color:#687385;">${t("Latest 100 events.")}</p>
+      <div class="scope-page-header">
+        <div>
+          <div class="scope-page-kicker">${t("Observability")}</div>
+          <h1>${t("Audit log")}</h1>
+          <p class="scope-page-copy">${t("Latest 100 events.")}</p>
+        </div>
+      </div>
       ${logs.length === 0 ? `<div class="card"><div class="empty">${t("No events yet.")}</div></div>` : `
       <div class="table-wrap">
         <table class="audit-table">

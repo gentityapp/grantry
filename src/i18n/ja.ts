@@ -626,6 +626,17 @@ export const ja: Record<string, string> = {
     "ドメイン全体の委任: 顧客の Workspace 管理者が、管理コンソールでこのサービスアカウントのクライアント ID とスコープを一度承認します。ユーザーごとの OAuth や 7 日間のトークン期限はありません。",
   "Copied": "コピーしました",
 
+  // ── Page-header kickers + agents list page (/agents) ───────────────────
+  "Automation": "オートメーション",
+  "Observability": "オブザーバビリティ",
+  "Self-management": "セルフ管理",
+  "Overview": "概要",
+  "Settings": "設定",
+  "Every agent that can call this workspace over MCP, the connections granted to it, and the scopes it can reach.":
+    "このワークスペースを MCP 経由で呼び出せるエージェントと、付与された接続、到達可能なスコープの一覧です。",
+  "With grants": "接続あり",
+  "Needs grant": "接続なし",
+
   // ── Scopes list page (/tenants) ────────────────────────────────────────
   "Workspace wiring": "ワークスペースの構成",
   "Manage each scope's connected services and agent-ready status. API wiring is available at <code>GET /api/scopes</code>.":
