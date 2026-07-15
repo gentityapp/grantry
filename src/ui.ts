@@ -6600,6 +6600,14 @@ dashboardApp.get("/agents/:id", async (c) => {
         </form>
       </div>
       <div class="card">
+        <h2>${t("Runbook")}</h2>
+        <p style="color:#687385;">${t("The instructions that define what this agent does and how — a Markdown SKILL.md, in the agent's own voice. Served over MCP via <code>grantry_get_runbook</code>, so whoever holds this agent's token can run it by connecting the MCP alone — no repo handoff. Distinct from the grantry platform manual (<code>grantry_get_skill</code>).")}</p>
+        <form method="post" action="/agents/${escapeHtml(agent.id)}/runbook">
+          <textarea name="runbook" rows="14" style="width:100%;box-sizing:border-box;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;" placeholder="---&#10;name: my-agent&#10;description: ...&#10;---&#10;&#10;# What I do&#10;...">${escapeHtml((agent as any).runbookMarkdown ?? "")}</textarea>
+          <button type="submit" style="margin-top:8px;">${t("Save runbook")}</button>
+        </form>
+      </div>
+      <div class="card">
         <h2>${t("Callable connections")}</h2>
         ${connections.length === 0 ? `<div class="empty">${t("No enabled connection is callable by this agent. Grant at least one connection to enable provider tools.")}</div>` : `
         <div class="table-wrap">
@@ -6720,6 +6728,22 @@ dashboardApp.post("/agents/:id/charter", async (c) => {
   const body = await c.req.parseBody();
   const charter = String(body.charter ?? "").trim();
   await prisma.agent.update({ where: { id: agent.id }, data: { description: charter || null } });
+
+  return c.redirect(`/agents/${agent.id}`);
+});
+
+// --- /agents/:id/runbook POST (edit the agent's runbook / SKILL.md) ---
+dashboardApp.post("/agents/:id/runbook", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+  const id = c.req.param("id");
+  const agent = await prisma.agent.findUnique({ where: { id } });
+  if (!agent) return c.html(`<h1>${t("agent not found")}</h1>`, 404);
+  if (!(await userMayManageAgent(user.id, agent))) return c.html(`<h1>${t("not your agent")}</h1>`, 403);
+
+  const body = await c.req.parseBody();
+  const runbook = String(body.runbook ?? "").trim();
+  await prisma.agent.update({ where: { id: agent.id }, data: { runbookMarkdown: runbook || null } });
 
   return c.redirect(`/agents/${agent.id}`);
 });
