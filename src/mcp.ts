@@ -91,6 +91,7 @@ const SKILL_URL = new URL("../docs/skill.md", import.meta.url);
 const SYSTEM_TOOLS = [
   "grantry/get_skill",
   "grantry/get_runbook",
+  "grantry/get_runbook_file",
   "grantry/get_providers",
   "grantry/list_scopes",
   "grantry/find_agent",
@@ -100,7 +101,7 @@ const SYSTEM_TOOLS = [
 
 // System tools that need the calling agent's identity (workspace boundary) and
 // therefore require authentication, unlike the public metadata tools.
-const AUTHED_SYSTEM_TOOLS = new Set<string>(["grantry/get_runbook", "grantry/list_scopes", "grantry/find_agent", "grantry/route", "grantry/delegate"]);
+const AUTHED_SYSTEM_TOOLS = new Set<string>(["grantry/get_runbook", "grantry/get_runbook_file", "grantry/list_scopes", "grantry/find_agent", "grantry/route", "grantry/delegate"]);
 
 // Capability-scoped delegation TTL: short by design (single-use anyway).
 const DELEGATION_TTL_MS = 5 * 60 * 1000;
@@ -174,6 +175,11 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "grantry/get_runbook") {
     return {
       format: { type: "string", enum: ["markdown"], description: "Output format. Defaults to markdown." },
+    };
+  }
+  if (toolName === "grantry/get_runbook_file") {
+    return {
+      path: { type: "string", description: "A file path from grantry_get_runbook's file list, e.g. 'event-rfp/scripts/build.py'." },
     };
   }
   if (toolName === "grantry/get_providers") {
@@ -2892,28 +2898,75 @@ async function getSkillContent() {
   };
 }
 
-// Per-agent runbook: the author-supplied Markdown that defines what THIS agent
-// does (as opposed to grantry/get_skill, which is the platform manual). Lets an
-// agent be shared by its MCP token alone — the recipient calls get_runbook to
-// learn the role, no repo handoff needed.
+// Stored skill-bundle shape (Agent.runbookBundle JSON). content_b64 is the raw
+// file bytes base64-encoded, so text and binary assets round-trip identically.
+type RunbookBundle = {
+  filename: string;
+  files: { path: string; size: number; content_b64: string }[];
+};
+
+// Extensions we hand back as decoded UTF-8 text; everything else stays base64.
+const RUNBOOK_TEXT_EXT = new Set([
+  "md", "markdown", "txt", "py", "js", "ts", "json", "csv", "tsv",
+  "yaml", "yml", "toml", "sh", "html", "css", "svg", "xml",
+]);
+
+function parseRunbookBundle(raw: string | null | undefined): RunbookBundle | null {
+  if (!raw) return null;
+  try {
+    const b = JSON.parse(raw);
+    if (b && Array.isArray(b.files)) return b as RunbookBundle;
+  } catch { /* fall through */ }
+  return null;
+}
+
+// Per-agent runbook: the author-supplied instructions defining what THIS agent
+// does (as opposed to grantry/get_skill, the platform manual). Lets an agent be
+// shared by its MCP token alone — the recipient calls get_runbook to learn the
+// role (and get_runbook_file to pull bundled references/scripts/assets), with no
+// repo handoff. Two forms: a single SKILL.md (runbookMarkdown), or a full skill
+// bundle (runbookBundle) whose files are listed here and fetched individually.
 async function getRunbookContent(agentId: string) {
   const agent = await prisma.agent.findUnique({
     where: { id: agentId },
-    select: { name: true, description: true, runbookMarkdown: true, updatedAt: true },
+    select: { name: true, description: true, runbookMarkdown: true, runbookBundle: true, updatedAt: true },
   });
   const markdown = agent?.runbookMarkdown ?? "";
+  const bundle = parseRunbookBundle(agent?.runbookBundle);
   return {
+    // SKILL.md text is always inlined so the caller learns its role in one call.
     markdown,
+    // Manifest only (no file bodies) — pull each via grantry_get_runbook_file.
+    files: bundle ? bundle.files.map((f) => ({ path: f.path, size: f.size })) : [],
     metadata: {
-      format: "markdown",
+      format: bundle ? "skill-bundle" : "markdown",
       source: "agent.runbook",
       agent_name: agent?.name ?? null,
       charter: agent?.description ?? null,
-      configured: Boolean(markdown),
+      configured: Boolean(markdown) || Boolean(bundle),
+      bundle_filename: bundle?.filename ?? null,
+      file_count: bundle ? bundle.files.length : 0,
       updated_at: agent?.updatedAt ? agent.updatedAt.toISOString() : null,
       server_version: "0.1.0",
     },
   };
+}
+
+// Return one bundled file. Text-like extensions come back decoded; binary assets
+// come back base64 (encoding field says which).
+async function getRunbookFileContent(agentId: string, path: string) {
+  const agent = await prisma.agent.findUnique({
+    where: { id: agentId },
+    select: { runbookBundle: true },
+  });
+  const bundle = parseRunbookBundle(agent?.runbookBundle);
+  const entry = bundle?.files.find((f) => f.path === path);
+  if (!entry) return null;
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  if (RUNBOOK_TEXT_EXT.has(ext)) {
+    return { path, encoding: "utf-8", content: Buffer.from(entry.content_b64, "base64").toString("utf8"), size: entry.size };
+  }
+  return { path, encoding: "base64", content: entry.content_b64, size: entry.size };
 }
 
 function providerMetadataItem(p: any, includeTools = true) {
@@ -3104,11 +3157,36 @@ async function callSystemTool(toolName: string, args: Record<string, unknown>, c
       };
     }
     const runbook = await getRunbookContent(ctx.agentId);
-    const text = runbook.markdown ||
+    let text = runbook.markdown ||
       "This agent has no runbook configured yet. The owner can add one in the grantry dashboard (agent detail → Runbook).";
+    if (runbook.files.length) {
+      const list = runbook.files.map((f) => `  - ${f.path} (${f.size} bytes)`).join("\n");
+      text += `\n\n---\nBundled skill files — fetch each with grantry_get_runbook_file(path), then reconstruct the skill directory:\n${list}`;
+    }
     return {
       content: [{ type: "text", text }],
       structuredContent: runbook,
+      isError: false,
+    };
+  }
+  if (toolName === "grantry/get_runbook_file") {
+    if (!ctx?.agentId) {
+      return {
+        content: [{ type: "text", text: "get_runbook_file requires an authenticated agent token." }],
+        isError: true,
+      };
+    }
+    const path = String(args.path ?? "").trim();
+    if (!path) {
+      return { content: [{ type: "text", text: "get_runbook_file requires a 'path' from grantry_get_runbook's file list." }], isError: true };
+    }
+    const file = await getRunbookFileContent(ctx.agentId, path);
+    if (!file) {
+      return { content: [{ type: "text", text: `No bundled runbook file at path: ${path}` }], isError: true };
+    }
+    return {
+      content: [{ type: "text", text: file.encoding === "utf-8" ? file.content : `<${file.size} bytes, base64 in structuredContent.content>` }],
+      structuredContent: file,
       isError: false,
     };
   }
@@ -3336,11 +3414,20 @@ function buildToolList(
   tools.push(
     {
       name: publicToolName("grantry/get_runbook"),
-      description: "grantry: this agent's own runbook — the author-supplied instructions defining what this agent does and how. Call this first when you connect to learn your role. Distinct from grantry_get_skill, which is the grantry platform manual.",
+      description: "grantry: this agent's own runbook — the author-supplied instructions defining what this agent does and how. Call this first when you connect to learn your role. Returns the SKILL.md text inline; if a skill bundle is attached, also lists its files (fetch each with grantry_get_runbook_file). Distinct from grantry_get_skill, which is the grantry platform manual.",
       inputSchema: {
         type: "object",
         properties: toolSpecificInputProperties("grantry/get_runbook"),
         required: [],
+      },
+    },
+    {
+      name: publicToolName("grantry/get_runbook_file"),
+      description: "grantry: fetch one file from this agent's skill bundle (references/scripts/assets) by the path shown in grantry_get_runbook. Text files come back decoded; binary assets come back base64. Reconstruct the skill directory from these to run the bundled skill.",
+      inputSchema: {
+        type: "object",
+        properties: toolSpecificInputProperties("grantry/get_runbook_file"),
+        required: ["path"],
       },
     },
     {
