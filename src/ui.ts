@@ -6159,7 +6159,7 @@ dashboardApp.get("/agents", async (c) => {
       ${agents.length === 0 ? `<div class="card"><div class="empty">${t("No agents yet.")} <a href="/tenants/new">${t("Create one via the scope wizard")}</a>.</div></div>` : `
       <div class="card">
         <table>
-          <thead><tr><th></th><th>${t("Name")}</th><th>${t("Token prefix")}</th><th>${t("Granted connections")}</th><th>${t("Accessible scopes")}</th><th>${t("Status")}</th><th>${t("Last used")}</th><th>${t("Created")}</th><th>${t("Actions")}</th></tr></thead>
+          <thead><tr><th></th><th>${t("Name")}</th><th>${t("Granted connections")}</th><th>${t("Accessible scopes")}</th><th>${t("Status")}</th><th>${t("Last used")}</th><th>${t("Created")}</th><th>${t("Actions")}</th></tr></thead>
           <tbody>
           ${agents.map((a) => {
             const allScopes = new Set<string>();
@@ -6175,7 +6175,6 @@ dashboardApp.get("/agents", async (c) => {
             <tr>
               <td><input type="checkbox" form="bulkAgentForm" name="agent_ids" value="${a.id}" class="agentCheck"></td>
               <td><code>${a.name}</code></td>
-              <td><code>${a.tokenPrefix}...</code></td>
               <td>${grantsDisplay}</td>
               <td>${scopesDisplay}</td>
               <td>${a.enabled ? `<span class="badge ok">${t("enabled")}</span>` : `<span class="badge denied">${t("disabled")}</span>`}</td>
