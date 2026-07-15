@@ -683,6 +683,7 @@ const NAV = (current: string, email?: string) => `
     <a href="/audit" class="${current === "audit" ? "active" : ""}">${t("Audit")}</a>
     <a href="/api-keys" class="${current === "api-keys" ? "active" : ""}">${t("API keys")}</a>
     <a href="/account" class="${current === "account" ? "active" : ""}">${t("Account")}</a>
+    <a href="https://docs.grantry.ai" target="_blank" rel="noopener">${t("Help")}</a>
   </div>
   <div class="nav-foot">
     ${langSwitcher()}
