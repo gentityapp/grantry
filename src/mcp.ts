@@ -90,6 +90,7 @@ const SKILL_URL = new URL("../docs/skill.md", import.meta.url);
 
 const SYSTEM_TOOLS = [
   "grantry/get_skill",
+  "grantry/get_runbook",
   "grantry/get_providers",
   "grantry/list_scopes",
   "grantry/find_agent",
@@ -99,7 +100,7 @@ const SYSTEM_TOOLS = [
 
 // System tools that need the calling agent's identity (workspace boundary) and
 // therefore require authentication, unlike the public metadata tools.
-const AUTHED_SYSTEM_TOOLS = new Set<string>(["grantry/list_scopes", "grantry/find_agent", "grantry/route", "grantry/delegate"]);
+const AUTHED_SYSTEM_TOOLS = new Set<string>(["grantry/get_runbook", "grantry/list_scopes", "grantry/find_agent", "grantry/route", "grantry/delegate"]);
 
 // Capability-scoped delegation TTL: short by design (single-use anyway).
 const DELEGATION_TTL_MS = 5 * 60 * 1000;
@@ -166,6 +167,11 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   const metaToolName = metaAdsRuntimeToolName(toolName);
   if (isAdminTool(toolName)) return adminToolDescriptor(toolName).properties as Record<string, any>;
   if (toolName === "grantry/get_skill") {
+    return {
+      format: { type: "string", enum: ["markdown"], description: "Output format. Defaults to markdown." },
+    };
+  }
+  if (toolName === "grantry/get_runbook") {
     return {
       format: { type: "string", enum: ["markdown"], description: "Output format. Defaults to markdown." },
     };
@@ -2886,6 +2892,30 @@ async function getSkillContent() {
   };
 }
 
+// Per-agent runbook: the author-supplied Markdown that defines what THIS agent
+// does (as opposed to grantry/get_skill, which is the platform manual). Lets an
+// agent be shared by its MCP token alone — the recipient calls get_runbook to
+// learn the role, no repo handoff needed.
+async function getRunbookContent(agentId: string) {
+  const agent = await prisma.agent.findUnique({
+    where: { id: agentId },
+    select: { name: true, description: true, runbookMarkdown: true, updatedAt: true },
+  });
+  const markdown = agent?.runbookMarkdown ?? "";
+  return {
+    markdown,
+    metadata: {
+      format: "markdown",
+      source: "agent.runbook",
+      agent_name: agent?.name ?? null,
+      charter: agent?.description ?? null,
+      configured: Boolean(markdown),
+      updated_at: agent?.updatedAt ? agent.updatedAt.toISOString() : null,
+      server_version: "0.1.0",
+    },
+  };
+}
+
 function providerMetadataItem(p: any, includeTools = true) {
   return {
       key: p.key,
@@ -3063,6 +3093,22 @@ async function callSystemTool(toolName: string, args: Record<string, unknown>, c
     return {
       content: [{ type: "text", text: skill.markdown }],
       structuredContent: skill,
+      isError: false,
+    };
+  }
+  if (toolName === "grantry/get_runbook") {
+    if (!ctx?.agentId) {
+      return {
+        content: [{ type: "text", text: "get_runbook requires an authenticated agent token." }],
+        isError: true,
+      };
+    }
+    const runbook = await getRunbookContent(ctx.agentId);
+    const text = runbook.markdown ||
+      "This agent has no runbook configured yet. The owner can add one in the grantry dashboard (agent detail → Runbook).";
+    return {
+      content: [{ type: "text", text }],
+      structuredContent: runbook,
       isError: false,
     };
   }
@@ -3288,6 +3334,15 @@ function buildToolList(
   // Capability discovery tools — only for authenticated agents, since they
   // search the caller's workspace (docs/agent-orchestration.md).
   tools.push(
+    {
+      name: publicToolName("grantry/get_runbook"),
+      description: "grantry: this agent's own runbook — the author-supplied instructions defining what this agent does and how. Call this first when you connect to learn your role. Distinct from grantry_get_skill, which is the grantry platform manual.",
+      inputSchema: {
+        type: "object",
+        properties: toolSpecificInputProperties("grantry/get_runbook"),
+        required: [],
+      },
+    },
     {
       name: publicToolName("grantry/find_agent"),
       description: "grantry: find which agent in your workspace can do a described task. Candidates are distinct *connections* (not duplicate agents), ranked by how well the task names the connection's scope/label/project plus each agent's `charter`. Confidence reflects target match — a low score means the connection probably doesn't reach what the task describes.",

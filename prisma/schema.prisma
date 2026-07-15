@@ -117,6 +117,11 @@ model Agent {
   id            String   @id @default(cuid())
   name          String   @unique
   description   String?
+  // Per-agent runbook (Markdown, e.g. a Claude Code SKILL.md). Distinct in
+  // nature from the platform skill (docs/skill.md): that explains how to
+  // operate grantry, this defines what THIS agent does. Served over MCP via
+  // grantry/get_runbook so an agent can be shared by its MCP token alone.
+  runbookMarkdown String?
   hashedToken   String   // sha256 of the high-entropy agent token (gn_agt_...)
   tokenPrefix   String   // first 12 chars of plaintext (for UI display)
   ownerId       String
