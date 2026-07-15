@@ -6789,8 +6789,11 @@ dashboardApp.post("/agents/:id/runbook-bundle", async (c) => {
   if (!(await userMayManageAgent(user.id, agent))) return c.html(`<h1>${t("not your agent")}</h1>`, 403);
 
   const body = await c.req.parseBody();
-  const file = body.skillfile;
-  if (!(file instanceof File) || file.size === 0) {
+  // Duck-type the uploaded file: the global `File` constructor isn't present in
+  // every Node runtime, so `instanceof File` throws "File is not defined". The
+  // multipart parser hands back a File-like Blob with name/size/arrayBuffer().
+  const file = body.skillfile as unknown as { name?: string; size?: number; arrayBuffer?: () => Promise<ArrayBuffer> } | undefined;
+  if (!file || typeof file.arrayBuffer !== "function" || (file.size ?? 0) === 0) {
     return c.html(`<h1>${t("No file uploaded")}</h1><p><a href="/agents/${agent.id}">← ${t("Back")}</a></p>`, 400);
   }
 
