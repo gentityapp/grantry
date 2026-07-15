@@ -25,6 +25,7 @@ export const ja: Record<string, string> = {
   "Usage": "使用状況",
   "API keys": "API キー",
   "Account": "アカウント",
+  "Help": "ヘルプ",
   "Signed in as {email}": "{email} でログイン中",
   "Sign out": "ログアウト",
   "Sign in": "ログイン",
