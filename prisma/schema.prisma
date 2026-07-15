@@ -202,6 +202,10 @@ model Connection {
   credential          ProviderCredential? @relation(fields: [credentialId], references: [id], onDelete: SetNull)
   encryptedServerCredential String? // encrypted provider-level secret, e.g. Google Ads developer token
   credentialMetadata  String   @default("{}") // JSON: observed provider scopes/capabilities, never raw token
+  // Non-secret per-connection variables substituted into the provider's
+  // templated baseUrl/path (e.g. {"teamId":"Y309..."} for a tenant-scoped API
+  // whose key is bound to one team). Never holds credentials.
+  connectionConfig    String   @default("{}") // JSON: {varName: value} for {var} template expansion
   credentialValidatedAt DateTime?
   healthStatusSnapshot String?
   healthCheckedAtSnapshot DateTime?

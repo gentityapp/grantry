@@ -106,6 +106,7 @@ export async function createTenantConnectionFromCredential(args: {
   tenant: Pick<Tenant, "id" | "slug" | "workspaceId" | "ownerId">;
   sourceConnection: ConnectionSecretFields;
   createdById: string;
+  connectionConfig?: string;
 }): Promise<Connection> {
   const workspaceId = requireWorkspaceId(args.tenant.workspaceId, args.sourceConnection.id);
   if (args.sourceConnection.workspaceId !== workspaceId) {
@@ -148,6 +149,7 @@ export async function createTenantConnectionFromCredential(args: {
       refreshToken: credential.refreshToken,
       accessTokenExpiresAt: credential.accessTokenExpiresAt,
       enabled: credential.enabled,
+      ...(args.connectionConfig ? { connectionConfig: args.connectionConfig } : {}),
     },
   });
 }

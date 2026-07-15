@@ -7,7 +7,7 @@ import { decrypt, encrypt } from "./crypto.js";
 import { PROVIDERS, getProvider, getProviderForWorkspace, listProvidersForWorkspace, normalizePathPrefixes, toolsForProviderForWorkspace, validateCustomProviderKey } from "./connectors/registry.js";
 import { providerIcon, providerIconMap } from "./connectors/icons.js";
 import { credentialMetadataForStorage, deriveCredentialHealth } from "./connectors/credential_meta.js";
-import { callGenericCheckConnection, callGenericListCapabilities } from "./connectors/generic_request.js";
+import { callGenericCheckConnection, callGenericListCapabilities, templateVarNames } from "./connectors/generic_request.js";
 import { parseServiceAccountInput, serviceAccountPublicMeta, invalidateDwdToken, mintDwdAccessToken, type ServiceAccountCredential } from "./google_dwd.js";
 import { connectionsForAgent, findCapableAgents, normalizeToolName } from "./policy.js";
 import { ensureTenant } from "./tenants.js";
@@ -4236,6 +4236,21 @@ dashboardApp.get("/tenants/:scope/connect/:provider", async (c) => {
          <textarea name="credential" id="credential" rows="3" required></textarea>
        </div>`;
 
+  // Per-connection config variables: any {var} placeholders in the provider's
+  // templated base URL (e.g. .../team/{teamId}) need a value stored on this
+  // connection. Non-secret; substituted into the request URL at call time.
+  const configVarNames = templateVarNames(providerDef.genericRequest?.baseUrl ?? "");
+  const configInputs = configVarNames.length
+    ? `<div class="step-card">
+        <p class="field-hint" style="margin-top:0;">${t("This provider's API is scoped per connection. Provide the value(s) below — they are stored with this connection (not secret) and filled into the request path automatically.")}</p>
+        ${configVarNames.map((name) => `
+        <div class="field">
+          <label for="cfg_${escapeHtml(name)}">${escapeHtml(name)}</label>
+          <input type="text" name="cfg_${escapeHtml(name)}" id="cfg_${escapeHtml(name)}" autocomplete="off" required placeholder="${escapeHtml(name)}">
+        </div>`).join("")}
+      </div>`
+    : "";
+
   const tokenLink = providerDef.tokenUrl
     ? `<p style="margin-top:6px;"><a href="${escapeHtml(providerDef.tokenUrl)}" target="_blank" rel="noopener" style="font-size:13px;">${t("🔗 Get a token / credential here →")}</a></p>`
     : "";
@@ -4257,6 +4272,7 @@ dashboardApp.get("/tenants/:scope/connect/:provider", async (c) => {
         ${credentialInputs}
         ${tokenLink}
       </div>
+      ${configInputs}
       <div style="display:flex;gap:8px;">
         <button type="submit">${t("Connect")}</button>
         <a class="btn secondary" href="/tenants/${encodeURIComponent(scope)}/edit">${t("Cancel")}</a>
@@ -5274,6 +5290,16 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     // workspace credential. Existing same-scope connections are edited from
     // /connections/:id/edit, not overwritten by Add service.
     const tenantRow = await ensureTenant(user.id, scope, undefined, wsId);
+    // Collect per-connection config variables (cfg_<var>) for any {var} in the
+    // provider's templated base URL. Stored non-secret, substituted at call time.
+    const configVarNames = templateVarNames(providerDef.genericRequest?.baseUrl ?? "");
+    const configValues: Record<string, string> = {};
+    for (const name of configVarNames) {
+      const value = String(body[`cfg_${name}`] ?? "").trim();
+      if (!value) return c.html(`<h1>${escapeHtml(t("Configuration value required"))}</h1><p>${escapeHtml(providerDef.label)} needs a value for <code>${escapeHtml(name)}</code>.</p><p><a href="/tenants/${scope}/edit">← Back</a></p>`, 400);
+      configValues[name] = value;
+    }
+    const connectionConfigJson = Object.keys(configValues).length ? JSON.stringify(configValues) : undefined;
     let conn;
     if (credential) {
       const credentialMeta = await credentialMetadataForProviderDef(providerDef, "pat", credential);
@@ -5287,6 +5313,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
           ownerId: user.id,
           workspaceId: tenantRow.workspaceId ?? wsId,
           encryptedCredential: encrypt(credential),
+          ...(connectionConfigJson ? { connectionConfig: connectionConfigJson } : {}),
           ...connectionCredentialData(credentialMeta),
         },
       });
@@ -5311,6 +5338,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
         tenant: tenantRow,
         sourceConnection: reusableConn,
         createdById: user.id,
+        connectionConfig: connectionConfigJson,
       });
     } else {
       const reusableConnsForProvider = await prisma.connection.findMany({
@@ -5333,6 +5361,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
         tenant: tenantRow,
         sourceConnection: reusableConn,
         createdById: user.id,
+        connectionConfig: connectionConfigJson,
       });
     }
     await grantConnectionToTenantAgents(rowsWhere, scope, conn.id, user.id);

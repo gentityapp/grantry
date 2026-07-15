@@ -78,6 +78,36 @@ function normalizeBaseUrl(url: string) {
   return url.replace(/\/+$/, "");
 }
 
+// Expand {varName} placeholders in a templated baseUrl/path from the
+// connection's non-secret config (e.g. {"teamId":"Y309..."} for a
+// tenant-scoped API whose credential is bound to one team). Missing variables
+// throw a clear error rather than leaving a literal {var} in the request URL.
+function substituteConfigVars(provider: string, template: string, config: Record<string, string> | undefined) {
+  if (!template.includes("{")) return template;
+  const missing: string[] = [];
+  const resolved = template.replace(/\{([a-zA-Z0-9_]+)\}/g, (_match, name: string) => {
+    const value = config?.[name];
+    if (value === undefined || value === null || String(value).trim() === "") {
+      missing.push(name);
+      return `{${name}}`;
+    }
+    return encodeURIComponent(String(value).trim());
+  });
+  if (missing.length) {
+    throw new Error(
+      `provider_config_missing: ${provider}/request needs connection config value(s) for ${missing.map((m) => `{${m}}`).join(", ")}. Set them on the connection.`,
+    );
+  }
+  return resolved;
+}
+
+// Distinct variable names referenced by a template, e.g. "{teamId}" -> ["teamId"].
+export function templateVarNames(template: string): string[] {
+  const names = new Set<string>();
+  for (const match of String(template ?? "").matchAll(/\{([a-zA-Z0-9_]+)\}/g)) names.add(match[1]);
+  return [...names];
+}
+
 function parsedCredentialObject(credential: string) {
   const parsed = parseJsonMaybe(credential);
   return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null;
@@ -447,15 +477,20 @@ async function executeGenericRequest(args: {
   headers?: Record<string, string>;
   serverCredential?: string | null;
   baseUrlKey?: unknown;
+  config?: Record<string, string>;
   logTool: string;
 }) {
   const manifest = args.provider.genericRequest;
   if (!manifest) throw new Error(`tool_not_implemented: ${args.provider.key}/request is not enabled`);
   const method = args.method.trim().toUpperCase();
-  const path = normalizePath(args.path);
+  const path = substituteConfigVars(args.provider.key, normalizePath(args.path), args.config);
   assertAllowed(args.provider.key, manifest, method, path);
 
-  const baseUrl = resolveBaseUrl(args.provider.key, manifest, args.credential, args.baseUrlKey);
+  const baseUrl = substituteConfigVars(
+    args.provider.key,
+    resolveBaseUrl(args.provider.key, manifest, args.credential, args.baseUrlKey),
+    args.config,
+  );
   const token = credentialToken(args.provider.key, args.credential);
   const scheme = manifest.authScheme ?? "bearer";
   const queryRecord: Record<string, unknown> = { ...(args.query ?? {}) };
@@ -538,6 +573,7 @@ export async function callGenericProviderRequest(args: {
   requestArgs: GenericRequestArgs;
   credential: string;
   serverCredential?: string | null;
+  config?: Record<string, string>;
 }) {
   return executeGenericRequest({
     provider: args.provider,
@@ -551,6 +587,7 @@ export async function callGenericProviderRequest(args: {
     headers: headersFromArgs(args.requestArgs.headers),
     serverCredential: args.serverCredential,
     baseUrlKey: args.requestArgs.base_url_key ?? args.requestArgs.baseUrlKey,
+    config: args.config,
     logTool: args.toolName,
   });
 }
@@ -558,6 +595,7 @@ export async function callGenericProviderRequest(args: {
 export async function callGenericCheckConnection(args: {
   provider: ProviderDef;
   credential: string;
+  config?: Record<string, string>;
 }) {
   const manifest = args.provider.genericRequest;
   if (!manifest) throw new Error(`tool_not_implemented: ${args.provider.key}/check_connection is not enabled`);
@@ -584,6 +622,7 @@ export async function callGenericCheckConnection(args: {
         path: test.path,
         query: test.query ?? {},
         baseUrlKey: (test as Record<string, unknown>).base_url_key ?? (test as Record<string, unknown>).baseUrlKey,
+        config: args.config,
         logTool: `${args.provider.key}/check_connection`,
       });
       results.push({
@@ -628,6 +667,7 @@ export async function callGenericCheckConnection(args: {
         path,
         query: probeQuery ?? { limit: 1 },
         baseUrlKey: (op as Record<string, unknown>).base_url_key ?? (op as Record<string, unknown>).baseUrlKey,
+        config: args.config,
         logTool: `${args.provider.key}/check_connection`,
       });
       results.push({

@@ -2932,13 +2932,34 @@ async function getProviderMetadata(includeTools = true, workspaceId?: string | n
  * `conn` carries the optional provider-level server credential (e.g. Google Ads
  * developer token).
  */
+// Parse a connection's stored connectionConfig JSON into a flat {var: value}
+// map for template expansion. Non-secret only; values are coerced to strings
+// and blanks dropped. Returns undefined when there is nothing to substitute.
+function parseConnectionConfig(raw: string | null | undefined): Record<string, string> | undefined {
+  if (!raw || raw === "{}") return undefined;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+    const out: Record<string, string> = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (value === null || value === undefined) continue;
+      const str = String(value).trim();
+      if (str) out[key] = str;
+    }
+    return Object.keys(out).length ? out : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 async function dispatchProviderTool(
   provider: string,
   toolName: string,
   args: Record<string, unknown>,
   token: string,
-  conn: { provider?: string; encryptedServerCredential: string | null; workspaceId?: string | null },
+  conn: { provider?: string; encryptedServerCredential: string | null; workspaceId?: string | null; connectionConfig?: string | null },
 ): Promise<any> {
+  const connectionConfig = parseConnectionConfig(conn.connectionConfig);
   if (toolName === `${provider}/request`) {
     const providerDef = await getProviderForWorkspace(provider, conn.workspaceId);
     if (!providerDef) throw new Error(`provider not implemented: ${provider}`);
@@ -2948,12 +2969,13 @@ async function dispatchProviderTool(
       requestArgs: args,
       credential: token,
       serverCredential: conn.encryptedServerCredential ? decrypt(conn.encryptedServerCredential) : null,
+      config: connectionConfig,
     });
   }
   if (toolName === `${provider}/check_connection`) {
     const providerDef = await getProviderForWorkspace(provider, conn.workspaceId);
     if (!providerDef) throw new Error(`provider not implemented: ${provider}`);
-    return callGenericCheckConnection({ provider: providerDef, credential: token });
+    return callGenericCheckConnection({ provider: providerDef, credential: token, config: connectionConfig });
   }
   if (toolName === `${provider}/list_capabilities`) {
     const providerDef = await getProviderForWorkspace(provider, conn.workspaceId);
