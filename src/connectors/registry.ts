@@ -1365,6 +1365,19 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     tools: [],
     implemented: true,
   },
+  granola: {
+    key: "granola",
+    label: "Granola",
+    authTypes: ["pat"],
+    helpText: "Paste your Granola API key (starts with grn_), created in the Granola desktop app. It is sent as Authorization: Bearer against public-api.granola.ai/v1. Read-only: the API only returns notes that already have a generated AI summary and transcript. list_notes filters by created/updated timestamps and folder; get_note with include=transcript returns the full transcript.",
+    tokenUrl: "https://www.granola.ai",
+    tools: [
+      "granola/list_notes",
+      "granola/get_note",
+      "granola/list_folders",
+    ],
+    implemented: true,
+  },
 };
 
 const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]>> = {
