@@ -1356,6 +1356,15 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  apify: {
+    key: "apify",
+    label: "Apify",
+    authTypes: ["pat"],
+    helpText: "Paste an Apify API token from console.apify.com/settings/integrations. It is sent as Authorization: Bearer against api.apify.com/v2. Use apify/request to reach any endpoint — run Actors (POST /acts/{actorId}/runs), read runs, and fetch dataset items (GET /datasets/{datasetId}/items).",
+    tokenUrl: "https://console.apify.com/settings/integrations",
+    tools: [],
+    implemented: true,
+  },
 };
 
 const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]>> = {
@@ -1966,6 +1975,12 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
     smokeTests: [{ id: "ad_account", method: "GET", path: "/ad_account" }],
+  },
+  apify: {
+    baseUrl: "https://api.apify.com/v2",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "users_me", method: "GET", path: "/users/me" }],
   },
 };
 
