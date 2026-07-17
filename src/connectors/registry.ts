@@ -1378,6 +1378,33 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  canva: {
+    key: "canva",
+    label: "Canva",
+    authTypes: ["oauth"],
+    helpText: "Connect your Canva account via OAuth. Register an integration at canva.com/developers, set its redirect URL to this server's /oauth/canva/callback, then paste the integration's Client ID and Client Secret in Grantry. A development integration works for your own Canva team without review. Uses Authorization Code + PKCE (S256). Use canva/request to reach any Connect API endpoint under api.canva.com/rest/v1 — list/create designs, upload assets, autofill brand templates, export designs (async), read folders and comments.",
+    oauthSetupUrl: "https://www.canva.com/developers/integrations/connect-api",
+    oauthAppOwner: "workspace",
+    oauthClientAuthMethod: "CLIENT_SECRET_BASIC",
+    oauthScopes: [
+      "design:meta:read",
+      "design:content:read",
+      "design:content:write",
+      "asset:read",
+      "asset:write",
+      "brandtemplate:meta:read",
+      "brandtemplate:content:read",
+      "folder:read",
+      "folder:write",
+      "comment:read",
+      "comment:write",
+      "profile:read",
+    ],
+    authorizeUrl: "https://www.canva.com/api/oauth/authorize",
+    oauthTokenUrl: "https://api.canva.com/rest/v1/oauth/token",
+    tools: [],
+    implemented: true,
+  },
 };
 
 const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]>> = {
@@ -1991,6 +2018,12 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
   },
   apify: {
     baseUrl: "https://api.apify.com/v2",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "users_me", method: "GET", path: "/users/me" }],
+  },
+  canva: {
+    baseUrl: "https://api.canva.com/rest/v1",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
     smokeTests: [{ id: "users_me", method: "GET", path: "/users/me" }],

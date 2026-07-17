@@ -7113,7 +7113,7 @@ oauthApp.get("/:provider/start", async (c) => {
     userId: user.id,
   };
   // Providers that require PKCE (Authorization Code + S256) for the token exchange.
-  const usesPkce = providerKey === "hubspot" || providerKey === "x";
+  const usesPkce = providerKey === "hubspot" || providerKey === "x" || providerKey === "canva";
   const pkceVerifier = usesPkce ? pkceCodeVerifier() : "";
   if (pkceVerifier) {
     payload.pkce_code_verifier = pkceVerifier;
