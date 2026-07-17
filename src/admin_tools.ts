@@ -33,6 +33,7 @@ export const ADMIN_TOOLS = [
   "grantry/create_tenant",
   "grantry/create_agent",
   "grantry/update_agent",
+  "grantry/set_runbook",
   "grantry/rotate_agent_token",
   "grantry/grant_scope",
   "grantry/revoke_scope",
@@ -287,6 +288,34 @@ export async function callAdminTool(
     return { payload, summary: `updated agent ${updated.name} (${Object.keys(data).join(", ")})` };
   }
 
+  if (toolName === "grantry/set_runbook") {
+    const target = await targetAgent(ctx, requireString(args, "agent_id"));
+    if (args.markdown === undefined) {
+      throw new Error("'markdown' is required (pass an empty string to clear the runbook)");
+    }
+    const markdown = (args.markdown == null ? "" : String(args.markdown)).trim();
+    const updated = await prisma.agent.update({
+      where: { id: target.id },
+      // Setting a single-file SKILL.md replaces the runbook wholesale: clear any
+      // previously uploaded skill bundle so grantry_get_runbook serves exactly
+      // this text and doesn't list stale bundled files. Multi-file bundles stay
+      // a dashboard-only upload.
+      data: { runbookMarkdown: markdown || null, runbookBundle: null },
+    });
+    const payload = {
+      agent_id: updated.id,
+      name: updated.name,
+      runbook_chars: markdown.length,
+      cleared: markdown.length === 0,
+    };
+    return {
+      payload,
+      summary: markdown.length
+        ? `set runbook for agent ${updated.name} (${markdown.length} chars; any skill bundle cleared)`
+        : `cleared runbook for agent ${updated.name}`,
+    };
+  }
+
   if (toolName === "grantry/rotate_agent_token") {
     const target = await targetAgent(ctx, requireString(args, "agent_id"));
     const { token, tokenHash, tokenPrefix } = mintAgentToken();
@@ -497,6 +526,15 @@ export function adminToolDescriptor(toolName: AdminToolName): { description: str
           charter: { type: "string", description: "New charter text (empty string clears it)." },
         },
         required: ["agent_id"],
+      };
+    case "grantry/set_runbook":
+      return {
+        description: "grantry admin: set an agent's single-file runbook — the SKILL.md served over grantry_get_runbook so the agent is usable by its MCP token alone (no repo handoff). Pass the full Markdown; it replaces any existing runbook and clears any uploaded skill bundle. An empty string clears the runbook. To attach a multi-file .skill/.zip bundle, use the dashboard.",
+        properties: {
+          agent_id: { type: "string", description: "Agent id (from grantry_list_agents)." },
+          markdown: { type: "string", description: "The full runbook Markdown (a Claude Code SKILL.md). Empty string clears it. Any previously uploaded skill bundle is removed." },
+        },
+        required: ["agent_id", "markdown"],
       };
     case "grantry/rotate_agent_token":
       return {
