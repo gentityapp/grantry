@@ -68,6 +68,7 @@ import { callAwsTool } from "./connectors/aws.js";
 import { callSnowflakeTool } from "./connectors/snowflake.js";
 import { callGoogleCalendarTool } from "./connectors/google_calendar.js";
 import { callGoogleSheetsTool } from "./connectors/google_sheets.js";
+import { callGoogleSlidesTool } from "./connectors/google_slides.js";
 import { callGoogleTagManagerTool } from "./connectors/google_tag_manager.js";
 import { callGoogleCloudTool } from "./connectors/google_cloud.js";
 import { callBigQueryTool } from "./connectors/bigquery.js";
@@ -2453,6 +2454,13 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "google_sheets/update_values") { return { spreadsheet_id: { type: "string", description: "Spreadsheet id." }, range: { type: "string", description: "A1 range to write." }, values: { type: "array", items: { type: "array" }, description: "2D array of row values." }, value_input_option: { type: "string", description: "USER_ENTERED (default) or RAW." } }; }
   if (toolName === "google_sheets/append_values") { return { spreadsheet_id: { type: "string", description: "Spreadsheet id." }, range: { type: "string", description: "A1 range to append after." }, values: { type: "array", items: { type: "array" }, description: "2D array of row values." }, value_input_option: { type: "string", description: "USER_ENTERED (default) or RAW." } }; }
   if (toolName === "google_sheets/create_spreadsheet") { return { title: { type: "string", description: "New spreadsheet title." } }; }
+
+  // --- google_slides ---
+  if (toolName === "google_slides/get_presentation") { return { presentation_id: { type: "string", description: "Presentation id." } }; }
+  if (toolName === "google_slides/get_page") { return { presentation_id: { type: "string", description: "Presentation id." }, page_object_id: { type: "string", description: "Page (slide) object id." } }; }
+  if (toolName === "google_slides/get_page_thumbnail") { return { presentation_id: { type: "string", description: "Presentation id." }, page_object_id: { type: "string", description: "Page (slide) object id." }, thumbnail_size: { type: "string", description: "LARGE, MEDIUM, or SMALL. Defaults to LARGE." } }; }
+  if (toolName === "google_slides/create_presentation") { return { title: { type: "string", description: "New presentation title." } }; }
+  if (toolName === "google_slides/batch_update") { return { presentation_id: { type: "string", description: "Presentation id." }, requests: { type: "array", items: { type: "object" }, description: "Slides API batchUpdate request objects (e.g. createSlide, insertText, replaceAllText)." }, write_control: { type: "object", description: "Optional writeControl (requiredRevisionId)." } }; }
   // --- google_tag_manager ---
   if (toolName === "google_tag_manager/list_containers") { return { account_id: { type: "string", description: "GTM account id." } }; }
   if (toolName === "google_tag_manager/get_container") { return { account_id: { type: "string", description: "GTM account id." }, container_id: { type: "string", description: "GTM container id." } }; }
@@ -2839,6 +2847,11 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "google_sheets/update_values") return ["spreadsheet_id", "range", "values"];
   if (toolName === "google_sheets/append_values") return ["spreadsheet_id", "range", "values"];
   if (toolName === "google_sheets/create_spreadsheet") return ["title"];
+  if (toolName === "google_slides/get_presentation") return ["presentation_id"];
+  if (toolName === "google_slides/get_page") return ["presentation_id", "page_object_id"];
+  if (toolName === "google_slides/get_page_thumbnail") return ["presentation_id", "page_object_id"];
+  if (toolName === "google_slides/create_presentation") return ["title"];
+  if (toolName === "google_slides/batch_update") return ["presentation_id", "requests"];
   if (toolName === "google_tag_manager/list_containers") return ["account_id"];
   if (toolName === "google_tag_manager/get_container") return ["account_id", "container_id"];
   if (toolName === "google_tag_manager/list_workspaces") return ["account_id", "container_id"];
@@ -3131,6 +3144,7 @@ async function dispatchProviderTool(
   if (provider === "snowflake") return callSnowflakeTool(toolName, args, token);
   if (provider === "google_calendar") return callGoogleCalendarTool(toolName, args, token);
   if (provider === "google_sheets") return callGoogleSheetsTool(toolName, args, token);
+  if (provider === "google_slides") return callGoogleSlidesTool(toolName, args, token);
   if (provider === "google_tag_manager") return callGoogleTagManagerTool(toolName, args, token);
   if (provider === "google_cloud") return callGoogleCloudTool(toolName, args, token);
   if (provider === "bigquery") return callBigQueryTool(toolName, args, token);
@@ -3661,6 +3675,7 @@ function oauthEnvClientConfig(provider: string) {
     youtube: ["GOOGLE_CLIENT_ID"],
     google_calendar: ["GOOGLE_CLIENT_ID"],
     google_sheets: ["GOOGLE_CLIENT_ID"],
+    google_slides: ["GOOGLE_CLIENT_ID"],
     google_tag_manager: ["GOOGLE_CLIENT_ID"],
     google_cloud: ["GOOGLE_CLIENT_ID"],
     bigquery: ["GOOGLE_CLIENT_ID"],
@@ -3677,6 +3692,7 @@ function oauthEnvClientConfig(provider: string) {
     youtube: ["GOOGLE_CLIENT_SECRET"],
     google_calendar: ["GOOGLE_CLIENT_SECRET"],
     google_sheets: ["GOOGLE_CLIENT_SECRET"],
+    google_slides: ["GOOGLE_CLIENT_SECRET"],
     google_tag_manager: ["GOOGLE_CLIENT_SECRET"],
     google_cloud: ["GOOGLE_CLIENT_SECRET"],
     bigquery: ["GOOGLE_CLIENT_SECRET"],

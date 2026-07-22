@@ -1192,6 +1192,23 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     },
     implemented: true,
   },
+  google_slides: {
+    key: "google_slides",
+    label: "Google Slides",
+    authTypes: ["oauth", "service_account"],
+    helpText: "Connect your Google account to read, create, and edit presentations through the Slides API.",
+    oauthSetupUrl: "https://console.cloud.google.com/apis/credentials",
+    oauthScopes: ["https://www.googleapis.com/auth/presentations", "https://www.googleapis.com/auth/userinfo.email"],
+    dwdScopes: ["https://www.googleapis.com/auth/presentations"],
+    authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+    oauthTokenUrl: "https://oauth2.googleapis.com/token",
+    tools: ["google_slides/get_presentation", "google_slides/get_page", "google_slides/get_page_thumbnail", "google_slides/create_presentation", "google_slides/batch_update"],
+    toolScopeRequirements: {
+      "google_slides/create_presentation": ["https://www.googleapis.com/auth/presentations"],
+      "google_slides/batch_update": ["https://www.googleapis.com/auth/presentations"],
+    },
+    implemented: true,
+  },
   google_tag_manager: {
     key: "google_tag_manager",
     label: "Google Tag Manager",
@@ -1808,6 +1825,11 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
   },
   google_sheets: {
     baseUrl: "https://sheets.googleapis.com/v4",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  google_slides: {
+    baseUrl: "https://slides.googleapis.com/v1",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
   },
