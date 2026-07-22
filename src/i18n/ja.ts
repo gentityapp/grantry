@@ -281,6 +281,12 @@ export const ja: Record<string, string> = {
   // ── Audit log ──────────────────────────────────────────────────────────
   "Audit log": "監査ログ",
   "Latest 100 events.": "最新100件のイベント。",
+  "Click a row to see the tool-call arguments and response summary.":
+    "行をクリックすると、ツール呼び出しの引数とレスポンス要約を確認できます。",
+  "Request args": "リクエスト引数",
+  "Response summary": "レスポンス要約",
+  "Delegated by": "委任元",
+  "delegation": "委任",
   "No events yet.": "まだイベントはありません。",
   "Error": "エラー",
 

@@ -7032,38 +7032,79 @@ dashboardApp.get("/audit", async (c) => {
     include: { agent: true },
   });
 
+  // requestArgs is stored as JSON text (masked at write time); pretty-print it
+  // for the detail row, falling back to the raw string if it doesn't parse.
+  const prettyArgs = (raw: string): string => {
+    try {
+      return JSON.stringify(JSON.parse(raw), null, 2);
+    } catch {
+      return raw;
+    }
+  };
+
   return c.html(`
     <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Audit")} — grantry</title>
-    ${FAVICON}<style>${CSS}</style></head><body>
+    ${FAVICON}<style>${CSS}</style>
+    <style>
+      .audit-table tr.expandable { cursor: pointer; }
+      .audit-table tr.expandable:hover td { background: var(--hover, rgba(0,0,0,.03)); }
+      .audit-table td.chevron { width: 18px; color: var(--muted); font-size: 11px; user-select: none; }
+      .audit-table tr.audit-detail td { background: var(--hover, rgba(0,0,0,.02)); padding: 12px 16px; }
+      .audit-detail-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 8px 0 4px; }
+      .audit-detail pre { margin: 0; padding: 8px 10px; border: 1px solid var(--border, #e5e5e5); border-radius: 6px; font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; }
+    </style></head><body>
     ${NAV("audit", user?.email)}
     <main>
       <div class="scope-page-header">
         <div>
           <div class="scope-page-kicker">${t("Observability")}</div>
           <h1>${t("Audit log")}</h1>
-          <p class="scope-page-copy">${t("Latest 100 events.")}</p>
+          <p class="scope-page-copy">${t("Latest 100 events.")} ${t("Click a row to see the tool-call arguments and response summary.")}</p>
         </div>
       </div>
       ${logs.length === 0 ? `<div class="card"><div class="empty">${t("No events yet.")}</div></div>` : `
       <div class="table-wrap">
         <table class="audit-table">
-          <thead><tr><th>${t("When")}</th><th>${t("Agent")}</th><th>${t("Tool")}</th><th>${t("Scope")}</th><th>${t("Status")}</th><th>${t("Duration")}</th><th>${t("Error")}</th></tr></thead>
+          <thead><tr><th></th><th>${t("When")}</th><th>${t("Agent")}</th><th>${t("Tool")}</th><th>${t("Scope")}</th><th>${t("Status")}</th><th>${t("Duration")}</th><th>${t("Error")}</th></tr></thead>
           <tbody>
-          ${logs.map((l) => `
-            <tr>
+          ${logs.map((l) => {
+            const hasDetail = Boolean(l.requestArgs || l.responseSummary || l.delegatedById);
+            return `
+            <tr${hasDetail ? ` class="expandable" data-toggle="detail-${l.id}"` : ""}>
+              <td class="chevron">${hasDetail ? "▸" : ""}</td>
               <td><code>${l.createdAt.toISOString().slice(0, 19).replace("T", " ")}</code></td>
-              <td>${l.agent?.name ?? "<system>"}</td>
-              <td><code>${l.provider}/${l.tool.split("/").pop() ?? l.tool}</code></td>
-              <td>${l.scope ? `<span class="badge scoped">${l.scope}</span>` : `<span class="badge unscoped">-</span>`}</td>
-              <td>${l.status === "ok" ? '<span class="badge ok">ok</span>' : l.status === "denied" ? '<span class="badge denied">denied</span>' : `<span class="badge denied">${l.status}</span>`}</td>
+              <td>${escapeHtml(l.agent?.name ?? "<system>")}</td>
+              <td><code>${escapeHtml(`${l.provider}/${l.tool.split("/").pop() ?? l.tool}`)}</code></td>
+              <td>${l.scope ? `<span class="badge scoped">${escapeHtml(l.scope)}</span>` : `<span class="badge unscoped">-</span>`}</td>
+              <td>${l.status === "ok" ? '<span class="badge ok">ok</span>' : l.status === "denied" ? '<span class="badge denied">denied</span>' : `<span class="badge denied">${escapeHtml(l.status)}</span>`}</td>
               <td>${l.durationMs ?? "?"}ms</td>
-              <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;font-size:12px;">${l.errorMessage ?? ""}</td>
+              <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;font-size:12px;">${escapeHtml(l.errorMessage ?? "")}</td>
             </tr>
-          `).join("")}
+            ${hasDetail ? `
+            <tr class="audit-detail" id="detail-${l.id}" hidden>
+              <td colspan="8">
+                ${l.requestArgs ? `<div class="audit-detail-label">${t("Request args")}</div><pre>${escapeHtml(prettyArgs(l.requestArgs))}</pre>` : ""}
+                ${l.responseSummary ? `<div class="audit-detail-label">${t("Response summary")}</div><pre>${escapeHtml(l.responseSummary)}</pre>` : ""}
+                ${l.delegatedById ? `<div class="audit-detail-label">${t("Delegated by")}</div><pre>${escapeHtml(l.delegatedById)}${l.delegationId ? ` (${t("delegation")}: ${escapeHtml(l.delegationId)})` : ""}</pre>` : ""}
+              </td>
+            </tr>` : ""}`;
+          }).join("")}
           </tbody>
         </table>
       </div>`}
-    </main></body></html>
+    </main>
+    <script>
+      document.querySelectorAll(".audit-table tr.expandable").forEach((row) => {
+        row.addEventListener("click", () => {
+          const detail = document.getElementById(row.dataset.toggle);
+          if (!detail) return;
+          detail.hidden = !detail.hidden;
+          const chevron = row.querySelector(".chevron");
+          if (chevron) chevron.textContent = detail.hidden ? "▸" : "▾";
+        });
+      });
+    </script>
+    </body></html>
   `);
 });
 
