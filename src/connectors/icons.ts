@@ -130,6 +130,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   snowflake: "#29B5E8",
   google_calendar: "#4285F4",
   google_sheets: "#0F9D58",
+  google_slides: "#F4B400",
   google_tag_manager: "#246FDB",
   google_cloud: "#4285F4",
   bigquery: "#669DF6",
