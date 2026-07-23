@@ -204,8 +204,9 @@ export async function callAdminTool(
     const slug = requireString(args, "target_scope").toLowerCase();
     if (!SLUG_RE.test(slug)) throw new Error(`invalid scope: must match ${SLUG_RE} (lowercase letters, digits, '-', '_')`);
     const displayName = args.display_name == null ? undefined : String(args.display_name).trim() || undefined;
-    const existing = await prisma.tenant.findUnique({
-      where: { ownerId_slug: { ownerId: ctx.ownerId, slug } },
+    // Match ensureTenant's resolution (workspace-first) so `created` is accurate.
+    const existing = await prisma.tenant.findFirst({
+      where: ctx.workspaceId ? { workspaceId: ctx.workspaceId, slug } : { ownerId: ctx.ownerId, slug, workspaceId: null },
       select: { id: true },
     });
     const tenant = await ensureTenant(ctx.ownerId, slug, displayName, ctx.workspaceId);

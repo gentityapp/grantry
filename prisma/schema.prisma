@@ -107,9 +107,13 @@ model Tenant {
   updatedAt   DateTime @updatedAt
 
   connections Connection[]
-  @@unique([ownerId, slug])
+  // The slug is the wire key agents send as `scope`, and the runtime resolves
+  // it per workspace — so uniqueness is per (workspaceId, slug), NOT per
+  // owner. A per-owner unique here once made ensureTenant silently reuse a
+  // same-slug tenant from a *different* workspace of the same user, leaking
+  // new connections into the wrong workspace.
+  @@unique([workspaceId, slug])
   @@index([ownerId])
-  @@index([workspaceId])
   @@map("tenant")
 }
 

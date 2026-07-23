@@ -16,8 +16,12 @@ try {
   let createdTenants = 0;
   let linkedConnections = 0;
   for (const { ownerId, scope } of pairs) {
-    const existing = await prisma.tenant.findUnique({
-      where: { ownerId_slug: { ownerId, slug: scope } },
+    // Pre-workspace healer: match owner-scoped tenants (workspace assignment
+    // happens later in backfill-workspaces). The old compound unique
+    // (ownerId, slug) is gone — uniqueness is per (workspaceId, slug) now.
+    const existing = await prisma.tenant.findFirst({
+      where: { ownerId, slug: scope },
+      orderBy: { createdAt: "asc" },
       select: { id: true },
     });
     const tenant = existing ?? await prisma.tenant.create({
