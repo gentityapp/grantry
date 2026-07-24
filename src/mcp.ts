@@ -69,6 +69,7 @@ import { callSnowflakeTool } from "./connectors/snowflake.js";
 import { callGoogleCalendarTool } from "./connectors/google_calendar.js";
 import { callGoogleSheetsTool } from "./connectors/google_sheets.js";
 import { callGoogleSlidesTool } from "./connectors/google_slides.js";
+import { callGoogleFormsTool } from "./connectors/google_forms.js";
 import { callGoogleTagManagerTool } from "./connectors/google_tag_manager.js";
 import { callGoogleCloudTool } from "./connectors/google_cloud.js";
 import { callBigQueryTool } from "./connectors/bigquery.js";
@@ -2461,6 +2462,13 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "google_slides/get_page_thumbnail") { return { presentation_id: { type: "string", description: "Presentation id." }, page_object_id: { type: "string", description: "Page (slide) object id." }, thumbnail_size: { type: "string", description: "LARGE, MEDIUM, or SMALL. Defaults to LARGE." } }; }
   if (toolName === "google_slides/create_presentation") { return { title: { type: "string", description: "New presentation title." } }; }
   if (toolName === "google_slides/batch_update") { return { presentation_id: { type: "string", description: "Presentation id." }, requests: { type: "array", items: { type: "object" }, description: "Slides API batchUpdate request objects (e.g. createSlide, insertText, replaceAllText)." }, write_control: { type: "object", description: "Optional writeControl (requiredRevisionId)." } }; }
+
+  // --- google_forms ---
+  if (toolName === "google_forms/get_form") { return { form_id: { type: "string", description: "Form id." } }; }
+  if (toolName === "google_forms/create_form") { return { title: { type: "string", description: "New form title (shown to respondents)." }, document_title: { type: "string", description: "Optional Drive document title. Defaults to title." } }; }
+  if (toolName === "google_forms/batch_update") { return { form_id: { type: "string", description: "Form id." }, requests: { type: "array", items: { type: "object" }, description: "Forms API batchUpdate request objects (e.g. createItem, updateItem, updateFormInfo, updateSettings)." }, include_form_in_response: { type: "boolean", description: "Return the updated form in the response." }, write_control: { type: "object", description: "Optional writeControl (requiredRevisionId)." } }; }
+  if (toolName === "google_forms/list_responses") { return { form_id: { type: "string", description: "Form id." }, filter: { type: "string", description: "Optional filter, e.g. timestamp > 2026-07-01T00:00:00Z." }, page_size: { type: "number", description: "Max responses per page (up to 5000)." }, page_token: { type: "string", description: "Page token from a previous call." } }; }
+  if (toolName === "google_forms/get_response") { return { form_id: { type: "string", description: "Form id." }, response_id: { type: "string", description: "Response id." } }; }
   // --- google_tag_manager ---
   if (toolName === "google_tag_manager/list_containers") { return { account_id: { type: "string", description: "GTM account id." } }; }
   if (toolName === "google_tag_manager/get_container") { return { account_id: { type: "string", description: "GTM account id." }, container_id: { type: "string", description: "GTM container id." } }; }
@@ -2852,6 +2860,11 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "google_slides/get_page_thumbnail") return ["presentation_id", "page_object_id"];
   if (toolName === "google_slides/create_presentation") return ["title"];
   if (toolName === "google_slides/batch_update") return ["presentation_id", "requests"];
+  if (toolName === "google_forms/get_form") return ["form_id"];
+  if (toolName === "google_forms/create_form") return ["title"];
+  if (toolName === "google_forms/batch_update") return ["form_id", "requests"];
+  if (toolName === "google_forms/list_responses") return ["form_id"];
+  if (toolName === "google_forms/get_response") return ["form_id", "response_id"];
   if (toolName === "google_tag_manager/list_containers") return ["account_id"];
   if (toolName === "google_tag_manager/get_container") return ["account_id", "container_id"];
   if (toolName === "google_tag_manager/list_workspaces") return ["account_id", "container_id"];
@@ -3145,6 +3158,7 @@ async function dispatchProviderTool(
   if (provider === "google_calendar") return callGoogleCalendarTool(toolName, args, token);
   if (provider === "google_sheets") return callGoogleSheetsTool(toolName, args, token);
   if (provider === "google_slides") return callGoogleSlidesTool(toolName, args, token);
+  if (provider === "google_forms") return callGoogleFormsTool(toolName, args, token);
   if (provider === "google_tag_manager") return callGoogleTagManagerTool(toolName, args, token);
   if (provider === "google_cloud") return callGoogleCloudTool(toolName, args, token);
   if (provider === "bigquery") return callBigQueryTool(toolName, args, token);
@@ -3676,6 +3690,7 @@ function oauthEnvClientConfig(provider: string) {
     google_calendar: ["GOOGLE_CLIENT_ID"],
     google_sheets: ["GOOGLE_CLIENT_ID"],
     google_slides: ["GOOGLE_CLIENT_ID"],
+    google_forms: ["GOOGLE_CLIENT_ID"],
     google_tag_manager: ["GOOGLE_CLIENT_ID"],
     google_cloud: ["GOOGLE_CLIENT_ID"],
     bigquery: ["GOOGLE_CLIENT_ID"],
@@ -3693,6 +3708,7 @@ function oauthEnvClientConfig(provider: string) {
     google_calendar: ["GOOGLE_CLIENT_SECRET"],
     google_sheets: ["GOOGLE_CLIENT_SECRET"],
     google_slides: ["GOOGLE_CLIENT_SECRET"],
+    google_forms: ["GOOGLE_CLIENT_SECRET"],
     google_tag_manager: ["GOOGLE_CLIENT_SECRET"],
     google_cloud: ["GOOGLE_CLIENT_SECRET"],
     bigquery: ["GOOGLE_CLIENT_SECRET"],

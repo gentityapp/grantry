@@ -1209,6 +1209,25 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     },
     implemented: true,
   },
+  google_forms: {
+    key: "google_forms",
+    label: "Google Forms",
+    authTypes: ["oauth", "service_account"],
+    helpText: "Connect your Google account to read, create, and edit forms and read form responses through the Forms API.",
+    oauthSetupUrl: "https://console.cloud.google.com/apis/credentials",
+    oauthScopes: ["https://www.googleapis.com/auth/forms.body", "https://www.googleapis.com/auth/forms.responses.readonly", "https://www.googleapis.com/auth/userinfo.email"],
+    dwdScopes: ["https://www.googleapis.com/auth/forms.body", "https://www.googleapis.com/auth/forms.responses.readonly"],
+    authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
+    oauthTokenUrl: "https://oauth2.googleapis.com/token",
+    tools: ["google_forms/get_form", "google_forms/create_form", "google_forms/batch_update", "google_forms/list_responses", "google_forms/get_response"],
+    toolScopeRequirements: {
+      "google_forms/create_form": ["https://www.googleapis.com/auth/forms.body"],
+      "google_forms/batch_update": ["https://www.googleapis.com/auth/forms.body"],
+      "google_forms/list_responses": ["https://www.googleapis.com/auth/forms.responses.readonly"],
+      "google_forms/get_response": ["https://www.googleapis.com/auth/forms.responses.readonly"],
+    },
+    implemented: true,
+  },
   google_tag_manager: {
     key: "google_tag_manager",
     label: "Google Tag Manager",
@@ -1830,6 +1849,11 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
   },
   google_slides: {
     baseUrl: "https://slides.googleapis.com/v1",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+  },
+  google_forms: {
+    baseUrl: "https://forms.googleapis.com/v1",
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
   },
