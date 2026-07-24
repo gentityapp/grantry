@@ -42,6 +42,9 @@ function manifestBases(provider: (typeof PROVIDERS)[string]) {
       // Atlassian site URL is credential-derived.
     } else if (generic.baseUrl === "credential.snowflake_api_v2") {
       // Account host is credential-derived.
+    } else if (generic.baseUrl === "credential.twenty_base") {
+      // Self-hosted server URL is credential-derived; cloud default below.
+      bases.add("https://api.twenty.com");
     } else {
       bases.add(normalizeBase(generic.baseUrl));
     }

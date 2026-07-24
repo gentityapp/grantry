@@ -70,6 +70,7 @@ import { callGoogleCalendarTool } from "./connectors/google_calendar.js";
 import { callGoogleSheetsTool } from "./connectors/google_sheets.js";
 import { callGoogleSlidesTool } from "./connectors/google_slides.js";
 import { callGoogleFormsTool } from "./connectors/google_forms.js";
+import { callTwentyTool } from "./connectors/twenty.js";
 import { callGoogleTagManagerTool } from "./connectors/google_tag_manager.js";
 import { callGoogleCloudTool } from "./connectors/google_cloud.js";
 import { callBigQueryTool } from "./connectors/bigquery.js";
@@ -2469,6 +2470,13 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "google_forms/batch_update") { return { form_id: { type: "string", description: "Form id." }, requests: { type: "array", items: { type: "object" }, description: "Forms API batchUpdate request objects (e.g. createItem, updateItem, updateFormInfo, updateSettings)." }, include_form_in_response: { type: "boolean", description: "Return the updated form in the response." }, write_control: { type: "object", description: "Optional writeControl (requiredRevisionId)." } }; }
   if (toolName === "google_forms/list_responses") { return { form_id: { type: "string", description: "Form id." }, filter: { type: "string", description: "Optional filter, e.g. timestamp > 2026-07-01T00:00:00Z." }, page_size: { type: "number", description: "Max responses per page (up to 5000)." }, page_token: { type: "string", description: "Page token from a previous call." } }; }
   if (toolName === "google_forms/get_response") { return { form_id: { type: "string", description: "Form id." }, response_id: { type: "string", description: "Response id." } }; }
+
+  // --- twenty ---
+  if (toolName === "twenty/list_objects") { return {}; }
+  if (toolName === "twenty/list_records") { return { object: { type: "string", description: "Plural object name, e.g. people, companies, opportunities, or a custom object." }, filter: { type: "string", description: "Optional filter, e.g. name[ilike]:%acme% or emails.primaryEmail[eq]:a@b.com." }, order_by: { type: "string", description: "Optional sort, e.g. createdAt[DescNullsLast]." }, limit: { type: "number", description: "Max records (up to 60)." }, starting_after: { type: "string", description: "Cursor from a previous page (endCursor)." }, depth: { type: "number", description: "Relation depth 0-2." } }; }
+  if (toolName === "twenty/get_record") { return { object: { type: "string", description: "Plural object name." }, record_id: { type: "string", description: "Record id (uuid)." }, }; }
+  if (toolName === "twenty/create_record") { return { object: { type: "string", description: "Plural object name." }, data: { type: "object", description: "Field values, e.g. { name: { firstName, lastName } } for people." } }; }
+  if (toolName === "twenty/update_record") { return { object: { type: "string", description: "Plural object name." }, record_id: { type: "string", description: "Record id (uuid)." }, data: { type: "object", description: "Field values to update." } }; }
   // --- google_tag_manager ---
   if (toolName === "google_tag_manager/list_containers") { return { account_id: { type: "string", description: "GTM account id." } }; }
   if (toolName === "google_tag_manager/get_container") { return { account_id: { type: "string", description: "GTM account id." }, container_id: { type: "string", description: "GTM container id." } }; }
@@ -2865,6 +2873,11 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "google_forms/batch_update") return ["form_id", "requests"];
   if (toolName === "google_forms/list_responses") return ["form_id"];
   if (toolName === "google_forms/get_response") return ["form_id", "response_id"];
+  if (toolName === "twenty/list_objects") return [];
+  if (toolName === "twenty/list_records") return ["object"];
+  if (toolName === "twenty/get_record") return ["object", "record_id"];
+  if (toolName === "twenty/create_record") return ["object", "data"];
+  if (toolName === "twenty/update_record") return ["object", "record_id", "data"];
   if (toolName === "google_tag_manager/list_containers") return ["account_id"];
   if (toolName === "google_tag_manager/get_container") return ["account_id", "container_id"];
   if (toolName === "google_tag_manager/list_workspaces") return ["account_id", "container_id"];
@@ -3107,6 +3120,7 @@ async function dispatchProviderTool(
   if (provider === "gmail") return callGmailTool(toolName, args, token);
   if (provider === "youtube") return callYouTubeTool(toolName, args, token);
   if (provider === "attio") return callAttioTool(toolName, args, token);
+  if (provider === "twenty") return callTwentyTool(toolName, args, token);
   if (provider === "clay") return callClayTool(toolName, args, token);
   if (provider === "apollo") return callApolloTool(toolName, args, token);
   if (provider === "heyreach") return callHeyReachTool(toolName, args, token);

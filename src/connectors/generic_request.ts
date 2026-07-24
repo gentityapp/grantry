@@ -187,6 +187,10 @@ function resolveBaseUrl(provider: string, manifest: GenericManifest, credential:
     if (ref) return `https://${ref}.supabase.co/rest/v1`;
     throw new Error(`${provider}/request requires a JSON credential with project_url (or a service_role key that encodes its project ref)`);
   }
+  if (manifest.baseUrl === "credential.twenty_base") {
+    const baseUrl = normalizeBaseUrl(credentialField(credential, ["base_url", "baseUrl"]));
+    return baseUrl || "https://api.twenty.com";
+  }
   if (manifest.baseUrl === "credential.snowflake_api_v2") {
     const account = credentialField(credential, ["account"]);
     if (!account) throw new Error(`${provider}/request requires a JSON credential with account`);
@@ -205,6 +209,7 @@ function credentialToken(provider: string, credential: string) {
   if (provider === "customerio" && parsed) return String(parsed.token ?? credential);
   if (provider === "microsoft_ads" && parsed) return String(parsed.access_token ?? credential);
   if (provider === "openai" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
+  if (provider === "twenty" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "shopify" && parsed) return String(parsed.token ?? credential);
   if (provider === "snowflake" && parsed) return String(parsed.token ?? credential);
   return credential;
