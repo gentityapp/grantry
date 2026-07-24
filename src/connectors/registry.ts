@@ -444,7 +444,27 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     helpText: "Connect via OAuth, or paste a HubSpot Private App access token to access CRM and marketing email data. Marketing email APIs require HubSpot's content scope. For OAuth apps, configure content as an optional scope in HubSpot.",
     tokenUrl: "https://app.hubspot.com/private-apps",
     oauthSetupUrl: "https://app.hubspot.com/developer",
-    oauthScopes: ["crm.objects.deals.read", "crm.objects.deals.write", "crm.objects.contacts.read", "crm.objects.contacts.write", "oauth"],
+    // Must be a superset of the scopes marked "required" on the HubSpot OAuth
+    // app (developer account) — HubSpot rejects the authorize request when any
+    // app-required scope is missing from the `scope` param.
+    oauthScopes: [
+      "crm.objects.deals.read",
+      "crm.objects.deals.write",
+      "crm.objects.contacts.read",
+      "crm.objects.contacts.write",
+      "oauth",
+      "crm.lists.read",
+      "crm.lists.write",
+      "crm.export",
+      "crm.objects.marketing_events.read",
+      "crm.objects.marketing_events.write",
+      "automation",
+      "automation.sequences.read",
+      "automation.sequences.enrollments.write",
+      "external_integrations.forms.access",
+      "forms",
+      "forms-uploaded-files",
+    ],
     oauthOptionalScopes: ["content"],
     authorizeUrl: "https://app.hubspot.com/oauth/authorize",
     oauthTokenUrl: "https://api.hubapi.com/oauth/v1/token",

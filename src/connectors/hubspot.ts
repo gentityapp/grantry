@@ -32,7 +32,9 @@ if (hubspotProvider) {
   if (!Array.isArray(hubspotProvider.oauthOptionalScopes)) {
     hubspotProvider.oauthOptionalScopes = [];
   }
-  for (const s of ["content", "marketing-email", "automation"]) {
+  // `automation` moved to required oauthScopes (the HubSpot app marks it
+  // required); keeping it out of optional avoids sending it in both params.
+  for (const s of ["content", "marketing-email"]) {
     if (!hubspotProvider.oauthOptionalScopes.includes(s)) {
       hubspotProvider.oauthOptionalScopes.push(s);
     }
