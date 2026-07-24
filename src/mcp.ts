@@ -71,6 +71,7 @@ import { callGoogleSheetsTool } from "./connectors/google_sheets.js";
 import { callGoogleSlidesTool } from "./connectors/google_slides.js";
 import { callGoogleFormsTool } from "./connectors/google_forms.js";
 import { callTwentyTool } from "./connectors/twenty.js";
+import { callMonidTool } from "./connectors/monid.js";
 import { callGoogleTagManagerTool } from "./connectors/google_tag_manager.js";
 import { callGoogleCloudTool } from "./connectors/google_cloud.js";
 import { callBigQueryTool } from "./connectors/bigquery.js";
@@ -2477,6 +2478,18 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "twenty/get_record") { return { object: { type: "string", description: "Plural object name." }, record_id: { type: "string", description: "Record id (uuid)." }, }; }
   if (toolName === "twenty/create_record") { return { object: { type: "string", description: "Plural object name." }, data: { type: "object", description: "Field values, e.g. { name: { firstName, lastName } } for people." } }; }
   if (toolName === "twenty/update_record") { return { object: { type: "string", description: "Plural object name." }, record_id: { type: "string", description: "Record id (uuid)." }, data: { type: "object", description: "Field values to update." } }; }
+
+  // --- monid ---
+  if (toolName === "monid/whoami") { return { workspace_id: { type: "string", description: "Optional workspace id (org_...); only needed for OAuth tokens without workspace context." } }; }
+  if (toolName === "monid/list_workspaces") { return { workspace_id: { type: "string", description: "Optional workspace id." } }; }
+  if (toolName === "monid/discover") { return { query: { type: "string", description: "Natural-language search for data endpoints, e.g. 'twitter posts'." }, limit: { type: "number", description: "Max results." }, workspace_id: { type: "string", description: "Optional workspace id." } }; }
+  if (toolName === "monid/inspect") { return { provider: { type: "string", description: "Provider slug, e.g. apify." }, endpoint: { type: "string", description: "Endpoint id, e.g. /apidojo/tweet-scraper." }, workspace_id: { type: "string", description: "Optional workspace id." } }; }
+  if (toolName === "monid/run") { return { provider: { type: "string", description: "Provider slug, e.g. apify." }, endpoint: { type: "string", description: "Endpoint id, e.g. /apidojo/tweet-scraper." }, input: { type: "object", description: "Endpoint input parameters, e.g. { searchTerms: ['AI'], maxItems: 10 }." }, workspace_id: { type: "string", description: "Optional workspace id." } }; }
+  if (toolName === "monid/list_runs") { return { limit: { type: "number", description: "Max runs." }, status: { type: "string", description: "Optional status filter." }, cursor: { type: "string", description: "Pagination cursor from a previous page." }, workspace_id: { type: "string", description: "Optional workspace id." } }; }
+  if (toolName === "monid/get_run") { return { run_id: { type: "string", description: "Run id." }, workspace_id: { type: "string", description: "Optional workspace id." } }; }
+  if (toolName === "monid/stop_run") { return { run_id: { type: "string", description: "Run id." }, workspace_id: { type: "string", description: "Optional workspace id." } }; }
+  if (toolName === "monid/get_balance") { return { workspace_id: { type: "string", description: "Optional workspace id." } }; }
+  if (toolName === "monid/list_activities") { return { limit: { type: "number", description: "Max activities." }, cursor: { type: "string", description: "Pagination cursor from a previous page." }, workspace_id: { type: "string", description: "Optional workspace id." } }; }
   // --- google_tag_manager ---
   if (toolName === "google_tag_manager/list_containers") { return { account_id: { type: "string", description: "GTM account id." } }; }
   if (toolName === "google_tag_manager/get_container") { return { account_id: { type: "string", description: "GTM account id." }, container_id: { type: "string", description: "GTM container id." } }; }
@@ -2878,6 +2891,16 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "twenty/get_record") return ["object", "record_id"];
   if (toolName === "twenty/create_record") return ["object", "data"];
   if (toolName === "twenty/update_record") return ["object", "record_id", "data"];
+  if (toolName === "monid/whoami") return [];
+  if (toolName === "monid/list_workspaces") return [];
+  if (toolName === "monid/discover") return ["query"];
+  if (toolName === "monid/inspect") return ["provider", "endpoint"];
+  if (toolName === "monid/run") return ["provider", "endpoint"];
+  if (toolName === "monid/list_runs") return [];
+  if (toolName === "monid/get_run") return ["run_id"];
+  if (toolName === "monid/stop_run") return ["run_id"];
+  if (toolName === "monid/get_balance") return [];
+  if (toolName === "monid/list_activities") return [];
   if (toolName === "google_tag_manager/list_containers") return ["account_id"];
   if (toolName === "google_tag_manager/get_container") return ["account_id", "container_id"];
   if (toolName === "google_tag_manager/list_workspaces") return ["account_id", "container_id"];
@@ -3121,6 +3144,7 @@ async function dispatchProviderTool(
   if (provider === "youtube") return callYouTubeTool(toolName, args, token);
   if (provider === "attio") return callAttioTool(toolName, args, token);
   if (provider === "twenty") return callTwentyTool(toolName, args, token);
+  if (provider === "monid") return callMonidTool(toolName, args, token);
   if (provider === "clay") return callClayTool(toolName, args, token);
   if (provider === "apollo") return callApolloTool(toolName, args, token);
   if (provider === "heyreach") return callHeyReachTool(toolName, args, token);

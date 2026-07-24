@@ -528,6 +528,19 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  monid: {
+    key: "monid",
+    label: "Monid",
+    authTypes: ["pat"],
+    helpText: "Create an API key at https://app.monid.ai/access/api-keys and paste it here (starts with monid_live_). It is sent as Authorization: Bearer to the Monid API. Monid is pay-per-use: discover -> inspect -> run against hundreds of data endpoints. monid/run spends wallet balance.",
+    tokenUrl: "https://app.monid.ai/access/api-keys",
+    tools: ["monid/whoami", "monid/list_workspaces", "monid/discover", "monid/inspect", "monid/run", "monid/list_runs", "monid/get_run", "monid/stop_run", "monid/get_balance", "monid/list_activities"],
+    credentialFields: [
+      { key: "api_key", label: "API key", required: true, secret: true, placeholder: "monid_live_..." },
+      { key: "base_url", label: "Base URL", required: false, placeholder: "https://api.monid.ai" },
+    ],
+    implemented: true,
+  },
   clay: {
     key: "clay",
     label: "Clay",
@@ -1665,6 +1678,12 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/rest/", "/graphql"],
     smokeTests: [{ id: "metadata_objects", method: "GET", path: "/rest/metadata/objects" }],
+  },
+  monid: {
+    baseUrl: "https://api.monid.ai",
+    defaultMethods: ["GET", "POST"],
+    allowedPathPrefixes: ["/v1/"],
+    smokeTests: [{ id: "whoami", method: "GET", path: "/v1/auth/whoami" }],
   },
   clay: {
     baseUrl: "https://api.clay.com",

@@ -210,6 +210,7 @@ function credentialToken(provider: string, credential: string) {
   if (provider === "microsoft_ads" && parsed) return String(parsed.access_token ?? credential);
   if (provider === "openai" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "twenty" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
+  if (provider === "monid" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "shopify" && parsed) return String(parsed.token ?? credential);
   if (provider === "snowflake" && parsed) return String(parsed.token ?? credential);
   return credential;
