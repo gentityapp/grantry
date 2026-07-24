@@ -131,6 +131,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   google_calendar: "#4285F4",
   google_sheets: "#0F9D58",
   google_slides: "#F4B400",
+  twenty: "#5E5CE6",
   google_forms: "#7248B9",
   google_tag_manager: "#246FDB",
   google_cloud: "#4285F4",

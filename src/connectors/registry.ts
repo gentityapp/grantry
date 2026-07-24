@@ -495,6 +495,19 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  twenty: {
+    key: "twenty",
+    label: "Twenty CRM",
+    authTypes: ["pat"],
+    helpText: "Create an API key in Twenty under Settings > API & Webhooks and paste it here. It is sent as Authorization: Bearer to the Twenty Core REST API. Cloud workspaces use https://api.twenty.com; self-hosted instances enter their own server URL.",
+    tokenUrl: "https://twenty.com/developers/section/api-and-webhooks/api",
+    tools: ["twenty/list_objects", "twenty/list_records", "twenty/get_record", "twenty/create_record", "twenty/update_record"],
+    credentialFields: [
+      { key: "api_key", label: "API key", required: true, secret: true, placeholder: "eyJhbGciOi..." },
+      { key: "base_url", label: "Server URL", required: false, placeholder: "https://api.twenty.com" },
+    ],
+    implemented: true,
+  },
   clay: {
     key: "clay",
     label: "Clay",
@@ -1626,6 +1639,12 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/v2/"],
     smokeTests: [{ id: "objects", method: "GET", path: "/v2/objects" }],
+  },
+  twenty: {
+    baseUrl: "credential.twenty_base",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/rest/", "/graphql"],
+    smokeTests: [{ id: "metadata_objects", method: "GET", path: "/rest/metadata/objects" }],
   },
   clay: {
     baseUrl: "https://api.clay.com",
