@@ -76,6 +76,7 @@ import { callYouCanBookMeTool } from "./connectors/youcanbookme.js";
 import { callCalcomTool } from "./connectors/calcom.js";
 import { callAcuityTool } from "./connectors/acuity.js";
 import { callTimerexTool } from "./connectors/timerex.js";
+import { callJicooTool } from "./connectors/jicoo.js";
 import { callCalendlyTool } from "./connectors/calendly.js";
 import { callGoogleTagManagerTool } from "./connectors/google_tag_manager.js";
 import { callGoogleCloudTool } from "./connectors/google_cloud.js";
@@ -2541,6 +2542,17 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "timerex/cancel_event") { return { event_id: { type: "string", description: "Confirmed event id." }, data: { type: "object", description: "Optional cancellation options (raw request body)." } }; }
   if (toolName === "timerex/create_one_time_url") { return { calendar_id: { type: "string", description: "Scheduling calendar id." }, data: { type: "object", description: "One-time URL options (raw request body)." } }; }
   if (toolName === "timerex/get_one_time_url") { return { one_time_url_id: { type: "string", description: "One-time URL id." } }; }
+
+  // --- jicoo ---
+  if (toolName === "jicoo/get_me") { return {}; }
+  if (toolName === "jicoo/list_teams") { return {}; }
+  if (toolName === "jicoo/list_event_types") { return { team_id: { type: "string", description: "Optional team id filter." }, page: { type: "number", description: "Page number." }, per_page: { type: "number", description: "Items per page." } }; }
+  if (toolName === "jicoo/get_event_type") { return { event_type_id: { type: "string", description: "Event type id." } }; }
+  if (toolName === "jicoo/list_available_schedules") { return { event_type_id: { type: "string", description: "Event type id." }, started_at: { type: "string", description: "ISO 8601 lower bound (UTC)." }, ended_at: { type: "string", description: "ISO 8601 upper bound (UTC)." }, timezone: { type: "string", description: "IANA timezone, e.g. Asia/Tokyo." } }; }
+  if (toolName === "jicoo/list_bookings") { return { status: { type: "string", description: "open or cancel." }, started_at: { type: "string", description: "Only bookings starting on/after this ISO 8601 time (UTC)." }, ended_at: { type: "string", description: "Only bookings ending on/before this ISO 8601 time (UTC)." }, sort: { type: "string", description: "asc or desc." }, order: { type: "string", description: "startedAt or createdAt." }, page: { type: "number", description: "Page number." }, per_page: { type: "number", description: "Items per page." } }; }
+  if (toolName === "jicoo/get_booking") { return { booking_id: { type: "string", description: "Booking id." } }; }
+  if (toolName === "jicoo/update_booking") { return { booking_id: { type: "string", description: "Booking id." }, data: { type: "object", description: "Booking fields to PATCH (name, description, timezone, start/end, hosts, ...)." } }; }
+  if (toolName === "jicoo/cancel_booking") { return { booking_id: { type: "string", description: "Booking id." }, reason: { type: "string", description: "Optional cancellation reason." } }; }
   // --- google_tag_manager ---
   if (toolName === "google_tag_manager/list_containers") { return { account_id: { type: "string", description: "GTM account id." } }; }
   if (toolName === "google_tag_manager/get_container") { return { account_id: { type: "string", description: "GTM account id." }, container_id: { type: "string", description: "GTM container id." } }; }
@@ -2988,6 +3000,15 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "timerex/cancel_event") return ["event_id"];
   if (toolName === "timerex/create_one_time_url") return ["calendar_id"];
   if (toolName === "timerex/get_one_time_url") return ["one_time_url_id"];
+  if (toolName === "jicoo/get_me") return [];
+  if (toolName === "jicoo/list_teams") return [];
+  if (toolName === "jicoo/list_event_types") return [];
+  if (toolName === "jicoo/get_event_type") return ["event_type_id"];
+  if (toolName === "jicoo/list_available_schedules") return ["event_type_id"];
+  if (toolName === "jicoo/list_bookings") return [];
+  if (toolName === "jicoo/get_booking") return ["booking_id"];
+  if (toolName === "jicoo/update_booking") return ["booking_id", "data"];
+  if (toolName === "jicoo/cancel_booking") return ["booking_id"];
   if (toolName === "google_tag_manager/list_containers") return ["account_id"];
   if (toolName === "google_tag_manager/get_container") return ["account_id", "container_id"];
   if (toolName === "google_tag_manager/list_workspaces") return ["account_id", "container_id"];
@@ -3237,6 +3258,7 @@ async function dispatchProviderTool(
   if (provider === "calcom") return callCalcomTool(toolName, args, token);
   if (provider === "acuity") return callAcuityTool(toolName, args, token);
   if (provider === "timerex") return callTimerexTool(toolName, args, token);
+  if (provider === "jicoo") return callJicooTool(toolName, args, token);
   if (provider === "clay") return callClayTool(toolName, args, token);
   if (provider === "apollo") return callApolloTool(toolName, args, token);
   if (provider === "heyreach") return callHeyReachTool(toolName, args, token);

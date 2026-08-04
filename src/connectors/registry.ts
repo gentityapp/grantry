@@ -557,6 +557,28 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  jicoo: {
+    key: "jicoo",
+    label: "Jicoo",
+    authTypes: ["pat"],
+    helpText: "Create an API key in the Jicoo dashboard (developer settings) and paste it here. It is sent as the x-jicoo-api-key header to the Jicoo REST API v1. Covers teams, event types, availability, and bookings (list/get/update/cancel). Available on all plans.",
+    tokenUrl: "https://www.jicoo.com/dashboard",
+    tools: [
+      "jicoo/get_me",
+      "jicoo/list_teams",
+      "jicoo/list_event_types",
+      "jicoo/get_event_type",
+      "jicoo/list_available_schedules",
+      "jicoo/list_bookings",
+      "jicoo/get_booking",
+      "jicoo/update_booking",
+      "jicoo/cancel_booking",
+    ],
+    credentialFields: [
+      { key: "api_key", label: "API key", required: true, secret: true },
+    ],
+    implemented: true,
+  },
   timerex: {
     key: "timerex",
     label: "TimeRex",
@@ -1791,6 +1813,14 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
     smokeTests: [{ id: "me", method: "GET", path: "/users/me" }],
+  },
+  jicoo: {
+    baseUrl: "https://api.jicoo.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/v1/"],
+    authScheme: "api_key",
+    apiKeyHeader: "x-jicoo-api-key",
+    smokeTests: [{ id: "me", method: "GET", path: "/v1/users/me" }],
   },
   timerex: {
     baseUrl: "https://timerex.net",
