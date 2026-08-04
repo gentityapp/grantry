@@ -557,6 +557,27 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  acuity: {
+    key: "acuity",
+    label: "Acuity Scheduling",
+    authTypes: ["pat"],
+    helpText: "Find your numeric User ID and API key in Acuity (Squarespace Scheduling) under Integrations > API, and enter both. The API uses Basic auth (User ID + API key). Covers appointments, appointment types, calendars, and availability.",
+    tokenUrl: "https://secure.acuityscheduling.com/app.php?action=settings&key=api",
+    tools: [
+      "acuity/get_me",
+      "acuity/list_calendars",
+      "acuity/list_appointment_types",
+      "acuity/list_appointments",
+      "acuity/get_appointment",
+      "acuity/list_availability_times",
+      "acuity/cancel_appointment",
+    ],
+    credentialFields: [
+      { key: "user_id", label: "User ID", required: true, placeholder: "12345678", hint: "Numeric User ID from Integrations > API (Basic auth username)." },
+      { key: "api_key", label: "API key", required: true, secret: true },
+    ],
+    implemented: true,
+  },
   calcom: {
     key: "calcom",
     label: "Cal.com",
@@ -1747,6 +1768,12 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
     smokeTests: [{ id: "me", method: "GET", path: "/users/me" }],
+  },
+  acuity: {
+    baseUrl: "https://acuityscheduling.com/api/v1",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "me", method: "GET", path: "/me" }],
   },
   calcom: {
     baseUrl: "https://api.cal.com",

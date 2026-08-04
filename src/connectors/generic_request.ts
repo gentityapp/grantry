@@ -263,6 +263,13 @@ function applyProviderSpecificAuth(provider: string, credential: string, headers
     headers.Authorization = basicAuth(`${email}:${token}`);
     return true;
   }
+  if (provider === "acuity") {
+    const userId = credentialField(credential, ["user_id", "userId"]);
+    const apiKey = credentialField(credential, ["api_key", "apiKey", "token"]);
+    if (!userId || !apiKey) throw new Error('acuity/request requires JSON credential {"user_id","api_key"}');
+    headers.Authorization = basicAuth(`${userId}:${apiKey}`);
+    return true;
+  }
   if (provider === "calcom") {
     const parsed = parsedCredentialObject(credential);
     const apiKey = String(parsed?.api_key ?? parsed?.apiKey ?? credential).trim();

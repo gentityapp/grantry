@@ -74,6 +74,7 @@ import { callTwentyTool } from "./connectors/twenty.js";
 import { callMonidTool } from "./connectors/monid.js";
 import { callYouCanBookMeTool } from "./connectors/youcanbookme.js";
 import { callCalcomTool } from "./connectors/calcom.js";
+import { callAcuityTool } from "./connectors/acuity.js";
 import { callCalendlyTool } from "./connectors/calendly.js";
 import { callGoogleTagManagerTool } from "./connectors/google_tag_manager.js";
 import { callGoogleCloudTool } from "./connectors/google_cloud.js";
@@ -2518,6 +2519,15 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "calcom/list_bookings") { return { status: { type: "string", description: "upcoming, recurring, past, cancelled, or unconfirmed." }, attendee_email: { type: "string", description: "Filter by attendee email." }, attendee_name: { type: "string", description: "Filter by attendee name." }, after_start: { type: "string", description: "ISO 8601 lower bound for booking start." }, before_end: { type: "string", description: "ISO 8601 upper bound for booking end." }, event_type_id: { type: "string", description: "Filter by event type id." }, sort_start: { type: "string", description: "asc or desc by start time." }, take: { type: "number", description: "Page size." }, skip: { type: "number", description: "Offset for pagination." } }; }
   if (toolName === "calcom/get_booking") { return { booking_uid: { type: "string", description: "Booking uid." } }; }
   if (toolName === "calcom/cancel_booking") { return { booking_uid: { type: "string", description: "Booking uid." }, reason: { type: "string", description: "Optional cancellation reason." } }; }
+
+  // --- acuity ---
+  if (toolName === "acuity/get_me") { return {}; }
+  if (toolName === "acuity/list_calendars") { return {}; }
+  if (toolName === "acuity/list_appointment_types") { return { include_deleted: { type: "boolean", description: "Include deleted appointment types." } }; }
+  if (toolName === "acuity/list_appointments") { return { min_date: { type: "string", description: "Only appointments on/after this date (YYYY-MM-DD)." }, max_date: { type: "string", description: "Only appointments on/before this date (YYYY-MM-DD)." }, calendar_id: { type: "string", description: "Filter by calendar id." }, appointment_type_id: { type: "string", description: "Filter by appointment type id." }, email: { type: "string", description: "Filter by client email." }, first_name: { type: "string", description: "Filter by client first name." }, last_name: { type: "string", description: "Filter by client last name." }, canceled: { type: "boolean", description: "Return canceled appointments instead of active ones." }, max: { type: "number", description: "Max results (default 100)." }, direction: { type: "string", description: "Sort by date: ASC or DESC." } }; }
+  if (toolName === "acuity/get_appointment") { return { appointment_id: { type: "string", description: "Appointment id." } }; }
+  if (toolName === "acuity/list_availability_times") { return { date: { type: "string", description: "Date to check (YYYY-MM-DD)." }, appointment_type_id: { type: "string", description: "Appointment type id." }, calendar_id: { type: "string", description: "Optional calendar id." }, timezone: { type: "string", description: "Optional IANA timezone, e.g. Asia/Tokyo." } }; }
+  if (toolName === "acuity/cancel_appointment") { return { appointment_id: { type: "string", description: "Appointment id." }, reason: { type: "string", description: "Optional cancellation note." }, no_email: { type: "boolean", description: "Suppress cancellation emails." } }; }
   // --- google_tag_manager ---
   if (toolName === "google_tag_manager/list_containers") { return { account_id: { type: "string", description: "GTM account id." } }; }
   if (toolName === "google_tag_manager/get_container") { return { account_id: { type: "string", description: "GTM account id." }, container_id: { type: "string", description: "GTM container id." } }; }
@@ -2948,6 +2958,13 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "calcom/list_bookings") return [];
   if (toolName === "calcom/get_booking") return ["booking_uid"];
   if (toolName === "calcom/cancel_booking") return ["booking_uid"];
+  if (toolName === "acuity/get_me") return [];
+  if (toolName === "acuity/list_calendars") return [];
+  if (toolName === "acuity/list_appointment_types") return [];
+  if (toolName === "acuity/list_appointments") return [];
+  if (toolName === "acuity/get_appointment") return ["appointment_id"];
+  if (toolName === "acuity/list_availability_times") return ["date", "appointment_type_id"];
+  if (toolName === "acuity/cancel_appointment") return ["appointment_id"];
   if (toolName === "google_tag_manager/list_containers") return ["account_id"];
   if (toolName === "google_tag_manager/get_container") return ["account_id", "container_id"];
   if (toolName === "google_tag_manager/list_workspaces") return ["account_id", "container_id"];
@@ -3195,6 +3212,7 @@ async function dispatchProviderTool(
   if (provider === "youcanbookme") return callYouCanBookMeTool(toolName, args, token);
   if (provider === "calendly") return callCalendlyTool(toolName, args, token);
   if (provider === "calcom") return callCalcomTool(toolName, args, token);
+  if (provider === "acuity") return callAcuityTool(toolName, args, token);
   if (provider === "clay") return callClayTool(toolName, args, token);
   if (provider === "apollo") return callApolloTool(toolName, args, token);
   if (provider === "heyreach") return callHeyReachTool(toolName, args, token);

@@ -136,6 +136,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   youcanbookme: "#0053F0",
   calendly: "#006BFF",
   calcom: "#292929",
+  acuity: "#1B7DA0",
   google_forms: "#7248B9",
   google_tag_manager: "#246FDB",
   google_cloud: "#4285F4",
