@@ -541,6 +541,22 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  calendly: {
+    key: "calendly",
+    label: "Calendly",
+    authTypes: ["pat"],
+    helpText: "Create a Personal Access Token at Calendly > Integrations & apps > API & webhooks and paste it here. It is sent as Authorization: Bearer to the Calendly v2 API. List tools auto-resolve your user URI from /users/me; pass organization to query org-wide events.",
+    tokenUrl: "https://calendly.com/integrations/api_webhooks",
+    tools: [
+      "calendly/get_me",
+      "calendly/list_event_types",
+      "calendly/list_events",
+      "calendly/get_event",
+      "calendly/list_invitees",
+      "calendly/cancel_event",
+    ],
+    implemented: true,
+  },
   youcanbookme: {
     key: "youcanbookme",
     label: "YouCanBook.me",
@@ -1706,6 +1722,12 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET", "POST"],
     allowedPathPrefixes: ["/v1/"],
     smokeTests: [{ id: "whoami", method: "GET", path: "/v1/auth/whoami" }],
+  },
+  calendly: {
+    baseUrl: "https://api.calendly.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "me", method: "GET", path: "/users/me" }],
   },
   youcanbookme: {
     baseUrl: "https://api.youcanbook.me",
