@@ -557,6 +557,25 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  calcom: {
+    key: "calcom",
+    label: "Cal.com",
+    authTypes: ["pat"],
+    helpText: "Create an API key at Cal.com Settings > Security > API keys (cal_live_...) and paste it here. It is sent as Authorization: Bearer to the Cal.com v2 API; the connector adds the required cal-api-version header per endpoint.",
+    tokenUrl: "https://app.cal.com/settings/developer/api-keys",
+    tools: [
+      "calcom/get_me",
+      "calcom/list_event_types",
+      "calcom/list_schedules",
+      "calcom/list_bookings",
+      "calcom/get_booking",
+      "calcom/cancel_booking",
+    ],
+    credentialFields: [
+      { key: "api_key", label: "API key", required: true, secret: true, placeholder: "cal_live_..." },
+    ],
+    implemented: true,
+  },
   youcanbookme: {
     key: "youcanbookme",
     label: "YouCanBook.me",
@@ -1728,6 +1747,12 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
     smokeTests: [{ id: "me", method: "GET", path: "/users/me" }],
+  },
+  calcom: {
+    baseUrl: "https://api.cal.com",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/v2/", "/v1/"],
+    smokeTests: [{ id: "me", method: "GET", path: "/v2/me" }],
   },
   youcanbookme: {
     baseUrl: "https://api.youcanbook.me",

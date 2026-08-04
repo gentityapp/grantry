@@ -73,6 +73,7 @@ import { callGoogleFormsTool } from "./connectors/google_forms.js";
 import { callTwentyTool } from "./connectors/twenty.js";
 import { callMonidTool } from "./connectors/monid.js";
 import { callYouCanBookMeTool } from "./connectors/youcanbookme.js";
+import { callCalcomTool } from "./connectors/calcom.js";
 import { callCalendlyTool } from "./connectors/calendly.js";
 import { callGoogleTagManagerTool } from "./connectors/google_tag_manager.js";
 import { callGoogleCloudTool } from "./connectors/google_cloud.js";
@@ -2509,6 +2510,14 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "calendly/get_event") { return { event_uuid: { type: "string", description: "Scheduled event uuid (or full event URI)." } }; }
   if (toolName === "calendly/list_invitees") { return { event_uuid: { type: "string", description: "Scheduled event uuid (or full event URI)." }, status: { type: "string", description: "active or canceled." }, email: { type: "string", description: "Filter by invitee email." }, count: { type: "number", description: "Page size (max 100)." }, page_token: { type: "string", description: "Pagination token." } }; }
   if (toolName === "calendly/cancel_event") { return { event_uuid: { type: "string", description: "Scheduled event uuid (or full event URI)." }, reason: { type: "string", description: "Optional cancellation reason shown to invitees." } }; }
+
+  // --- calcom ---
+  if (toolName === "calcom/get_me") { return {}; }
+  if (toolName === "calcom/list_event_types") { return { username: { type: "string", description: "Filter by username; defaults to the API key's user." }, event_slug: { type: "string", description: "Filter by event type slug." } }; }
+  if (toolName === "calcom/list_schedules") { return {}; }
+  if (toolName === "calcom/list_bookings") { return { status: { type: "string", description: "upcoming, recurring, past, cancelled, or unconfirmed." }, attendee_email: { type: "string", description: "Filter by attendee email." }, attendee_name: { type: "string", description: "Filter by attendee name." }, after_start: { type: "string", description: "ISO 8601 lower bound for booking start." }, before_end: { type: "string", description: "ISO 8601 upper bound for booking end." }, event_type_id: { type: "string", description: "Filter by event type id." }, sort_start: { type: "string", description: "asc or desc by start time." }, take: { type: "number", description: "Page size." }, skip: { type: "number", description: "Offset for pagination." } }; }
+  if (toolName === "calcom/get_booking") { return { booking_uid: { type: "string", description: "Booking uid." } }; }
+  if (toolName === "calcom/cancel_booking") { return { booking_uid: { type: "string", description: "Booking uid." }, reason: { type: "string", description: "Optional cancellation reason." } }; }
   // --- google_tag_manager ---
   if (toolName === "google_tag_manager/list_containers") { return { account_id: { type: "string", description: "GTM account id." } }; }
   if (toolName === "google_tag_manager/get_container") { return { account_id: { type: "string", description: "GTM account id." }, container_id: { type: "string", description: "GTM container id." } }; }
@@ -2933,6 +2942,12 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "calendly/get_event") return ["event_uuid"];
   if (toolName === "calendly/list_invitees") return ["event_uuid"];
   if (toolName === "calendly/cancel_event") return ["event_uuid"];
+  if (toolName === "calcom/get_me") return [];
+  if (toolName === "calcom/list_event_types") return [];
+  if (toolName === "calcom/list_schedules") return [];
+  if (toolName === "calcom/list_bookings") return [];
+  if (toolName === "calcom/get_booking") return ["booking_uid"];
+  if (toolName === "calcom/cancel_booking") return ["booking_uid"];
   if (toolName === "google_tag_manager/list_containers") return ["account_id"];
   if (toolName === "google_tag_manager/get_container") return ["account_id", "container_id"];
   if (toolName === "google_tag_manager/list_workspaces") return ["account_id", "container_id"];
@@ -3179,6 +3194,7 @@ async function dispatchProviderTool(
   if (provider === "monid") return callMonidTool(toolName, args, token);
   if (provider === "youcanbookme") return callYouCanBookMeTool(toolName, args, token);
   if (provider === "calendly") return callCalendlyTool(toolName, args, token);
+  if (provider === "calcom") return callCalcomTool(toolName, args, token);
   if (provider === "clay") return callClayTool(toolName, args, token);
   if (provider === "apollo") return callApolloTool(toolName, args, token);
   if (provider === "heyreach") return callHeyReachTool(toolName, args, token);

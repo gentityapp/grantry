@@ -263,6 +263,15 @@ function applyProviderSpecificAuth(provider: string, credential: string, headers
     headers.Authorization = basicAuth(`${email}:${token}`);
     return true;
   }
+  if (provider === "calcom") {
+    const parsed = parsedCredentialObject(credential);
+    const apiKey = String(parsed?.api_key ?? parsed?.apiKey ?? credential).trim();
+    headers.Authorization = `Bearer ${apiKey}`;
+    // Versioned v2 endpoints require this header; callers can override via
+    // the request's headers argument for endpoints on a different contract.
+    headers["cal-api-version"] = "2024-08-13";
+    return true;
+  }
   if (provider === "youcanbookme") {
     const email = credentialField(credential, ["account_email", "accountEmail", "email"]);
     const apiKey = credentialField(credential, ["api_key", "apiKey", "token"]);
