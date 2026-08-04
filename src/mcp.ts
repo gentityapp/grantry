@@ -72,6 +72,7 @@ import { callGoogleSlidesTool } from "./connectors/google_slides.js";
 import { callGoogleFormsTool } from "./connectors/google_forms.js";
 import { callTwentyTool } from "./connectors/twenty.js";
 import { callMonidTool } from "./connectors/monid.js";
+import { callYouCanBookMeTool } from "./connectors/youcanbookme.js";
 import { callGoogleTagManagerTool } from "./connectors/google_tag_manager.js";
 import { callGoogleCloudTool } from "./connectors/google_cloud.js";
 import { callBigQueryTool } from "./connectors/bigquery.js";
@@ -2490,6 +2491,15 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "monid/stop_run") { return { run_id: { type: "string", description: "Run id." }, workspace_id: { type: "string", description: "Optional workspace id." } }; }
   if (toolName === "monid/get_balance") { return { workspace_id: { type: "string", description: "Optional workspace id." } }; }
   if (toolName === "monid/list_activities") { return { limit: { type: "number", description: "Max activities." }, cursor: { type: "string", description: "Pagination cursor from a previous page." }, workspace_id: { type: "string", description: "Optional workspace id." } }; }
+
+  // --- youcanbookme ---
+  if (toolName === "youcanbookme/get_account") { return {}; }
+  if (toolName === "youcanbookme/list_profiles") { return { fields: { type: "string", description: "Optional comma-separated field selector, e.g. 'id,title,subdomain,questions,questions.code'." } }; }
+  if (toolName === "youcanbookme/get_profile") { return { profile_id: { type: "string", description: "Booking page (profile) id (uuid)." }, fields: { type: "string", description: "Optional comma-separated field selector." } }; }
+  if (toolName === "youcanbookme/query_bookings") { return { from: { type: "string", description: "Start of time range, ISO 8601 (e.g. 2026-08-01T00:00:00Z). Required." }, to: { type: "string", description: "End of time range, ISO 8601." }, statuses: { type: "array", items: { type: "string" }, description: "Booking statuses: tentative, rejected, cancelled, upcoming, inProgress, finished, noShow." }, booking_page_ids: { type: "array", items: { type: "string" }, description: "Restrict to these booking page (profile) ids." }, search_text: { type: "string", description: "Text search (min 3 chars) against title/form/ref." }, search_text_criteria: { type: "array", items: { type: "string" }, description: "Fields for search_text: title, form, ref (default all)." }, page_size: { type: "number", description: "Bookings per page (10-500, default 50)." }, direction: { type: "string", description: "Pagination direction: forwards (default) or backwards." }, from_booking_id: { type: "string", description: "Starting booking id for pagination." }, account_id: { type: "string", description: "Account id; auto-resolved from /v1/account when omitted." } }; }
+  if (toolName === "youcanbookme/get_booking") { return { booking_id: { type: "string", description: "Booking id (uuid)." }, fields: { type: "string", description: "Optional comma-separated field selector, e.g. 'startsAt,endsAt,answers,answers.code,answers.string'." } }; }
+  if (toolName === "youcanbookme/update_booking") { return { booking_id: { type: "string", description: "Booking id (uuid)." }, data: { type: "object", description: "Booking fields to PATCH, e.g. { startsAt: '2026-08-10T09:00:00Z' }." } }; }
+  if (toolName === "youcanbookme/cancel_booking") { return { booking_id: { type: "string", description: "Booking id (uuid)." }, reason: { type: "string", description: "Optional cancellation reason." } }; }
   // --- google_tag_manager ---
   if (toolName === "google_tag_manager/list_containers") { return { account_id: { type: "string", description: "GTM account id." } }; }
   if (toolName === "google_tag_manager/get_container") { return { account_id: { type: "string", description: "GTM account id." }, container_id: { type: "string", description: "GTM container id." } }; }
@@ -2901,6 +2911,13 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "monid/stop_run") return ["run_id"];
   if (toolName === "monid/get_balance") return [];
   if (toolName === "monid/list_activities") return [];
+  if (toolName === "youcanbookme/get_account") return [];
+  if (toolName === "youcanbookme/list_profiles") return [];
+  if (toolName === "youcanbookme/get_profile") return ["profile_id"];
+  if (toolName === "youcanbookme/query_bookings") return ["from"];
+  if (toolName === "youcanbookme/get_booking") return ["booking_id"];
+  if (toolName === "youcanbookme/update_booking") return ["booking_id", "data"];
+  if (toolName === "youcanbookme/cancel_booking") return ["booking_id"];
   if (toolName === "google_tag_manager/list_containers") return ["account_id"];
   if (toolName === "google_tag_manager/get_container") return ["account_id", "container_id"];
   if (toolName === "google_tag_manager/list_workspaces") return ["account_id", "container_id"];
@@ -3145,6 +3162,7 @@ async function dispatchProviderTool(
   if (provider === "attio") return callAttioTool(toolName, args, token);
   if (provider === "twenty") return callTwentyTool(toolName, args, token);
   if (provider === "monid") return callMonidTool(toolName, args, token);
+  if (provider === "youcanbookme") return callYouCanBookMeTool(toolName, args, token);
   if (provider === "clay") return callClayTool(toolName, args, token);
   if (provider === "apollo") return callApolloTool(toolName, args, token);
   if (provider === "heyreach") return callHeyReachTool(toolName, args, token);

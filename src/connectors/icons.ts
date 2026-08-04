@@ -133,6 +133,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   google_slides: "#F4B400",
   twenty: "#5E5CE6",
   monid: "#111827",
+  youcanbookme: "#0053F0",
   google_forms: "#7248B9",
   google_tag_manager: "#246FDB",
   google_cloud: "#4285F4",

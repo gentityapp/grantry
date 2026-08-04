@@ -263,6 +263,13 @@ function applyProviderSpecificAuth(provider: string, credential: string, headers
     headers.Authorization = basicAuth(`${email}:${token}`);
     return true;
   }
+  if (provider === "youcanbookme") {
+    const email = credentialField(credential, ["account_email", "accountEmail", "email"]);
+    const apiKey = credentialField(credential, ["api_key", "apiKey", "token"]);
+    if (!email || !apiKey) throw new Error('youcanbookme/request requires JSON credential {"account_email","api_key"}');
+    headers.Authorization = basicAuth(`${email}:${apiKey}`);
+    return true;
+  }
   if (provider === "shopify") {
     const token = credentialField(credential, ["token"]);
     if (!token) throw new Error('shopify/request requires JSON credential {"shop","token"}');

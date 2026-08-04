@@ -541,6 +541,27 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  youcanbookme: {
+    key: "youcanbookme",
+    label: "YouCanBook.me",
+    authTypes: ["pat"],
+    helpText: "Generate your account API key at My Account > Security in the YouCanBook.me dashboard, and enter it with the account owner's email. The API uses Basic auth (email + API key). Covers booking pages (profiles), bookings query/cancel, and a generic /v1 passthrough.",
+    tokenUrl: "https://app.youcanbook.me/",
+    tools: [
+      "youcanbookme/get_account",
+      "youcanbookme/list_profiles",
+      "youcanbookme/get_profile",
+      "youcanbookme/query_bookings",
+      "youcanbookme/get_booking",
+      "youcanbookme/update_booking",
+      "youcanbookme/cancel_booking",
+    ],
+    credentialFields: [
+      { key: "account_email", label: "Account email", required: true, placeholder: "you@example.com", hint: "Email of the YouCanBook.me account owner (Basic auth username)." },
+      { key: "api_key", label: "API key", required: true, secret: true, placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" },
+    ],
+    implemented: true,
+  },
   clay: {
     key: "clay",
     label: "Clay",
@@ -1684,6 +1705,12 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET", "POST"],
     allowedPathPrefixes: ["/v1/"],
     smokeTests: [{ id: "whoami", method: "GET", path: "/v1/auth/whoami" }],
+  },
+  youcanbookme: {
+    baseUrl: "https://api.youcanbook.me",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/v1/"],
+    smokeTests: [{ id: "profiles", method: "GET", path: "/v1/profiles" }],
   },
   clay: {
     baseUrl: "https://api.clay.com",
