@@ -10,11 +10,13 @@ type YcbmArgs = Record<string, unknown>;
 function parseCredential(credential: string) {
   let email = "";
   let apiKey = "";
+  let accountId = "";
   try {
     const parsed = JSON.parse(credential);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       email = String(parsed.account_email ?? parsed.accountEmail ?? parsed.email ?? "").trim();
       apiKey = String(parsed.api_key ?? parsed.apiKey ?? parsed.token ?? "").trim();
+      accountId = String(parsed.account_id ?? parsed.accountId ?? "").trim();
     }
   } catch {
     // plain "email:apiKey" credential
@@ -25,10 +27,12 @@ function parseCredential(credential: string) {
       apiKey = raw.slice(sep + 1).trim();
     }
   }
-  if (!email || !apiKey) {
-    throw new Error('YouCanBook.me credential requires {"account_email","api_key"} (Basic auth: email + account API key)');
+  // The API accepts either the account email or the account id (uuid) as the
+  // Basic username; SSO (e.g. Google login) accounts may only work by id.
+  if ((!email && !accountId) || !apiKey) {
+    throw new Error('YouCanBook.me credential requires {"account_email","api_key"} (Basic auth: email + account API key), optionally with "account_id"');
   }
-  return { email, apiKey };
+  return { email: email || accountId, apiKey, accountId };
 }
 
 function authHeader(credential: string) {
@@ -114,14 +118,30 @@ function stringList(value: unknown): string[] {
 async function resolveAccountId(credential: string, args: YcbmArgs, tool: string) {
   const provided = optionalArg(args, "account_id", ["accountId"]);
   if (provided) return provided;
-  const account: any = await request(credential, "GET", "/v1/account", undefined, tool, { step: "resolve_account_id" });
-  const id = String(account?.id ?? "").trim();
-  if (!id) throw new Error("could not resolve account_id from /v1/account; pass account_id explicitly");
-  return id;
+  const fromCredential = parseCredential(credential).accountId;
+  if (fromCredential) return fromCredential;
+  // /v1/account only exists for password ("local") accounts; SSO logins 404
+  // with caligraph_local_account_not_found.
+  try {
+    const account: any = await request(credential, "GET", "/v1/account", undefined, tool, { step: "resolve_account_id" });
+    const id = String(account?.id ?? "").trim();
+    if (id) return id;
+  } catch {
+    // fall through to the guidance error below
+  }
+  throw new Error(
+    "could not resolve account_id (SSO accounts have no /v1/account); pass account_id explicitly, or store it in the connection credential — it is shown at https://app.youcanbook.me/#/account",
+  );
 }
 
 export async function callYouCanBookMeTool(tool: string, args: YcbmArgs, credential: string) {
   if (tool === "youcanbookme/get_account") {
+    // /v1/account 404s for SSO logins; /v1/accounts/{id} works for both, so
+    // prefer it whenever an account id is available.
+    const accountId = optionalArg(args, "account_id", ["accountId"]) || parseCredential(credential).accountId;
+    if (accountId) {
+      return { structuredContent: await request(credential, "GET", `/v1/accounts/${encodeURIComponent(accountId)}`, undefined, tool, { accountId }) };
+    }
     return { structuredContent: await request(credential, "GET", "/v1/account", undefined, tool) };
   }
 

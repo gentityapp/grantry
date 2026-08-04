@@ -545,7 +545,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "youcanbookme",
     label: "YouCanBook.me",
     authTypes: ["pat"],
-    helpText: "Generate your account API key at My Account > Security in the YouCanBook.me dashboard, and enter it with the account owner's email. The API uses Basic auth (email + API key). Covers booking pages (profiles), bookings query/cancel, and a generic /v1 passthrough.",
+    helpText: "Generate your account API key at My Account > Security in the YouCanBook.me dashboard, and enter it with the account owner's email. The API uses Basic auth (email + API key). If you sign in to YouCanBook.me via Google/SSO, also enter your Account ID (shown at My Account) — SSO accounts need it for account-level endpoints. Covers booking pages (profiles), bookings query/cancel, and a generic /v1 passthrough.",
     tokenUrl: "https://app.youcanbook.me/",
     tools: [
       "youcanbookme/get_account",
@@ -558,7 +558,8 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     credentialFields: [
       { key: "account_email", label: "Account email", required: true, placeholder: "you@example.com", hint: "Email of the YouCanBook.me account owner (Basic auth username)." },
-      { key: "api_key", label: "API key", required: true, secret: true, placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" },
+      { key: "api_key", label: "API key", required: true, secret: true, placeholder: "ak_..." },
+      { key: "account_id", label: "Account ID", required: false, placeholder: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", hint: "Shown at https://app.youcanbook.me/#/account. Required for Google/SSO logins (their /v1/account lookup 404s); lets query_bookings resolve the account automatically." },
     ],
     implemented: true,
   },
