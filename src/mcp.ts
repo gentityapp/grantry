@@ -75,6 +75,7 @@ import { callMonidTool } from "./connectors/monid.js";
 import { callYouCanBookMeTool } from "./connectors/youcanbookme.js";
 import { callCalcomTool } from "./connectors/calcom.js";
 import { callAcuityTool } from "./connectors/acuity.js";
+import { callTimerexTool } from "./connectors/timerex.js";
 import { callCalendlyTool } from "./connectors/calendly.js";
 import { callGoogleTagManagerTool } from "./connectors/google_tag_manager.js";
 import { callGoogleCloudTool } from "./connectors/google_cloud.js";
@@ -2528,6 +2529,18 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "acuity/get_appointment") { return { appointment_id: { type: "string", description: "Appointment id." } }; }
   if (toolName === "acuity/list_availability_times") { return { date: { type: "string", description: "Date to check (YYYY-MM-DD)." }, appointment_type_id: { type: "string", description: "Appointment type id." }, calendar_id: { type: "string", description: "Optional calendar id." }, timezone: { type: "string", description: "Optional IANA timezone, e.g. Asia/Tokyo." } }; }
   if (toolName === "acuity/cancel_appointment") { return { appointment_id: { type: "string", description: "Appointment id." }, reason: { type: "string", description: "Optional cancellation note." }, no_email: { type: "boolean", description: "Suppress cancellation emails." } }; }
+
+  // --- timerex ---
+  if (toolName === "timerex/get_primary_team") { return {}; }
+  if (toolName === "timerex/list_teams") { return {}; }
+  if (toolName === "timerex/get_team") { return { team_id: { type: "string", description: "Team id (API key's team only)." } }; }
+  if (toolName === "timerex/list_calendars") { return { team_id: { type: "string", description: "Team id." }, sort_order: { type: "string", description: "Optional sort order." } }; }
+  if (toolName === "timerex/get_calendar") { return { calendar_id: { type: "string", description: "Scheduling calendar id." } }; }
+  if (toolName === "timerex/list_calendar_events") { return { calendar_id: { type: "string", description: "Scheduling calendar id." }, start_time: { type: "string", description: "ISO 8601 lower bound for event start." }, end_time: { type: "string", description: "ISO 8601 upper bound for event start." } }; }
+  if (toolName === "timerex/get_event") { return { event_id: { type: "string", description: "Confirmed event id." } }; }
+  if (toolName === "timerex/cancel_event") { return { event_id: { type: "string", description: "Confirmed event id." }, data: { type: "object", description: "Optional cancellation options (raw request body)." } }; }
+  if (toolName === "timerex/create_one_time_url") { return { calendar_id: { type: "string", description: "Scheduling calendar id." }, data: { type: "object", description: "One-time URL options (raw request body)." } }; }
+  if (toolName === "timerex/get_one_time_url") { return { one_time_url_id: { type: "string", description: "One-time URL id." } }; }
   // --- google_tag_manager ---
   if (toolName === "google_tag_manager/list_containers") { return { account_id: { type: "string", description: "GTM account id." } }; }
   if (toolName === "google_tag_manager/get_container") { return { account_id: { type: "string", description: "GTM account id." }, container_id: { type: "string", description: "GTM container id." } }; }
@@ -2965,6 +2978,16 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "acuity/get_appointment") return ["appointment_id"];
   if (toolName === "acuity/list_availability_times") return ["date", "appointment_type_id"];
   if (toolName === "acuity/cancel_appointment") return ["appointment_id"];
+  if (toolName === "timerex/get_primary_team") return [];
+  if (toolName === "timerex/list_teams") return [];
+  if (toolName === "timerex/get_team") return ["team_id"];
+  if (toolName === "timerex/list_calendars") return ["team_id"];
+  if (toolName === "timerex/get_calendar") return ["calendar_id"];
+  if (toolName === "timerex/list_calendar_events") return ["calendar_id"];
+  if (toolName === "timerex/get_event") return ["event_id"];
+  if (toolName === "timerex/cancel_event") return ["event_id"];
+  if (toolName === "timerex/create_one_time_url") return ["calendar_id"];
+  if (toolName === "timerex/get_one_time_url") return ["one_time_url_id"];
   if (toolName === "google_tag_manager/list_containers") return ["account_id"];
   if (toolName === "google_tag_manager/get_container") return ["account_id", "container_id"];
   if (toolName === "google_tag_manager/list_workspaces") return ["account_id", "container_id"];
@@ -3213,6 +3236,7 @@ async function dispatchProviderTool(
   if (provider === "calendly") return callCalendlyTool(toolName, args, token);
   if (provider === "calcom") return callCalcomTool(toolName, args, token);
   if (provider === "acuity") return callAcuityTool(toolName, args, token);
+  if (provider === "timerex") return callTimerexTool(toolName, args, token);
   if (provider === "clay") return callClayTool(toolName, args, token);
   if (provider === "apollo") return callApolloTool(toolName, args, token);
   if (provider === "heyreach") return callHeyReachTool(toolName, args, token);
