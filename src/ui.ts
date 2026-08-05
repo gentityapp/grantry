@@ -7162,7 +7162,7 @@ oauthApp.get("/:provider/start", async (c) => {
     userId: user.id,
   };
   // Providers that require PKCE (Authorization Code + S256) for the token exchange.
-  const usesPkce = providerKey === "hubspot" || providerKey === "x" || providerKey === "canva";
+  const usesPkce = providerKey === "hubspot" || providerKey === "x" || providerKey === "canva" || providerKey === "figma";
   const pkceVerifier = usesPkce ? pkceCodeVerifier() : "";
   if (pkceVerifier) {
     payload.pkce_code_verifier = pkceVerifier;
@@ -7424,6 +7424,10 @@ oauthApp.get("/:provider/callback", async (c) => {
     } else if (providerKey === "zoom") {
       const u: any = await (await fetch("https://api.zoom.us/v2/users/me", { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } })).json();
       if (u?.email) userLogin = u.email;
+    } else if (providerKey === "figma") {
+      const u: any = await (await fetch("https://api.figma.com/v1/me", { headers: { Authorization: `Bearer ${accessToken}` } })).json();
+      if (u?.email) userLogin = u.email;
+      else if (u?.handle) userLogin = u.handle;
     }
   } catch { /* non-fatal */ }
 

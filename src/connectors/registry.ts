@@ -40,6 +40,10 @@ export type ProviderDef = {
   authorizeUrl?: string;
   /** OAuth App token exchange URL (oauth only) */
   oauthTokenUrl?: string;
+  /** OAuth refresh URL, when the provider refreshes at a different endpoint than
+   *  token exchange (e.g. Figma: /v1/oauth/refresh vs /v1/oauth/token). Falls
+   *  back to oauthTokenUrl when unset. */
+  oauthRefreshUrl?: string;
   /** Tools this provider exposes, by name */
   tools: string[];
   /** Provider permission scopes required for specific tools before dispatch. */
@@ -1641,6 +1645,37 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     tools: [],
     implemented: true,
   },
+  figma: {
+    key: "figma",
+    label: "Figma",
+    authTypes: ["oauth"],
+    helpText: "Connect your Figma account via OAuth. Register an app at figma.com/developers/apps, set its redirect URL to this server's /oauth/figma/callback, then paste the app's Client ID and Client Secret in Grantry. Uses Authorization Code + PKCE (S256); the client authenticates with HTTP Basic at the token endpoint. Use figma/request to reach any REST endpoint under api.figma.com/v1 — read files and nodes (GET /files/:key), file images, comments (read/write), dev resources, versions, projects, team components/styles, and the current user (GET /me).",
+    oauthSetupUrl: "https://www.figma.com/developers/apps",
+    oauthAppOwner: "workspace",
+    oauthClientAuthMethod: "CLIENT_SECRET_BASIC",
+    oauthScopes: [
+      "current_user:read",
+      "file_content:read",
+      "file_metadata:read",
+      "file_versions:read",
+      "file_comments:read",
+      "file_comments:write",
+      "file_dev_resources:read",
+      "file_dev_resources:write",
+      "library_assets:read",
+      "library_content:read",
+      "team_library_content:read",
+      "projects:read",
+      "project_metadata:read",
+      "selections:read",
+      "webhooks:read",
+    ],
+    authorizeUrl: "https://www.figma.com/oauth",
+    oauthTokenUrl: "https://api.figma.com/v1/oauth/token",
+    oauthRefreshUrl: "https://api.figma.com/v1/oauth/refresh",
+    tools: [],
+    implemented: true,
+  },
 };
 
 const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]>> = {
@@ -2331,6 +2366,12 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
     smokeTests: [{ id: "users_me", method: "GET", path: "/users/me" }],
+  },
+  figma: {
+    baseUrl: "https://api.figma.com/v1",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "me", method: "GET", path: "/me" }],
   },
 };
 

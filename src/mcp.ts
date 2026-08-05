@@ -3926,6 +3926,9 @@ async function oauthClientConfigForRefresh(provider: string, workspaceId: string
 async function refreshOAuthToken(provider: string, refreshToken: string, workspaceId?: string | null) {
   const providerDef = PROVIDERS[provider];
   if (!providerDef?.oauthTokenUrl) throw new Error(`OAuth refresh is not configured for provider: ${provider}`);
+  // Most providers refresh at the token endpoint; some (e.g. Figma) use a
+  // distinct refresh URL. Prefer oauthRefreshUrl when the registry sets it.
+  const refreshUrl = providerDef.oauthRefreshUrl || providerDef.oauthTokenUrl;
 
   const envPrefix = provider.toUpperCase();
   const { clientId, clientSecret, clientAuthMethod, source } = await oauthClientConfigForRefresh(provider, workspaceId);
@@ -3971,7 +3974,7 @@ async function refreshOAuthToken(provider: string, refreshToken: string, workspa
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TOKEN_REFRESH_TIMEOUT_MS);
   try {
-    const resp = await fetch(providerDef.oauthTokenUrl, {
+    const resp = await fetch(refreshUrl, {
       method: "POST",
       headers: refreshHeaders,
       body: refreshBody,
