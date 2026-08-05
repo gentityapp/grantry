@@ -167,23 +167,24 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "zoom",
     label: "Zoom",
     authTypes: ["oauth"],
-    helpText: "Connect your Zoom account via OAuth. Register a user-managed OAuth app at marketplace.zoom.us, set its redirect URL to this server's /oauth/zoom/callback, then paste the app's Client ID and Client Secret in Grantry. Enable the same scopes on the Marketplace app first — Zoom rejects the authorize request for scopes the app does not declare. The Zoom Phone scopes are read-only and only usable on accounts with a Zoom Phone license.",
+    helpText: "Register your own Zoom OAuth app and paste its Client ID and Client Secret here — each workspace connects its own app, because Zoom account-level (:admin) data is only reachable through an app owned by that Zoom account. At marketplace.zoom.us create a General app, choose ADMIN-MANAGED (this is fixed at creation and cannot be changed later; a user-managed app can never be granted the :admin scopes), set its redirect URL to this server's /oauth/zoom/callback, and declare the same scopes listed here — Zoom silently drops scopes the app does not declare. The Zoom Phone scopes are read-only and need a Zoom Phone license.",
     oauthSetupUrl: "https://marketplace.zoom.us/develop/create",
+    oauthAppOwner: "workspace",
     oauthClientAuthMethod: "CLIENT_SECRET_BASIC",
+    // Account-level (:admin) scopes throughout: this provider expects an
+    // admin-managed Zoom app, whose Marketplace scope picker only offers the
+    // :admin/:master variants — the user-scoped variants are not selectable
+    // there, so requesting them would just get them dropped.
     oauthScopes: [
-      "user:read:user",
+      "user:read:user:admin",
       "user:read:list_users:admin",
-      "cloud_recording:read:list_user_recordings",
-      "cloud_recording:read:list_recording_files",
-      "meeting:read:list_meetings",
-      "meeting:read:meeting",
-      "meeting:write:meeting",
+      "cloud_recording:read:list_user_recordings:admin",
+      "cloud_recording:read:list_recording_files:admin",
+      "meeting:read:list_meetings:admin",
+      "meeting:read:meeting:admin",
+      "meeting:write:meeting:admin",
       "report:read:list_meeting_participants:admin",
-      // Zoom Phone (read-only), account-level: phone users + account call
-      // history. The :admin variants require an ADMIN-MANAGED Zoom app — a
-      // user-managed app cannot be granted them (they never appear in the
-      // Marketplace scope picker). Connect an admin-managed Zoom app for these
-      // to resolve; a user-managed app will fail authorize with these scopes.
+      // Zoom Phone (read-only): phone users + account call history.
       "phone:read:list_users:admin",
       "phone:read:user:admin",
       "phone:read:list_call_logs:admin",
@@ -202,7 +203,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "zoom/get_meeting_participants",
     ],
     toolScopeRequirements: {
-      "zoom/create_meeting": ["meeting:write:meeting"],
+      "zoom/create_meeting": ["meeting:write:meeting:admin"],
     },
     implemented: true,
   },
