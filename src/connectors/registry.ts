@@ -175,11 +175,14 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "meeting:read:meeting",
       "meeting:write:meeting",
       "report:read:list_meeting_participants:admin",
-      // Zoom Phone (read-only): phone users + account call history.
-      "phone:read:list_users:admin",
-      "phone:read:user:admin",
-      "phone:read:list_call_logs:admin",
-      "phone:read:call_log:admin",
+      // Zoom Phone (read-only): user profile + call logs. The account-level
+      // (:admin) variants are not grantable on standard accounts, so we use the
+      // user-scoped granular scopes actually offered in the Marketplace picker.
+      // Enumerate phone users via the regular user API (user:read:list_users)
+      // since phone:read:list_users:admin is unavailable.
+      "phone:read:user",
+      "phone:read:list_call_logs",
+      "phone:read:call_log",
     ],
     authorizeUrl: "https://zoom.us/oauth/authorize",
     oauthTokenUrl: "https://zoom.us/oauth/token",
