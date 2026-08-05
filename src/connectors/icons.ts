@@ -139,6 +139,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   acuity: "#1B7DA0",
   timerex: "#00A99D",
   jicoo: "#3E63DD",
+  firecrawl: "#FA5D19",
   google_forms: "#7248B9",
   google_tag_manager: "#246FDB",
   google_cloud: "#4285F4",

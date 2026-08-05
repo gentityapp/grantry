@@ -587,6 +587,28 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  firecrawl: {
+    key: "firecrawl",
+    label: "Firecrawl",
+    authTypes: ["pat"],
+    helpText: "Create an API key in the Firecrawl dashboard (https://www.firecrawl.dev/app/api-keys) and paste it here (starts with fc-). It is sent as Authorization: Bearer to the Firecrawl REST API v2. Covers scrape, crawl (start/status/cancel), map, search, extract (start/status), and team credit usage.",
+    tokenUrl: "https://www.firecrawl.dev/app/api-keys",
+    tools: [
+      "firecrawl/scrape",
+      "firecrawl/crawl",
+      "firecrawl/get_crawl_status",
+      "firecrawl/cancel_crawl",
+      "firecrawl/map",
+      "firecrawl/search",
+      "firecrawl/extract",
+      "firecrawl/get_extract_status",
+      "firecrawl/get_credit_usage",
+    ],
+    credentialFields: [
+      { key: "api_key", label: "API key", required: true, secret: true },
+    ],
+    implemented: true,
+  },
   timerex: {
     key: "timerex",
     label: "TimeRex",
@@ -1837,6 +1859,12 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     authScheme: "api_key",
     apiKeyHeader: "x-api-key",
     smokeTests: [{ id: "primary_team", method: "GET", path: "/api/beta/user/me/teams/primary" }],
+  },
+  firecrawl: {
+    baseUrl: "https://api.firecrawl.dev",
+    defaultMethods: ["GET", "POST"],
+    allowedPathPrefixes: ["/v2/"],
+    smokeTests: [{ id: "credit_usage", method: "GET", path: "/v2/team/credit-usage" }],
   },
   acuity: {
     baseUrl: "https://acuityscheduling.com/api/v1",

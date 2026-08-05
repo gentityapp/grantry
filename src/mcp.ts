@@ -77,6 +77,7 @@ import { callCalcomTool } from "./connectors/calcom.js";
 import { callAcuityTool } from "./connectors/acuity.js";
 import { callTimerexTool } from "./connectors/timerex.js";
 import { callJicooTool } from "./connectors/jicoo.js";
+import { callFirecrawlTool } from "./connectors/firecrawl.js";
 import { callCalendlyTool } from "./connectors/calendly.js";
 import { callGoogleTagManagerTool } from "./connectors/google_tag_manager.js";
 import { callGoogleCloudTool } from "./connectors/google_cloud.js";
@@ -2553,6 +2554,17 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "jicoo/get_booking") { return { booking_id: { type: "string", description: "Booking id." } }; }
   if (toolName === "jicoo/update_booking") { return { booking_id: { type: "string", description: "Booking id." }, data: { type: "object", description: "Booking fields to PATCH (name, description, timezone, start/end, hosts, ...)." } }; }
   if (toolName === "jicoo/cancel_booking") { return { booking_id: { type: "string", description: "Booking id." }, reason: { type: "string", description: "Optional cancellation reason." } }; }
+
+  // --- firecrawl ---
+  if (toolName === "firecrawl/scrape") { return { url: { type: "string", description: "URL to scrape." }, formats: { type: "array", description: "Output formats, e.g. [\"markdown\",\"html\",\"links\",\"screenshot\"]. Defaults to markdown.", items: { type: "string" } }, options: { type: "object", description: "Extra Firecrawl scrape options merged into the request body (onlyMainContent, includeTags, excludeTags, waitFor, actions, jsonOptions, ...)." } }; }
+  if (toolName === "firecrawl/crawl") { return { url: { type: "string", description: "Root URL to crawl." }, limit: { type: "number", description: "Max pages to crawl." }, options: { type: "object", description: "Extra crawl options merged into the body (includePaths, excludePaths, maxDepth, scrapeOptions, ...). Returns a crawl id; poll firecrawl/get_crawl_status." } }; }
+  if (toolName === "firecrawl/get_crawl_status") { return { crawl_id: { type: "string", description: "Crawl id returned by firecrawl/crawl." } }; }
+  if (toolName === "firecrawl/cancel_crawl") { return { crawl_id: { type: "string", description: "Crawl id to cancel." } }; }
+  if (toolName === "firecrawl/map") { return { url: { type: "string", description: "URL to map (discover all links on the site)." }, options: { type: "object", description: "Extra map options merged into the body (search, limit, sitemapOnly, includeSubdomains, ...)." } }; }
+  if (toolName === "firecrawl/search") { return { query: { type: "string", description: "Search query." }, limit: { type: "number", description: "Max results." }, options: { type: "object", description: "Extra search options merged into the body (sources, tbs, location, scrapeOptions, ...)." } }; }
+  if (toolName === "firecrawl/extract") { return { urls: { type: "array", description: "URLs (or wildcard patterns like https://example.com/*) to extract structured data from.", items: { type: "string" } }, prompt: { type: "string", description: "Natural-language extraction instruction." }, schema: { type: "object", description: "Optional JSON schema describing the shape of the data to extract." }, options: { type: "object", description: "Extra extract options merged into the body. Returns an extract id; poll firecrawl/get_extract_status." } }; }
+  if (toolName === "firecrawl/get_extract_status") { return { extract_id: { type: "string", description: "Extract id returned by firecrawl/extract." } }; }
+  if (toolName === "firecrawl/get_credit_usage") { return {}; }
   // --- google_tag_manager ---
   if (toolName === "google_tag_manager/list_containers") { return { account_id: { type: "string", description: "GTM account id." } }; }
   if (toolName === "google_tag_manager/get_container") { return { account_id: { type: "string", description: "GTM account id." }, container_id: { type: "string", description: "GTM container id." } }; }
@@ -3009,6 +3021,15 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "jicoo/get_booking") return ["booking_id"];
   if (toolName === "jicoo/update_booking") return ["booking_id", "data"];
   if (toolName === "jicoo/cancel_booking") return ["booking_id"];
+  if (toolName === "firecrawl/scrape") return ["url"];
+  if (toolName === "firecrawl/crawl") return ["url"];
+  if (toolName === "firecrawl/get_crawl_status") return ["crawl_id"];
+  if (toolName === "firecrawl/cancel_crawl") return ["crawl_id"];
+  if (toolName === "firecrawl/map") return ["url"];
+  if (toolName === "firecrawl/search") return ["query"];
+  if (toolName === "firecrawl/extract") return [];
+  if (toolName === "firecrawl/get_extract_status") return ["extract_id"];
+  if (toolName === "firecrawl/get_credit_usage") return [];
   if (toolName === "google_tag_manager/list_containers") return ["account_id"];
   if (toolName === "google_tag_manager/get_container") return ["account_id", "container_id"];
   if (toolName === "google_tag_manager/list_workspaces") return ["account_id", "container_id"];
@@ -3259,6 +3280,7 @@ async function dispatchProviderTool(
   if (provider === "acuity") return callAcuityTool(toolName, args, token);
   if (provider === "timerex") return callTimerexTool(toolName, args, token);
   if (provider === "jicoo") return callJicooTool(toolName, args, token);
+  if (provider === "firecrawl") return callFirecrawlTool(toolName, args, token);
   if (provider === "clay") return callClayTool(toolName, args, token);
   if (provider === "apollo") return callApolloTool(toolName, args, token);
   if (provider === "heyreach") return callHeyReachTool(toolName, args, token);
