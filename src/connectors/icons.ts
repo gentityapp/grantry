@@ -150,6 +150,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   openai_ads: "#000000", // OpenAI black
   higgsfield: "#000000", // Higgsfield black
   figma: "#F24E1E", // Figma orange-red
+  miro: "#FFD02F", // Miro yellow
 };
 
 /** Letter overrides where the label's first character is not the recognizable one. */

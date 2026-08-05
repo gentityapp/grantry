@@ -1676,6 +1676,25 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     tools: [],
     implemented: true,
   },
+  miro: {
+    key: "miro",
+    label: "Miro",
+    authTypes: ["oauth"],
+    helpText: "Connect your Miro account via OAuth. Create an app at miro.com/app/settings/user-profile/apps, set its redirect URL to this server's /oauth/miro/callback, then paste the app's Client ID and Client Secret in Grantry. Access tokens last ~60 min and refresh silently. Use miro/request to reach any REST endpoint under api.miro.com/v2 — list/create/update boards and board items (shapes, sticky notes, text, frames, connectors), members, tags, and app cards.",
+    oauthSetupUrl: "https://miro.com/app/settings/user-profile/apps",
+    oauthAppOwner: "workspace",
+    oauthClientAuthMethod: "CLIENT_SECRET_POST",
+    oauthScopes: [
+      "boards:read",
+      "boards:write",
+      "identity:read",
+      "team:read",
+    ],
+    authorizeUrl: "https://miro.com/oauth/authorize",
+    oauthTokenUrl: "https://api.miro.com/v1/oauth/token",
+    tools: [],
+    implemented: true,
+  },
 };
 
 const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]>> = {
@@ -2372,6 +2391,12 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
     smokeTests: [{ id: "me", method: "GET", path: "/me" }],
+  },
+  miro: {
+    baseUrl: "https://api.miro.com/v2",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "boards", method: "GET", path: "/boards", query: { limit: 1 } }],
   },
 };
 

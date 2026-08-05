@@ -7428,6 +7428,11 @@ oauthApp.get("/:provider/callback", async (c) => {
       const u: any = await (await fetch("https://api.figma.com/v1/me", { headers: { Authorization: `Bearer ${accessToken}` } })).json();
       if (u?.email) userLogin = u.email;
       else if (u?.handle) userLogin = u.handle;
+    } else if (providerKey === "miro") {
+      const u: any = await (await fetch("https://api.miro.com/v1/oauth-token", { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } })).json();
+      if (u?.team?.name) userLogin = u.team.name;
+      else if (u?.user?.name) userLogin = u.user.name;
+      else if (u?.createdBy?.name) userLogin = u.createdBy.name;
     }
   } catch { /* non-fatal */ }
 
