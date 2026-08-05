@@ -902,3 +902,61 @@ POST /mcp   Authorization: Bearer gn_agt_<token>
   human-minted `gn_adm_` key (`/api-keys`); those tools can never mint keys or
   spread admin connections, so admin capability always originates from a human.
 - `tools/call` is rate-limited per agent (default 120/min → `-32029`).
+
+## Multi-server guard (multiple grantry MCP servers in one client)
+
+grantry is the **callee** (the MCP server). The client (Claude Code, a routine,
+etc.) is the **caller**. Server-side tenant/scope isolation is real, but it
+cannot see a *client-level* mix-up: if a call arrives at customer B's endpoint
+with B's valid token, B's server has no way to know the human was actually
+working on customer A. That kind of cross-workspace misfire can only be caught
+on the **client** side. This section is the client-side protocol.
+
+Two usage models exist, and the failure mode differs:
+- **Single endpoint + `scope` argument** (the JSON-RPC model above): one server,
+  many scopes, disambiguated by the `scope` you pass. Misfire = wrong `scope`
+  string (already covered by the scope rule + `connections/list`).
+- **Multiple client-configured servers**: the client has several grantry MCP
+  servers connected at once, one per customer/workspace, each surfacing as its
+  own tool prefix (`mcp__grantry-A__…`, `mcp__grantry-B__…`). All tools flatten
+  into one namespace, so a tool from the wrong customer's server is one wrong
+  pick away. This section addresses that second model.
+
+### Activation gate (count first — this keeps single-tenant users at zero cost)
+Before the first grantry tool call, count how many distinct `mcp__grantry-*__`
+**prefixes** are present in the tool namespace.
+- **Exactly one** → this guard is a **no-op**. Do nothing, ask nothing, proceed
+  normally. Single-workspace users never feel it.
+- **Two or more** → run the protocol below.
+
+### Protocol (only when two or more grantry prefixes coexist)
+1. **Fix the active workspace before calling.** Determine which
+   customer/workspace the current task belongs to. If the task context makes it
+   unambiguous, adopt that prefix silently. If it is ambiguous, **stop and ask** —
+   do not guess. Hold the chosen prefix as the "active prefix"
+   (e.g. `mcp__grantry-A__`).
+2. **Only call raw provider tools under the active prefix.** Provider tools
+   (`*_request`, `attio_*`, `slack_*`, `gmail_*`, …) must come from the active
+   prefix only. Never call another prefix's raw provider tools directly.
+3. **Cross-workspace work goes through delegation, not direct calls.** If the
+   task genuinely needs another workspace, use `grantry_delegate` /
+   `grantry_route` / `grantry_find_agent` **on your own active prefix** — the
+   crossing is then authorized server-side against scope/tenant and audited.
+   This is the only sanctioned cross-boundary path; it does not conflict with
+   this rule, it is reinforced by it.
+4. **Re-confirm on switch.** When the user moves to a different customer/case,
+   update the active prefix explicitly. If you notice you are about to call the
+   new case's tools while the active prefix still points at the previous one,
+   stop and confirm the switch instead of proceeding silently.
+5. **When in doubt, stop — especially for writes.** Do not proceed to a
+   side-effecting call (create / update / delete / send / push) while unsure
+   which prefix it belongs to. Hold read-only calls to a lower bar than writes.
+
+### Non-goals
+- This does not replace server-side tenant/scope isolation; that stays in force
+  at its own layer.
+- This is a **soft** guard (model-followed). Customers who need a hard guarantee
+  should pair it with a client-side `PreToolUse` hook that denies any
+  `mcp__grantry-*__` call whose prefix is not the bound one.
+- It never forbids `grantry_delegate` / `grantry_route`; those remain the
+  intended cross-workspace channel.
