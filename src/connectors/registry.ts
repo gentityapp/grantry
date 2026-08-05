@@ -163,7 +163,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "zoom",
     label: "Zoom",
     authTypes: ["oauth"],
-    helpText: "Connect your Zoom account via OAuth. Register a user-managed OAuth app at marketplace.zoom.us, set its redirect URL to this server's /oauth/zoom/callback, then paste the app's Client ID and Client Secret in Grantry.",
+    helpText: "Connect your Zoom account via OAuth. Register a user-managed OAuth app at marketplace.zoom.us, set its redirect URL to this server's /oauth/zoom/callback, then paste the app's Client ID and Client Secret in Grantry. Enable the same scopes on the Marketplace app first — Zoom rejects the authorize request for scopes the app does not declare. The Zoom Phone scopes are read-only and only usable on accounts with a Zoom Phone license.",
     oauthSetupUrl: "https://marketplace.zoom.us/develop/create",
     oauthClientAuthMethod: "CLIENT_SECRET_BASIC",
     oauthScopes: [
@@ -175,6 +175,11 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "meeting:read:meeting",
       "meeting:write:meeting",
       "report:read:list_meeting_participants:admin",
+      // Zoom Phone (read-only): phone users + account call history.
+      "phone:read:list_users:admin",
+      "phone:read:user:admin",
+      "phone:read:list_call_logs:admin",
+      "phone:read:call_log:admin",
     ],
     authorizeUrl: "https://zoom.us/oauth/authorize",
     oauthTokenUrl: "https://zoom.us/oauth/token",
