@@ -146,8 +146,8 @@ function configuredMcpScope(c: any): string {
 }
 
 function isUserMcpMode(c: any): boolean {
-  return String(c.req.path ?? "") === "/u"
-    || String(c.req.path ?? "").startsWith("/u/");
+  const path = String(c.req.path ?? "").toLowerCase();
+  return path === "/u" || path.startsWith("/u/");
 }
 
 function publicToolName(canonicalName: string): string {
