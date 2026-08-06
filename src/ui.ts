@@ -403,6 +403,32 @@ function userMcpConfigCard(origin: string, workspaceSlug: string, token: string)
     <div class="row spread"><h3 style="font-size:14px;margin:0;">Codex <code>~/.codex/config.toml</code></h3>${copy("Codex", codexToml)}</div><pre>${escapeHtml(codexToml)}</pre>
     <div class="row spread"><h3 style="font-size:14px;margin:0;">Claude Desktop</h3>${copy("JSON", claudeConfig)}</div><pre>${escapeHtml(claudeConfig)}</pre>
     <p style="font-size:13px;color:var(--muted);margin-bottom:0;">When more than one agent is available, MCP lists them and asks the client to pass <code>agent_id</code> for the provider call.</p>
+    <script>
+      (function () {
+        document.querySelectorAll('.copy-config-btn').forEach(function (btn) {
+          if (btn.dataset.bound) return;
+          btn.dataset.bound = '1';
+          btn.addEventListener('click', async function () {
+            var value = btn.dataset.copy || '';
+            try {
+              await navigator.clipboard.writeText(value);
+            } catch (e) {
+              var ta = document.createElement('textarea');
+              ta.value = value;
+              ta.style.position = 'fixed';
+              ta.style.opacity = '0';
+              document.body.appendChild(ta);
+              ta.select();
+              try { document.execCommand('copy'); } catch (_) {}
+              document.body.removeChild(ta);
+            }
+            var original = btn.textContent;
+            btn.textContent = 'Copied';
+            setTimeout(function () { btn.textContent = original; }, 1500);
+          });
+        });
+      })();
+    </script>
   </div>`;
 }
 
