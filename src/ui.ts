@@ -1977,6 +1977,73 @@ function appendOkParam(path: string, message: string): string {
   return `${path}${path.includes("?") ? "&" : "?"}ok=${encodeURIComponent(message)}`;
 }
 
+// One agent, every member of its workspace — assign/unassign without leaving the
+// page. Used on the agent-created page, where the token is shown once and a
+// redirecting form POST would lose it, so the buttons fetch() instead.
+// Returns "" when the viewer is not a workspace owner/admin (only they may
+// assign) or when the agent's workspace has nobody else to hand it to.
+async function agentAssignCard(c: any, workspaceId: string, agentId: string): Promise<string> {
+  if (!(await requireWsAdmin(c, workspaceId))) return "";
+  const [members, assignments] = await Promise.all([
+    prisma.workspaceMember.findMany({
+      where: { workspaceId },
+      include: { user: { select: { id: true, email: true, name: true } } },
+      orderBy: [{ role: "asc" }, { createdAt: "asc" }],
+    }),
+    prisma.agentAssignment.findMany({ where: { agentId }, select: { userId: true } }),
+  ]);
+  if (members.length === 0) return "";
+  const assigned = new Set(assignments.map((a) => a.userId));
+  const rows = members.map((m) => {
+    const isAssigned = assigned.has(m.user.id);
+    return `
+      <div class="assignment-agent-row">
+        <div class="assignment-agent-main">
+          <strong>${escapeHtml(m.user.email)}</strong>
+          <small>${m.user.name ? `${escapeHtml(m.user.name)} · ` : ""}${escapeHtml(m.role)}</small>
+        </div>
+        <div class="assignment-agent-actions">
+          <button type="button" class="${isAssigned ? "assigned" : "secondary"}" data-assign-user="${escapeHtml(m.user.id)}" data-assigned="${isAssigned ? "1" : "0"}">${isAssigned ? t("Remove") : t("Assign")}</button>
+        </div>
+      </div>`;
+  }).join("");
+  return `
+    <div class="card" id="agent-assign-card">
+      <h2>${t("Assign to people")}</h2>
+      <p class="field-hint" style="margin-top:0;">${t("Assigned members reach this agent through the workspace connector URL — they never need its token.")}</p>
+      <div class="assignment-agent-list">${rows}</div>
+      <p style="margin-bottom:0;"><a href="/workspaces/assignments">${t("Manage all assignments")}</a> · <a href="/workspaces">${t("Invite someone new")}</a></p>
+    </div>
+    <script>
+      (function () {
+        var card = document.getElementById('agent-assign-card');
+        if (!card) return;
+        var wsId = ${jsString(workspaceId)}, agentId = ${jsString(agentId)};
+        var labels = { assign: ${jsString(t("Assign"))}, remove: ${jsString(t("Remove"))}, failed: ${jsString(t("Could not update the assignment. Try again from the Assignments page."))} };
+        card.querySelectorAll('button[data-assign-user]').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            var wasAssigned = btn.dataset.assigned === '1';
+            var body = new FormData();
+            body.set('agentId', agentId);
+            body.set('userId', btn.dataset.assignUser);
+            btn.disabled = true;
+            fetch('/workspaces/' + encodeURIComponent(wsId) + '/' + (wasAssigned ? 'unassign' : 'assign'), {
+              method: 'POST', body: body, credentials: 'same-origin', redirect: 'manual',
+            }).then(function (res) {
+              // redirect:'manual' turns the 302 into an opaque (status 0) response.
+              if (res.status !== 0 && !res.ok) throw new Error('assign failed');
+              btn.dataset.assigned = wasAssigned ? '0' : '1';
+              btn.textContent = wasAssigned ? labels.assign : labels.remove;
+              btn.className = wasAssigned ? 'secondary' : 'assigned';
+            }).catch(function () {
+              alert(labels.failed);
+            }).finally(function () { btn.disabled = false; });
+          });
+        });
+      })();
+    </script>`;
+}
+
 // JSON feed for the nav workspace switcher (populated client-side).
 dashboardApp.get("/api/workspaces/active", async (c) => {
   const user = await getSessionUser(c);
@@ -7492,6 +7559,11 @@ dashboardApp.post("/agents/new", async (c) => {
     granted = await grantConnectionsToAgent(agentRow.id, conns.map((cn) => cn.id), user.id);
   }
 
+  // Hand the new agent to a person right here. The token is shown once, so a
+  // plain form POST (which redirects to /workspaces) would blow it away — these
+  // buttons fetch() the same assign/unassign routes and keep the page put.
+  const assignCard = wsId ? await agentAssignCard(c, wsId, agentRow.id) : "";
+
   return c.html(`
     <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Agent created")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
@@ -7502,6 +7574,7 @@ dashboardApp.post("/agents/new", async (c) => {
         <h2>${t("Access")}</h2>
         <p>${managerMode ? `<span class="badge denied">${t("all present and future scope connections")}</span>` : `${t("Scopes")}: ${scopes.map((s) => `<span class="badge scoped">${s}</span>`).join(" ")}`} · ${t("granted {count} current connection(s)", { count: granted })}</p>
       </div>
+      ${assignCard}
       ${agentTokenCard(token)}
       ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true)}
       <div class="card">
@@ -7589,6 +7662,7 @@ dashboardApp.get("/agents/:id", async (c) => {
   // a scope that also holds unrelated credentials".
   const grantedConnectionIds = new Set(connections.map((conn) => conn.id));
   const addableConnections = grantableConnections.filter((conn) => !grantedConnectionIds.has(conn.id));
+  const assignCard = agent.workspaceId ? await agentAssignCard(c, agent.workspaceId, agent.id) : "";
 
   return c.html(`
     <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${escapeHtml(agent.name)} — grantry</title>
@@ -7598,6 +7672,7 @@ dashboardApp.get("/agents/:id", async (c) => {
       <h1>${t("Agent")} <code>${escapeHtml(agent.name)}</code></h1>
       ${okNotice ? `<div class="card" style="border-color:var(--accent);"><p style="margin:0;">${escapeHtml(okNotice)}</p></div>` : ""}
       ${canManageAgent ? "" : `<div class="card" style="border-color:var(--accent);"><p style="margin:0;">${t("This agent is assigned to you. You can view its callable connections, but only workspace owners and admins can manage grants, tokens, charter, or runbook.")}</p></div>`}
+      ${assignCard}
       <div class="card">
         <h2>${t("Connection grants")}</h2>
         <p>${t("Status")}: ${agent.enabled ? `<span class="badge ok">${t("enabled")}</span>` : `<span class="badge denied">${t("disabled")}</span>`}</p>

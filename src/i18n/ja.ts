@@ -185,6 +185,13 @@ export const ja: Record<string, string> = {
     "{email} をワークスペースから削除しますか？そのコネクターアクセスは即座に取り消されます。",
   "Assign an agent": "エージェントを割り当て",
   "Assign": "割り当て",
+  "Assign to people": "人に割り当てる",
+  "Assigned members reach this agent through the workspace connector URL — they never need its token.":
+    "割り当てられたメンバーは、ワークスペースのコネクター URL からこのエージェントを利用できます。トークンを渡す必要はありません。",
+  "Manage all assignments": "割り当てをまとめて管理",
+  "Invite someone new": "新しいメンバーを招待",
+  "Could not update the assignment. Try again from the Assignments page.":
+    "割り当てを更新できませんでした。Assignments ページからやり直してください。",
   "Invite": "招待",
   "member": "メンバー",
   "admin": "管理者",
