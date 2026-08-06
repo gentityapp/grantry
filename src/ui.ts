@@ -3621,11 +3621,16 @@ dashboardApp.get("/login", async (c) => {
   const user = await getSessionUser(c);
   if (user) return c.redirect(dest);
   const resetDone = c.req.query("reset") === "1";
+  const oauthError = c.req.query("error") ?? c.req.query("auth_error") ?? "";
+  const oauthErrorMessage = oauthError
+    ? t("OAuth sign-in failed: {error}", { error: oauthError.replace(/_/g, " ") })
+    : "";
   return c.html(`
     <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Sign in")} — grantry</title>
     ${FAVICON}<style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
     <h1>${t("Sign in to grantry")}</h1>
     ${resetDone ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">✓ ${t("Password updated. Sign in with your new password.")}</div>` : ""}
+    ${oauthErrorMessage ? `<div class="card" style="border-color:#df1b41;background:rgba(223,27,65,0.08);">${escapeHtml(oauthErrorMessage)}</div>` : ""}
     <div class="card">
       ${socialAuthButtons()}
       <form id="loginForm">

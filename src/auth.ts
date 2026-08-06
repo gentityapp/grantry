@@ -183,6 +183,14 @@ If you didn't create a grantry account, you can safely ignore this email.`,
       clientSecret: process.env.GITHUB_CLIENT_SECRET ?? "",
     },
   },
+  account: {
+    accountLinking: {
+      enabled: true,
+      trustedProviders: ["google"],
+      requireLocalEmailVerified: false,
+      updateUserInfoOnLink: true,
+    },
+  },
   user: {
     additionalFields: {
       role: { type: "string", defaultValue: "user", input: false },
