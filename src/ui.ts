@@ -541,6 +541,9 @@ const CSS = `
   button.danger, .btn.danger { background: var(--danger); color: #fff; }
   button.danger:hover, .btn.danger:hover { background: var(--danger-strong); color: #fff; }
   button:disabled, .btn[aria-disabled="true"] { background: var(--disabled); border-color: var(--border-default-medium); color: var(--fg-disabled); cursor: not-allowed; box-shadow: none; transform: none; }
+  .social-auth { display: flex; flex-direction: column; gap: 8px; }
+  .auth-separator { display: flex; align-items: center; gap: 10px; margin: 16px 0; color: var(--muted); font-size: 12px; }
+  .auth-separator::before, .auth-separator::after { content: ""; height: 1px; flex: 1; background: var(--border); }
   .combo { position: relative; flex: 1; }
   .combo-btn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; background: var(--neutral-secondary-medium); color: var(--ink-2); border: 1px solid var(--border-default-medium); border-radius: 8px; font-weight: 400; font-size: 14px; text-align: left; box-shadow: var(--shadow-xs); }
   .combo-btn:hover { background: var(--neutral-secondary-medium); border-color: var(--border-default-strong); color: var(--ink-2); transform: none; }
@@ -1506,6 +1509,37 @@ async function getDbSessionUser(c: any) {
   return prisma.user.findUnique({ where: { id: user.id } });
 }
 
+function accountGoogleAuthConfigured(): boolean {
+  return Boolean(
+    (process.env.AUTH_GOOGLE_CLIENT_ID || process.env.GRANTRY_AUTH_GOOGLE_CLIENT_ID)
+    && (process.env.AUTH_GOOGLE_CLIENT_SECRET || process.env.GRANTRY_AUTH_GOOGLE_CLIENT_SECRET),
+  );
+}
+
+function accountGithubAuthConfigured(): boolean {
+  return Boolean(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
+}
+
+function verificationNoticePath(email: string, next = "/dashboard"): string {
+  const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/dashboard";
+  const qs = new URLSearchParams({ email, next: safeNext });
+  return `/verify-email-sent?${qs.toString()}`;
+}
+
+function requestPathWithQuery(c: any): string {
+  const url = new URL(c.req.url);
+  return `${url.pathname}${url.search}`;
+}
+
+async function requireVerifiedDbSessionUser(c: any, nextPath = requestPathWithQuery(c)) {
+  const user = await getDbSessionUser(c);
+  if (!user?.id) return { user: null, response: c.redirect("/login") as Response };
+  if (!user.emailVerified) {
+    return { user: null, response: c.redirect(verificationNoticePath(user.email, nextPath)) as Response };
+  }
+  return { user, response: null as Response | null };
+}
+
 // ---------- Active workspace context ----------
 // The "active workspace" is the management context the dashboard operates in:
 // new tenants/agents/roles/connections are created in it, and list pages are
@@ -1634,8 +1668,11 @@ function setActiveWorkspaceCookie(c: any, workspaceId: string) {
  *  - multiple agents       → render a picker; submit binds then resumes authorize
  */
 export async function mcpAuthorizeGate(c: any): Promise<Response | null> {
-  const user = await getSessionUser(c);
+  const sessionUser = await getSessionUser(c);
+  if (!sessionUser?.id) return null;
+  const user = await prisma.user.findUnique({ where: { id: sessionUser.id } });
   if (!user?.id) return null;
+  if (!user.emailVerified) return c.redirect(verificationNoticePath(user.email, requestPathWithQuery(c)));
   const clientId = c.req.query("client_id") ?? "";
   if (!clientId) return null;
 
@@ -1719,15 +1756,17 @@ export async function mcpAuthorizeGate(c: any): Promise<Response | null> {
 }
 
 dashboardApp.get("/oauth-consent/agents", async (c) => {
-  const user = await getSessionUser(c);
+  const user = await getDbSessionUser(c);
   if (!user?.id) return c.json({ error: "unauthorized" }, 401);
+  if (!user.emailVerified) return c.json({ error: "email_not_verified" }, 403);
   const agents = await connectableAgentsFor(user.id);
   return c.json({ agents });
 });
 
 dashboardApp.post("/oauth-consent/bind", async (c) => {
-  const user = await getSessionUser(c);
+  const user = await getDbSessionUser(c);
   if (!user?.id) return c.json({ error: "unauthorized" }, 401);
+  if (!user.emailVerified) return c.json({ error: "email_not_verified" }, 403);
   let body: any;
   try {
     body = await c.req.json();
@@ -1751,6 +1790,38 @@ dashboardApp.post("/oauth-consent/bind", async (c) => {
     update: { agentId },
   });
   return c.json({ ok: true });
+});
+
+dashboardApp.use("*", async (c, next) => {
+  const path = new URL(c.req.url).pathname;
+  const publicExact = new Set([
+    "/",
+    "/privacy",
+    "/terms",
+    "/login",
+    "/logout",
+    "/register",
+    "/verify-email-sent",
+    "/forgot-password",
+    "/reset-password",
+  ]);
+  if (publicExact.has(path) || path.startsWith("/invite/")) {
+    await next();
+    return;
+  }
+  const sessionUser = await getSessionUser(c);
+  if (!sessionUser?.id) {
+    await next();
+    return;
+  }
+  const user = await prisma.user.findUnique({ where: { id: sessionUser.id } });
+  if (user && !user.emailVerified) {
+    if (c.req.method === "GET") {
+      return c.redirect(verificationNoticePath(user.email, requestPathWithQuery(c)));
+    }
+    return c.json({ error: "email_not_verified" }, 403);
+  }
+  await next();
 });
 
 // ---------- Workspaces: members, invites, agent distribution ----------
@@ -2116,7 +2187,7 @@ dashboardApp.get("/invite/:token", async (c) => {
   if (!invite || invite.acceptedAt) return page(`<p>${t("This invite link is invalid or already used.")}</p>`);
   if (invite.expiresAt < new Date()) return page(`<p>${t("This invite has expired. Ask your admin to send a new one.")}</p>`);
 
-  const user = await getSessionUser(c);
+  const user = await getDbSessionUser(c);
   if (!user) {
     const next = encodeURIComponent(`/invite/${token}`);
     return page(`
@@ -2131,6 +2202,11 @@ dashboardApp.get("/invite/:token", async (c) => {
   if (user.email.toLowerCase() !== invite.email.toLowerCase()) {
     return page(`<p>${t("This invite was issued to <b>{invited}</b>, but you are signed in as <b>{current}</b>.", { invited: escapeHtml(invite.email), current: escapeHtml(user.email) })}</p>
       <p>${t("Sign out and use the invited address.")}</p>`);
+  }
+
+  if (!user.emailVerified) {
+    return page(`<p>${t("Verify <b>{email}</b> before accepting this workspace invite.", { email: escapeHtml(user.email) })}</p>
+      <p><a href="${verificationNoticePath(user.email, `/invite/${token}`)}">${t("Open email verification")}</a></p>`);
   }
 
   const agentIds = safeJsonArray(invite.agentIds);
@@ -2833,7 +2909,9 @@ dashboardApp.get("/terms", (c) => c.html(publicPage("Terms of Service", `
 `)));
 
 dashboardApp.get("/dashboard", async (c) => {
-  const user = await getSessionUser(c);
+  const verified = await requireVerifiedDbSessionUser(c, "/dashboard");
+  if (verified.response) return verified.response;
+  const user = verified.user;
   if (!user) return c.redirect("/login");
 
   const ws = await getWorkspaceAccess(c, user.id);
@@ -3330,6 +3408,47 @@ function postAuthDestination(c: any): { dest: string; oauthQuery: string } {
   return { dest: "/dashboard", oauthQuery: "" };
 }
 
+function socialAuthButtons(): string {
+  const providers: Array<{ id: string; label: string }> = [];
+  if (accountGoogleAuthConfigured()) providers.push({ id: "google", label: t("Continue with Google") });
+  if (accountGithubAuthConfigured()) providers.push({ id: "github", label: t("Continue with GitHub") });
+  if (!providers.length) return "";
+  return `
+    <div class="social-auth">
+      ${providers.map((p) => `<button type="button" class="secondary social-auth-btn" data-provider="${escapeHtml(p.id)}" style="width:100%;">${escapeHtml(p.label)}</button>`).join("")}
+    </div>
+    <div class="auth-separator"><span>${t("or")}</span></div>`;
+}
+
+function socialAuthScript(dest: string): string {
+  return `
+      for (const btn of document.querySelectorAll('[data-provider]')) {
+        btn.addEventListener('click', async () => {
+          const provider = btn.getAttribute('data-provider');
+          btn.disabled = true;
+          try {
+            const r = await fetch('/api/auth/sign-in/social', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                provider,
+                callbackURL: ${jsString(dest)},
+                newUserCallbackURL: ${jsString(dest)},
+                errorCallbackURL: '/login?auth_error=social'
+              })
+            });
+            const data = await r.json().catch(() => ({}));
+            if (data.url) { location.href = data.url; return; }
+            if (r.ok && data.redirectURL) { location.href = data.redirectURL; return; }
+            throw new Error(data.message || ${jsString(t("OAuth sign-in failed"))});
+          } catch (e) {
+            document.getElementById('err').textContent = e.message || ${jsString(t("OAuth sign-in failed"))};
+            btn.disabled = false;
+          }
+        });
+      }`;
+}
+
 dashboardApp.get("/login", async (c) => {
   const { dest, oauthQuery } = postAuthDestination(c);
   const user = await getSessionUser(c);
@@ -3341,6 +3460,7 @@ dashboardApp.get("/login", async (c) => {
     <h1>${t("Sign in to grantry")}</h1>
     ${resetDone ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">✓ ${t("Password updated. Sign in with your new password.")}</div>` : ""}
     <div class="card">
+      ${socialAuthButtons()}
       <form id="loginForm">
         <div class="field">
           <label for="email">${t("Email")}</label>
@@ -3362,11 +3482,20 @@ dashboardApp.get("/login", async (c) => {
         const r = await fetch('/api/auth/sign-in/email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: fd.get('email'), password: fd.get('password') })
+          body: JSON.stringify({ email: fd.get('email'), password: fd.get('password'), callbackURL: ${jsString(dest)} })
         });
         if (r.ok) { location.href = ${jsString(dest)}; }
-        else { document.getElementById('err').textContent = ${jsString(t("Invalid email or password"))}; }
+        else {
+          const j = await r.json().catch(() => ({}));
+          const code = String(j.code || j.message || '');
+          if (r.status === 403 || code.toLowerCase().includes('verify')) {
+            location.href = '/verify-email-sent?email=' + encodeURIComponent(String(fd.get('email') || '')) + '&next=' + encodeURIComponent(${jsString(dest)});
+            return;
+          }
+          document.getElementById('err').textContent = ${jsString(t("Invalid email or password"))};
+        }
       });
+      ${socialAuthScript(dest)}
     </script>
     </body></html>
   `);
@@ -3383,6 +3512,7 @@ dashboardApp.get("/register", async (c) => {
     ${FAVICON}<style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
     <h1>${t("Create account")}</h1>
     <div class="card">
+      ${socialAuthButtons()}
       <form id="regForm">
         <div class="field">
           <label for="email">${t("Email")}</label>
@@ -3408,10 +3538,53 @@ dashboardApp.get("/register", async (c) => {
         const r = await fetch('/api/auth/sign-up/email', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: name, email: email, password: fd.get('password') })
+          body: JSON.stringify({ name: name, email: email, password: fd.get('password'), callbackURL: ${jsString(dest)} })
         });
-        if (r.ok) { location.href = ${jsString(dest)}; }
+        if (r.ok) { location.href = '/verify-email-sent?email=' + encodeURIComponent(String(email || '')) + '&next=' + encodeURIComponent(${jsString(dest)}); }
         else { const j = await r.json().catch(()=>({})); document.getElementById('err').textContent = j.message || ${jsString(t("Sign up failed"))}; }
+      });
+      ${socialAuthScript(dest)}
+    </script>
+    </body></html>
+  `);
+});
+
+dashboardApp.get("/verify-email-sent", async (c) => {
+  const qs = new URL(c.req.url).searchParams;
+  const email = String(qs.get("email") ?? "").trim();
+  const requestedNext = String(qs.get("next") ?? "/dashboard");
+  const next = requestedNext.startsWith("/") && !requestedNext.startsWith("//") ? requestedNext : "/dashboard";
+  return c.html(`
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Verify email")} — grantry</title>
+    ${FAVICON}<style>${CSS} body { max-width: 420px; margin: 80px auto; padding: 0 24px; }</style></head><body>
+    <h1>${t("Verify your email")}</h1>
+    <div class="card">
+      <p>${t("Open the verification link we sent to <b>{email}</b>. You need a verified email address before using grantry dashboards, workspace invites, or MCP OAuth.", { email: escapeHtml(email || t("your email")) })}</p>
+      <form id="resendForm">
+        <input type="hidden" name="email" value="${escapeHtml(email)}">
+        <button type="submit" class="secondary" style="width:100%;" ${email ? "" : "disabled"}>${t("Resend verification email")}</button>
+        <div id="err" style="color:#df1b41;margin-top:8px;font-size:13px;"></div>
+        <div id="ok" style="color:#1a7f37;margin-top:8px;font-size:13px;"></div>
+      </form>
+    </div>
+    <p style="text-align:center;color:#687385;font-size:13px;"><a href="/login?next=${encodeURIComponent(next)}">${t("Back to sign in")}</a></p>
+    <script>
+      document.getElementById('resendForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const email = e.target.email.value;
+        const err = document.getElementById('err');
+        const ok = document.getElementById('ok');
+        err.textContent = ''; ok.textContent = '';
+        const r = await fetch('/api/auth/send-verification-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, callbackURL: ${jsString(next)} })
+        });
+        if (r.ok) ok.textContent = ${jsString(t("Verification email sent."))};
+        else {
+          const j = await r.json().catch(() => ({}));
+          err.textContent = j.message || ${jsString(t("Could not send verification email"))};
+        }
       });
     </script>
     </body></html>

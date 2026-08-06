@@ -9,14 +9,12 @@ import { t, htmlLang } from "./i18n.js";
 
 const googleSignInClientId =
   process.env.AUTH_GOOGLE_CLIENT_ID
-  || process.env.GRANTRY_GOOGLE_CLIENT_ID
-  || process.env.GOOGLE_CLIENT_ID
+  || process.env.GRANTRY_AUTH_GOOGLE_CLIENT_ID
   || "";
 
 const googleSignInClientSecret =
   process.env.AUTH_GOOGLE_CLIENT_SECRET
-  || process.env.GRANTRY_GOOGLE_CLIENT_SECRET
-  || process.env.GOOGLE_CLIENT_SECRET
+  || process.env.GRANTRY_AUTH_GOOGLE_CLIENT_SECRET
   || "";
 
 // Consent screen for MCP OAuth (claude.ai / Claude Desktop connecting via
@@ -127,7 +125,8 @@ export const auth = betterAuth({
     .filter(Boolean),
   emailAndPassword: {
     enabled: true,
-    autoSignIn: true,
+    autoSignIn: false,
+    requireEmailVerification: true,
     minPasswordLength: 8,
     sendResetPassword: async ({ user, url }) => {
       await sendSystemEmail({
@@ -150,6 +149,28 @@ If you didn't request this, you can safely ignore this email.`,
     resetPasswordTokenExpiresIn: 60 * 60, // 1h
     onPasswordReset: async ({ user }) => {
       console.log(`[auth] password was reset for ${user.email}`);
+    },
+  },
+  emailVerification: {
+    sendOnSignUp: true,
+    sendOnSignIn: true,
+    expiresIn: 60 * 60 * 24, // 24h
+    sendVerificationEmail: async ({ user, url }) => {
+      await sendSystemEmail({
+        to: user.email,
+        subject: "Verify your grantry email",
+        text: `Hi ${user.name || user.email},
+
+Open this link to verify your grantry email address (valid for 24 hours):
+
+${url}
+
+If you didn't create a grantry account, you can safely ignore this email.`,
+        html: `<p>Hi ${user.name || user.email},</p>
+<p>Open this link to verify your <b>grantry</b> email address:</p>
+<p><a href="${url}">Verify email address</a> (valid for 24 hours)</p>
+<p style="color:#888;font-size:13px;">If you didn't create a grantry account, you can safely ignore this email.</p>`,
+      });
     },
   },
   socialProviders: {
