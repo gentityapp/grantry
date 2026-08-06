@@ -1547,6 +1547,10 @@ function verificationNoticePath(email: string, next = "/dashboard"): string {
   return `/verify-email-sent?${qs.toString()}`;
 }
 
+function safeRelativePath(path: string, fallback = "/dashboard"): string {
+  return path.startsWith("/") && !path.startsWith("//") ? path : fallback;
+}
+
 function requestPathWithQuery(c: any): string {
   const url = new URL(c.req.url);
   return `${url.pathname}${url.search}`;
@@ -1669,6 +1673,33 @@ function setActiveWorkspaceCookie(c: any, workspaceId: string) {
     sameSite: "Lax",
     maxAge: 60 * 60 * 24 * 365,
   });
+}
+
+function rememberPostAuthDestination(c: any, dest: string) {
+  const safeDest = safeRelativePath(dest);
+  if (safeDest === "/dashboard") return;
+  setCookie(c, "gn_post_auth", safeDest, {
+    path: "/",
+    httpOnly: true,
+    sameSite: "Lax",
+    maxAge: 60 * 10,
+  });
+}
+
+function clearPostAuthDestination(c: any) {
+  setCookie(c, "gn_post_auth", "", {
+    path: "/",
+    httpOnly: true,
+    sameSite: "Lax",
+    maxAge: 0,
+  });
+}
+
+function consumePostAuthDestination(c: any): string | null {
+  const dest = safeRelativePath(getCookie(c, "gn_post_auth") ?? "", "");
+  if (!dest || dest === "/dashboard") return null;
+  clearPostAuthDestination(c);
+  return dest;
 }
 
 // ---------- MCP OAuth consent support ----------
@@ -2360,6 +2391,7 @@ dashboardApp.get("/invite/:token", async (c) => {
       });
       if (member) {
         setActiveWorkspaceCookie(c, invite.workspaceId);
+        clearPostAuthDestination(c);
         return c.redirect(`/workspaces?ok=${encodeURIComponent(t("Joined {workspace}", { workspace: invite.workspace.displayName }))}`);
       }
     }
@@ -2405,6 +2437,7 @@ dashboardApp.get("/invite/:token", async (c) => {
     prisma.workspaceInvite.update({ where: { id: invite.id }, data: { acceptedAt: new Date() } }),
   ]);
   setActiveWorkspaceCookie(c, invite.workspaceId);
+  clearPostAuthDestination(c);
   return c.redirect(`/workspaces?ok=${encodeURIComponent(t("Joined {workspace}", { workspace: invite.workspace.displayName }))}`);
 });
 
@@ -3093,6 +3126,8 @@ dashboardApp.get("/dashboard", async (c) => {
   if (verified.response) return verified.response;
   const user = verified.user;
   if (!user) return c.redirect("/login");
+  const postAuthDest = consumePostAuthDestination(c);
+  if (postAuthDest) return c.redirect(postAuthDest);
 
   const ws = await getWorkspaceAccess(c, user.id);
   const wsId = ws.wsId;
@@ -3582,7 +3617,7 @@ function postAuthDestination(c: any): { dest: string; oauthQuery: string } {
   // Generic post-auth continuation (e.g. workspace invite links). Same-origin
   // relative paths only — never absolute URLs.
   const next = qs.get("next") ?? "";
-  if (next.startsWith("/") && !next.startsWith("//")) {
+  if (safeRelativePath(next, "") !== "") {
     return { dest: next, oauthQuery: qs.toString() };
   }
   return { dest: "/dashboard", oauthQuery: "" };
@@ -3601,6 +3636,7 @@ function socialAuthButtons(): string {
 }
 
 function socialAuthScript(dest: string): string {
+  const errorCallbackURL = `/login?next=${encodeURIComponent(dest)}&auth_error=social`;
   return `
       for (const btn of document.querySelectorAll('[data-provider]')) {
         btn.addEventListener('click', async () => {
@@ -3614,7 +3650,7 @@ function socialAuthScript(dest: string): string {
                 provider,
                 callbackURL: ${jsString(dest)},
                 newUserCallbackURL: ${jsString(dest)},
-                errorCallbackURL: '/login?auth_error=social'
+                errorCallbackURL: ${jsString(errorCallbackURL)}
               })
             });
             const data = await r.json().catch(() => ({}));
@@ -3631,6 +3667,7 @@ function socialAuthScript(dest: string): string {
 
 dashboardApp.get("/login", async (c) => {
   const { dest, oauthQuery } = postAuthDestination(c);
+  rememberPostAuthDestination(c, dest);
   const user = await getSessionUser(c);
   if (user) return c.redirect(dest);
   const resetDone = c.req.query("reset") === "1";
@@ -3692,6 +3729,7 @@ dashboardApp.post("/logout", async (c) => signOutAndRedirect(c));
 // --- /register ---
 dashboardApp.get("/register", async (c) => {
   const { dest, oauthQuery } = postAuthDestination(c);
+  rememberPostAuthDestination(c, dest);
   return c.html(`
     <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Create account")} — grantry</title>
     ${FAVICON}<style>${CSS} body { max-width: 360px; margin: 80px auto; padding: 0 24px; }</style></head><body>
