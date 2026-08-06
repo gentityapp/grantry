@@ -3922,16 +3922,53 @@ dashboardApp.post("/reset-password", async (c) => {
 // provider="grantry" connections. Minting is dashboard-only by design (a key
 // can never mint another key), so admin capability always originates from a
 // human. Owner/admin of the active workspace only.
+function apiKeysAccessDeniedPage(c: any, args: { user?: { email?: string | null } | null; title: string; message: string; status: 400 | 403 }) {
+  return c.html(`
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${escapeHtml(args.title)} — grantry</title>
+    ${FAVICON}<style>${CSS}</style></head><body>
+    ${NAV("api-keys", args.user?.email ?? undefined)}
+    <main>
+      <div class="scope-page-header">
+        <div>
+          <div class="scope-page-kicker">${t("Self-management")}</div>
+          <h1>${escapeHtml(args.title)}</h1>
+          <p class="scope-page-copy">${escapeHtml(args.message)}</p>
+        </div>
+      </div>
+      <div class="card" style="border-color:var(--border-warning-subtle);background:var(--warning-soft);">
+        <h2 style="margin-top:0;">${t("Access limited")}</h2>
+        <p style="margin-top:0;color:var(--ink-2);">${escapeHtml(args.message)}</p>
+        <div class="row" style="gap:8px;margin-top:18px;">
+          <a class="btn secondary" href="/workspaces">${t("Workspace settings")}</a>
+          <a class="btn secondary" href="/dashboard">${t("Dashboard")}</a>
+        </div>
+      </div>
+    </main></body></html>
+  `, args.status);
+}
+
 async function requireWorkspaceAdmin(c: any): Promise<{ user: any; workspaceId: string } | Response> {
   const user = await getSessionUser(c);
   if (!user) return c.redirect("/login");
   const workspaceId = await getActiveWorkspaceId(c);
-  if (!workspaceId) return c.html(`<h1>${t("workspace required")}</h1>`, 400);
+  if (!workspaceId) {
+    return apiKeysAccessDeniedPage(c, {
+      user,
+      title: t("Workspace required"),
+      message: t("Create or join a workspace before managing grantry admin API keys."),
+      status: 400,
+    });
+  }
   const member = await prisma.workspaceMember.findUnique({
     where: { workspaceId_userId: { workspaceId, userId: user.id } },
   });
   if (!member || !["owner", "admin"].includes(member.role)) {
-    return c.html(`<h1>${t("workspace owner/admin required")}</h1><p>${t("Only workspace owners and admins can manage grantry admin API keys.")}</p>`, 403);
+    return apiKeysAccessDeniedPage(c, {
+      user,
+      title: t("Workspace owner or admin required"),
+      message: t("Only workspace owners and admins can manage grantry admin API keys."),
+      status: 403,
+    });
   }
   return { user, workspaceId };
 }
