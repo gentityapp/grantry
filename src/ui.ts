@@ -17,7 +17,7 @@ import { credentialMetadataForProviderDef, recordRuntimeCallHealth } from "./con
 import { isSweepRunning, runConnectionHealthSweep } from "./health_sweep.js";
 import { credentialForConnection } from "./mcp.js";
 import { sendSystemEmail } from "./email.js";
-import { adminWorkspacesFor, connectableAgentsFor, userMayUseAgent } from "./workspaces.js";
+import { adminWorkspacesFor, connectableAgentsFor, connectableAgentsForWorkspace, userMayUseAgent } from "./workspaces.js";
 import { t, htmlLang, currentLocale } from "./i18n.js";
 import nodeCrypto from "node:crypto";
 
@@ -388,11 +388,12 @@ ${scope ? `X-Grantry-Scope = "${scope}"` : ""}`;
       `;
 }
 
-function userMcpConfigCard(origin: string, token: string): string {
-  const endpoint = `${origin}/mcp/u`;
-  const codexToml = `[mcp_servers.grantry]\ntype = "streamable-http"\nurl = "${endpoint}"\n\n[mcp_servers.grantry.http_headers]\nAuthorization = "Bearer ${token}"`;
-  const claudeConfig = JSON.stringify({ mcpServers: { grantry: { type: "http", url: endpoint, headers: { Authorization: `Bearer ${token}` } } } }, null, 2);
-  const claudeCli = `claude mcp add --scope user --transport http grantry \\\n+  ${endpoint} \\\n+  --header "Authorization: Bearer ${token}"`;
+function userMcpConfigCard(origin: string, workspaceSlug: string, token: string): string {
+  const endpoint = `${origin}/mcp/u/w/${encodeURIComponent(workspaceSlug)}`;
+  const serverName = `grantry-${workspaceSlug}`.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase();
+  const codexToml = `[mcp_servers.${serverName}]\ntype = "streamable-http"\nurl = "${endpoint}"\n\n[mcp_servers.${serverName}.http_headers]\nAuthorization = "Bearer ${token}"`;
+  const claudeConfig = JSON.stringify({ mcpServers: { [serverName]: { type: "http", url: endpoint, headers: { Authorization: `Bearer ${token}` } } } }, null, 2);
+  const claudeCli = `claude mcp add --scope user --transport http ${serverName} ${endpoint} --header "Authorization: Bearer ${token}"`;
   const copy = (label: string, value: string) => `<button type="button" class="secondary copy-config-btn" data-copy="${escapeHtml(value)}" style="font-size:12px;padding:4px 10px;">Copy ${label}</button>`;
   return `<div class="card">
     <h2>MCP configuration</h2>
@@ -2484,23 +2485,25 @@ dashboardApp.get("/invite/:token", async (c) => {
 dashboardApp.get("/mcp-tokens", async (c) => {
   const user = await getDbSessionUser(c);
   if (!user?.id) return c.redirect(`/login?next=${encodeURIComponent(requestPathWithQuery(c))}`);
+  const { active } = await resolveActiveWorkspace(c, user.id);
+  if (!active) return c.redirect("/workspaces");
   const [agents, tokens] = await Promise.all([
-    connectableAgentsFor(user.id),
-    prisma.userMcpToken.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
+    connectableAgentsForWorkspace(user.id, active.id),
+    prisma.userMcpToken.findMany({ where: { userId: user.id, workspaceId: active.id }, orderBy: { createdAt: "desc" } }),
   ]);
   const activeToken = tokens.find((token) => !token.revokedAt);
   const joined = c.req.query("joined") ?? "";
   const created = c.req.query("created") === "1";
   const revoked = c.req.query("revoked") === "1";
   const agentRows = agents.length
-    ? `<div class="card"><h2>Agents available to you</h2><p style="color:var(--muted);font-size:14px;margin-top:0;">Your token can act only through these agents. Workspace admins manage this list from Assignments.</p><div class="table-wrap"><table><thead><tr><th>Agent</th><th>Workspace</th><th>Description</th></tr></thead><tbody>${agents.map((agent) => `<tr><td><code>${escapeHtml(agent.name)}</code></td><td>${escapeHtml(agent.workspace?.displayName ?? "Personal")}</td><td>${escapeHtml(agent.description ?? "—")}</td></tr>`).join("")}</tbody></table></div></div>`
+    ? `<div class="card"><h2>Agents available to you</h2><p style="color:var(--muted);font-size:14px;margin-top:0;">Your token can act only through these agents in <b>${escapeHtml(active.displayName)}</b>. Workspace admins manage this list from Assignments.</p><div class="table-wrap"><table><thead><tr><th>Agent</th><th>Workspace</th><th>Description</th></tr></thead><tbody>${agents.map((agent) => `<tr><td><code>${escapeHtml(agent.name)}</code></td><td>${escapeHtml(agent.workspace?.displayName ?? "Personal")}</td><td>${escapeHtml(agent.description ?? "—")}</td></tr>`).join("")}</tbody></table></div></div>`
     : `<div class="card"><h2>No assigned agents yet</h2><p style="color:var(--muted);margin-bottom:0;">Ask a workspace owner or admin to assign an agent to you. Issuing a token before that does not grant access.</p></div>`;
   const tokenRows = tokens.length
     ? `<div class="card"><h2>Token history</h2><div class="table-wrap"><table><thead><tr><th>Token</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr></thead><tbody>${tokens.map((token) => `<tr><td><code>${escapeHtml(token.tokenPrefix)}...</code></td><td>${token.createdAt.toISOString().slice(0, 10)}</td><td>${token.lastUsedAt ? token.lastUsedAt.toISOString().slice(0, 16).replace("T", " ") : "—"}</td><td>${token.revokedAt ? '<span class="badge denied">revoked</span>' : '<span class="badge ok">active</span>'}</td><td>${token.revokedAt ? "" : `<form method="post" action="/mcp-tokens/${escapeHtml(token.id)}/revoke" style="margin:0;" onsubmit="return confirm('Revoke this MCP token? Existing MCP clients will lose access immediately.')"><button class="secondary" type="submit">Revoke</button></form>`}</td></tr>`).join("")}</tbody></table></div></div>`
     : "";
   return c.html(`<!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>MCP tokens — grantry</title>${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("mcp-tokens", user.email)}
-    <main><div class="scope-page-header"><div><div class="scope-page-kicker">Personal access</div><h1>MCP tokens</h1><p class="scope-page-copy">Create one personal token, then use every agent assigned to you from the same MCP connection.</p></div></div>
+    <main><div class="scope-page-header"><div><div class="scope-page-kicker">${escapeHtml(active.displayName)}</div><h1>MCP tokens</h1><p class="scope-page-copy">Create one personal token for this workspace, then use every agent assigned to you here from the same MCP connection.</p></div></div>
     ${joined ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">Joined <b>${escapeHtml(joined)}</b>. Your assigned agents are ready below; create your personal MCP token to connect.</div>` : ""}
     ${revoked ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">Token revoked.</div>` : ""}
     ${created ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">A new personal token was issued. It is shown below once.</div>` : ""}
@@ -2512,21 +2515,25 @@ dashboardApp.get("/mcp-tokens", async (c) => {
 dashboardApp.post("/mcp-tokens/rotate", async (c) => {
   const user = await getDbSessionUser(c);
   if (!user?.id) return c.redirect("/login?next=/mcp-tokens");
-  const agents = await connectableAgentsFor(user.id);
+  const { active } = await resolveActiveWorkspace(c, user.id);
+  if (!active) return c.redirect("/workspaces");
+  const agents = await connectableAgentsForWorkspace(user.id, active.id);
   if (!agents.length) return c.redirect("/mcp-tokens");
   const token = `gn_usr_${nodeCrypto.randomBytes(32).toString("base64url")}`;
   const hashedToken = nodeCrypto.createHash("sha256").update(token).digest("hex");
   await prisma.$transaction([
-    prisma.userMcpToken.updateMany({ where: { userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } }),
-    prisma.userMcpToken.create({ data: { userId: user.id, label: "Personal MCP token", hashedToken, tokenPrefix: token.slice(0, 16) } }),
+    prisma.userMcpToken.updateMany({ where: { userId: user.id, workspaceId: active.id, revokedAt: null }, data: { revokedAt: new Date() } }),
+    prisma.userMcpToken.create({ data: { userId: user.id, workspaceId: active.id, label: "Personal MCP token", hashedToken, tokenPrefix: token.slice(0, 16) } }),
   ]);
-  return c.html(`<!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>Personal MCP token — grantry</title>${FAVICON}<style>${CSS}</style></head><body>${NAV("mcp-tokens", user.email)}<main><h1>Your personal MCP token</h1><div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">This token is shown once. Workspace admins cannot retrieve it.</div>${agentTokenCard(token, "Save this token now. Rotating or revoking it disconnects every MCP client using it.", "🔑 Personal MCP token (save this — shown once!)")}${userMcpConfigCard(mcpOrigin(c), token)}<p><a href="/mcp-tokens">Back to MCP tokens</a></p></main></body></html>`);
+  return c.html(`<!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>Personal MCP token — grantry</title>${FAVICON}<style>${CSS}</style></head><body>${NAV("mcp-tokens", user.email)}<main><h1>Your personal MCP token</h1><div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">This token is scoped to <b>${escapeHtml(active.displayName)}</b> and shown once. Workspace admins cannot retrieve it.</div>${agentTokenCard(token, "Save this token now. Rotating or revoking it disconnects every MCP client using it.", "🔑 Personal MCP token (save this — shown once!)")}${userMcpConfigCard(mcpOrigin(c), active.slug, token)}<p><a href="/mcp-tokens">Back to MCP tokens</a></p></main></body></html>`);
 });
 
 dashboardApp.post("/mcp-tokens/:id/revoke", async (c) => {
   const user = await getDbSessionUser(c);
   if (!user?.id) return c.redirect("/login?next=/mcp-tokens");
-  await prisma.userMcpToken.updateMany({ where: { id: c.req.param("id"), userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
+  const { active } = await resolveActiveWorkspace(c, user.id);
+  if (!active) return c.redirect("/workspaces");
+  await prisma.userMcpToken.updateMany({ where: { id: c.req.param("id"), userId: user.id, workspaceId: active.id, revokedAt: null }, data: { revokedAt: new Date() } });
   return c.redirect("/mcp-tokens?revoked=1");
 });
 

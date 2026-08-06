@@ -3822,14 +3822,19 @@ async function resolveOAuthAccessToken(token: string): Promise<{ userId: string;
   return { userId: accessToken.userId, clientId: accessToken.clientId };
 }
 
-async function resolveOAuthUser(authHeader: string | null): Promise<ResolvedMcpUser | null> {
+async function resolveOAuthUser(authHeader: string | null, workspaceSlug = ""): Promise<ResolvedMcpUser | null> {
   if (!authHeader?.startsWith("Bearer ")) return null;
   const token = authHeader.slice(7);
   if (!token || token.startsWith("gn_agt_")) return null;
   if (token.startsWith("gn_usr_")) {
     const tokenHash = createHash("sha256").update(token).digest("hex");
-    const userToken = await prisma.userMcpToken.findUnique({ where: { hashedToken: tokenHash } });
-    if (!userToken || userToken.revokedAt) return null;
+    const userToken = await prisma.userMcpToken.findUnique({
+      where: { hashedToken: tokenHash },
+      include: { workspace: { select: { slug: true } } },
+    });
+    // Global personal tokens predate the workspace boundary. Rejecting them
+    // forces a reissue in the active workspace instead of guessing a scope.
+    if (!userToken || userToken.revokedAt || !workspaceSlug || userToken.workspace?.slug !== workspaceSlug) return null;
     void prisma.userMcpToken.update({ where: { id: userToken.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
     return { userId: userToken.userId, tokenId: userToken.id };
   }
@@ -4266,11 +4271,18 @@ const handleMcpPost = async (c: any) => {
   const started = Date.now();
   const auth = c.req.header("authorization") ?? null;
   const userMode = isUserMcpMode(c);
-  const userPrincipal = userMode ? await resolveOAuthUser(auth) : null;
+  const wsSlug = String(c.req.param("ws") ?? "").trim();
+  const userPrincipal = userMode ? await resolveOAuthUser(auth, wsSlug) : null;
   let agent = userMode ? null : await resolveAgent(auth);
   const configuredScope = configuredMcpScope(c);
-  const wsSlug = String(c.req.param("ws") ?? "").trim();
   c.header("Access-Control-Expose-Headers", "Mcp-Session-Id, WWW-Authenticate");
+
+  if (userMode && !wsSlug) {
+    return c.json({
+      jsonrpc: "2.0", id: null,
+      error: { code: -32003, message: "Personal MCP tokens require a workspace-locked endpoint: /mcp/u/w/<workspace>." },
+    }, 403);
+  }
 
   // MCP authorization spec: unauthenticated (or invalid-token) requests get
   // 401 + WWW-Authenticate pointing at the protected-resource metadata for
@@ -4867,10 +4879,10 @@ mcpApp.post("/", handleMcpPost);
 mcpApp.post("/w/:ws", handleMcpPost);
 mcpApp.post("/s/:scope", handleMcpPost);
 mcpApp.post("/w/:ws/s/:scope", handleMcpPost);
-// User-mode MCP: one OAuth-authenticated connector can act through any agent
-// the user may use. Provider calls select an agent with `agent_id` (or auto-pick
-// when the user has exactly one candidate). Existing agent-token routes above
-// remain unchanged for already distributed clients.
+// User-mode MCP: the workspace-locked form can act through only agents the
+// user may use in that workspace. Provider calls select an agent with
+// `agent_id` (or auto-pick when there is exactly one candidate). Existing
+// agent-token routes above remain unchanged for already distributed clients.
 mcpApp.post("/u", handleMcpPost);
 mcpApp.post("/u/w/:ws", handleMcpPost);
 mcpApp.post("/u/s/:scope", handleMcpPost);

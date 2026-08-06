@@ -529,6 +529,7 @@ model Workspace {
   providerCredentials ProviderCredential[]
   customProviders CustomProvider[]
   adminApiKeys AdminApiKey[]
+  mcpTokens UserMcpToken[]
   @@map("workspace")
 }
 
@@ -579,13 +580,16 @@ model AgentAssignment {
   @@map("agent_assignment")
 }
 
-// A person's MCP credential. It is deliberately independent of Agent so a
-// single token follows the signed-in person across every agent currently
-// assigned to them. AgentAssignment remains the live authorization boundary.
+// A person's MCP credential within one workspace. A token can reach only the
+// assigned agents in this workspace; it is never a cross-workspace credential.
 model UserMcpToken {
   id          String   @id @default(cuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Nullable only to allow a safe rollout for the short-lived global-token
+  // version. Runtime rejects null rows; newly issued tokens always set it.
+  workspaceId String?
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   label       String
   hashedToken String   @unique
   tokenPrefix String
@@ -594,7 +598,8 @@ model UserMcpToken {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@index([userId, revokedAt])
+  @@index([userId, workspaceId, revokedAt])
+  @@index([workspaceId])
   @@map("user_mcp_token")
 }
 

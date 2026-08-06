@@ -39,6 +39,32 @@ export async function connectableAgentsFor(userId: string): Promise<ConnectableA
   });
 }
 
+/** Workspace-scoped agent selection for personal MCP tokens and their UI. */
+export async function connectableAgentsForWorkspace(userId: string, workspaceId: string): Promise<ConnectableAgent[]> {
+  const membership = await prisma.workspaceMember.findUnique({
+    where: { workspaceId_userId: { workspaceId, userId } },
+    select: { role: true },
+  });
+  if (!membership) return [];
+  const where = membership.role === "owner" || membership.role === "admin"
+    ? { workspaceId, enabled: true }
+    : {
+        workspaceId,
+        enabled: true,
+        OR: [{ ownerId: userId }, { assignments: { some: { userId } } }],
+      };
+  return prisma.agent.findMany({
+    where,
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      workspace: { select: { slug: true, displayName: true } },
+    },
+    orderBy: { name: "asc" },
+  });
+}
+
 /**
  * Re-checked on every OAuth token resolution so that unassigning a user or
  * removing them from a workspace revokes connector access immediately —
