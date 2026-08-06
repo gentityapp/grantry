@@ -146,7 +146,9 @@ function configuredMcpScope(c: any): string {
 }
 
 function isUserMcpMode(c: any): boolean {
-  const path = String(c.req.path ?? "").toLowerCase();
+  // c.req.path is the FULL request path (/mcp/u/w/<ws>), not the path relative
+  // to where mcpApp is mounted — strip the mount prefix before matching.
+  const path = String(c.req.path ?? "").toLowerCase().replace(/^\/mcp/, "");
   return path === "/u" || path.startsWith("/u/");
 }
 
