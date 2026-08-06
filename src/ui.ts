@@ -1604,6 +1604,7 @@ async function getActiveWorkspaceId(c: any): Promise<string | null> {
 
 type RowsWhere = { ownerId?: string; workspaceId?: string };
 type WsAccess = { wsId: string | null; wsAdmin: boolean };
+type AgentAccessWhere = { OR: Array<Record<string, unknown>> };
 
 async function isWsAdmin(userId: string, workspaceId: string | null | undefined): Promise<boolean> {
   if (!workspaceId) return false;
@@ -1627,6 +1628,19 @@ async function getWorkspaceAccess(c: any, userId: string): Promise<WsAccess> {
 function manageableWhere(userId: string, ws: WsAccess): RowsWhere {
   if (ws.wsAdmin && ws.wsId) return { workspaceId: ws.wsId };
   return { ownerId: userId, ...(ws.wsId ? { workspaceId: ws.wsId } : {}) };
+}
+
+function visibleAgentWhere(userId: string, ws: WsAccess): AgentAccessWhere {
+  const OR: Array<Record<string, unknown>> = [{ ownerId: userId }];
+  if (ws.wsId) {
+    OR.push({ workspaceId: ws.wsId, assignments: { some: { userId } } });
+    if (ws.wsAdmin) OR.push({ workspaceId: ws.wsId });
+  }
+  return { OR };
+}
+
+function userMayManageAgentInWorkspace(userId: string, ws: WsAccess, agent: { ownerId: string; workspaceId: string | null }): boolean {
+  return agent.ownerId === userId || Boolean(ws.wsAdmin && ws.wsId && agent.workspaceId === ws.wsId);
 }
 
 // Resolve a tenant by slug for detail/mutation pages, independent of the
@@ -6811,7 +6825,7 @@ dashboardApp.get("/agents", async (c) => {
 
   const ws = await getWorkspaceAccess(c, user.id);
   const agents = await prisma.agent.findMany({
-    where: manageableWhere(user.id, ws),
+    where: visibleAgentWhere(user.id, ws),
     orderBy: { createdAt: "desc" },
     include: {
       connectionGrants: {
@@ -6822,6 +6836,7 @@ dashboardApp.get("/agents", async (c) => {
   });
 
   const agentCount = agents.length;
+  const manageableCount = agents.filter((a) => userMayManageAgentInWorkspace(user.id, ws, a)).length;
   const enabledCount = agents.filter((a) => a.enabled).length;
   const withGrantsCount = agents.filter((a) => a.connectionGrants.some((g) => g.connection.enabled)).length;
   const needsGrantCount = agentCount - withGrantsCount;
@@ -6850,15 +6865,16 @@ dashboardApp.get("/agents", async (c) => {
       </form>
       ${agents.length === 0 ? `<div class="card"><div class="empty">${t("No agents yet.")} <a href="/tenants/new">${t("Create one via the scope wizard")}</a>.</div></div>` : `
       <div class="card scope-list-card">
-        <div class="scope-list-toolbar">
+        ${manageableCount ? `<div class="scope-list-toolbar">
           <label><input type="checkbox" id="selAllAgents"> ${t("Select all")}</label>
           <button type="submit" form="bulkAgentForm" class="secondary" style="font-size:12px;padding:4px 10px;" id="bulkAgentBtn" disabled>🗑 ${escapeHtml(t("Delete selected"))} (0)</button>
-        </div>
+        </div>` : ""}
         <div class="table-wrap">
           <table class="scope-table agent-table">
             <thead><tr><th scope="col"></th><th scope="col">${t("Name")}</th><th scope="col">${t("Granted connections")}</th><th scope="col">${t("Accessible scopes")}</th><th scope="col">${t("Status")}</th><th scope="col">${t("Last used")}</th><th scope="col">${t("Created")}</th><th scope="col">${t("Actions")}</th></tr></thead>
             <tbody>
             ${agents.map((a) => {
+              const canManageAgent = userMayManageAgentInWorkspace(user.id, ws, a);
               const allScopes = new Set<string>();
               const liveGrants = a.connectionGrants.filter((g) => g.connection.enabled);
               for (const g of liveGrants) allScopes.add(g.connection.scope);
@@ -6870,8 +6886,8 @@ dashboardApp.get("/agents", async (c) => {
                 : `<span class="badge ok">${liveGrants.length}</span>`;
               return `
               <tr>
-                <td><input type="checkbox" form="bulkAgentForm" name="agent_ids" value="${a.id}" class="agentCheck" style="margin:0;"></td>
-                <th scope="row"><code class="agent-name" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</code></th>
+                <td>${canManageAgent ? `<input type="checkbox" form="bulkAgentForm" name="agent_ids" value="${a.id}" class="agentCheck" style="margin:0;">` : ""}</td>
+                <th scope="row"><code class="agent-name" title="${escapeHtml(a.name)}">${escapeHtml(a.name)}</code>${canManageAgent ? "" : ` <span class="badge scoped">${t("assigned")}</span>`}</th>
                 <td>${grantsDisplay}</td>
                 <td>${scopesDisplay}</td>
                 <td>${a.enabled ? `<span class="badge ok">${t("enabled")}</span>` : `<span class="badge denied">${t("disabled")}</span>`}</td>
@@ -6880,12 +6896,13 @@ dashboardApp.get("/agents", async (c) => {
                 <td>
                   <span class="scope-actions">
                     <a href="/agents/${a.id}" class="btn secondary">${t("Details")}</a>
+                    ${canManageAgent ? `
                     <form method="post" action="/agents/${a.id}/rotate" onsubmit="return confirm('${t("Rotate token for {name}?\\n\\nThe OLD token will be invalidated immediately. The NEW token will be shown ONCE on the next page.", { name: a.name })}')">
                       <button type="submit" class="secondary">${t("Rotate")}</button>
                     </form>
                     <form method="post" action="/agents/${a.id}/delete" onsubmit="return confirm('${t("Delete agent {name}?\\n\\nThis permanently destroys its token and connection grants.", { name: a.name })}')">
                       <button type="submit" class="danger" title="${escapeHtml(t("Delete"))}">🗑</button>
-                    </form>
+                    </form>` : ""}
                   </span>
                 </td>
               </tr>
@@ -7230,7 +7247,8 @@ dashboardApp.get("/agents/:id", async (c) => {
   });
   if (!agent) return c.html(`<h1>${t("agent not found")}</h1>`, 404);
   const wsAdminOfAgent = await isWsAdmin(user.id, agent.workspaceId);
-  if (agent.ownerId !== user.id && !wsAdminOfAgent) return c.html(`<h1>${t("not your agent")}</h1>`, 403);
+  const canManageAgent = agent.ownerId === user.id || wsAdminOfAgent;
+  if (!canManageAgent && !(await userMayUseAgent(user.id, agent))) return c.html(`<h1>${t("not your agent")}</h1>`, 403);
 
   const connections = await connectionsForAgent(agent.id);
   const scopeSet = new Set<string>();
@@ -7245,11 +7263,13 @@ dashboardApp.get("/agents/:id", async (c) => {
     scope: { not: "" },
   };
   if (agent.workspaceId) grantableConnectionWhere.workspaceId = agent.workspaceId;
-  const grantableConnections = await prisma.connection.findMany({
-    where: grantableConnectionWhere,
-    select: { id: true, provider: true, scope: true },
-    orderBy: [{ scope: "asc" }, { provider: "asc" }],
-  });
+  const grantableConnections = canManageAgent
+    ? await prisma.connection.findMany({
+      where: grantableConnectionWhere,
+      select: { id: true, provider: true, scope: true },
+      orderBy: [{ scope: "asc" }, { provider: "asc" }],
+    })
+    : [];
   const addableScopes = Array.from(
     grantableConnections.reduce((acc, conn) => {
       if (scopeSet.has(conn.scope)) return acc;
@@ -7273,6 +7293,7 @@ dashboardApp.get("/agents/:id", async (c) => {
     <main>
       <h1>${t("Agent")} <code>${escapeHtml(agent.name)}</code></h1>
       ${okNotice ? `<div class="card" style="border-color:var(--accent);"><p style="margin:0;">${escapeHtml(okNotice)}</p></div>` : ""}
+      ${canManageAgent ? "" : `<div class="card" style="border-color:var(--accent);"><p style="margin:0;">${t("This agent is assigned to you. You can view its callable connections, but only workspace owners and admins can manage grants, tokens, charter, or runbook.")}</p></div>`}
       <div class="card">
         <h2>${t("Connection grants")}</h2>
         <p>${t("Status")}: ${agent.enabled ? `<span class="badge ok">${t("enabled")}</span>` : `<span class="badge denied">${t("disabled")}</span>`}</p>
@@ -7361,7 +7382,7 @@ dashboardApp.get("/agents/:id", async (c) => {
         ${connections.length === 0 ? `<div class="empty">${t("No enabled connection is callable by this agent. Grant at least one connection to enable provider tools.")}</div>` : `
         <div class="table-wrap">
           <table>
-            <thead><tr><th>${t("Scope")}</th><th>${t("Provider")}</th><th>${t("Auth")}</th><th>${t("Label")}</th><th>${t("Tools")}</th>${agent.fullScopeManager ? "" : `<th></th>`}</tr></thead>
+            <thead><tr><th>${t("Scope")}</th><th>${t("Provider")}</th><th>${t("Auth")}</th><th>${t("Label")}</th><th>${t("Tools")}</th>${canManageAgent && !agent.fullScopeManager ? `<th></th>` : ""}</tr></thead>
             <tbody>
               ${connections.map((conn) => `
                 <tr>
@@ -7370,12 +7391,12 @@ dashboardApp.get("/agents/:id", async (c) => {
                   <td><code>${escapeHtml(conn.authType)}</code></td>
                   <td>${escapeHtml(conn.label)}</td>
                   <td>${conn.tools.map((t) => `<span class="tool-pill">${escapeHtml(t)}</span>`).join(" ")}</td>
-                  ${agent.fullScopeManager ? "" : `<td>
+                  ${canManageAgent && !agent.fullScopeManager ? `<td>
                     <form method="post" action="/agents/${escapeHtml(agent.id)}/connections/revoke" onsubmit="return confirm('${t("Remove {provider} ({scope}) from agent {name}? The agent loses these tools on its next request.", { provider: escapeHtml(conn.provider), scope: escapeHtml(conn.scope), name: escapeHtml(agent.name) })}')">
                       <input type="hidden" name="connection_ids" value="${escapeHtml(conn.id)}">
                       <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;">${t("Remove")}</button>
                     </form>
-                  </td>`}
+                  </td>` : ""}
                 </tr>
               `).join("")}
             </tbody>
