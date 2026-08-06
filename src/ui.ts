@@ -2351,10 +2351,22 @@ dashboardApp.get("/invite/:token", async (c) => {
     ${FAVICON}<style>${CSS} body { max-width: 440px; margin: 80px auto; padding: 0 24px; }</style></head><body>
     <h1>${t("Workspace invite")}</h1><div class="card">${inner}</div></body></html>`);
 
-  if (!invite || invite.acceptedAt) return page(`<p>${t("This invite link is invalid or already used.")}</p>`);
+  if (!invite) return page(`<p>${t("This invite link is invalid or already used.")}</p>`);
+  const user = await getDbSessionUser(c);
+  if (invite.acceptedAt) {
+    if (user?.email.toLowerCase() === invite.email.toLowerCase()) {
+      const member = await prisma.workspaceMember.findUnique({
+        where: { workspaceId_userId: { workspaceId: invite.workspaceId, userId: user.id } },
+      });
+      if (member) {
+        setActiveWorkspaceCookie(c, invite.workspaceId);
+        return c.redirect(`/workspaces?ok=${encodeURIComponent(t("Joined {workspace}", { workspace: invite.workspace.displayName }))}`);
+      }
+    }
+    return page(`<p>${t("This invite link is invalid or already used.")}</p>`);
+  }
   if (invite.expiresAt < new Date()) return page(`<p>${t("This invite has expired. Ask your admin to send a new one.")}</p>`);
 
-  const user = await getDbSessionUser(c);
   if (!user) {
     const next = encodeURIComponent(`/invite/${token}`);
     return page(`
@@ -2392,6 +2404,7 @@ dashboardApp.get("/invite/:token", async (c) => {
     ),
     prisma.workspaceInvite.update({ where: { id: invite.id }, data: { acceptedAt: new Date() } }),
   ]);
+  setActiveWorkspaceCookie(c, invite.workspaceId);
   return c.redirect(`/workspaces?ok=${encodeURIComponent(t("Joined {workspace}", { workspace: invite.workspace.displayName }))}`);
 });
 
