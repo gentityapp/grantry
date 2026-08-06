@@ -6681,6 +6681,11 @@ dashboardApp.get("/agents/:id", async (c) => {
       return acc;
     }, new Map<string, { scope: string; providers: Set<string>; count: number }>())
   ).map(([, item]) => item);
+  // Connections this agent could still be granted one at a time. Scope-level
+  // grants stay available above; this is the narrower door for "one tool out of
+  // a scope that also holds unrelated credentials".
+  const grantedConnectionIds = new Set(connections.map((conn) => conn.id));
+  const addableConnections = grantableConnections.filter((conn) => !grantedConnectionIds.has(conn.id));
   const tokenPlaceholder = `${agent.tokenPrefix}...ROTATE_TO_VIEW_FULL_TOKEN`;
 
   return c.html(`
@@ -6718,6 +6723,21 @@ dashboardApp.get("/agents/:id", async (c) => {
           <button type="submit" class="secondary" style="margin-top:8px;">${t("Add selected scopes")}</button>
         </form>`}
       </div>
+      ${agent.fullScopeManager ? "" : `<div class="card">
+        <h2>${t("Add individual connections")}</h2>
+        ${addableConnections.length === 0 ? `<div class="empty">${t("Every enabled connection available to this agent is already granted.")}</div>` : `
+        <p style="color:#687385;">${t("Grant single connections instead of a whole scope — the agent reaches only what you tick. Use this when it needs one tool from a scope that also holds unrelated credentials.")}</p>
+        <form method="post" action="/agents/${escapeHtml(agent.id)}/connections/grant">
+          ${addableConnections.map((conn) => `
+            <label style="display:flex;align-items:center;gap:10px;margin:8px 0;cursor:pointer;">
+              <input type="checkbox" name="connection_ids" value="${escapeHtml(conn.id)}" style="transform:scale(1.15);">
+              <span class="badge scoped" style="min-width:120px;">${escapeHtml(conn.scope)}</span>
+              <code>${escapeHtml(conn.provider)}</code>
+            </label>
+          `).join("")}
+          <button type="submit" class="secondary" style="margin-top:8px;">${t("Grant selected connections")}</button>
+        </form>`}
+      </div>`}
       ${agent.fullScopeManager
         ? `<div class="card">
         <h2>${t("Remove scopes")}</h2>
@@ -6763,7 +6783,7 @@ dashboardApp.get("/agents/:id", async (c) => {
         ${connections.length === 0 ? `<div class="empty">${t("No enabled connection is callable by this agent. Grant at least one connection to enable provider tools.")}</div>` : `
         <div class="table-wrap">
           <table>
-            <thead><tr><th>${t("Scope")}</th><th>${t("Provider")}</th><th>${t("Auth")}</th><th>${t("Label")}</th><th>${t("Tools")}</th></tr></thead>
+            <thead><tr><th>${t("Scope")}</th><th>${t("Provider")}</th><th>${t("Auth")}</th><th>${t("Label")}</th><th>${t("Tools")}</th>${agent.fullScopeManager ? "" : `<th></th>`}</tr></thead>
             <tbody>
               ${connections.map((conn) => `
                 <tr>
@@ -6772,6 +6792,12 @@ dashboardApp.get("/agents/:id", async (c) => {
                   <td><code>${escapeHtml(conn.authType)}</code></td>
                   <td>${escapeHtml(conn.label)}</td>
                   <td>${conn.tools.map((t) => `<span class="tool-pill">${escapeHtml(t)}</span>`).join(" ")}</td>
+                  ${agent.fullScopeManager ? "" : `<td>
+                    <form method="post" action="/agents/${escapeHtml(agent.id)}/connections/revoke" onsubmit="return confirm('${t("Remove {provider} ({scope}) from agent {name}? The agent loses these tools on its next request.", { provider: escapeHtml(conn.provider), scope: escapeHtml(conn.scope), name: escapeHtml(agent.name) })}')">
+                      <input type="hidden" name="connection_ids" value="${escapeHtml(conn.id)}">
+                      <button type="submit" class="secondary" style="font-size:12px;padding:4px 10px;">${t("Remove")}</button>
+                    </form>
+                  </td>`}
                 </tr>
               `).join("")}
             </tbody>
@@ -6865,6 +6891,87 @@ dashboardApp.post("/agents/:id/scopes/revoke", async (c) => {
     where: { agentId: agent.id, connection: connWhere },
   });
   return c.redirect(`/agents/${agent.id}?ok=${encodeURIComponent(t("Removed scope {scope}", { scope }))}`);
+});
+
+/**
+ * Parse `connection_ids` (checkbox list or single hidden field) and resolve the
+ * ones the signed-in user may hand to this agent. Mirrors the scope-level
+ * boundary: members act on connections they own, workspace admins on any
+ * connection in the workspace. grantry admin connections stay dashboard-only
+ * to grant, so they are not excluded here — this IS the dashboard.
+ */
+async function resolveGrantableConnectionIds(
+  body: Record<string, unknown>,
+  agent: { id: string; ownerId: string; workspaceId: string | null },
+  userId: string,
+  wsAdminOfAgent: boolean,
+): Promise<string[]> {
+  const raw = (body as any).connection_ids;
+  const ids = Array.from(
+    new Set(
+      (Array.isArray(raw) ? raw : [raw])
+        .map((v) => String(v ?? "").trim())
+        .filter(Boolean),
+    ),
+  );
+  if (!ids.length) return [];
+
+  const where: any = {
+    ...(wsAdminOfAgent && agent.workspaceId ? {} : { ownerId: userId }),
+    id: { in: ids },
+  };
+  if (agent.workspaceId) where.workspaceId = agent.workspaceId;
+
+  const rows = await prisma.connection.findMany({ where, select: { id: true } });
+  return rows.map((row) => row.id);
+}
+
+// --- /agents/:id/connections/grant POST (grant individual connections) ---
+dashboardApp.post("/agents/:id/connections/grant", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+  const id = c.req.param("id");
+  const agent = await prisma.agent.findUnique({
+    where: { id },
+    select: { id: true, ownerId: true, workspaceId: true },
+  });
+  if (!agent) return c.html(`<h1>${t("agent not found")}</h1>`, 404);
+  const wsAdminOfAgent = await isWsAdmin(user.id, agent.workspaceId);
+  if (agent.ownerId !== user.id && !wsAdminOfAgent) return c.html(`<h1>${t("not your agent")}</h1>`, 403);
+
+  const body = await c.req.parseBody();
+  const connectionIds = await resolveGrantableConnectionIds(body, agent, user.id, wsAdminOfAgent);
+  if (!connectionIds.length) return c.html(`<h1>${t("select at least one connection")}</h1>`, 400);
+
+  const granted = await grantConnectionsToAgent(agent.id, connectionIds, user.id);
+  return c.redirect(
+    `/agents/${agent.id}?ok=${encodeURIComponent(t("Granted {count} connection(s)", { count: granted }))}`,
+  );
+});
+
+// --- /agents/:id/connections/revoke POST (revoke individual connections) ---
+dashboardApp.post("/agents/:id/connections/revoke", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+  const id = c.req.param("id");
+  const agent = await prisma.agent.findUnique({
+    where: { id },
+    select: { id: true, ownerId: true, workspaceId: true },
+  });
+  if (!agent) return c.html(`<h1>${t("agent not found")}</h1>`, 404);
+  const wsAdminOfAgent = await isWsAdmin(user.id, agent.workspaceId);
+  if (agent.ownerId !== user.id && !wsAdminOfAgent) return c.html(`<h1>${t("not your agent")}</h1>`, 403);
+
+  const body = await c.req.parseBody();
+  const connectionIds = await resolveGrantableConnectionIds(body, agent, user.id, wsAdminOfAgent);
+  if (!connectionIds.length) return c.html(`<h1>${t("select at least one connection")}</h1>`, 400);
+
+  const res = await prisma.agentConnectionGrant.deleteMany({
+    where: { agentId: agent.id, connectionId: { in: connectionIds } },
+  });
+  return c.redirect(
+    `/agents/${agent.id}?ok=${encodeURIComponent(t("Removed {count} connection(s)", { count: res.count }))}`,
+  );
 });
 
 // --- /agents/:id/charter POST (edit the agent's charter / description) ---
