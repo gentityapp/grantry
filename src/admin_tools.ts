@@ -411,7 +411,7 @@ export async function callAdminTool(
 
   if (toolName === "grantry/grant_connection") {
     const target = await targetAgent(ctx, requireString(args, "agent_id"));
-    const conn = await targetConnection(ctx, requireString(args, "connection_id"));
+    const conn = await targetConnection(ctx, requireString(args, "target_connection_id"));
     assertConnectionGrantable(conn.provider);
     if (!conn.enabled) throw new Error(`connection ${conn.id} (${conn.provider} @ ${conn.scope}) is disabled`);
     const res = await prisma.agentConnectionGrant.createMany({
@@ -436,7 +436,7 @@ export async function callAdminTool(
 
   if (toolName === "grantry/revoke_connection") {
     const target = await targetAgent(ctx, requireString(args, "agent_id"));
-    const conn = await targetConnection(ctx, requireString(args, "connection_id"));
+    const conn = await targetConnection(ctx, requireString(args, "target_connection_id"));
     const res = await prisma.agentConnectionGrant.deleteMany({
       where: { agentId: target.id, connectionId: conn.id },
     });
@@ -670,18 +670,18 @@ export function adminToolDescriptor(toolName: AdminToolName): { description: str
         description: "grantry admin: grant an agent ONE connection, by connection id — the least-privilege alternative to grant_scope when the agent needs a single tool out of a scope that also holds unrelated credentials. Get ids from grantry_list_connections. Idempotent. Providers controlling money, mail, identity, or infrastructure (stripe, gmail, google_admin, cloudflare, railway, aws, …) are refused here: grant those from the dashboard, or scope-wide with grant_scope.",
         properties: {
           agent_id: { type: "string", description: "Agent id (from grantry_list_agents)." },
-          connection_id: { type: "string", description: "Connection id to grant (from grantry_list_connections)." },
+          target_connection_id: { type: "string", description: "Connection id to grant (from grantry_list_connections). (Named target_connection_id because 'connection_id' selects the admin connection itself.)" },
         },
-        required: ["agent_id", "connection_id"],
+        required: ["agent_id", "target_connection_id"],
       };
     case "grantry/revoke_connection":
       return {
         description: "grantry admin: remove an agent's grant to ONE connection, by connection id. Use it to trim an over-broad grant_scope down to what the agent actually needs, without dropping the whole scope.",
         properties: {
           agent_id: { type: "string", description: "Agent id (from grantry_list_agents)." },
-          connection_id: { type: "string", description: "Connection id to revoke (from grantry_list_connections)." },
+          target_connection_id: { type: "string", description: "Connection id to revoke (from grantry_list_connections). (Named target_connection_id because 'connection_id' selects the admin connection itself.)" },
         },
-        required: ["agent_id", "connection_id"],
+        required: ["agent_id", "target_connection_id"],
       };
     case "grantry/create_connection":
       return {
