@@ -327,8 +327,8 @@ export const ja: Record<string, string> = {
   "Pick a provider, attach it to a scope, then paste the credential or authorize. Existing workspace credentials can be reused, so a new scope is only needed when you actually want one.":
     "プロバイダーを選び、スコープに紐づけてから認証情報を貼り付けるか認可します。ワークスペース内の既存の認証情報を再利用できるので、スコープを新規作成するのは本当に必要なときだけで構いません。",
   "Select a provider…": "プロバイダーを選択…",
-  "Connections live inside a scope — that is how agents are granted access. Attach this one to a scope you already have, or create a new scope for it.":
-    "接続はスコープの中に存在します（エージェントへの権限付与がスコープ単位のため）。既存のスコープに紐づけるか、この接続用に新しいスコープを作成してください。",
+  "Agents are granted access per connection, but every connection lives inside a scope — the key agents send at call time. Attach this one to a scope you already have, or create a new scope for it. The scope's agents are granted this connection automatically.":
+    "エージェントへの権限付与は接続単位ですが、接続は必ずスコープ（エージェントが呼び出し時に送るキー）の中に存在します。既存のスコープに紐づけるか、この接続用に新しいスコープを作成してください。そのスコープのエージェントにはこの接続が自動で付与されます。",
   "Attach to scope": "紐づけるスコープ",
   "+ Create a new scope": "+ 新しいスコープを作成",
   "Continue": "次へ",

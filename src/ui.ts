@@ -4569,7 +4569,7 @@ dashboardApp.get("/connections/new", async (c) => {
 
         <div class="step-card">
           <h2><span class="num">2</span> ${t("Scope")}</h2>
-          <p class="field-hint" style="margin-top:0;">${t("Connections live inside a scope — that is how agents are granted access. Attach this one to a scope you already have, or create a new scope for it.")}</p>
+          <p class="field-hint" style="margin-top:0;">${t("Agents are granted access per connection, but every connection lives inside a scope — the key agents send at call time. Attach this one to a scope you already have, or create a new scope for it. The scope's agents are granted this connection automatically.")}</p>
           <div class="field">
             <label for="scope">${t("Attach to scope")}</label>
             <select name="scope" id="scope">
