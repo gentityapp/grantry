@@ -3792,7 +3792,7 @@ function buildToolList(
  *    per request, so dashboard changes apply immediately.
  */
 type ResolvedAgent = { id: string; name: string; enabled: boolean; userId?: string | null };
-type ResolvedMcpUser = { userId: string; clientId: string };
+type ResolvedMcpUser = { userId: string; clientId?: string; tokenId?: string };
 
 async function resolveAgent(authHeader: string | null): Promise<ResolvedAgent | null> {
   if (!authHeader?.startsWith("Bearer ")) return null;
@@ -3826,6 +3826,13 @@ async function resolveOAuthUser(authHeader: string | null): Promise<ResolvedMcpU
   if (!authHeader?.startsWith("Bearer ")) return null;
   const token = authHeader.slice(7);
   if (!token || token.startsWith("gn_agt_")) return null;
+  if (token.startsWith("gn_usr_")) {
+    const tokenHash = createHash("sha256").update(token).digest("hex");
+    const userToken = await prisma.userMcpToken.findUnique({ where: { hashedToken: tokenHash } });
+    if (!userToken || userToken.revokedAt) return null;
+    void prisma.userMcpToken.update({ where: { id: userToken.id }, data: { lastUsedAt: new Date() } }).catch(() => {});
+    return { userId: userToken.userId, tokenId: userToken.id };
+  }
   return resolveOAuthAccessToken(token);
 }
 

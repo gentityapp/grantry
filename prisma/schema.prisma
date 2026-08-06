@@ -39,6 +39,7 @@ model User {
   oauthAgentGrants  OauthAgentGrant[]
   workspaceMembers  WorkspaceMember[]
   agentAssignments  AgentAssignment[]
+  mcpTokens         UserMcpToken[]
   adminApiKeys      AdminApiKey[]
 
   @@map("user")
@@ -576,6 +577,25 @@ model AgentAssignment {
   @@id([agentId, userId])
   @@index([userId])
   @@map("agent_assignment")
+}
+
+// A person's MCP credential. It is deliberately independent of Agent so a
+// single token follows the signed-in person across every agent currently
+// assigned to them. AgentAssignment remains the live authorization boundary.
+model UserMcpToken {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label       String
+  hashedToken String   @unique
+  tokenPrefix String
+  lastUsedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, revokedAt])
+  @@map("user_mcp_token")
 }
 
 // Workspace-level provider catalog selection. This controls whether a provider
