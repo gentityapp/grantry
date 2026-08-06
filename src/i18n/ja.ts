@@ -322,6 +322,23 @@ export const ja: Record<string, string> = {
   "A health check is already running.": "ヘルスチェックはすでに実行中です。",
   "Check all now": "すべて今すぐ確認",
   "+ New scope connection": "+ 新しいスコープ接続",
+  "+ New connection": "+ 新しい接続",
+  "New connection": "新しい接続",
+  "Pick a provider, attach it to a scope, then paste the credential or authorize. Existing workspace credentials can be reused, so a new scope is only needed when you actually want one.":
+    "プロバイダーを選び、スコープに紐づけてから認証情報を貼り付けるか認可します。ワークスペース内の既存の認証情報を再利用できるので、スコープを新規作成するのは本当に必要なときだけで構いません。",
+  "Select a provider…": "プロバイダーを選択…",
+  "Connections live inside a scope — that is how agents are granted access. Attach this one to a scope you already have, or create a new scope for it.":
+    "接続はスコープの中に存在します（エージェントへの権限付与がスコープ単位のため）。既存のスコープに紐づけるか、この接続用に新しいスコープを作成してください。",
+  "Attach to scope": "紐づけるスコープ",
+  "+ Create a new scope": "+ 新しいスコープを作成",
+  "Continue": "次へ",
+  "Scope key must be lowercase letters, numbers, hyphens or underscores.":
+    "スコープキーは小文字の英数字・ハイフン・アンダースコアのみ使用できます。",
+  "Scope not found.": "スコープが見つかりません。",
+  "Existing credential": "既存の認証情報",
+  "Use existing: {label} ({scope})": "既存を使用: {label}（{scope}）",
+  "Creates a new scope-scoped connection that uses the selected workspace credential — no re-authentication needed.":
+    "選択したワークスペース認証情報を使う、このスコープ専用の接続を作成します（再認証は不要）。",
   "Workspace-wide health view for scope connections. Provider app and token settings are linked from each row's actions.":
     "スコープ接続のワークスペース全体のヘルス状況です。プロバイダーアプリとトークンの設定は各行のアクションからリンクされています。",
   "Total": "合計",

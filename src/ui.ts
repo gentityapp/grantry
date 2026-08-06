@@ -4405,7 +4405,7 @@ dashboardApp.get("/connections", async (c) => {
           <form method="post" action="/connections/check-all" style="margin:0;">
             <button type="submit" class="secondary"${isSweepRunning() ? ` disabled title="${escapeHtml(t("A health check is already running."))}"` : ""}>${t("Check all now")}</button>
           </form>
-          <a href="/tenants/new" class="btn">${t("+ New scope connection")}</a>
+          <a href="/connections/new" class="btn">${t("+ New connection")}</a>
         </span>
       </div>
       ${notice ? noticeBanner(String(notice), noticeKind) : ""}
@@ -4520,6 +4520,135 @@ dashboardApp.post("/connections/check-all", async (c) => {
     .then((stats) => console.log(`[health-sweep] manual check-all done: checked=${stats.checked} updated=${stats.updated} failed=${stats.failed}`))
     .catch((e) => console.error("[health-sweep] manual check-all crashed:", e));
   return c.redirect("/connections?ok=" + encodeURIComponent(t("Health check started for all connections in this workspace. It runs in the background — reload in a few minutes.")));
+});
+
+// --- /connections/new — create one connection without starting from a scope ---
+// A connection is always tenant-bound in the schema, but the human unit of work
+// is "connect this provider". This page inverts the old flow: pick the provider
+// first, then attach it to an existing scope (or spin up a new one inline). It
+// hands off to /tenants/:scope/connect/:provider, so credential entry, OAuth
+// consent and agent auto-grant stay on the single existing code path.
+dashboardApp.get("/connections/new", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect(`/login?next=${encodeURIComponent("/connections/new")}`);
+
+  const ws = await getWorkspaceAccess(c, user.id);
+  const wsId = ws.wsId;
+  const mw = manageableWhere(user.id, ws);
+  const [tenants, providers] = await Promise.all([
+    prisma.tenant.findMany({ where: mw, orderBy: { slug: "asc" } }),
+    listConnectionCandidateProviders(wsId),
+  ]);
+  const usableProviders = providers.filter((p) => p.implemented !== false);
+  const notice = c.req.query("err");
+  const selectedProvider = String(c.req.query("provider") ?? "");
+  const selectedScope = String(c.req.query("scope") ?? "");
+
+  return c.html(`
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("New connection")} — grantry</title>
+    ${FAVICON}<style>${CSS}</style></head><body>
+    ${NAV("connections", user?.email)}
+    <main>
+      <h1>${t("+ New connection")}</h1>
+      <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
+        ${t("Pick a provider, attach it to a scope, then paste the credential or authorize. Existing workspace credentials can be reused, so a new scope is only needed when you actually want one.")}
+      </p>
+      ${notice ? noticeBanner(String(notice), "error") : ""}
+      <form method="post" action="/connections/new">
+        <div class="step-card">
+          <h2><span class="num">1</span> ${t("Provider")}</h2>
+          <div class="field field-primary">
+            <label for="provider">${t("Provider")}</label>
+            <select name="provider" id="provider" required>
+              <option value="">${t("Select a provider…")}</option>
+              ${usableProviders.map((p) => `<option value="${escapeHtml(p.key)}"${p.key === selectedProvider ? " selected" : ""}>${escapeHtml(p.label)} (${escapeHtml(p.key)})</option>`).join("")}
+            </select>
+            <div class="field-hint">${t("Only providers enabled in <a href=\"/providers\">Providers</a> are shown here.")}</div>
+          </div>
+        </div>
+
+        <div class="step-card">
+          <h2><span class="num">2</span> ${t("Scope")}</h2>
+          <p class="field-hint" style="margin-top:0;">${t("Connections live inside a scope — that is how agents are granted access. Attach this one to a scope you already have, or create a new scope for it.")}</p>
+          <div class="field">
+            <label for="scope">${t("Attach to scope")}</label>
+            <select name="scope" id="scope">
+              ${tenants.map((tn) => `<option value="${escapeHtml(tn.slug)}"${tn.slug === selectedScope ? " selected" : ""}>${escapeHtml(tn.displayName && tn.displayName !== tn.slug ? `${tn.displayName} (${tn.slug})` : tn.slug)}</option>`).join("")}
+              <option value="__new__"${tenants.length === 0 || selectedScope === "__new__" ? " selected" : ""}>${t("+ Create a new scope")}</option>
+            </select>
+          </div>
+          <div id="newScopeFields" style="display:none;">
+            <div class="field">
+              <label for="new_scope">${t("Scope key")}</label>
+              <input type="text" name="new_scope" id="new_scope" pattern="[a-z0-9_-]+" placeholder="backoffice" title="${escapeHtml(t("Lowercase letters, numbers, hyphens and underscores only (a-z 0-9 - _). Use the Display name field below for Japanese or other names."))}">
+              <div class="field-hint">${t("lowercase, alphanumeric, hyphens, underscores. Agents send this as <b>scope</b> in API calls — it cannot be changed later, so pick carefully.")}</div>
+            </div>
+            <div class="field">
+              <label for="new_display_name">${t("Display name (optional)")}</label>
+              <input type="text" name="new_display_name" id="new_display_name" placeholder="e.g. Grantry 開発環境">
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;">
+          <button type="submit">${t("Continue")}</button>
+          <a class="btn secondary" href="/connections">${t("Cancel")}</a>
+        </div>
+      </form>
+      <script>
+        (function () {
+          var scopeSelect = document.getElementById('scope');
+          var newFields = document.getElementById('newScopeFields');
+          var newScope = document.getElementById('new_scope');
+          function sync() {
+            var creating = scopeSelect.value === '__new__';
+            newFields.style.display = creating ? '' : 'none';
+            newScope.required = creating;
+          }
+          scopeSelect.addEventListener('change', sync);
+          sync();
+        })();
+      </script>
+    </main></body></html>
+  `);
+});
+
+// --- /connections/new (POST) — resolve/create the scope, then hand off ---
+dashboardApp.post("/connections/new", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+
+  const wsId = await getActiveWorkspaceId(c);
+  const body = await c.req.parseBody();
+  const provider = String(body.provider ?? "").trim();
+  const scopeChoice = String(body.scope ?? "").trim();
+  const newScope = String(body.new_scope ?? "").trim().toLowerCase();
+  const newDisplayName = String(body.new_display_name ?? "").trim();
+  const back = (err: string) =>
+    c.redirect(`/connections/new?err=${encodeURIComponent(err)}&provider=${encodeURIComponent(provider)}&scope=${encodeURIComponent(scopeChoice)}`);
+
+  const providerDef = await getProviderForWorkspace(provider, wsId);
+  if (!providerDef) return back(t("Unknown provider"));
+  if (providerDef.implemented === false) return back(t("{provider} is not available yet", { provider: providerDef.label }));
+  if (!(await workspaceProviderEnabled(wsId, provider))) {
+    return back(t("{provider} is disabled for this workspace", { provider: providerDef.label }));
+  }
+
+  let scope: string;
+  if (scopeChoice === "__new__" || !scopeChoice) {
+    if (!/^[a-z0-9_-]+$/.test(newScope)) {
+      return back(t("Scope key must be lowercase letters, numbers, hyphens or underscores."));
+    }
+    await ensureTenant(user.id, newScope, newDisplayName || undefined, wsId);
+    scope = newScope;
+  } else {
+    // Existing scope: only one the caller may actually manage.
+    const access = await scopeAccessFor(user.id, scopeChoice);
+    if (!access) return back(t("Scope not found."));
+    scope = access.tenant.slug;
+  }
+
+  return c.redirect(`/tenants/${encodeURIComponent(scope)}/connect/${encodeURIComponent(provider)}?return_to=connections`);
 });
 
 // --- /connections/:connectionId/edit — direct repair/edit for one connection ---
@@ -4920,7 +5049,17 @@ dashboardApp.get("/tenants", async (c) => {
 dashboardApp.get("/tenants/:scope/connect/:provider", async (c) => {
   const scope = c.req.param("scope");
   const provider = c.req.param("provider");
+  // Where to land after the connection is saved. "connections" is set by
+  // /connections/new so the provider-first flow returns to the connection list
+  // instead of the scope page it happened to route through.
+  const returnTo = String(c.req.query("return_to") ?? "") === "connections" ? "connections" : "";
+  const backHref = returnTo === "connections" ? "/connections" : `/tenants/${encodeURIComponent(scope)}/edit`;
   const selfPath = `/tenants/${encodeURIComponent(scope)}/connect/${encodeURIComponent(provider)}`;
+  const selfPathWith = (params: Record<string, string> = {}) => {
+    const q = new URLSearchParams({ ...(returnTo ? { return_to: returnTo } : {}), ...params });
+    const qs = q.toString();
+    return qs ? `${selfPath}?${qs}` : selfPath;
+  };
 
   const user = await getSessionUser(c);
   if (!user) return c.redirect(`/login?next=${encodeURIComponent(selfPath)}`);
@@ -4938,10 +5077,10 @@ dashboardApp.get("/tenants/:scope/connect/:provider", async (c) => {
       </body></html>`, status as any);
 
   if (!providerDef) {
-    return connectShell(t("Unknown provider"), `<h1>${t("Unknown provider")} <code>${escapeHtml(provider)}</code></h1><p><a href="/tenants/${encodeURIComponent(scope)}/edit">${t("← Back to scope")}</a></p>`, 404);
+    return connectShell(t("Unknown provider"), `<h1>${t("Unknown provider")} <code>${escapeHtml(provider)}</code></h1><p><a href="${backHref}">${t("← Back to scope")}</a></p>`, 404);
   }
   if (providerDef.implemented === false) {
-    return connectShell(t("Provider not available"), `<h1>${escapeHtml(t("{provider} is not available yet", { provider: providerDef.label }))}</h1><p><a href="/tenants/${encodeURIComponent(scope)}/edit">${t("← Back to scope")}</a></p>`, 400);
+    return connectShell(t("Provider not available"), `<h1>${escapeHtml(t("{provider} is not available yet", { provider: providerDef.label }))}</h1><p><a href="${backHref}">${t("← Back to scope")}</a></p>`, 400);
   }
   if (!(await workspaceProviderEnabled(wsId, provider))) {
     return connectShell(t("Provider disabled"), `<h1>${escapeHtml(t("{provider} is disabled for this workspace", { provider: providerDef.label }))}</h1><p>${t('Enable it from <a href="/providers">Providers</a> first.')}</p>`, 400);
@@ -4955,9 +5094,10 @@ dashboardApp.get("/tenants/:scope/connect/:provider", async (c) => {
   // OAuth path: hand straight off to the existing consent flow.
   if (useOauth) {
     if (!supportsOauth) {
-      return connectShell(t("OAuth unavailable"), `<h1>${escapeHtml(t("{provider} does not support OAuth", { provider: providerDef.label }))}</h1><p><a href="${selfPath}">${t("← Paste a token instead")}</a></p>`, 400);
+      return connectShell(t("OAuth unavailable"), `<h1>${escapeHtml(t("{provider} does not support OAuth", { provider: providerDef.label }))}</h1><p><a href="${selfPathWith()}">${t("← Paste a token instead")}</a></p>`, 400);
     }
-    return c.redirect(`/oauth/${encodeURIComponent(provider)}/start?tenant=${encodeURIComponent(scope)}`);
+    const startParams = new URLSearchParams({ tenant: scope, ...(returnTo ? { return_to: returnTo } : {}) });
+    return c.redirect(`/oauth/${encodeURIComponent(provider)}/start?${startParams.toString()}`);
   }
 
   // PAT path: minimal paste form that posts to the shared add_service handler.
@@ -4993,7 +5133,35 @@ dashboardApp.get("/tenants/:scope/connect/:provider", async (c) => {
     ? `<p style="margin-top:6px;"><a href="${escapeHtml(providerDef.tokenUrl)}" target="_blank" rel="noopener" style="font-size:13px;">${t("🔗 Get a token / credential here →")}</a></p>`
     : "";
   const oauthSwitch = supportsOauth
-    ? `<p class="field-hint" style="margin-top:14px;">${t("Prefer to authorize instead?")} <a href="${selfPath}?method=oauth">${escapeHtml(t("Connect {provider} with OAuth →", { provider: providerDef.label }))}</a></p>`
+    ? `<p class="field-hint" style="margin-top:14px;">${t("Prefer to authorize instead?")} <a href="${selfPathWith({ method: "oauth" })}">${escapeHtml(t("Connect {provider} with OAuth →", { provider: providerDef.label }))}</a></p>`
+    : "";
+
+  // Credentials are workspace-owned, so an existing PAT connection for this
+  // provider in another scope can back this one too — no re-paste, no new
+  // secret. Same eligibility rule the add_service handler enforces on submit.
+  const reusableConns = await prisma.connection.findMany({
+    where: {
+      provider,
+      authType: "pat",
+      ownerId: user.id,
+      workspaceId: access?.tenant.workspaceId ?? wsId ?? undefined,
+      enabled: true,
+      scope: { not: scope },
+    },
+    select: { id: true, label: true, scope: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const reuseBlock = reusableConns.length
+    ? `<div class="step-card">
+        <div class="field" style="margin-bottom:0;">
+          <label for="reuse_connection_id">${t("Existing credential")}</label>
+          <select name="reuse_connection_id" id="reuse_connection_id">
+            ${reusableConns.map((cn) => `<option value="${escapeHtml(cn.id)}">${escapeHtml(t("Use existing: {label} ({scope})", { label: cn.label, scope: cn.scope }))}</option>`).join("")}
+            <option value="">${t("Paste a new credential instead")}</option>
+          </select>
+          <div class="field-hint">${t("Creates a new scope-scoped connection that uses the selected workspace credential — no re-authentication needed.")}</div>
+        </div>
+      </div>`
     : "";
 
   return connectShell(t("Connect {provider}", { provider: providerDef.label }), `
@@ -5005,7 +5173,9 @@ dashboardApp.get("/tenants/:scope/connect/:provider", async (c) => {
       <input type="hidden" name="_action" value="add_service">
       <input type="hidden" name="provider" value="${escapeHtml(provider)}">
       <input type="hidden" name="auth_method" value="pat">
-      <div class="step-card">
+      ${returnTo ? `<input type="hidden" name="return_to" value="${escapeHtml(returnTo)}">` : ""}
+      ${reuseBlock}
+      <div class="step-card" id="credentialCard">
         <p class="field-hint" style="margin-top:0;">${escapeHtml(providerDef.helpText)}</p>
         ${credentialInputs}
         ${tokenLink}
@@ -5013,10 +5183,27 @@ dashboardApp.get("/tenants/:scope/connect/:provider", async (c) => {
       ${configInputs}
       <div style="display:flex;gap:8px;">
         <button type="submit">${t("Connect")}</button>
-        <a class="btn secondary" href="/tenants/${encodeURIComponent(scope)}/edit">${t("Cancel")}</a>
+        <a class="btn secondary" href="${backHref}">${t("Cancel")}</a>
       </div>
     </form>
     ${oauthSwitch}
+    ${reusableConns.length ? `<script>
+      (function () {
+        var select = document.getElementById('reuse_connection_id');
+        var card = document.getElementById('credentialCard');
+        if (!select || !card) return;
+        var inputs = card.querySelectorAll('input, textarea');
+        function sync() {
+          // Reusing means posting no credential at all: disabled fields are not
+          // submitted, which is exactly what the add_service handler expects.
+          var reusing = !!select.value;
+          card.style.display = reusing ? 'none' : '';
+          for (var i = 0; i < inputs.length; i++) inputs[i].disabled = reusing;
+        }
+        select.addEventListener('change', sync);
+        sync();
+      })();
+    </script>` : ""}
   `);
 });
 
@@ -5985,6 +6172,14 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     let credential = String(body.credential ?? "").trim();
     const reuseConnectionId = String(body.reuse_connection_id ?? "").trim();
 
+    // Set by the provider-first flow (/connections/new): land back on the
+    // connection list instead of the scope page it routed through.
+    const returnTo = String(body.return_to ?? "") === "connections" ? "connections" : "";
+    const doneRedirect = (message: string) =>
+      returnTo === "connections"
+        ? c.redirect(`/connections?ok=${encodeURIComponent(message)}`)
+        : c.redirect(tenantEditUrl(scope, message, "ok", "#connections"));
+
     const providerDef = await getProviderForWorkspace(provider, wsId);
     if (!providerDef) return c.html(`<h1>${t("unknown provider")}</h1>`, 400);
     if (!(await workspaceProviderEnabled(wsId, provider))) {
@@ -6048,7 +6243,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
       await syncProviderCredentialFromConnection(conn);
       await grantConnectionToTenantAgents(rowsWhere, scope, conn.id, user.id);
 
-      return c.redirect(tenantEditUrl(scope, `${providerDef.label} service account connected.`, "ok", "#connections"));
+      return doneRedirect(`${providerDef.label} service account connected.`);
     }
 
     if (!wantsPat && !wantsSa && !wantsOauth && credential) {
@@ -6085,6 +6280,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
         }
       }
       const params = new URLSearchParams({ tenant: scope });
+      if (returnTo) params.set("return_to", returnTo);
       if (body.oauth_popup === "1") params.set("popup", "1");
       if (oauthAppCredentialId) params.set("oauth_app_credential_id", oauthAppCredentialId);
       return c.redirect(`/oauth/${provider}/start?${params.toString()}`);
@@ -6171,7 +6367,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     }
     await grantConnectionToTenantAgents(rowsWhere, scope, conn.id, user.id);
 
-    return c.redirect(tenantEditUrl(scope, `Service ${conn.label} added.`, "ok", "#connections"));
+    return doneRedirect(`Service ${conn.label} added.`);
   }
 
   return c.html(`<h1>${t("unknown action")}</h1>`, 400);
