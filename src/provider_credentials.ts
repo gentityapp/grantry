@@ -18,6 +18,7 @@ type ConnectionSecretFields = Pick<
   | "refreshToken"
   | "accessTokenExpiresAt"
   | "credentialId"
+  | "oauthAppCredentialId"
 >;
 
 type CredentialMetadataWrite = {
@@ -33,6 +34,9 @@ type CredentialMetadataWrite = {
   healthMissingScopes?: string;
   refreshToken?: string | null;
   accessTokenExpiresAt?: Date | null;
+  // Which workspace OAuth app issued the tokens. Both Connection and
+  // ProviderCredential carry it, so it rides along to either write.
+  oauthAppCredentialId?: string | null;
 };
 
 export function connectionCredentialData<T extends CredentialMetadataWrite>(data: T) {
@@ -91,6 +95,7 @@ export async function ensureProviderCredentialForConnection(
       ...healthFromConnection(conn),
       refreshToken: conn.refreshToken,
       accessTokenExpiresAt: conn.accessTokenExpiresAt,
+      oauthAppCredentialId: conn.oauthAppCredentialId ?? null,
       createdById,
     },
   });

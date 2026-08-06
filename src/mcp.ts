@@ -3898,12 +3898,41 @@ function oauthEnvClientConfig(provider: string) {
   };
 }
 
-async function oauthClientConfigForRefresh(provider: string, workspaceId: string | null | undefined) {
+async function oauthClientConfigForRefresh(
+  provider: string,
+  workspaceId: string | null | undefined,
+  oauthAppCredentialId?: string | null,
+) {
   if (workspaceId && providerRequiresWorkspaceOAuthApp(provider)) {
-    const credential = await prisma.providerCredential.findFirst({
-      where: { workspaceId, provider, authType: "oauth_app", enabled: true },
-      orderBy: { updatedAt: "desc" },
-    });
+    // A refresh token only works with the OAuth app that issued it. Prefer the
+    // app recorded on the credential; fall back to "the workspace's only app"
+    // for rows minted before that binding existed. With several apps and no
+    // binding we refuse rather than guess — picking the most recent one is how
+    // a swapped app used to break every older connection silently.
+    const boundId = String(oauthAppCredentialId ?? "").trim();
+    const credential = boundId
+      ? await prisma.providerCredential.findFirst({
+          where: { id: boundId, workspaceId, provider, authType: "oauth_app", enabled: true },
+        })
+      : await (async () => {
+          const apps = await prisma.providerCredential.findMany({
+            where: { workspaceId, provider, authType: "oauth_app", enabled: true },
+            orderBy: { updatedAt: "desc" },
+            take: 2,
+          });
+          return apps.length === 1 ? apps[0] : null;
+        })();
+    if (boundId && !credential) {
+      return { source: "app_unavailable" as const, clientId: "", clientSecret: "", clientAuthMethod: PROVIDERS[provider]?.oauthClientAuthMethod || "CLIENT_SECRET_POST" };
+    }
+    if (!boundId && !credential) {
+      const appCount = await prisma.providerCredential.count({
+        where: { workspaceId, provider, authType: "oauth_app", enabled: true },
+      });
+      if (appCount > 1) {
+        return { source: "app_ambiguous" as const, clientId: "", clientSecret: "", clientAuthMethod: PROVIDERS[provider]?.oauthClientAuthMethod || "CLIENT_SECRET_POST" };
+      }
+    }
     if (credential) {
       const meta = safeJsonObject(credential.credentialMetadata);
       const clientId = typeof meta.oauthClientId === "string" ? meta.oauthClientId.trim() : "";
@@ -3923,7 +3952,12 @@ async function oauthClientConfigForRefresh(provider: string, workspaceId: string
   return { source: "env" as const, ...oauthEnvClientConfig(provider) };
 }
 
-async function refreshOAuthToken(provider: string, refreshToken: string, workspaceId?: string | null) {
+async function refreshOAuthToken(
+  provider: string,
+  refreshToken: string,
+  workspaceId?: string | null,
+  oauthAppCredentialId?: string | null,
+) {
   const providerDef = PROVIDERS[provider];
   if (!providerDef?.oauthTokenUrl) throw new Error(`OAuth refresh is not configured for provider: ${provider}`);
   // Most providers refresh at the token endpoint; some (e.g. Figma) use a
@@ -3931,8 +3965,14 @@ async function refreshOAuthToken(provider: string, refreshToken: string, workspa
   const refreshUrl = providerDef.oauthRefreshUrl || providerDef.oauthTokenUrl;
 
   const envPrefix = provider.toUpperCase();
-  const { clientId, clientSecret, clientAuthMethod, source } = await oauthClientConfigForRefresh(provider, workspaceId);
+  const { clientId, clientSecret, clientAuthMethod, source } = await oauthClientConfigForRefresh(provider, workspaceId, oauthAppCredentialId);
   if (!clientId || !clientSecret) {
+    if (source === "app_unavailable") {
+      throw new Error(`${provider} OAuth app for this credential is missing or disabled: reconnect it against a registered ${provider} OAuth app`);
+    }
+    if (source === "app_ambiguous") {
+      throw new Error(`${provider} has several OAuth apps in this workspace and this credential predates app binding: reconnect it so it records which app issued it`);
+    }
     if (providerRequiresWorkspaceOAuthApp(provider)) {
       throw new Error(`${provider} OAuth refresh credentials missing: configure this workspace's OAuth app credential`);
     }
@@ -4005,6 +4045,7 @@ export async function credentialForConnection(conn: {
   refreshToken: string | null;
   accessTokenExpiresAt: Date | null;
   workspaceId?: string | null;
+  oauthAppCredentialId?: string | null;
 }) {
   const shared = conn.credentialId
     ? await prisma.providerCredential.findUnique({ where: { id: conn.credentialId } })
@@ -4031,7 +4072,11 @@ export async function credentialForConnection(conn: {
     connectionId: conn.id,
     expiresAt: accessTokenExpiresAt.toISOString(),
   });
-  const refreshed = await refreshOAuthToken(conn.provider, decrypt(refreshToken), conn.workspaceId);
+  // The shared ProviderCredential is the row the tokens actually live on, so it
+  // carries the authoritative app binding; the connection's own column covers
+  // connections that never got promoted to a shared credential.
+  const oauthAppCredentialId = shared?.oauthAppCredentialId ?? conn.oauthAppCredentialId ?? null;
+  const refreshed = await refreshOAuthToken(conn.provider, decrypt(refreshToken), conn.workspaceId, oauthAppCredentialId);
   const data = {
     encryptedCredential: encrypt(refreshed.access_token),
     accessTokenExpiresAt: refreshed.expires_in ? new Date(Date.now() + refreshed.expires_in * 1000) : null,

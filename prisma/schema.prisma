@@ -217,6 +217,12 @@ model Connection {
   encryptedCredential String   // Fernet-encrypted PAT/OAuth token
   credentialId        String?
   credential          ProviderCredential? @relation(fields: [credentialId], references: [id], onDelete: SetNull)
+  // Which workspace OAuth app minted these tokens (ProviderCredential row with
+  // authType="oauth_app"). Refresh tokens are bound to the client that issued
+  // them, so refreshing with a different app fails — recording the app makes
+  // that mismatch explicit instead of a silent invalid_grant. Null for tokens
+  // minted before this column existed, or from an env-level OAuth client.
+  oauthAppCredentialId String?
   encryptedServerCredential String? // encrypted provider-level secret, e.g. Google Ads developer token
   credentialMetadata  String   @default("{}") // JSON: observed provider scopes/capabilities, never raw token
   // Non-secret per-connection variables substituted into the provider's
@@ -244,6 +250,7 @@ model Connection {
   @@index([tenantId])
   @@index([workspaceId])
   @@index([credentialId])
+  @@index([oauthAppCredentialId])
   @@map("connection")
 }
 
@@ -271,6 +278,10 @@ model ProviderCredential {
   healthMissingScopes String   @default("[]")
   refreshToken        String?
   accessTokenExpiresAt DateTime?
+  // For authType="oauth" rows: which workspace OAuth app (authType="oauth_app"
+  // row) minted this credential, so refresh uses that same client. Always null
+  // on the oauth_app rows themselves.
+  oauthAppCredentialId String?
   enabled             Boolean  @default(true)
   createdById         String?
   createdAt           DateTime @default(now())
@@ -280,6 +291,7 @@ model ProviderCredential {
 
   @@index([workspaceId, provider, authType])
   @@index([ownerId, provider, authType])
+  @@index([oauthAppCredentialId])
   @@map("provider_credential")
 }
 
