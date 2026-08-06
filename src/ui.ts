@@ -266,12 +266,18 @@ function mcpConfigCard(origin: string, agentName: string, token: string, exactTo
 
 function mcpConfigBlock(origin: string, agentName: string, token: string, exactToken: boolean, scope?: string): string {
   const serverName = `grantry-${scope || agentName}`.replace(/[^a-zA-Z0-9_-]/g, "-").toLowerCase();
+  // Agent tokens are stored as sha256 + a 12-char prefix, so a page rendered
+  // after minting has no plaintext to show. Render an obvious blank rather than
+  // a prefix-plus-ellipsis that reads like a real token: the config is meant to
+  // be copied, and a string that *looks* like a credential gets pasted, then
+  // fails at auth with nothing on screen explaining why.
+  const tokenText = exactToken ? token : "<PASTE_YOUR_TOKEN_HERE>";
   const codexToml = `[mcp_servers.${serverName}]
 type = "streamable-http"
 url = "${origin}/mcp"
 
 [mcp_servers.${serverName}.http_headers]
-Authorization = "Bearer ${token}"
+Authorization = "Bearer ${tokenText}"
 ${scope ? `X-Grantry-Scope = "${scope}"` : ""}`;
   const claudeConfig = {
     mcpServers: {
@@ -279,7 +285,7 @@ ${scope ? `X-Grantry-Scope = "${scope}"` : ""}`;
         type: "http",
         url: `${origin}/mcp`,
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${tokenText}`,
           ...(scope ? { "X-Grantry-Scope": scope } : {}),
         },
       },
@@ -288,7 +294,7 @@ ${scope ? `X-Grantry-Scope = "${scope}"` : ""}`;
   const claudeJson = JSON.stringify(claudeConfig, null, 2);
   const claudeCli = `claude mcp add --scope user --transport http ${serverName} \\
   ${origin}/mcp \\
-  --header "Authorization: Bearer ${token}"${scope ? ` \\
+  --header "Authorization: Bearer ${tokenText}"${scope ? ` \\
   --header "X-Grantry-Scope: ${scope}"` : ""}`;
   const claudeDesktopConfig = {
     mcpServers: {
@@ -299,15 +305,19 @@ ${scope ? `X-Grantry-Scope = "${scope}"` : ""}`;
           "mcp-remote@latest",
           `${origin}/mcp`,
           "--header",
-          `Authorization: Bearer ${token}`,
+          `Authorization: Bearer ${tokenText}`,
           ...(scope ? ["--header", `X-Grantry-Scope: ${scope}`] : []),
         ],
       },
     },
   };
   const claudeDesktopJson = JSON.stringify(claudeDesktopConfig, null, 2);
+  // Without the plaintext there is nothing worth copying, so the button is dead
+  // rather than silently handing over a config that cannot authenticate.
   const copyButton = (label: string, text: string) =>
-    `<button type="button" class="secondary copy-config-btn" data-copy="${escapeHtml(text)}" style="font-size:12px;padding:4px 10px;">Copy ${label}</button>`;
+    exactToken
+      ? `<button type="button" class="secondary copy-config-btn" data-copy="${escapeHtml(text)}" style="font-size:12px;padding:4px 10px;">Copy ${label}</button>`
+      : `<button type="button" class="secondary" disabled title="The full token is only shown when the agent is created or rotated." style="font-size:12px;padding:4px 10px;opacity:.5;cursor:not-allowed;">Copy ${label}</button>`;
   return `
         <h2>MCP config</h2>
         <p style="font-size:13px;color:#687385;margin-top:0;">
@@ -316,6 +326,9 @@ ${scope ? `X-Grantry-Scope = "${scope}"` : ""}`;
             : `This entry is <b>not</b> scope-locked: the token decides what it can reach, and each call picks its scope via the <code>scope</code> argument.`}
         </p>
         <p style="font-size:13px;color:#3c4257;margin:0 0 4px;">MCP endpoint: <code>${escapeHtml(origin)}/mcp</code> — authenticate with <code>Authorization: Bearer &lt;token&gt;</code>.</p>
+        ${exactToken
+          ? ""
+          : `<p style="font-size:13px;color:#df1b41;margin:12px 0 0;border-left:3px solid #df1b41;padding-left:10px;">These snippets are <b>incomplete</b>: the token is stored hashed, so its plaintext exists only at the moment it is minted. Paste your saved token over <code>&lt;PASTE_YOUR_TOKEN_HERE&gt;</code>, or <a href="/agents">rotate this agent</a> to mint a fresh one — rotating invalidates the current token immediately.</p>`}
 
         <div class="row spread" style="margin:20px 0 6px;">
           <h3 style="font-size:14px;margin:0;color:#3c4257;">Claude Code <span class="badge ok">Recommended — fastest</span></h3>
@@ -344,7 +357,7 @@ ${scope ? `X-Grantry-Scope = "${scope}"` : ""}`;
         <pre>${escapeHtml(codexToml)}</pre>
         ${exactToken
           ? '<p style="font-size:13px;color:#687385;margin-bottom:0;">This config includes the newly minted token. <code>Mcp-Session-Id</code> is managed by the MCP client/server handshake.</p>'
-          : '<p style="font-size:13px;color:#df1b41;margin-bottom:0;">The full token is only shown when created or rotated. Rotate this agent if you need a copy-pasteable config with a fresh token.</p>'}
+          : ""}
         <script>
           (function () {
             document.querySelectorAll('.copy-config-btn').forEach(function (btn) {
@@ -6814,7 +6827,6 @@ dashboardApp.get("/agents/:id", async (c) => {
   // a scope that also holds unrelated credentials".
   const grantedConnectionIds = new Set(connections.map((conn) => conn.id));
   const addableConnections = grantableConnections.filter((conn) => !grantedConnectionIds.has(conn.id));
-  const tokenPlaceholder = `${agent.tokenPrefix}...ROTATE_TO_VIEW_FULL_TOKEN`;
 
   return c.html(`
     <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${escapeHtml(agent.name)} — grantry</title>
@@ -6933,8 +6945,8 @@ dashboardApp.get("/agents/:id", async (c) => {
         </div>`}
       </div>
       ${scopes.length
-        ? scopes.map((scope) => mcpConfigCard(mcpOrigin(c), agent.name, tokenPlaceholder, false, scope)).join("")
-        : mcpConfigCard(mcpOrigin(c), agent.name, tokenPlaceholder, false)}
+        ? scopes.map((scope) => mcpConfigCard(mcpOrigin(c), agent.name, "", false, scope)).join("")
+        : mcpConfigCard(mcpOrigin(c), agent.name, "", false)}
       <div class="card">
         <h2>${t("Quick checks")}</h2>
         <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
@@ -8199,7 +8211,7 @@ dashboardApp.post("/tenants/:scope/agents/assign-existing", async (c) => {
       <div class="card">
         <h2>Token</h2>
         <p>This agent keeps its existing token. The plaintext token cannot be shown again; rotate it from the agent page if you need a fresh copy.</p>
-        ${mcpConfigCard(mcpOrigin(c), agent.name, `${agent.tokenPrefix}...ROTATE_TO_VIEW_FULL_TOKEN`, false, scope)}
+        ${mcpConfigCard(mcpOrigin(c), agent.name, "", false, scope)}
       </div>
       <p><a href="/tenants/${scope}/agents/setup?assigned=${granted}">Back to agent setup</a> · <a href="/agents/${agent.id}">Open agent</a></p>
     </main></body></html>
