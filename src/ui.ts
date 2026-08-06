@@ -544,6 +544,17 @@ const CSS = `
   .social-auth { display: flex; flex-direction: column; gap: 8px; }
   .auth-separator { display: flex; align-items: center; gap: 10px; margin: 16px 0; color: var(--muted); font-size: 12px; }
   .auth-separator::before, .auth-separator::after { content: ""; height: 1px; flex: 1; background: var(--border); }
+  .assignment-matrix { min-width: 760px; table-layout: fixed; }
+  .assignment-matrix th, .assignment-matrix td { padding: 12px; text-align: center; }
+  .assignment-matrix th:first-child, .assignment-matrix td:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); text-align: left; min-width: 220px; width: 220px; }
+  .assignment-matrix th:first-child { background: var(--neutral-secondary-soft); z-index: 2; }
+  .assignment-agent-head { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; height: 150px; max-width: 72px; overflow: hidden; text-overflow: ellipsis; margin: 0 auto; }
+  .assignment-toggle { width: 36px; height: 36px; padding: 0; border-radius: 8px; font-size: 16px; }
+  .assignment-toggle.assigned { background: var(--success); border-color: var(--border-success-subtle); color: #fff; }
+  .assignment-toggle.unassigned { background: var(--surface); color: var(--muted); border: 1px solid var(--border-default-medium); box-shadow: var(--shadow-xs); }
+  .assignment-toggle.unassigned:hover { background: var(--neutral-secondary-medium); color: var(--ink); transform: none; }
+  .assignment-person { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .assignment-person strong, .assignment-person span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .combo { position: relative; flex: 1; }
   .combo-btn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; background: var(--neutral-secondary-medium); color: var(--ink-2); border: 1px solid var(--border-default-medium); border-radius: 8px; font-weight: 400; font-size: 14px; text-align: left; box-shadow: var(--shadow-xs); }
   .combo-btn:hover { background: var(--neutral-secondary-medium); border-color: var(--border-default-strong); color: var(--ink-2); transform: none; }
@@ -709,6 +720,7 @@ const NAV = (current: string, email?: string) => `
     <a href="/connections" class="${current === "connections" ? "active" : ""}">${t("Connections")}</a>
     <a href="/providers" class="${current === "providers" ? "active" : ""}">${t("Providers")}</a>
     <a href="/agents" class="${current === "agents" ? "active" : ""}">${t("Agents")}</a>
+    <a href="/workspaces/assignments" class="${current === "assignments" ? "active" : ""}">${t("Assignments")}</a>
     <a href="/workspaces" class="${current === "workspaces" ? "active" : ""}">${t("Workspace")}</a>
     <a href="/audit" class="${current === "audit" ? "active" : ""}">${t("Audit")}</a>
     <a href="/api-keys" class="${current === "api-keys" ? "active" : ""}">${t("API keys")}</a>
@@ -1852,6 +1864,15 @@ async function requireWsAdmin(c: any, workspaceId: string) {
   return member ? { user, member } : null;
 }
 
+function safeFormReturnTo(value: FormDataEntryValue | null, fallback = "/workspaces"): string {
+  const path = String(value ?? "");
+  return path.startsWith("/") && !path.startsWith("//") ? path : fallback;
+}
+
+function appendOkParam(path: string, message: string): string {
+  return `${path}${path.includes("?") ? "&" : "?"}ok=${encodeURIComponent(message)}`;
+}
+
 // JSON feed for the nav workspace switcher (populated client-side).
 dashboardApp.get("/api/workspaces/active", async (c) => {
   const user = await getSessionUser(c);
@@ -1877,6 +1898,134 @@ dashboardApp.get("/workspaces/switch", async (c) => {
   if (member) setActiveWorkspaceCookie(c, wsId);
   const next = c.req.query("next");
   return c.redirect(next && next.startsWith("/") ? next : "/dashboard");
+});
+
+dashboardApp.get("/workspaces/assignments", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user?.id) return c.redirect("/login");
+  const flash = c.req.query("ok") ?? "";
+  const { active, memberships } = await resolveActiveWorkspace(c, user.id);
+  const member = active ? memberships.find((m) => m.workspaceId === active.id) : undefined;
+  if (!active || !member) return c.redirect("/workspaces");
+  const isAdmin = member.role === "owner" || member.role === "admin";
+  if (!isAdmin) {
+    return c.html(`
+      <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Assignments")} — grantry</title>
+      ${FAVICON}<style>${CSS}</style></head><body>
+      ${NAV("assignments", user.email)}
+      <main>
+        <div class="scope-page-header">
+          <div>
+            <div class="scope-page-kicker">${t("Workspace")}</div>
+            <h1>${t("Assignments")}</h1>
+            <p class="scope-page-copy">${t("Only workspace owners and admins can manage person-to-agent assignments.")}</p>
+          </div>
+        </div>
+        <div class="card"><b>${escapeHtml(active.displayName)}</b> <span class="badge unscoped">${escapeHtml(member.role)}</span></div>
+      </main></body></html>`, 403);
+  }
+
+  const [members, agents, assignments] = await Promise.all([
+    prisma.workspaceMember.findMany({
+      where: { workspaceId: active.id },
+      include: { user: { select: { id: true, email: true, name: true } } },
+      orderBy: [{ role: "asc" }, { createdAt: "asc" }],
+    }),
+    prisma.agent.findMany({
+      where: { workspaceId: active.id, enabled: true },
+      select: { id: true, name: true, description: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.agentAssignment.findMany({
+      where: { agent: { workspaceId: active.id } },
+      select: { agentId: true, userId: true },
+    }),
+  ]);
+  const assigned = new Set(assignments.map((a) => `${a.userId}:${a.agentId}`));
+  const assignedCountByUser = new Map<string, number>();
+  const assignedCountByAgent = new Map<string, number>();
+  for (const a of assignments) {
+    assignedCountByUser.set(a.userId, (assignedCountByUser.get(a.userId) ?? 0) + 1);
+    assignedCountByAgent.set(a.agentId, (assignedCountByAgent.get(a.agentId) ?? 0) + 1);
+  }
+  const returnTo = "/workspaces/assignments";
+  const matrix = members.length && agents.length ? `
+    <div class="table-wrap">
+      <table class="assignment-matrix">
+        <thead>
+          <tr>
+            <th>
+              <div>${t("Person")}</div>
+              <small style="color:var(--muted);font-weight:500;">${t("Rows are workspace members")}</small>
+            </th>
+            ${agents.map((agent) => `
+              <th title="${escapeHtml(agent.name)}${agent.description ? ` — ${escapeHtml(agent.description)}` : ""}">
+                <div class="assignment-agent-head">${escapeHtml(agent.name)}</div>
+              </th>`).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${members.map((m) => `
+            <tr>
+              <td>
+                <div class="assignment-person">
+                  <strong>${escapeHtml(m.user.email)}</strong>
+                  ${m.user.name ? `<span style="color:var(--muted);font-size:12px;">${escapeHtml(m.user.name)}</span>` : ""}
+                  <span><span class="badge ${m.role === "member" ? "unscoped" : "ok"}">${escapeHtml(m.role)}</span> <small style="color:var(--muted);">${t("{count} assigned", { count: String(assignedCountByUser.get(m.user.id) ?? 0) })}</small></span>
+                </div>
+              </td>
+              ${agents.map((agent) => {
+                const key = `${m.user.id}:${agent.id}`;
+                const isAssigned = assigned.has(key);
+                return `<td>
+                  <form method="post" action="/workspaces/${escapeHtml(active.id)}/${isAssigned ? "unassign" : "assign"}" style="margin:0;">
+                    <input type="hidden" name="userId" value="${escapeHtml(m.user.id)}">
+                    <input type="hidden" name="agentId" value="${escapeHtml(agent.id)}">
+                    <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
+                    <button type="submit" class="assignment-toggle ${isAssigned ? "assigned" : "unassigned"}" aria-label="${escapeHtml(isAssigned ? t("Unassign {agent} from {email}", { agent: agent.name, email: m.user.email }) : t("Assign {agent} to {email}", { agent: agent.name, email: m.user.email }))}" title="${escapeHtml(isAssigned ? t("Assigned — click to unassign") : t("Not assigned — click to assign"))}">${isAssigned ? "✓" : "+"}</button>
+                  </form>
+                </td>`;
+              }).join("")}
+            </tr>`).join("")}
+        </tbody>
+        <tfoot>
+          <tr>
+            <th>${t("Assigned users")}</th>
+            ${agents.map((agent) => `<td><span class="badge ${assignedCountByAgent.get(agent.id) ? "ok" : "unscoped"}">${escapeHtml(String(assignedCountByAgent.get(agent.id) ?? 0))}</span></td>`).join("")}
+          </tr>
+        </tfoot>
+      </table>
+    </div>` : `
+    <div class="card">
+      <div class="empty">${members.length ? t("No enabled agents in this workspace yet.") : t("No workspace members yet.")}</div>
+      <p style="margin:8px 0 0;color:var(--muted);font-size:13px;"><a href="/workspaces">${t("Open workspace settings")}</a></p>
+    </div>`;
+
+  return c.html(`
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Assignments")} — grantry</title>
+    ${FAVICON}<style>${CSS}</style></head><body>
+    ${NAV("assignments", user.email)}
+    <main>
+      <div class="scope-page-header">
+        <div>
+          <div class="scope-page-kicker">${t("Workspace")}</div>
+          <h1>${t("People × Agents")}</h1>
+          <p class="scope-page-copy">${t("Manage which workspace members can act as which agents. Provider permissions still come from each agent's granted connections and each provider's own ACLs.")}</p>
+        </div>
+        <div class="row" style="justify-content:flex-end;">
+          <a class="btn secondary" href="/workspaces">${t("Workspace settings")}</a>
+        </div>
+      </div>
+      ${flash ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">${escapeHtml(flash)}</div>` : ""}
+      <div class="scope-summary-grid">
+        <div class="scope-summary-card"><span>${t("Workspace")}</span><strong>${escapeHtml(active.displayName)}</strong></div>
+        <div class="scope-summary-card"><span>${t("Members")}</span><strong>${escapeHtml(String(members.length))}</strong></div>
+        <div class="scope-summary-card"><span>${t("Agents")}</span><strong>${escapeHtml(String(agents.length))}</strong></div>
+        <div class="scope-summary-card"><span>${t("Assignments")}</span><strong>${escapeHtml(String(assignments.length))}</strong></div>
+      </div>
+      ${matrix}
+    </main></body></html>
+  `);
 });
 
 dashboardApp.get("/workspaces", async (c) => {
@@ -2130,6 +2279,7 @@ dashboardApp.post("/workspaces/:id/assign", async (c) => {
   const wsId = c.req.param("id");
   if (!(await requireWsAdmin(c, wsId))) return c.redirect("/login");
   const form = await c.req.formData();
+  const returnTo = safeFormReturnTo(form.get("returnTo"));
   const agentId = String(form.get("agentId") ?? "");
   const userId = String(form.get("userId") ?? "");
   const [agent, member] = await Promise.all([
@@ -2143,17 +2293,18 @@ dashboardApp.post("/workspaces/:id/assign", async (c) => {
       update: {},
     });
   }
-  return c.redirect("/workspaces?ok=Agent%20assigned");
+  return c.redirect(appendOkParam(returnTo, t("Agent assigned")));
 });
 
 dashboardApp.post("/workspaces/:id/unassign", async (c) => {
   const wsId = c.req.param("id");
   if (!(await requireWsAdmin(c, wsId))) return c.redirect("/login");
   const form = await c.req.formData();
+  const returnTo = safeFormReturnTo(form.get("returnTo"));
   const agentId = String(form.get("agentId") ?? "");
   const userId = String(form.get("userId") ?? "");
   await prisma.agentAssignment.deleteMany({ where: { agentId, userId, agent: { workspaceId: wsId } } });
-  return c.redirect("/workspaces?ok=Agent%20unassigned");
+  return c.redirect(appendOkParam(returnTo, t("Agent unassigned")));
 });
 
 dashboardApp.post("/workspaces/:id/members/:userId/remove", async (c) => {
