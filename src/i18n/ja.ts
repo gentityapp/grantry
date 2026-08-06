@@ -417,6 +417,13 @@ export const ja: Record<string, string> = {
   "No agents yet.": "まだエージェントがありません。",
   "Create one via the scope wizard": "スコープウィザードで作成",
   "Token prefix": "トークンのプレフィックス",
+  "Lock an entry to a single scope (optional)": "エントリを1スコープに固定する（任意）",
+  "The entry above already reaches every connection this agent holds; a locked entry is a narrowing, not a requirement. Two cases need one: claude.ai and Claude Desktop cannot register two connectors on the same URL, so parallel connectors must differ by URL — use <code>{origin}/mcp/s/&lt;scope&gt;</code> there, since those clients cannot set headers. And an agent spanning many scopes produces a long tool list, which locking trims.":
+    "上のエントリだけでこのエージェントの全接続に到達します。固定は絞り込みであって必須ではありません。必要になるのは2ケース。claude.ai と Claude Desktop は同じURLのコネクタを2つ登録できないため、並列コネクタはURLで区別する必要があります（これらのクライアントはヘッダを指定できないので <code>{origin}/mcp/s/&lt;scope&gt;</code> を使う）。もう1つは、多数のスコープにまたがるエージェントでツール一覧が長くなる場合。固定すると短くなります。",
+  "Registering several of these at once puts more than one <code>mcp__grantry-*__</code> prefix in the same client. That is the arrangement the multi-server guard in the agent skill exists for — prefer one entry per agent unless a case above applies.":
+    "これらを複数まとめて登録すると、1つのクライアントに <code>mcp__grantry-*__</code> プレフィックスが複数並びます。エージェントスキルのマルチサーバーガードは、まさにこの状態のためにあります。上記のケースに該当しない限り、1エージェント1エントリを推奨します。",
+  "{providers} only — {n} of {total} connections in this scope": "{providers} のみ — このスコープの {total} 接続のうち {n} 件",
+  "{providers} — every connection in this scope": "{providers} — このスコープの全接続",
   "Granted connections": "付与された接続",
   "Accessible scopes": "アクセス可能なスコープ",
   "Last used": "最終使用",

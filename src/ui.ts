@@ -322,8 +322,8 @@ ${scope ? `X-Grantry-Scope = "${scope}"` : ""}`;
         <h2>MCP config</h2>
         <p style="font-size:13px;color:#687385;margin-top:0;">
           ${scope
-            ? `Use one MCP server entry per scope. Tool names stay stable; the token and <code>X-Grantry-Scope</code> lock this entry to the selected scope.`
-            : `This entry is <b>not</b> scope-locked: the token decides what it can reach, and each call picks its scope via the <code>scope</code> argument.`}
+            ? `This entry is locked to <code>${escapeHtml(scope)}</code> by <code>X-Grantry-Scope</code>: its tool list is trimmed to that scope, and a call passing any other <code>scope</code> is refused. Tool names stay stable.`
+            : `One entry per agent. The token decides what it can reach across every scope it holds, and each call picks its scope via the <code>scope</code> argument.`}
         </p>
         <p style="font-size:13px;color:#3c4257;margin:0 0 4px;">MCP endpoint: <code>${escapeHtml(origin)}/mcp</code> — authenticate with <code>Authorization: Bearer &lt;token&gt;</code>.</p>
         ${exactToken
@@ -6944,9 +6944,29 @@ dashboardApp.get("/agents/:id", async (c) => {
           </table>
         </div>`}
       </div>
-      ${scopes.length
-        ? scopes.map((scope) => mcpConfigCard(mcpOrigin(c), agent.name, "", false, scope)).join("")
-        : mcpConfigCard(mcpOrigin(c), agent.name, "", false)}
+      ${mcpConfigCard(mcpOrigin(c), agent.name, "", false)}
+      ${scopes.length ? `<div class="card">
+        <details>
+          <summary style="cursor:pointer;font-weight:600;font-size:14px;color:#3c4257;">${t("Lock an entry to a single scope (optional)")}</summary>
+          <p style="font-size:13px;color:#687385;margin:12px 0 0;">${t("The entry above already reaches every connection this agent holds; a locked entry is a narrowing, not a requirement. Two cases need one: claude.ai and Claude Desktop cannot register two connectors on the same URL, so parallel connectors must differ by URL — use <code>{origin}/mcp/s/&lt;scope&gt;</code> there, since those clients cannot set headers. And an agent spanning many scopes produces a long tool list, which locking trims.", { origin: escapeHtml(mcpOrigin(c)) })}</p>
+          <p style="font-size:13px;color:#687385;margin:8px 0 0;">${t("Registering several of these at once puts more than one <code>mcp__grantry-*__</code> prefix in the same client. That is the arrangement the multi-server guard in the agent skill exists for — prefer one entry per agent unless a case above applies.")}</p>
+          ${scopes.map((scope) => {
+            const inScope = connections.filter((conn) => conn.scope === scope);
+            const totalInScope = grantableConnections.filter((conn) => conn.scope === scope).length;
+            const providerList = Array.from(new Set(inScope.map((conn) => conn.provider))).sort();
+            // Name the actual reach: a card headed `grantry-gtm` otherwise reads
+            // as "this agent has the gtm scope", which is exactly the confusion
+            // per-connection grants were added to remove.
+            const reach = totalInScope > inScope.length
+              ? t("{providers} only — {n} of {total} connections in this scope", { providers: providerList.join(", "), n: String(inScope.length), total: String(totalInScope) })
+              : t("{providers} — every connection in this scope", { providers: providerList.join(", ") });
+            return `<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border,#e3e8ee);">
+              <p style="font-size:13px;color:#3c4257;margin:0 0 4px;"><code>${escapeHtml(scope)}</code> → ${escapeHtml(reach)}</p>
+              ${mcpConfigBlock(mcpOrigin(c), agent.name, "", false, scope)}
+            </div>`;
+          }).join("")}
+        </details>
+      </div>` : ""}
       <div class="card">
         <h2>${t("Quick checks")}</h2>
         <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
