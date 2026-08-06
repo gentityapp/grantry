@@ -1643,6 +1643,11 @@ export async function mcpAuthorizeGate(c: any): Promise<Response | null> {
   // `resource` parameter carries the MCP URL the client connected to
   // (e.g. https://host/mcp/w/acme). Use it to pin the choice to that ws.
   const resourceParam = String(c.req.query("resource") ?? "");
+  if (/\/mcp\/u(?:\/|$)/.test(resourceParam)) {
+    // User-mode MCP authenticates the person first and chooses the acting agent
+    // per request, so it must not create or require a single OauthAgentGrant.
+    return null;
+  }
   const wsLock = resourceParam.match(/\/mcp\/w\/([A-Za-z0-9-]+)/)?.[1] ?? "";
 
   const existing = await prisma.oauthAgentGrant.findUnique({

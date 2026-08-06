@@ -55,6 +55,8 @@ User（ログイン主体）
 https://app.grantry.ai/mcp                # 既存。agent紐付けに従い全scope
 https://app.grantry.ai/mcp/w/<ws-slug>    # Workspace固定（将来）
 https://app.grantry.ai/mcp/s/<scope>      # scope固定（Workspace導入前でも有用）
+https://app.grantry.ai/mcp/u              # 新規。人でOAuth認証し、agent_idで実行agentを選ぶ
+https://app.grantry.ai/mcp/u/w/<ws-slug>  # 人レーン + Workspace固定
 ```
 
 実装上の注意：
@@ -67,6 +69,22 @@ https://app.grantry.ai/mcp/s/<scope>      # scope固定（Workspace導入前で�
 - `OauthAgentGrant` の一意キーは現在 `(userId, clientId)`。コネクタが複数並ぶ
   世界では同一clientIdが別URLで再利用される可能性を考慮し、
   `(userId, clientId, resource)` への拡張を検討（オープン課題）。
+
+### User-mode MCP（追加レーン）
+
+`/mcp/u` は既存の agent-bound `/mcp` を置き換えずに追加する。OAuth access token は
+まず `User` として解決し、provider tool 実行時に `agent_id` で acting agent を選ぶ。
+候補が1つだけなら自動選択する。候補が複数ある場合は `grantry_list_user_agents` または
+`connections/list` で候補を見てから `agent_id` を渡す。
+
+認可境界は既存の延長:
+
+- 人がその agent を使えるか: `AgentAssignment` / workspace owner-admin / owner
+- agent が connection を使えるか: `AgentConnectionGrant`
+- connection の先で何ができるか: provider credential / provider ACL
+
+既存配布済みの `gn_agt_*` クライアントと、`OauthAgentGrant` で単一agentにbindされる
+既存OAuth `/mcp` はそのまま残す。
 
 ## スキーマ案
 

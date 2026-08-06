@@ -86,7 +86,7 @@ import { callGoogleAdminTool } from "./connectors/google_admin.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 import { mintDwdAccessToken, type ServiceAccountCredential } from "./google_dwd.js";
 import { callGenericCheckConnection, callGenericListCapabilities, callGenericProviderRequest } from "./connectors/generic_request.js";
-import { userMayUseAgent } from "./workspaces.js";
+import { connectableAgentsFor, userMayUseAgent } from "./workspaces.js";
 import { connectionCredentialData, providerCredentialData } from "./provider_credentials.js";
 import { adminToolDescriptor, isAdminTool } from "./admin_tools.js";
 import { callGrantryAdminTool } from "./connectors/grantry_admin.js";
@@ -104,6 +104,7 @@ const SYSTEM_TOOLS = [
   "grantry/get_runbook",
   "grantry/get_runbook_file",
   "grantry/get_providers",
+  "grantry/list_user_agents",
   "grantry/list_scopes",
   "grantry/find_agent",
   "grantry/route",
@@ -112,13 +113,13 @@ const SYSTEM_TOOLS = [
 
 // System tools that need the calling agent's identity (workspace boundary) and
 // therefore require authentication, unlike the public metadata tools.
-const AUTHED_SYSTEM_TOOLS = new Set<string>(["grantry/get_runbook", "grantry/get_runbook_file", "grantry/list_scopes", "grantry/find_agent", "grantry/route", "grantry/delegate"]);
+const AUTHED_SYSTEM_TOOLS = new Set<string>(["grantry/get_runbook", "grantry/get_runbook_file", "grantry/list_user_agents", "grantry/list_scopes", "grantry/find_agent", "grantry/route", "grantry/delegate"]);
 
 // Capability-scoped delegation TTL: short by design (single-use anyway).
 const DELEGATION_TTL_MS = 5 * 60 * 1000;
 
 type McpSession = {
-  agentId: string;
+  principalKey: string;
   createdAt: number;
   lastSeenAt: number;
   expiresAt: number;
@@ -142,6 +143,11 @@ function configuredMcpScope(c: any): string {
     c.req.header("x-grantry-scope") ?? c.req.header("x-grantry-tenant") ??
     c.req.header("x-gentity-scope") ?? c.req.header("x-gentity-tenant") ?? ""
   ).trim();
+}
+
+function isUserMcpMode(c: any): boolean {
+  return String(c.req.path ?? "") === "/u"
+    || String(c.req.path ?? "").startsWith("/u/");
 }
 
 function publicToolName(canonicalName: string): string {
@@ -198,6 +204,9 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       include_tools: { type: "boolean", description: "When true, include each provider's tool names. Defaults to true." },
     };
   }
+  if (toolName === "grantry/list_user_agents") {
+    return {};
+  }
   if (toolName === "grantry/list_scopes") {
     return {};
   }
@@ -216,6 +225,7 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   }
   if (toolName === "grantry/delegate") {
     return {
+      acting_agent_id: { type: "string", description: "Only on /mcp/u: agent id this authenticated user is acting through. Omit when the user has exactly one usable agent." },
       agent_id: { type: "string", description: "Id of the capable agent to delegate to (from grantry_find_agent / grantry_route). Must share your owner." },
       tool: { type: "string", description: "Canonical tool to authorize, e.g. 'railway/graphql' (public 'railway_graphql' also accepted)." },
       scope: { type: "string", description: "Tenant scope the grant is for." },
@@ -3340,7 +3350,7 @@ async function dispatchProviderTool(
   throw new Error(`no dispatcher for provider: ${provider}`);
 }
 
-type SystemToolContext = { agentId: string; ownerId: string; workspaceId: string | null };
+type SystemToolContext = { agentId?: string; ownerId?: string; workspaceId?: string | null; workspaceSlug?: string; userId?: string };
 
 async function callSystemTool(toolName: string, args: Record<string, unknown>, ctx?: SystemToolContext) {
   if (toolName === "grantry/get_skill") {
@@ -3398,7 +3408,7 @@ async function callSystemTool(toolName: string, args: Record<string, unknown>, c
     // When called with an agent token, surface the scopes this token can
     // actually reach so the caller can discover them in the same round-trip
     // (full detail is in grantry/list_scopes). Anonymous callers get no scopes.
-    if (ctx) {
+    if (ctx?.agentId) {
       const conns = await connectionsForAgent(ctx.agentId);
       (providers.metadata as Record<string, unknown>).scopes = Array.from(new Set(conns.map((c) => c.scope))).sort();
     }
@@ -3408,8 +3418,23 @@ async function callSystemTool(toolName: string, args: Record<string, unknown>, c
       isError: false,
     };
   }
+  if (toolName === "grantry/list_user_agents") {
+    if (!ctx?.userId) throw new Error("list_user_agents requires user authentication");
+    const agents = await selectableAgentsForUser(ctx.userId, ctx.workspaceSlug);
+    const payload = {
+      agents: agents.map((agent) => ({
+        agent_id: agent.id,
+        name: agent.name,
+        description: agent.description,
+        workspace: agent.workspace,
+      })),
+      count: agents.length,
+      usage: "Call provider tools with agent_id set to one of these agent_id values. If only one agent is listed, grantry can select it automatically.",
+    };
+    return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], structuredContent: payload, isError: false };
+  }
   if (toolName === "grantry/list_scopes") {
-    if (!ctx) throw new Error("list_scopes requires authentication");
+    if (!ctx?.agentId) throw new Error("list_scopes requires an authenticated or selected agent");
     const conns = await connectionsForAgent(ctx.agentId);
     const byScope = new Map<string, { provider: string; auth_type: string; connection_id: string; label: string; tools: string[] }[]>();
     for (const conn of conns) {
@@ -3433,7 +3458,7 @@ async function callSystemTool(toolName: string, args: Record<string, unknown>, c
     return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], structuredContent: payload, isError: false };
   }
   if (toolName === "grantry/find_agent") {
-    if (!ctx) throw new Error("find_agent requires authentication");
+    if (!ctx?.agentId || !ctx.ownerId) throw new Error("find_agent requires an authenticated or selected agent");
     const task = String(args.task ?? "");
     if (!task.trim()) throw new Error("find_agent requires a 'task' description");
     const scope = args.scope === undefined || args.scope === null || args.scope === "" ? undefined : String(args.scope);
@@ -3513,7 +3538,7 @@ async function callSystemTool(toolName: string, args: Record<string, unknown>, c
     return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], structuredContent: payload, isError: false };
   }
   if (toolName === "grantry/route") {
-    if (!ctx) throw new Error("route requires authentication");
+    if (!ctx?.ownerId) throw new Error("route requires authentication");
     const tool = normalizeToolName(args.tool);
     if (!tool || !tool.includes("/")) throw new Error("route requires a 'tool' like 'railway/graphql'");
     const scope = args.scope === undefined || args.scope === null || args.scope === "" ? undefined : String(args.scope);
@@ -3587,6 +3612,11 @@ function rateLimitExceeded(agentId: string): boolean {
 function buildToolList(
   connections: Awaited<ReturnType<typeof connectionsForAgent>> | null,
   delegatable: Map<string, Set<string>> = new Map(),
+  options: {
+    userMode?: boolean;
+    requireAgentId?: boolean;
+    agentOptionsByTool?: Map<string, { id: string; name: string }[]>;
+  } = {},
 ) {
   const tools: any[] = [
     { name: "ping", description: "Liveness check", inputSchema: { type: "object", properties: {} } },
@@ -3609,66 +3639,78 @@ function buildToolList(
       },
     },
   ];
+  if (options.userMode) {
+    tools.push({
+      name: publicToolName("grantry/list_user_agents"),
+      description: "grantry: list the agents this authenticated user may act through. On /mcp/u, pass one of the returned agent_id values when calling provider tools.",
+      inputSchema: {
+        type: "object",
+        properties: toolSpecificInputProperties("grantry/list_user_agents"),
+        required: [],
+      },
+    });
+  }
   if (!connections) return tools;
 
-  // Capability discovery tools — only for authenticated agents, since they
-  // search the caller's workspace (docs/agent-orchestration.md).
-  tools.push(
-    {
-      name: publicToolName("grantry/get_runbook"),
-      description: "grantry: this agent's own runbook — the author-supplied instructions defining what this agent does and how. Call this first when you connect to learn your role. Returns the SKILL.md text inline; if a skill bundle is attached, also lists its files (fetch each with grantry_get_runbook_file). Distinct from grantry_get_skill, which is the grantry platform manual.",
-      inputSchema: {
-        type: "object",
-        properties: toolSpecificInputProperties("grantry/get_runbook"),
-        required: [],
+  if (!options.userMode) {
+    // Capability discovery tools search the calling agent's workspace.
+    tools.push(
+      {
+        name: publicToolName("grantry/get_runbook"),
+        description: "grantry: this agent's own runbook — the author-supplied instructions defining what this agent does and how. Call this first when you connect to learn your role. Returns the SKILL.md text inline; if a skill bundle is attached, also lists its files (fetch each with grantry_get_runbook_file). Distinct from grantry_get_skill, which is the grantry platform manual.",
+        inputSchema: {
+          type: "object",
+          properties: toolSpecificInputProperties("grantry/get_runbook"),
+          required: [],
+        },
       },
-    },
-    {
-      name: publicToolName("grantry/get_runbook_file"),
-      description: "grantry: fetch one file from this agent's skill bundle (references/scripts/assets) by the path shown in grantry_get_runbook. Text files come back decoded; binary assets come back base64. Reconstruct the skill directory from these to run the bundled skill.",
-      inputSchema: {
-        type: "object",
-        properties: toolSpecificInputProperties("grantry/get_runbook_file"),
-        required: ["path"],
+      {
+        name: publicToolName("grantry/get_runbook_file"),
+        description: "grantry: fetch one file from this agent's skill bundle (references/scripts/assets) by the path shown in grantry_get_runbook. Text files come back decoded; binary assets come back base64. Reconstruct the skill directory from these to run the bundled skill.",
+        inputSchema: {
+          type: "object",
+          properties: toolSpecificInputProperties("grantry/get_runbook_file"),
+          required: ["path"],
+        },
       },
-    },
-    {
-      name: publicToolName("grantry/find_agent"),
-      description: "grantry: find which agent in your workspace can do a described task. Candidates are distinct *connections* (not duplicate agents), ranked by how well the task names the connection's scope/label/project plus each agent's `charter`. Confidence reflects target match — a low score means the connection probably doesn't reach what the task describes.",
-      inputSchema: {
-        type: "object",
-        properties: toolSpecificInputProperties("grantry/find_agent"),
-        required: ["task"],
+      {
+        name: publicToolName("grantry/find_agent"),
+        description: "grantry: find which agent in your workspace can do a described task. Candidates are distinct *connections* (not duplicate agents), ranked by how well the task names the connection's scope/label/project plus each agent's `charter`. Confidence reflects target match — a low score means the connection probably doesn't reach what the task describes.",
+        inputSchema: {
+          type: "object",
+          properties: toolSpecificInputProperties("grantry/find_agent"),
+          required: ["task"],
+        },
       },
-    },
-    {
-      name: publicToolName("grantry/route"),
-      description: "grantry: list agents in your workspace that can call a specific tool/scope",
-      inputSchema: {
-        type: "object",
-        properties: toolSpecificInputProperties("grantry/route"),
-        required: ["tool"],
+      {
+        name: publicToolName("grantry/route"),
+        description: "grantry: list agents in your workspace that can call a specific tool/scope",
+        inputSchema: {
+          type: "object",
+          properties: toolSpecificInputProperties("grantry/route"),
+          required: ["tool"],
+        },
       },
-    },
-    {
-      name: publicToolName("grantry/list_scopes"),
-      description: "grantry: list the tenant scopes this agent token can access, each with its connected providers and the exact `scope` strings + tools to pass to tools/call. Call this first to discover what you can reach instead of guessing scope names.",
-      inputSchema: {
-        type: "object",
-        properties: toolSpecificInputProperties("grantry/list_scopes"),
-        required: [],
+      {
+        name: publicToolName("grantry/list_scopes"),
+        description: "grantry: list the tenant scopes this agent token can access, each with its connected providers and the exact `scope` strings + tools to pass to tools/call. Call this first to discover what you can reach instead of guessing scope names.",
+        inputSchema: {
+          type: "object",
+          properties: toolSpecificInputProperties("grantry/list_scopes"),
+          required: [],
+        },
       },
-    },
-    {
-      name: publicToolName("grantry/delegate"),
-      description: "grantry: mint a single-use grant token to run one tool/scope via a capable peer agent (same owner). grantry does not execute — present the returned grant_token on a normal tools/call",
-      inputSchema: {
-        type: "object",
-        properties: toolSpecificInputProperties("grantry/delegate"),
-        required: ["agent_id", "tool", "scope"],
+      {
+        name: publicToolName("grantry/delegate"),
+        description: "grantry: mint a single-use grant token to run one tool/scope via a capable peer agent (same owner). grantry does not execute — present the returned grant_token on a normal tools/call",
+        inputSchema: {
+          type: "object",
+          properties: toolSpecificInputProperties("grantry/delegate"),
+          required: ["agent_id", "tool", "scope"],
+        },
       },
-    },
-  );
+    );
+  }
 
   const scopesByTool = new Map<string, Set<string>>();
   const authTypesByTool = new Map<string, Set<string>>();
@@ -3720,13 +3762,20 @@ function buildToolList(
         inputSchema: {
           type: "object",
           properties: {
+            ...(options.userMode ? {
+              agent_id: {
+                type: "string",
+                enum: Array.from(new Set((options.agentOptionsByTool?.get(toolName) ?? []).map((a) => a.id))).sort(),
+                description: "Agent to act through for this call. Use grantry_list_user_agents to inspect names and descriptions.",
+              },
+            } : {}),
             scope: { type: "string", enum: scopes, description: "Tenant scope. Use one of the scopes exposed for this agent token." },
             auth_type: { type: "string", enum: authTypes, description: "Optional auth type disambiguator." },
             connection_id: { type: "string", enum: connectionIds, description: "Optional connection id disambiguator." },
             grant_token: { type: "string", description: "One-time delegation grant from grantry_delegate, authorizing this exact tool+scope via a capable peer agent. Required for delegated scopes (those without a direct connection on this agent token)." },
             ...toolSpecificInputProperties(toolName),
           },
-          required: ["scope", ...requiredToolSpecificArgs(toolName)],
+          required: [...(options.userMode && options.requireAgentId ? ["agent_id"] : []), "scope", ...requiredToolSpecificArgs(toolName)],
         },
       });
   }
@@ -3742,7 +3791,10 @@ function buildToolList(
  *    connector acts as. Permissions are evaluated from live connection grants
  *    per request, so dashboard changes apply immediately.
  */
-async function resolveAgent(authHeader: string | null): Promise<{ id: string; name: string; enabled: boolean } | null> {
+type ResolvedAgent = { id: string; name: string; enabled: boolean; userId?: string | null };
+type ResolvedMcpUser = { userId: string; clientId: string };
+
+async function resolveAgent(authHeader: string | null): Promise<ResolvedAgent | null> {
   if (!authHeader?.startsWith("Bearer ")) return null;
   const token = authHeader.slice(7);
   if (!token) return null;
@@ -3761,12 +3813,25 @@ async function resolveAgent(authHeader: string | null): Promise<{ id: string; na
 }
 
 /** Resolve an MCP-plugin OAuth access token to the grantry Agent it acts as. */
-async function resolveOAuthAgent(token: string): Promise<{ id: string; name: string; enabled: boolean } | null> {
+async function resolveOAuthAccessToken(token: string): Promise<{ userId: string; clientId: string } | null> {
   const accessToken = await prisma.oauthAccessToken
     .findUnique({ where: { accessToken: token } })
     .catch(() => null);
   if (!accessToken || !accessToken.userId) return null;
   if (accessToken.accessTokenExpiresAt && accessToken.accessTokenExpiresAt < new Date()) return null;
+  return { userId: accessToken.userId, clientId: accessToken.clientId };
+}
+
+async function resolveOAuthUser(authHeader: string | null): Promise<ResolvedMcpUser | null> {
+  if (!authHeader?.startsWith("Bearer ")) return null;
+  const token = authHeader.slice(7);
+  if (!token || token.startsWith("gn_agt_")) return null;
+  return resolveOAuthAccessToken(token);
+}
+
+async function resolveOAuthAgent(token: string): Promise<ResolvedAgent | null> {
+  const accessToken = await resolveOAuthAccessToken(token);
+  if (!accessToken) return null;
 
   // Explicit binding chosen at connect time wins; otherwise fall back to the
   // user's sole connectable agent so single-agent setups need no extra step.
@@ -3796,11 +3861,11 @@ async function resolveOAuthAgent(token: string): Promise<{ id: string; name: str
   // access immediately even though the OauthAgentGrant row still exists.
   if (!(await userMayUseAgent(accessToken.userId, agent))) return null;
 
-  return { id: agent.id, name: agent.name, enabled: agent.enabled };
+  return { id: agent.id, name: agent.name, enabled: agent.enabled, userId: accessToken.userId };
 }
 
-function prepareMcpSession(c: any, agent: { id: string } | null) {
-  if (!agent) return { ok: true as const };
+function prepareMcpSession(c: any, principalKey: string | null) {
+  if (!principalKey) return { ok: true as const };
 
   cleanupExpiredMcpSessions();
   const now = Date.now();
@@ -3810,8 +3875,8 @@ function prepareMcpSession(c: any, agent: { id: string } | null) {
     if (!existing || existing.expiresAt <= now) {
       return { ok: false as const, status: 404, message: "Mcp-Session-Id is unknown or expired; retry without the header to create a new session" };
     }
-    if (existing.agentId !== agent.id) {
-      return { ok: false as const, status: 409, message: "Mcp-Session-Id belongs to a different agent token" };
+    if (existing.principalKey !== principalKey) {
+      return { ok: false as const, status: 409, message: "Mcp-Session-Id belongs to a different authenticated principal" };
     }
     existing.lastSeenAt = now;
     existing.expiresAt = now + MCP_SESSION_TTL_MS;
@@ -3821,13 +3886,109 @@ function prepareMcpSession(c: any, agent: { id: string } | null) {
 
   const sessionId = randomUUID();
   mcpSessions.set(sessionId, {
-    agentId: agent.id,
+    principalKey,
     createdAt: now,
     lastSeenAt: now,
     expiresAt: now + MCP_SESSION_TTL_MS,
   });
   c.header("Mcp-Session-Id", sessionId);
   return { ok: true as const };
+}
+
+function auditIdentity(agent: ResolvedAgent): { agentId: string; userId?: string } {
+  return agent.userId ? { agentId: agent.id, userId: agent.userId } : { agentId: agent.id };
+}
+
+async function selectableAgentsForUser(userId: string, wsSlug = "") {
+  let agents = await connectableAgentsFor(userId);
+  if (wsSlug) agents = agents.filter((agent) => agent.workspace?.slug === wsSlug);
+  return agents;
+}
+
+async function resolveUserSelectedAgent(userId: string, args: Record<string, unknown>, wsSlug = ""): Promise<
+  | { ok: true; agent: ResolvedAgent }
+  | { ok: false; status: number; code: number; message: string; agents?: Awaited<ReturnType<typeof selectableAgentsForUser>> }
+> {
+  const requestedAgentId = String(args.acting_agent_id ?? args.actingAgentId ?? args.agent_id ?? args.agentId ?? "").trim();
+  const candidates = await selectableAgentsForUser(userId, wsSlug);
+  if (requestedAgentId) {
+    const visible = candidates.find((agent) => agent.id === requestedAgentId);
+    if (!visible) {
+      return {
+        ok: false,
+        status: 403,
+        code: -32010,
+        message: wsSlug
+          ? `agent_id is not usable by this user in workspace '${wsSlug}'`
+          : "agent_id is not usable by this user",
+        agents: candidates,
+      };
+    }
+    const agent = await prisma.agent.findUnique({ where: { id: requestedAgentId } });
+    if (!agent || !agent.enabled || (agent.expiresAt && agent.expiresAt < new Date()) || !(await userMayUseAgent(userId, agent))) {
+      return { ok: false, status: 403, code: -32010, message: "agent_id is no longer usable by this user", agents: candidates };
+    }
+    return { ok: true, agent: { id: agent.id, name: agent.name, enabled: agent.enabled, userId } };
+  }
+  if (candidates.length === 1) {
+    const agent = await prisma.agent.findUnique({ where: { id: candidates[0].id } });
+    if (agent && agent.enabled && !(agent.expiresAt && agent.expiresAt < new Date()) && await userMayUseAgent(userId, agent)) {
+      return { ok: true, agent: { id: agent.id, name: agent.name, enabled: agent.enabled, userId } };
+    }
+  }
+  if (!candidates.length) {
+    return {
+      ok: false,
+      status: 403,
+      code: -32010,
+      message: wsSlug ? `no enabled agents available for this user in workspace '${wsSlug}'` : "no enabled agents available for this user",
+    };
+  }
+  return {
+    ok: false,
+    status: 400,
+    code: -32602,
+    message: "agent_id is required because this user can use multiple agents. Call grantry_list_user_agents first.",
+    agents: candidates,
+  };
+}
+
+async function userModeToolContext(userId: string, args: Record<string, unknown>, wsSlug: string): Promise<
+  | { ok: true; agent: ResolvedAgent; ctx: SystemToolContext }
+  | { ok: false; response: any; status: number }
+> {
+  const selected = await resolveUserSelectedAgent(userId, args, wsSlug);
+  if (!selected.ok) {
+    return {
+      ok: false,
+      status: selected.status,
+      response: {
+        jsonrpc: "2.0",
+        id: null,
+        error: {
+          code: selected.code,
+          message: selected.message,
+          data: selected.agents ? {
+            agents: selected.agents.map((agent) => ({
+              agent_id: agent.id,
+              name: agent.name,
+              description: agent.description,
+              workspace: agent.workspace,
+            })),
+          } : undefined,
+        },
+      },
+    };
+  }
+  const self = await prisma.agent.findUnique({ where: { id: selected.agent.id }, select: { ownerId: true, workspaceId: true } });
+  if (!self) {
+    return {
+      ok: false,
+      status: 500,
+      response: { jsonrpc: "2.0", id: null, error: { code: -32011, message: "selected agent vanished" } },
+    };
+  }
+  return { ok: true, agent: selected.agent, ctx: { agentId: selected.agent.id, ownerId: self.ownerId, workspaceId: self.workspaceId, userId } };
 }
 
 function safeJsonObject(s: string | null | undefined): Record<string, any> {
@@ -4097,7 +4258,9 @@ export async function credentialForConnection(conn: {
 const handleMcpPost = async (c: any) => {
   const started = Date.now();
   const auth = c.req.header("authorization") ?? null;
-  const agent = await resolveAgent(auth);
+  const userMode = isUserMcpMode(c);
+  const userPrincipal = userMode ? await resolveOAuthUser(auth) : null;
+  let agent = userMode ? null : await resolveAgent(auth);
   const configuredScope = configuredMcpScope(c);
   const wsSlug = String(c.req.param("ws") ?? "").trim();
   c.header("Access-Control-Expose-Headers", "Mcp-Session-Id, WWW-Authenticate");
@@ -4107,7 +4270,7 @@ const handleMcpPost = async (c: any) => {
   // THIS resource URL (RFC 9728 path insertion — /mcp/w/<ws> gets its own).
   // This is what triggers the OAuth flow in remote clients like claude.ai
   // and Claude Desktop. Static gn_agt_ tokens authenticate as before.
-  if (!agent) {
+  if (!agent && !userPrincipal) {
     const requestOrigin = new URL(c.req.url).origin;
     const origin = process.env.BETTER_AUTH_URL
       ? new URL(process.env.BETTER_AUTH_URL).origin
@@ -4131,7 +4294,7 @@ const handleMcpPost = async (c: any) => {
   // Workspace-locked endpoint (/mcp/w/<slug>): the resolved agent must live
   // in that workspace. Lets one desktop hold parallel connectors for
   // different workspaces (client A / client B) without cross-talk.
-  if (wsSlug) {
+  if (wsSlug && agent) {
     const dbAgent = await prisma.agent.findUnique({
       where: { id: agent.id },
       select: { workspace: { select: { slug: true } } },
@@ -4147,7 +4310,7 @@ const handleMcpPost = async (c: any) => {
     }
   }
 
-  const session = prepareMcpSession(c, agent);
+  const session = prepareMcpSession(c, userPrincipal ? `user:${userPrincipal.userId}` : (agent ? `agent:${agent.id}` : null));
   if (!session.ok) {
     return c.json({
       jsonrpc: "2.0", id: null,
@@ -4197,6 +4360,29 @@ const handleMcpPost = async (c: any) => {
   // Unauthenticated requests only see `ping`; an authenticated agent only sees
   // tools backed by enabled connections it can actually call.
   if (method === "tools/list") {
+    if (userPrincipal) {
+      const agents = await selectableAgentsForUser(userPrincipal.userId, wsSlug);
+      const allConnections: Awaited<ReturnType<typeof connectionsForAgent>> = [];
+      const agentOptionsByTool = new Map<string, { id: string; name: string }[]>();
+      for (const candidate of agents) {
+        const conns = (await connectionsForAgent(candidate.id)).filter((conn) => !configuredScope || conn.scope === configuredScope);
+        allConnections.push(...conns);
+        for (const conn of conns) {
+          for (const tool of conn.tools) {
+            const options = agentOptionsByTool.get(tool) ?? [];
+            if (!options.some((option) => option.id === candidate.id)) options.push({ id: candidate.id, name: candidate.name });
+            agentOptionsByTool.set(tool, options);
+          }
+        }
+      }
+      return c.json({ jsonrpc: "2.0", id, result: {
+        tools: buildToolList(allConnections, new Map(), {
+          userMode: true,
+          requireAgentId: agents.length > 1,
+          agentOptionsByTool,
+        }),
+      } });
+    }
     const connections = agent
       ? (await connectionsForAgent(agent.id)).filter((conn) => !configuredScope || conn.scope === configuredScope)
       : null;
@@ -4219,6 +4405,20 @@ const handleMcpPost = async (c: any) => {
   // --- connections/list: requires auth; returns the exact (provider, scope)
   // pairs the agent can use, so it never has to guess `scope` for tools/call. ---
   if (method === "connections/list") {
+    if (userPrincipal) {
+      const agents = await selectableAgentsForUser(userPrincipal.userId, wsSlug);
+      const resultAgents = [];
+      for (const candidate of agents) {
+        resultAgents.push({
+          agent_id: candidate.id,
+          name: candidate.name,
+          description: candidate.description,
+          workspace: candidate.workspace,
+          connections: (await connectionsForAgent(candidate.id)).filter((conn) => !configuredScope || conn.scope === configuredScope),
+        });
+      }
+      return c.json({ jsonrpc: "2.0", id, result: { agents: resultAgents } });
+    }
     if (!agent) {
       return c.json({
         jsonrpc: "2.0", id,
@@ -4234,11 +4434,25 @@ const handleMcpPost = async (c: any) => {
     const requestedToolName = String(params?.name ?? "");
     const toolName = canonicalToolName(requestedToolName);
     const args = params?.arguments ?? {};
+    let systemCtx: SystemToolContext | undefined = userPrincipal ? { userId: userPrincipal.userId, workspaceSlug: wsSlug } : undefined;
+
+    if (userPrincipal && !["grantry/get_skill", "grantry/get_providers", "grantry/list_user_agents"].includes(toolName)) {
+      const selectionArgs = toolName === "grantry/delegate"
+        ? { acting_agent_id: (args as any).acting_agent_id ?? (args as any).actingAgentId }
+        : args;
+      const selected = await userModeToolContext(userPrincipal.userId, selectionArgs, wsSlug);
+      if (!selected.ok) {
+        selected.response.id = id;
+        return c.json(selected.response, selected.status as any);
+      }
+      agent = selected.agent;
+      systemCtx = selected.ctx;
+    }
 
     // grantry/delegate executes a real provider call, so it runs through the
     // authenticated path below (rate limit + audit), not the metadata helper.
     if (SYSTEM_TOOLS.includes(toolName as any) && toolName !== "grantry/delegate") {
-      if (AUTHED_SYSTEM_TOOLS.has(toolName) && !agent) {
+      if (AUTHED_SYSTEM_TOOLS.has(toolName) && !agent && !systemCtx?.userId) {
         return c.json({
           jsonrpc: "2.0", id,
           error: { code: -32001, message: "authentication required: pass 'Authorization: Bearer gn_agt_...'" },
@@ -4247,10 +4461,9 @@ const handleMcpPost = async (c: any) => {
       // Resolve identity for any authenticated caller (not just AUTHED tools):
       // the public metadata tools (e.g. get_providers) optionally enrich their
       // output with the caller's scopes when a token is present.
-      let systemCtx: SystemToolContext | undefined;
-      if (agent) {
+      if (!systemCtx && agent) {
         const self = await prisma.agent.findUnique({ where: { id: agent.id }, select: { ownerId: true, workspaceId: true } });
-        if (self) systemCtx = { agentId: agent.id, ownerId: self.ownerId, workspaceId: self.workspaceId };
+        if (self) systemCtx = { ...auditIdentity(agent), ownerId: self.ownerId, workspaceId: self.workspaceId, userId: agent.userId ?? undefined };
       }
       try {
         const result = await callSystemTool(toolName, args, systemCtx);
@@ -4276,6 +4489,11 @@ const handleMcpPost = async (c: any) => {
     const authType = args.auth_type !== undefined ? String(args.auth_type) : (args.authType !== undefined ? String(args.authType) : "");
     const connectionId = args.connection_id !== undefined ? String(args.connection_id) : (args.connectionId !== undefined ? String(args.connectionId) : "");
     const grantToken = args.grant_token !== undefined ? String(args.grant_token) : (args.grantToken !== undefined ? String(args.grantToken) : "");
+    const providerArgs: Record<string, unknown> = { ...args };
+    delete providerArgs.agent_id;
+    delete providerArgs.agentId;
+    delete providerArgs.acting_agent_id;
+    delete providerArgs.actingAgentId;
 
     if (rateLimitExceeded(agent.id)) {
       return c.json({
@@ -4302,7 +4520,7 @@ const handleMcpPost = async (c: any) => {
 
       const fail = async (code: number, message: string, status = 400) => {
         await prisma.auditLog.create({ data: {
-          agentId: agent.id,
+          ...auditIdentity(agent!),
           provider: delegTool.includes("/") ? delegTool.split("/", 1)[0] : "system",
           tool: delegTool || "grantry/delegate",
           scope: delegScope,
@@ -4349,7 +4567,7 @@ const handleMcpPost = async (c: any) => {
         expiresAt,
       } });
       await prisma.auditLog.create({ data: {
-        agentId: agent.id,
+        ...auditIdentity(agent),
         delegatedById: agent.id,
         delegationId: grant.id,
         provider: decision.provider,
@@ -4382,7 +4600,7 @@ const handleMcpPost = async (c: any) => {
     if (toolName === "ping") {
       await prisma.auditLog.create({
         data: {
-          agentId: agent.id,
+          ...auditIdentity(agent),
           provider: "system",
           tool: "ping",
           status: "ok",
@@ -4395,7 +4613,7 @@ const handleMcpPost = async (c: any) => {
     if (configuredScope && requestedScope && requestedScope !== configuredScope) {
       await prisma.auditLog.create({
         data: {
-          agentId: agent.id,
+          ...auditIdentity(agent),
           provider: toolName.includes("/") ? toolName.split("/", 1)[0] : "unknown",
           tool: String(toolName ?? ""),
           scope: requestedScope,
@@ -4430,7 +4648,7 @@ const handleMcpPost = async (c: any) => {
         : "";
       if (invalid) {
         await prisma.auditLog.create({ data: {
-          agentId: agent.id,
+          ...auditIdentity(agent),
           provider: toolName.includes("/") ? toolName.split("/", 1)[0] : "system",
           tool: toolName, scope, status: "denied",
           errorMessage: `delegation grant rejected: ${invalid}`,
@@ -4447,7 +4665,7 @@ const handleMcpPost = async (c: any) => {
       if (!decision.allowed) {
         await prisma.delegationGrant.update({ where: { id: grant!.id }, data: { status: "consumed", consumedAt: now } }).catch(() => {});
         await prisma.auditLog.create({ data: {
-          agentId: agent.id, delegatedById: agent.id, delegationId: grant!.id,
+          ...auditIdentity(agent), delegatedById: agent.id, delegationId: grant!.id,
           provider: decision.provider, tool: toolName, scope, status: "denied",
           errorMessage: `target no longer capable: ${decision.reason}`,
           requestArgs: maskAuditArgs(args),
@@ -4462,6 +4680,10 @@ const handleMcpPost = async (c: any) => {
       const innerArgs: Record<string, unknown> = { ...args };
       delete innerArgs.grant_token;
       delete innerArgs.grantToken;
+      delete innerArgs.agent_id;
+      delete innerArgs.agentId;
+      delete innerArgs.acting_agent_id;
+      delete innerArgs.actingAgentId;
       try {
         const credential = await credentialForConnection(conn);
 
@@ -4470,7 +4692,7 @@ const handleMcpPost = async (c: any) => {
         const result = await dispatchProviderTool(decision.provider, toolName, innerArgs, credential, conn);
         void recordRuntimeCallHealth(conn, { ok: true });
         await prisma.auditLog.create({ data: {
-          agentId: grant!.targetAgentId, delegatedById: agent.id, delegationId: grant!.id,
+          agentId: grant!.targetAgentId, userId: agent.userId ?? undefined, delegatedById: agent.id, delegationId: grant!.id,
           connectionId: conn.id,
           provider: decision.provider, tool: toolName, scope, status: "ok",
           responseSummary: JSON.stringify({ delegatedBy: agent.name, connectionId: conn.id, result: (result as any)?.auditSummary ?? result }).slice(0, 500),
@@ -4487,7 +4709,7 @@ const handleMcpPost = async (c: any) => {
         const errMsg = String(e?.message ?? e);
         void recordRuntimeCallHealth(conn, { ok: false, errorMessage: errMsg });
         await prisma.auditLog.create({ data: {
-          agentId: grant!.targetAgentId, delegatedById: agent.id, delegationId: grant!.id,
+          agentId: grant!.targetAgentId, userId: agent.userId ?? undefined, delegatedById: agent.id, delegationId: grant!.id,
           connectionId: conn.id,
           provider: decision.provider, tool: toolName, scope, status: "error",
           errorMessage: errMsg.slice(0, 2000),
@@ -4503,7 +4725,7 @@ const handleMcpPost = async (c: any) => {
     if (!decision.allowed) {
       await prisma.auditLog.create({
         data: {
-          agentId: agent.id,
+          ...auditIdentity(agent),
           provider: decision.provider,
           tool: toolName,
           scope,
@@ -4557,7 +4779,7 @@ const handleMcpPost = async (c: any) => {
       void recordRuntimeCallHealth(conn, { ok: false, errorMessage: errMsg });
       await prisma.auditLog.create({
         data: {
-          agentId: agent.id,
+          ...auditIdentity(agent),
           connectionId: conn.id,
           provider: decision.provider,
           tool: toolName,
@@ -4576,19 +4798,19 @@ const handleMcpPost = async (c: any) => {
 
     // 4) Dispatch to provider-specific tool
     try {
-      const result = await dispatchProviderTool(decision.provider, toolName, args, token, conn);
+      const result = await dispatchProviderTool(decision.provider, toolName, providerArgs, token, conn);
       void recordRuntimeCallHealth(conn, { ok: true });
 
       await prisma.auditLog.create({
         data: {
-          agentId: agent.id,
+          ...auditIdentity(agent),
           connectionId: conn.id,
           provider: decision.provider,
           tool: toolName,
           scope,
           status: "ok",
           responseSummary: JSON.stringify({ authType: decision.authType, connectionId: conn.id, result: (result as any)?.auditSummary ?? result }).slice(0, 500),
-          requestArgs: maskAuditArgs(args),
+          requestArgs: maskAuditArgs(providerArgs),
           durationMs: Date.now() - started,
           ipAddress: c.req.header("x-forwarded-for") ?? null,
         },
@@ -4607,14 +4829,14 @@ const handleMcpPost = async (c: any) => {
       void recordRuntimeCallHealth(conn, { ok: false, errorMessage: errMsg });
       await prisma.auditLog.create({
         data: {
-          agentId: agent.id,
+          ...auditIdentity(agent),
           connectionId: conn.id,
           provider: decision.provider,
           tool: toolName,
           scope,
           status: "error",
           errorMessage: errMsg.slice(0, 2000),
-          requestArgs: maskAuditArgs(args),
+          requestArgs: maskAuditArgs(providerArgs),
           durationMs: Date.now() - started,
         },
       });
@@ -4638,3 +4860,11 @@ mcpApp.post("/", handleMcpPost);
 mcpApp.post("/w/:ws", handleMcpPost);
 mcpApp.post("/s/:scope", handleMcpPost);
 mcpApp.post("/w/:ws/s/:scope", handleMcpPost);
+// User-mode MCP: one OAuth-authenticated connector can act through any agent
+// the user may use. Provider calls select an agent with `agent_id` (or auto-pick
+// when the user has exactly one candidate). Existing agent-token routes above
+// remain unchanged for already distributed clients.
+mcpApp.post("/u", handleMcpPost);
+mcpApp.post("/u/w/:ws", handleMcpPost);
+mcpApp.post("/u/s/:scope", handleMcpPost);
+mcpApp.post("/u/w/:ws/s/:scope", handleMcpPost);
