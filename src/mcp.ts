@@ -4290,6 +4290,7 @@ const handleMcpPost = async (c: any) => {
   // This is what triggers the OAuth flow in remote clients like claude.ai
   // and Claude Desktop. Static gn_agt_ tokens authenticate as before.
   if (!agent && !userPrincipal) {
+    const suppliedPersonalToken = userMode && auth?.startsWith("Bearer gn_usr_");
     const requestOrigin = new URL(c.req.url).origin;
     const origin = process.env.BETTER_AUTH_URL
       ? new URL(process.env.BETTER_AUTH_URL).origin
@@ -4304,8 +4305,9 @@ const handleMcpPost = async (c: any) => {
       id: null,
       error: {
         code: -32001,
-        message:
-          "Unauthorized: pass 'Authorization: Bearer gn_agt_...' or complete the OAuth flow advertised in WWW-Authenticate",
+        message: suppliedPersonalToken
+          ? `Unauthorized: this personal MCP token is invalid, revoked, or is not scoped to workspace '${wsSlug}'. Open MCP tokens for that workspace, rotate the token, and copy the new configuration.`
+          : "Unauthorized: pass 'Authorization: Bearer gn_agt_...' or complete the OAuth flow advertised in WWW-Authenticate",
       },
     }, 401);
   }
