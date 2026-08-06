@@ -544,17 +544,26 @@ const CSS = `
   .social-auth { display: flex; flex-direction: column; gap: 8px; }
   .auth-separator { display: flex; align-items: center; gap: 10px; margin: 16px 0; color: var(--muted); font-size: 12px; }
   .auth-separator::before, .auth-separator::after { content: ""; height: 1px; flex: 1; background: var(--border); }
-  .assignment-matrix { min-width: 760px; table-layout: fixed; }
-  .assignment-matrix th, .assignment-matrix td { padding: 12px; text-align: center; }
-  .assignment-matrix th:first-child, .assignment-matrix td:first-child { position: sticky; left: 0; z-index: 1; background: var(--surface); text-align: left; min-width: 220px; width: 220px; }
-  .assignment-matrix th:first-child { background: var(--neutral-secondary-soft); z-index: 2; }
-  .assignment-agent-head { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; height: 150px; max-width: 72px; overflow: hidden; text-overflow: ellipsis; margin: 0 auto; }
-  .assignment-toggle { width: 36px; height: 36px; padding: 0; border-radius: 8px; font-size: 16px; }
-  .assignment-toggle.assigned { background: var(--success); border-color: var(--border-success-subtle); color: #fff; }
-  .assignment-toggle.unassigned { background: var(--surface); color: var(--muted); border: 1px solid var(--border-default-medium); box-shadow: var(--shadow-xs); }
-  .assignment-toggle.unassigned:hover { background: var(--neutral-secondary-medium); color: var(--ink); transform: none; }
-  .assignment-person { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .assignment-list { display: grid; gap: 14px; }
+  .assignment-card { display: grid; grid-template-columns: minmax(220px, 300px) minmax(0, 1fr); gap: 20px; align-items: start; }
+  .assignment-person { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
   .assignment-person strong, .assignment-person span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .assignment-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .assignment-search { display: grid; gap: 8px; }
+  .assignment-agent-list { max-height: 420px; overflow-y: auto; border: 1px solid var(--border); border-radius: 10px; background: var(--neutral-primary); }
+  .assignment-agent-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .assignment-agent-row:last-child { border-bottom: 0; }
+  .assignment-agent-row[hidden] { display: none; }
+  .assignment-agent-main { min-width: 0; }
+  .assignment-agent-main strong { display: block; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .assignment-agent-main small { display: block; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .assignment-agent-actions { display: flex; align-items: center; gap: 8px; }
+  .assignment-agent-actions button { min-width: 82px; padding: 7px 10px; font-size: 12px; }
+  .assignment-agent-actions .assigned { background: var(--success-soft); border: 1px solid var(--border-success-subtle); color: var(--fg-success-strong); }
+  .assignment-agent-actions .assigned:hover { background: var(--success-medium); color: var(--fg-success-strong); transform: none; }
+  @media (max-width: 900px) {
+    .assignment-card { grid-template-columns: 1fr; }
+  }
   .combo { position: relative; flex: 1; }
   .combo-btn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; background: var(--neutral-secondary-medium); color: var(--ink-2); border: 1px solid var(--border-default-medium); border-radius: 8px; font-weight: 400; font-size: 14px; text-align: left; box-shadow: var(--shadow-xs); }
   .combo-btn:hover { background: var(--neutral-secondary-medium); border-color: var(--border-default-strong); color: var(--ink-2); transform: none; }
@@ -1943,58 +1952,54 @@ dashboardApp.get("/workspaces/assignments", async (c) => {
   ]);
   const assigned = new Set(assignments.map((a) => `${a.userId}:${a.agentId}`));
   const assignedCountByUser = new Map<string, number>();
-  const assignedCountByAgent = new Map<string, number>();
   for (const a of assignments) {
     assignedCountByUser.set(a.userId, (assignedCountByUser.get(a.userId) ?? 0) + 1);
-    assignedCountByAgent.set(a.agentId, (assignedCountByAgent.get(a.agentId) ?? 0) + 1);
   }
   const returnTo = "/workspaces/assignments";
-  const matrix = members.length && agents.length ? `
-    <div class="table-wrap">
-      <table class="assignment-matrix">
-        <thead>
-          <tr>
-            <th>
-              <div>${t("Person")}</div>
-              <small style="color:var(--muted);font-weight:500;">${t("Rows are workspace members")}</small>
-            </th>
-            ${agents.map((agent) => `
-              <th title="${escapeHtml(agent.name)}${agent.description ? ` — ${escapeHtml(agent.description)}` : ""}">
-                <div class="assignment-agent-head">${escapeHtml(agent.name)}</div>
-              </th>`).join("")}
-          </tr>
-        </thead>
-        <tbody>
-          ${members.map((m) => `
-            <tr>
-              <td>
-                <div class="assignment-person">
-                  <strong>${escapeHtml(m.user.email)}</strong>
-                  ${m.user.name ? `<span style="color:var(--muted);font-size:12px;">${escapeHtml(m.user.name)}</span>` : ""}
-                  <span><span class="badge ${m.role === "member" ? "unscoped" : "ok"}">${escapeHtml(m.role)}</span> <small style="color:var(--muted);">${t("{count} assigned", { count: String(assignedCountByUser.get(m.user.id) ?? 0) })}</small></span>
-                </div>
-              </td>
-              ${agents.map((agent) => {
+  const memberCards = members.length && agents.length ? `
+    <div class="assignment-list">
+      ${members.map((m) => {
+        const assignedAgents = agents.filter((agent) => assigned.has(`${m.user.id}:${agent.id}`));
+        const orderedAgents = [
+          ...assignedAgents,
+          ...agents.filter((agent) => !assigned.has(`${m.user.id}:${agent.id}`)),
+        ];
+        return `
+        <section class="card assignment-card">
+          <div class="assignment-person">
+            <strong>${escapeHtml(m.user.email)}</strong>
+            ${m.user.name ? `<span style="color:var(--muted);font-size:13px;">${escapeHtml(m.user.name)}</span>` : ""}
+            <span><span class="badge ${m.role === "member" ? "unscoped" : "ok"}">${escapeHtml(m.role)}</span> <small style="color:var(--muted);">${t("{count} assigned", { count: String(assignedCountByUser.get(m.user.id) ?? 0) })}</small></span>
+            <div class="assignment-chips">
+              ${assignedAgents.slice(0, 8).map((agent) => `<span class="badge ok">${escapeHtml(agent.name)}</span>`).join("")}
+              ${assignedAgents.length > 8 ? `<span class="badge unscoped">${t("+{count} more", { count: String(assignedAgents.length - 8) })}</span>` : ""}
+              ${assignedAgents.length === 0 ? `<span style="color:var(--muted);font-size:13px;">${t("No agents assigned")}</span>` : ""}
+            </div>
+          </div>
+          <div class="assignment-search">
+            <input type="search" class="assignment-filter" placeholder="${escapeHtml(t("Search agents"))}" aria-label="${escapeHtml(t("Search agents for {email}", { email: m.user.email }))}">
+            <div class="assignment-agent-list">
+              ${orderedAgents.map((agent) => {
                 const key = `${m.user.id}:${agent.id}`;
                 const isAssigned = assigned.has(key);
-                return `<td>
-                  <form method="post" action="/workspaces/${escapeHtml(active.id)}/${isAssigned ? "unassign" : "assign"}" style="margin:0;">
+                return `
+                <div class="assignment-agent-row" data-agent-name="${escapeHtml(agent.name.toLowerCase())}">
+                  <div class="assignment-agent-main">
+                    <strong>${escapeHtml(agent.name)}</strong>
+                    ${agent.description ? `<small>${escapeHtml(agent.description)}</small>` : `<small>${isAssigned ? t("Assigned to this person") : t("Not assigned")}</small>`}
+                  </div>
+                  <form method="post" action="/workspaces/${escapeHtml(active.id)}/${isAssigned ? "unassign" : "assign"}" class="assignment-agent-actions">
                     <input type="hidden" name="userId" value="${escapeHtml(m.user.id)}">
                     <input type="hidden" name="agentId" value="${escapeHtml(agent.id)}">
                     <input type="hidden" name="returnTo" value="${escapeHtml(returnTo)}">
-                    <button type="submit" class="assignment-toggle ${isAssigned ? "assigned" : "unassigned"}" aria-label="${escapeHtml(isAssigned ? t("Unassign {agent} from {email}", { agent: agent.name, email: m.user.email }) : t("Assign {agent} to {email}", { agent: agent.name, email: m.user.email }))}" title="${escapeHtml(isAssigned ? t("Assigned — click to unassign") : t("Not assigned — click to assign"))}">${isAssigned ? "✓" : "+"}</button>
+                    <button type="submit" class="${isAssigned ? "assigned" : "secondary"}">${isAssigned ? t("Remove") : t("Assign")}</button>
                   </form>
-                </td>`;
+                </div>`;
               }).join("")}
-            </tr>`).join("")}
-        </tbody>
-        <tfoot>
-          <tr>
-            <th>${t("Assigned users")}</th>
-            ${agents.map((agent) => `<td><span class="badge ${assignedCountByAgent.get(agent.id) ? "ok" : "unscoped"}">${escapeHtml(String(assignedCountByAgent.get(agent.id) ?? 0))}</span></td>`).join("")}
-          </tr>
-        </tfoot>
-      </table>
+            </div>
+          </div>
+        </section>`;
+      }).join("")}
     </div>` : `
     <div class="card">
       <div class="empty">${members.length ? t("No enabled agents in this workspace yet.") : t("No workspace members yet.")}</div>
@@ -2023,7 +2028,18 @@ dashboardApp.get("/workspaces/assignments", async (c) => {
         <div class="scope-summary-card"><span>${t("Agents")}</span><strong>${escapeHtml(String(agents.length))}</strong></div>
         <div class="scope-summary-card"><span>${t("Assignments")}</span><strong>${escapeHtml(String(assignments.length))}</strong></div>
       </div>
-      ${matrix}
+      ${memberCards}
+      <script>
+        for (const input of document.querySelectorAll('.assignment-filter')) {
+          input.addEventListener('input', () => {
+            const card = input.closest('.assignment-card');
+            const q = input.value.trim().toLowerCase();
+            for (const row of card.querySelectorAll('.assignment-agent-row')) {
+              row.hidden = q && !String(row.dataset.agentName || '').includes(q);
+            }
+          });
+        }
+      </script>
     </main></body></html>
   `);
 });
