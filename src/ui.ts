@@ -1650,12 +1650,16 @@ function manageableWhere(userId: string, ws: WsAccess): RowsWhere {
 }
 
 function visibleAgentWhere(userId: string, ws: WsAccess): AgentAccessWhere {
-  const OR: Array<Record<string, unknown>> = [{ ownerId: userId }];
-  if (ws.wsId) {
-    OR.push({ workspaceId: ws.wsId, assignments: { some: { userId } } });
-    if (ws.wsAdmin) OR.push({ workspaceId: ws.wsId });
-  }
-  return { OR };
+  // The agents page is a workspace-scoped management view. Do not let the
+  // owner branch escape that boundary: an owner can belong to many workspaces.
+  if (!ws.wsId) return { OR: [{ ownerId: userId }] };
+  if (ws.wsAdmin) return { OR: [{ workspaceId: ws.wsId }] };
+  return {
+    OR: [
+      { workspaceId: ws.wsId, ownerId: userId },
+      { workspaceId: ws.wsId, assignments: { some: { userId } } },
+    ],
+  };
 }
 
 function userMayManageAgentInWorkspace(userId: string, ws: WsAccess, agent: { ownerId: string; workspaceId: string | null }): boolean {
