@@ -1202,6 +1202,26 @@ export async function inspectCredential(provider: string, authType: string, toke
       return { provider, authType, status: "ok", subject: { account_name: body.account_name, email: body.email, datacenter: dc }, notes: ["Mailchimp API keys carry their datacenter as the suffix after the last '-' and use HTTP Basic auth."], checkedAt };
     }
 
+    if (provider === "nocodb") {
+      let apiToken = token.trim();
+      let base = "https://app.nocodb.com";
+      try {
+        const p = JSON.parse(token.trim());
+        if (p && typeof p === "object" && !Array.isArray(p)) {
+          apiToken = String(p.api_token ?? p.apiToken ?? p.token ?? "").trim();
+          const url = String(p.base_url ?? p.baseUrl ?? "").trim();
+          if (url) base = url.replace(/\/+$/, "");
+        }
+      } catch {
+        // plain API token credential
+      }
+      if (!apiToken) return { provider, authType, status: "error", checkedAt, error: "NocoDB credential must include an api_token" };
+      const resp = await fetchWithTimeout(`${base}/api/v1/auth/user/me`, { headers: { "xc-token": apiToken, Accept: "application/json" } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `NocoDB token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      return { provider, authType, status: "ok", subject: { id: body.id, email: body.email, roles: body.roles, base_url: base }, notes: ["NocoDB API tokens are sent via the xc-token header and inherit the issuing user's base permissions."], checkedAt };
+    }
+
     if (provider === "zendesk") {
       let p: any; try { p = JSON.parse(token.trim()); } catch { return { provider, authType, status: "error", checkedAt, error: 'Zendesk credential must be JSON {"subdomain","email","token"}' }; }
       if (!p.subdomain || !p.email || !p.token) return { provider, authType, status: "error", checkedAt, error: "Zendesk JSON must include subdomain, email, and token" };

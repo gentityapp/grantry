@@ -187,6 +187,8 @@ Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing scope):
 - **LINE**: paste a **Channel Access Token** from the LINE Developers console
   (`developers.line.biz/console`) > your Messaging API channel > Messaging API tab.
   Scoped to one official account / channel.
+- **NocoDB**: paste an **API token** from Account Settings > Tokens. Self-hosted
+  instances also enter their **Server URL**; NocoDB Cloud leaves it blank.
 - **PAT (paste an API key / token)**: **Airtable** (PAT), **Linear** (personal API
   key, no Bearer prefix), **SendGrid** (API key), **Vercel** (token), **Stripe**
   (secret key), **Webflow** (token), **Intercom** (access token), **Customer.io**
@@ -629,6 +631,16 @@ plain `text` string is accepted and wrapped into a single text message.
 - `get_record` (read): `base_id`, `table`, `record_id`.
 - `create_record` (write): `base_id`, `table`; one of `fields` (object) or `records` (array).
 - `update_record` (write): `base_id`, `table`, `record_id`, `fields`. `delete_record` (write): `base_id`, `table`, `record_id`.
+
+### NocoDB tool arguments (besides `scope`)
+- Credential: `{"api_token": "...", "base_url": "https://nocodb.example.com"}` — `base_url` only for self-hosted; cloud defaults to `https://app.nocodb.com`. Sent as the `xc-token` header.
+- `get_me` (read): none. `list_bases` (read): opt `workspace_id` (cloud only).
+- `list_tables` (read): `base_id`. `get_table` / `list_views` (read): `table_id`.
+- `list_records` (read): `table_id`; opt `view_id`, `fields`, `sort`, `where`, `limit`, `offset`.
+- `count_records` (read): `table_id`; opt `view_id`, `where`. `get_record` (read): `table_id`, `record_id`; opt `fields`.
+- `create_records` (write): `table_id`; one of `fields` (object) or `records` (array).
+- `update_records` (write): `table_id`; either `record_id` + `fields`, or `records` (array, each row carrying `Id`).
+- `delete_records` (destructive): `table_id`; either `record_id` or `records` (array of `{Id}`).
 
 ### Linear tool arguments (besides `scope`)
 - `get_me` / `list_teams` (read): none. `list_issues` (read): opt `first`.

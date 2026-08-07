@@ -71,6 +71,7 @@ import { callGoogleSheetsTool } from "./connectors/google_sheets.js";
 import { callGoogleSlidesTool } from "./connectors/google_slides.js";
 import { callGoogleFormsTool } from "./connectors/google_forms.js";
 import { callTwentyTool } from "./connectors/twenty.js";
+import { callNocodbTool } from "./connectors/nocodb.js";
 import { callMonidTool } from "./connectors/monid.js";
 import { callYouCanBookMeTool } from "./connectors/youcanbookme.js";
 import { callCalcomTool } from "./connectors/calcom.js";
@@ -2498,6 +2499,29 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "twenty/create_record") { return { object: { type: "string", description: "Plural object name." }, data: { type: "object", description: "Field values, e.g. { name: { firstName, lastName } } for people." } }; }
   if (toolName === "twenty/update_record") { return { object: { type: "string", description: "Plural object name." }, record_id: { type: "string", description: "Record id (uuid)." }, data: { type: "object", description: "Field values to update." } }; }
 
+  // --- nocodb ---
+  if (toolName === "nocodb/get_me") { return {}; }
+  if (toolName === "nocodb/list_bases") { return { workspace_id: { type: "string", description: "Optional NocoDB Cloud workspace id; omit on self-hosted instances." } }; }
+  if (toolName === "nocodb/list_tables") { return { base_id: { type: "string", description: "NocoDB base id (p...)." } }; }
+  if (toolName === "nocodb/get_table") { return { table_id: { type: "string", description: "NocoDB table id (m...); returns the table schema including columns." } }; }
+  if (toolName === "nocodb/list_views") { return { table_id: { type: "string", description: "NocoDB table id (m...)." } }; }
+  if (toolName === "nocodb/list_records") {
+    return {
+      table_id: { type: "string", description: "NocoDB table id (m...)." },
+      view_id: { type: "string", description: "Optional view id (vw...) to apply that view's filters and sorts." },
+      fields: { type: "string", description: "Comma-separated field names to return." },
+      sort: { type: "string", description: "Comma-separated sort, e.g. Title,-CreatedAt (leading - = descending)." },
+      where: { type: "string", description: "NocoDB filter expression, e.g. (Status,eq,Active)." },
+      limit: { type: "number", description: "Max records per page (default 25, max 1000)." },
+      offset: { type: "number", description: "Records to skip for pagination." },
+    };
+  }
+  if (toolName === "nocodb/count_records") { return { table_id: { type: "string", description: "NocoDB table id (m...)." }, view_id: { type: "string", description: "Optional view id." }, where: { type: "string", description: "NocoDB filter expression, e.g. (Status,eq,Active)." } }; }
+  if (toolName === "nocodb/get_record") { return { table_id: { type: "string", description: "NocoDB table id (m...)." }, record_id: { type: "string", description: "Record primary key (Id)." }, fields: { type: "string", description: "Comma-separated field names to return." } }; }
+  if (toolName === "nocodb/create_records") { return { table_id: { type: "string", description: "NocoDB table id (m...)." }, fields: { type: "object", description: "Field values for a single new record." }, records: { type: "array", items: { type: "object" }, description: "Array of field-value objects to insert in bulk (alternative to fields)." } }; }
+  if (toolName === "nocodb/update_records") { return { table_id: { type: "string", description: "NocoDB table id (m...)." }, record_id: { type: "string", description: "Record primary key (Id) to update, when using fields." }, fields: { type: "object", description: "Field values to update on record_id." }, records: { type: "array", items: { type: "object" }, description: "Array of objects, each carrying Id plus the fields to update (bulk alternative)." } }; }
+  if (toolName === "nocodb/delete_records") { return { table_id: { type: "string", description: "NocoDB table id (m...)." }, record_id: { type: "string", description: "Record primary key (Id) to delete." }, records: { type: "array", items: { type: "object" }, description: "Array of { Id } objects to delete in bulk (alternative to record_id)." } }; }
+
   // --- monid ---
   if (toolName === "monid/whoami") { return { workspace_id: { type: "string", description: "Optional workspace id (org_...); only needed for OAuth tokens without workspace context." } }; }
   if (toolName === "monid/list_workspaces") { return { workspace_id: { type: "string", description: "Optional workspace id." } }; }
@@ -2978,6 +3002,17 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "twenty/get_record") return ["object", "record_id"];
   if (toolName === "twenty/create_record") return ["object", "data"];
   if (toolName === "twenty/update_record") return ["object", "record_id", "data"];
+  if (toolName === "nocodb/get_me") return [];
+  if (toolName === "nocodb/list_bases") return [];
+  if (toolName === "nocodb/list_tables") return ["base_id"];
+  if (toolName === "nocodb/get_table") return ["table_id"];
+  if (toolName === "nocodb/list_views") return ["table_id"];
+  if (toolName === "nocodb/list_records") return ["table_id"];
+  if (toolName === "nocodb/count_records") return ["table_id"];
+  if (toolName === "nocodb/get_record") return ["table_id", "record_id"];
+  if (toolName === "nocodb/create_records") return ["table_id"];
+  if (toolName === "nocodb/update_records") return ["table_id"];
+  if (toolName === "nocodb/delete_records") return ["table_id"];
   if (toolName === "monid/whoami") return [];
   if (toolName === "monid/list_workspaces") return [];
   if (toolName === "monid/discover") return ["query"];
@@ -3285,6 +3320,7 @@ async function dispatchProviderTool(
   if (provider === "youtube") return callYouTubeTool(toolName, args, token);
   if (provider === "attio") return callAttioTool(toolName, args, token);
   if (provider === "twenty") return callTwentyTool(toolName, args, token);
+  if (provider === "nocodb") return callNocodbTool(toolName, args, token);
   if (provider === "monid") return callMonidTool(toolName, args, token);
   if (provider === "youcanbookme") return callYouCanBookMeTool(toolName, args, token);
   if (provider === "calendly") return callCalendlyTool(toolName, args, token);

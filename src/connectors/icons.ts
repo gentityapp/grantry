@@ -132,6 +132,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   google_sheets: "#0F9D58",
   google_slides: "#F4B400",
   twenty: "#5E5CE6",
+  nocodb: "#1348BA", // NocoDB blue
   monid: "#111827",
   youcanbookme: "#0053F0",
   calendly: "#006BFF",

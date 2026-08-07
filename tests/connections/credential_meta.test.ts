@@ -177,6 +177,9 @@ function patSuccessResponse(call: FetchCall) {
   if (url === "https://graph.facebook.com/v21.0/me?fields=id,name,category") {
     return jsonResponse({ id: "page-id", name: "Page", category: "Business" });
   }
+  if (url === "https://app.nocodb.com/api/v1/auth/user/me") {
+    return jsonResponse({ id: "nocodb-user", email: "ops@example.com", roles: { org_level_creator: true } });
+  }
   if (url === "https://api.notion.com/v1/users/me") {
     return jsonResponse({ id: "notion-bot", type: "bot", name: "Grantry", bot: { workspace_name: "Root" } });
   }

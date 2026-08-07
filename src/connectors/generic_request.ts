@@ -191,6 +191,10 @@ function resolveBaseUrl(provider: string, manifest: GenericManifest, credential:
     const baseUrl = normalizeBaseUrl(credentialField(credential, ["base_url", "baseUrl"]));
     return baseUrl || "https://api.twenty.com";
   }
+  if (manifest.baseUrl === "credential.nocodb_base") {
+    const baseUrl = normalizeBaseUrl(credentialField(credential, ["base_url", "baseUrl"]));
+    return baseUrl || "https://app.nocodb.com";
+  }
   if (manifest.baseUrl === "credential.snowflake_api_v2") {
     const account = credentialField(credential, ["account"]);
     if (!account) throw new Error(`${provider}/request requires a JSON credential with account`);
@@ -213,6 +217,7 @@ function credentialToken(provider: string, credential: string) {
   if (provider === "monid" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "timerex" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "jicoo" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
+  if (provider === "nocodb" && parsed) return String(parsed.api_token ?? parsed.apiToken ?? parsed.token ?? credential);
   if (provider === "shopify" && parsed) return String(parsed.token ?? credential);
   if (provider === "snowflake" && parsed) return String(parsed.token ?? credential);
   return credential;

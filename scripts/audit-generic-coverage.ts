@@ -45,6 +45,9 @@ function manifestBases(provider: (typeof PROVIDERS)[string]) {
     } else if (generic.baseUrl === "credential.twenty_base") {
       // Self-hosted server URL is credential-derived; cloud default below.
       bases.add("https://api.twenty.com");
+    } else if (generic.baseUrl === "credential.nocodb_base") {
+      // Self-hosted server URL is credential-derived; cloud default below.
+      bases.add("https://app.nocodb.com");
     } else {
       bases.add(normalizeBase(generic.baseUrl));
     }
