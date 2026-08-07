@@ -9,6 +9,8 @@ import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-a
 import { auth } from "./auth.js";
 import { mcpApp } from "./mcp.js";
 import { dashboardApp, oauthApp, mcpAuthorizeGate } from "./ui.js";
+import { Scalar } from "@scalar/hono-api-reference";
+import { openApiDocument } from "./openapi.js";
 import { startHealthSweepScheduler } from "./health_sweep.js";
 // Side-effect import: registers GET /usage on the dashboardApp exported by ui.ts.
 import "./usage.js";
@@ -142,6 +144,24 @@ app.get("/health", (c) =>
     version: "0.1.0",
     phase: 1,
     ts: new Date().toISOString(),
+  }),
+);
+
+// API reference. The spec is served as JSON so external tools (client
+// generators, Postman, other MCP hosts) can consume it directly; /docs renders
+// the same document with Scalar. Registered before the dashboard mount so the
+// paths can never be shadowed by a console route.
+app.get("/openapi.json", (c) => c.json(openApiDocument));
+app.get(
+  "/docs",
+  Scalar({
+    url: "/openapi.json",
+    pageTitle: "grantry API reference",
+    theme: "default",
+    darkMode: true,
+    // The reference UI itself loads from a CDN. Pin the major so an upstream
+    // release can never change what /docs renders without a deploy here.
+    cdn: "https://cdn.jsdelivr.net/npm/@scalar/api-reference@1",
   }),
 );
 
