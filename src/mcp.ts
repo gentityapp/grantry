@@ -72,6 +72,7 @@ import { callGoogleSlidesTool } from "./connectors/google_slides.js";
 import { callGoogleFormsTool } from "./connectors/google_forms.js";
 import { callTwentyTool } from "./connectors/twenty.js";
 import { callNocodbTool } from "./connectors/nocodb.js";
+import { callLanggraphTool } from "./connectors/langgraph.js";
 import { callLangsmithTool } from "./connectors/langsmith.js";
 import { callMonidTool } from "./connectors/monid.js";
 import { callYouCanBookMeTool } from "./connectors/youcanbookme.js";
@@ -2523,6 +2524,25 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "nocodb/update_records") { return { table_id: { type: "string", description: "NocoDB table id (m...)." }, record_id: { type: "string", description: "Record primary key (Id) to update, when using fields." }, fields: { type: "object", description: "Field values to update on record_id." }, records: { type: "array", items: { type: "object" }, description: "Array of objects, each carrying Id plus the fields to update (bulk alternative)." } }; }
   if (toolName === "nocodb/delete_records") { return { table_id: { type: "string", description: "NocoDB table id (m...)." }, record_id: { type: "string", description: "Record primary key (Id) to delete." }, records: { type: "array", items: { type: "object" }, description: "Array of { Id } objects to delete in bulk (alternative to record_id)." } }; }
 
+  // --- langgraph ---
+  if (toolName === "langgraph/get_info") { return {}; }
+  if (toolName === "langgraph/search_assistants") { return { graph_id: { type: "string", description: "Only assistants for this graph id." }, name: { type: "string", description: "Assistant name to match." }, metadata: { type: "object", description: "Metadata key/values every returned assistant must carry." }, limit: { type: "number", description: "Max assistants to return (default 20)." }, offset: { type: "number", description: "Assistants to skip for pagination." } }; }
+  if (toolName === "langgraph/get_assistant") { return { assistant_id: { type: "string", description: "Assistant id (uuid) or graph id." } }; }
+  if (toolName === "langgraph/get_assistant_schemas") { return { assistant_id: { type: "string", description: "Assistant id (uuid) or graph id; returns the input, output, state, and config JSON schemas." } }; }
+  if (toolName === "langgraph/search_threads") { return { metadata: { type: "object", description: "Metadata key/values every returned thread must carry." }, status: { type: "string", description: "Thread status: idle, busy, interrupted, or error." }, values: { type: "object", description: "State values every returned thread must match." }, limit: { type: "number", description: "Max threads to return (default 20)." }, offset: { type: "number", description: "Threads to skip for pagination." } }; }
+  if (toolName === "langgraph/create_thread") { return { thread_id: { type: "string", description: "Optional client-supplied thread id (uuid)." }, metadata: { type: "object", description: "Metadata to attach to the thread." }, if_exists: { type: "string", description: "Behaviour when thread_id already exists: raise (default) or do_nothing." } }; }
+  if (toolName === "langgraph/get_thread") { return { thread_id: { type: "string", description: "Thread id (uuid)." } }; }
+  if (toolName === "langgraph/get_thread_state") { return { thread_id: { type: "string", description: "Thread id (uuid)." }, checkpoint_id: { type: "string", description: "Optional checkpoint id; omit for the latest state." } }; }
+  if (toolName === "langgraph/get_thread_history") { return { thread_id: { type: "string", description: "Thread id (uuid)." }, limit: { type: "number", description: "Max checkpoints to return (default 10)." }, before: { type: "string", description: "Return checkpoints before this checkpoint id." }, metadata: { type: "object", description: "Only checkpoints whose metadata matches." } }; }
+  if (toolName === "langgraph/list_runs") { return { thread_id: { type: "string", description: "Thread id (uuid)." }, limit: { type: "number", description: "Max runs to return." }, offset: { type: "number", description: "Runs to skip for pagination." } }; }
+  if (toolName === "langgraph/get_run") { return { thread_id: { type: "string", description: "Thread id (uuid)." }, run_id: { type: "string", description: "Run id (uuid)." } }; }
+  if (toolName === "langgraph/create_run") { return { thread_id: { type: "string", description: "Thread id (uuid) to run on. Omit for a stateless background run." }, assistant_id: { type: "string", description: "Assistant id (uuid) or graph id to invoke." }, input: { type: "object", description: "Graph input, e.g. { messages: [{ role: \"user\", content: \"...\" }] }." }, config: { type: "object", description: "Run config, e.g. { configurable: { model: \"...\" } }." }, metadata: { type: "object", description: "Metadata to attach to the run." }, webhook: { type: "string", description: "URL called when the run finishes." }, interrupt_before: { description: "Node names to interrupt before (array, or the string \"*\")." }, interrupt_after: { description: "Node names to interrupt after (array, or the string \"*\")." }, multitask_strategy: { type: "string", description: "How to handle a busy thread: reject, rollback, interrupt, or enqueue." } }; }
+  if (toolName === "langgraph/run_wait") { return { thread_id: { type: "string", description: "Thread id (uuid). Omit for a stateless run that keeps no checkpoint." }, assistant_id: { type: "string", description: "Assistant id (uuid) or graph id to invoke." }, input: { type: "object", description: "Graph input, e.g. { messages: [{ role: \"user\", content: \"...\" }] }." }, config: { type: "object", description: "Run config, e.g. { configurable: { model: \"...\" } }." }, metadata: { type: "object", description: "Metadata to attach to the run." }, interrupt_before: { description: "Node names to interrupt before (array, or the string \"*\")." }, interrupt_after: { description: "Node names to interrupt after (array, or the string \"*\")." }, multitask_strategy: { type: "string", description: "How to handle a busy thread: reject, rollback, interrupt, or enqueue." } }; }
+  if (toolName === "langgraph/cancel_run") { return { thread_id: { type: "string", description: "Thread id (uuid)." }, run_id: { type: "string", description: "Run id (uuid)." }, wait: { type: "boolean", description: "Block until the run actually stops." }, action: { type: "string", description: "interrupt (default) or rollback." } }; }
+  if (toolName === "langgraph/search_crons") { return { assistant_id: { type: "string", description: "Only crons for this assistant id." }, thread_id: { type: "string", description: "Only crons bound to this thread id." }, limit: { type: "number", description: "Max crons to return (default 20)." }, offset: { type: "number", description: "Crons to skip for pagination." } }; }
+  if (toolName === "langgraph/delete_cron") { return { cron_id: { type: "string", description: "Cron id (uuid) to delete." } }; }
+  if (toolName === "langgraph/search_store_items") { return { namespace_prefix: { type: "array", items: { type: "string" }, description: "Namespace path prefix, e.g. [\"memories\", \"user-1\"]." }, filter: { type: "object", description: "Key/value filter over item values." }, query: { type: "string", description: "Natural-language query for semantic search, when the store has an index." }, limit: { type: "number", description: "Max items to return (default 20)." }, offset: { type: "number", description: "Items to skip for pagination." } }; }
+
   // --- langsmith ---
   if (toolName === "langsmith/list_workspaces") { return {}; }
   if (toolName === "langsmith/list_projects") { return { name: { type: "string", description: "Exact tracing project name." }, name_contains: { type: "string", description: "Substring match on the project name." }, limit: { type: "number", description: "Max projects to return (default 20)." }, offset: { type: "number", description: "Projects to skip for pagination." } }; }
@@ -3047,6 +3067,23 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "nocodb/create_records") return ["table_id"];
   if (toolName === "nocodb/update_records") return ["table_id"];
   if (toolName === "nocodb/delete_records") return ["table_id"];
+  if (toolName === "langgraph/get_info") return [];
+  if (toolName === "langgraph/search_assistants") return [];
+  if (toolName === "langgraph/get_assistant") return ["assistant_id"];
+  if (toolName === "langgraph/get_assistant_schemas") return ["assistant_id"];
+  if (toolName === "langgraph/search_threads") return [];
+  if (toolName === "langgraph/create_thread") return [];
+  if (toolName === "langgraph/get_thread") return ["thread_id"];
+  if (toolName === "langgraph/get_thread_state") return ["thread_id"];
+  if (toolName === "langgraph/get_thread_history") return ["thread_id"];
+  if (toolName === "langgraph/list_runs") return ["thread_id"];
+  if (toolName === "langgraph/get_run") return ["thread_id", "run_id"];
+  if (toolName === "langgraph/create_run") return ["assistant_id"];
+  if (toolName === "langgraph/run_wait") return ["assistant_id"];
+  if (toolName === "langgraph/cancel_run") return ["thread_id", "run_id"];
+  if (toolName === "langgraph/search_crons") return [];
+  if (toolName === "langgraph/delete_cron") return ["cron_id"];
+  if (toolName === "langgraph/search_store_items") return [];
   if (toolName === "langsmith/list_workspaces") return [];
   if (toolName === "langsmith/list_projects") return [];
   if (toolName === "langsmith/get_project") return ["project_id"];
@@ -3368,6 +3405,7 @@ async function dispatchProviderTool(
   if (provider === "attio") return callAttioTool(toolName, args, token);
   if (provider === "twenty") return callTwentyTool(toolName, args, token);
   if (provider === "nocodb") return callNocodbTool(toolName, args, token);
+  if (provider === "langgraph") return callLanggraphTool(toolName, args, token);
   if (provider === "langsmith") return callLangsmithTool(toolName, args, token);
   if (provider === "monid") return callMonidTool(toolName, args, token);
   if (provider === "youcanbookme") return callYouCanBookMeTool(toolName, args, token);

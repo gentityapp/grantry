@@ -53,6 +53,7 @@ function patTokenForProvider(providerKey: string) {
     channel_talk_documents: JSON.stringify({ accessKey: "ctd-test-key", accessSecret: "ctd-test-secret" }),
     customerio: JSON.stringify({ token: "cio-test-token", region: "us" }),
     godaddy: "godaddy-key:godaddy-secret",
+    langgraph: JSON.stringify({ api_key: "lsv2-test-key", base_url: "https://grantry-test.us.langgraph.app" }),
     jira: JSON.stringify({ site: "https://acme.atlassian.net", email: "ops@example.com", token: "jira-test-token" }),
     microsoft_ads: JSON.stringify({ developer_token: "dev-token", access_token: "msads-token", customer_id: "customer", account_id: "account" }),
     railway: JSON.stringify({ token: "railway-test-token", token_type: "project" }),
@@ -179,6 +180,9 @@ function patSuccessResponse(call: FetchCall) {
   }
   if (url === "https://app.nocodb.com/api/v1/auth/user/me") {
     return jsonResponse({ id: "nocodb-user", email: "ops@example.com", roles: { org_level_creator: true } });
+  }
+  if (url === "https://grantry-test.us.langgraph.app/info") {
+    return jsonResponse({ version: "0.2.0", flags: { assistants: true, crons: true } });
   }
   if (url === "https://api.smith.langchain.com/api/v1/workspaces") {
     return jsonResponse([{ id: "ws-1", display_name: "Root", tenant_handle: "root", is_personal: false }]);

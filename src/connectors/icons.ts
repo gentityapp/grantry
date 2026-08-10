@@ -133,6 +133,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   google_slides: "#F4B400",
   twenty: "#5E5CE6",
   nocodb: "#1348BA", // NocoDB blue
+  langgraph: "#1C3C3C", // LangChain dark teal
   langsmith: "#1C3C3C", // LangChain dark teal
   monid: "#111827",
   youcanbookme: "#0053F0",

@@ -195,6 +195,11 @@ function resolveBaseUrl(provider: string, manifest: GenericManifest, credential:
     const baseUrl = normalizeBaseUrl(credentialField(credential, ["base_url", "baseUrl"]));
     return baseUrl || "https://app.nocodb.com";
   }
+  if (manifest.baseUrl === "credential.langgraph_base") {
+    const baseUrl = normalizeBaseUrl(credentialField(credential, ["base_url", "baseUrl", "deployment_url"]));
+    if (!baseUrl) throw new Error(`${provider}/request requires a JSON credential with base_url (the deployment URL)`);
+    return baseUrl;
+  }
   if (manifest.baseUrl === "credential.langsmith_base") {
     const baseUrl = normalizeBaseUrl(credentialField(credential, ["base_url", "baseUrl"]));
     return baseUrl || "https://api.smith.langchain.com";
@@ -222,6 +227,7 @@ function credentialToken(provider: string, credential: string) {
   if (provider === "timerex" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "jicoo" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "nocodb" && parsed) return String(parsed.api_token ?? parsed.apiToken ?? parsed.token ?? credential);
+  if (provider === "langgraph" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? parsed.token ?? credential);
   if (provider === "langsmith" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? parsed.token ?? credential);
   if (provider === "shopify" && parsed) return String(parsed.token ?? credential);
   if (provider === "snowflake" && parsed) return String(parsed.token ?? credential);

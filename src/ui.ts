@@ -100,6 +100,7 @@ function authTypeLabel(providerKey: string, authType: string): string {
   if (providerKey === "discord") return "Bot token";
   if (providerKey === "line") return "Channel access token";
   if (providerKey === "nocodb") return "API token";
+  if (providerKey === "langgraph") return "API key";
   if (providerKey === "langsmith") return "API key";
   if (["airtable", "linear", "sendgrid", "vercel", "stripe", "webflow", "intercom", "customerio", "mailchimp", "openai", "higgsfield"].includes(providerKey)) return "API key";
   if (providerKey === "linkedin_ads" || providerKey === "tiktok_ads") return "Access token";

@@ -189,6 +189,9 @@ Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing scope):
   Scoped to one official account / channel.
 - **NocoDB**: paste an **API token** from Account Settings > Tokens. Self-hosted
   instances also enter their **Server URL**; NocoDB Cloud leaves it blank.
+- **LangGraph Platform**: paste a **LangSmith API key** (`smith.langchain.com/settings`)
+  and the **Deployment URL** of the LangGraph Server, e.g.
+  `https://my-agent-abc123.us.langgraph.app`. One connection = one deployment.
 - **LangSmith**: paste an **API key** from Settings > API keys
   (`smith.langchain.com/settings`). EU-region and self-hosted installations also
   enter their **API URL**; the US cloud leaves it blank.
@@ -644,6 +647,20 @@ plain `text` string is accepted and wrapped into a single text message.
 - `create_records` (write): `table_id`; one of `fields` (object) or `records` (array).
 - `update_records` (write): `table_id`; either `record_id` + `fields`, or `records` (array, each row carrying `Id`).
 - `delete_records` (destructive): `table_id`; either `record_id` or `records` (array of `{Id}`).
+
+### LangGraph Platform tool arguments (besides `scope`)
+- Credential: `{"api_key": "lsv2_...", "base_url": "https://my-agent-abc123.us.langgraph.app"}` — `base_url` is required (every deployment has its own URL). Sent as the `x-api-key` header.
+- `get_info` (read): none. `search_assistants` (read): opt `graph_id`, `name`, `metadata`, `limit`, `offset`.
+- `get_assistant` / `get_assistant_schemas` (read): `assistant_id`.
+- `search_threads` (read): opt `metadata`, `status`, `values`, `limit`, `offset`. `create_thread` (write): opt `thread_id`, `metadata`, `if_exists`.
+- `get_thread` (read): `thread_id`. `get_thread_state` (read): `thread_id`; opt `checkpoint_id`.
+- `get_thread_history` (read): `thread_id`; opt `limit`, `before`, `metadata`.
+- `list_runs` (read): `thread_id`; opt `limit`, `offset`. `get_run` (read): `thread_id`, `run_id`.
+- `create_run` (write): `assistant_id`; opt `thread_id` (omit for a stateless background run), `input`, `config`, `metadata`, `webhook`, `interrupt_before`, `interrupt_after`, `multitask_strategy`. Returns immediately.
+- `run_wait` (write): same args; blocks and returns the final output. Omit `thread_id` for a stateless run.
+- `cancel_run` (write): `thread_id`, `run_id`; opt `wait`, `action` (`interrupt` or `rollback`).
+- `search_crons` (read): opt `assistant_id`, `thread_id`, `limit`, `offset`. `delete_cron` (destructive): `cron_id`.
+- `search_store_items` (read): opt `namespace_prefix`, `filter`, `query`, `limit`, `offset`.
 
 ### LangSmith tool arguments (besides `scope`)
 - Credential: `{"api_key": "lsv2_...", "base_url": "https://eu.api.smith.langchain.com"}` — `base_url` only for the EU region or self-hosted; the US cloud defaults to `https://api.smith.langchain.com`. Sent as the `X-Api-Key` header.

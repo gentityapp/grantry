@@ -1222,6 +1222,26 @@ export async function inspectCredential(provider: string, authType: string, toke
       return { provider, authType, status: "ok", subject: { id: body.id, email: body.email, roles: body.roles, base_url: base }, notes: ["NocoDB API tokens are sent via the xc-token header and inherit the issuing user's base permissions."], checkedAt };
     }
 
+    if (provider === "langgraph") {
+      let apiKey = "";
+      let base = "";
+      try {
+        const p = JSON.parse(token.trim());
+        if (p && typeof p === "object" && !Array.isArray(p)) {
+          apiKey = String(p.api_key ?? p.apiKey ?? p.token ?? "").trim();
+          base = String(p.base_url ?? p.baseUrl ?? p.deployment_url ?? "").trim().replace(/\/+$/, "");
+        }
+      } catch {
+        // A bare key is accepted, but the deployment URL is still required.
+      }
+      if (!apiKey) return { provider, authType, status: "error", checkedAt, error: "LangGraph credential must include an api_key" };
+      if (!base) return { provider, authType, status: "error", checkedAt, error: "LangGraph credential must include a base_url (the deployment URL)" };
+      const resp = await fetchWithTimeout(`${base}/info`, { headers: { "x-api-key": apiKey, Accept: "application/json" } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `LangGraph deployment check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      return { provider, authType, status: "ok", subject: { base_url: base, version: body.version, flags: body.flags }, notes: ["LangGraph Platform keys are LangSmith API keys sent via the x-api-key header, and one connection targets one deployment URL."], checkedAt };
+    }
+
     if (provider === "langsmith") {
       let apiKey = token.trim();
       let base = "https://api.smith.langchain.com";
