@@ -180,6 +180,12 @@ function patSuccessResponse(call: FetchCall) {
   if (url === "https://app.nocodb.com/api/v1/auth/user/me") {
     return jsonResponse({ id: "nocodb-user", email: "ops@example.com", roles: { org_level_creator: true } });
   }
+  if (url === "https://api.smith.langchain.com/api/v1/workspaces") {
+    return jsonResponse([{ id: "ws-1", display_name: "Root", tenant_handle: "root", is_personal: false }]);
+  }
+  if (url === "https://api.smith.langchain.com/api/v1/sessions") {
+    return jsonResponse([{ id: "session-id", name: "default", tenant_id: "ws-1" }]);
+  }
   if (url === "https://api.notion.com/v1/users/me") {
     return jsonResponse({ id: "notion-bot", type: "bot", name: "Grantry", bot: { workspace_name: "Root" } });
   }

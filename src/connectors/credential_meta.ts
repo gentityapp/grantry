@@ -1222,6 +1222,37 @@ export async function inspectCredential(provider: string, authType: string, toke
       return { provider, authType, status: "ok", subject: { id: body.id, email: body.email, roles: body.roles, base_url: base }, notes: ["NocoDB API tokens are sent via the xc-token header and inherit the issuing user's base permissions."], checkedAt };
     }
 
+    if (provider === "langsmith") {
+      let apiKey = token.trim();
+      let base = "https://api.smith.langchain.com";
+      try {
+        const p = JSON.parse(token.trim());
+        if (p && typeof p === "object" && !Array.isArray(p)) {
+          apiKey = String(p.api_key ?? p.apiKey ?? p.token ?? "").trim();
+          const url = String(p.base_url ?? p.baseUrl ?? "").trim();
+          if (url) base = url.replace(/\/+$/, "");
+        }
+      } catch {
+        // plain API key credential
+      }
+      if (!apiKey) return { provider, authType, status: "error", checkedAt, error: "LangSmith credential must include an api_key" };
+      const headers = { "X-Api-Key": apiKey, Accept: "application/json" };
+      // Workspace-scoped service keys may not read /workspaces, so fall back to
+      // the tracing projects the key can actually see.
+      const wsResp = await fetchWithTimeout(`${base}/api/v1/workspaces`, { headers });
+      const wsBody: any = await readJson(wsResp);
+      if (wsResp.ok) {
+        const workspaces = Array.isArray(wsBody) ? wsBody : [];
+        const first = workspaces[0] ?? {};
+        return { provider, authType, status: "ok", subject: { workspace_id: first.id, workspace: first.display_name, tenant_handle: first.tenant_handle, workspace_count: workspaces.length, base_url: base }, notes: ["LangSmith API keys are sent via the X-Api-Key header. Service keys are scoped to one workspace; personal access tokens span the workspaces of their user."], checkedAt };
+      }
+      const resp = await fetchWithTimeout(`${base}/api/v1/sessions?limit=1`, { headers });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `LangSmith key check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      const first = Array.isArray(body) ? body[0] ?? {} : {};
+      return { provider, authType, status: "ok", subject: { tenant_id: first.tenant_id, base_url: base }, notes: ["LangSmith API keys are sent via the X-Api-Key header. This key is workspace-scoped: it can read tracing projects but not the workspace list."], checkedAt };
+    }
+
     if (provider === "zendesk") {
       let p: any; try { p = JSON.parse(token.trim()); } catch { return { provider, authType, status: "error", checkedAt, error: 'Zendesk credential must be JSON {"subdomain","email","token"}' }; }
       if (!p.subdomain || !p.email || !p.token) return { provider, authType, status: "error", checkedAt, error: "Zendesk JSON must include subdomain, email, and token" };

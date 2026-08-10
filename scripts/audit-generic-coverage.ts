@@ -48,6 +48,9 @@ function manifestBases(provider: (typeof PROVIDERS)[string]) {
     } else if (generic.baseUrl === "credential.nocodb_base") {
       // Self-hosted server URL is credential-derived; cloud default below.
       bases.add("https://app.nocodb.com");
+    } else if (generic.baseUrl === "credential.langsmith_base") {
+      // EU region / self-hosted API URL is credential-derived; US cloud default below.
+      bases.add("https://api.smith.langchain.com");
     } else {
       bases.add(normalizeBase(generic.baseUrl));
     }

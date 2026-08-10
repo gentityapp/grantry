@@ -72,6 +72,7 @@ import { callGoogleSlidesTool } from "./connectors/google_slides.js";
 import { callGoogleFormsTool } from "./connectors/google_forms.js";
 import { callTwentyTool } from "./connectors/twenty.js";
 import { callNocodbTool } from "./connectors/nocodb.js";
+import { callLangsmithTool } from "./connectors/langsmith.js";
 import { callMonidTool } from "./connectors/monid.js";
 import { callYouCanBookMeTool } from "./connectors/youcanbookme.js";
 import { callCalcomTool } from "./connectors/calcom.js";
@@ -2522,6 +2523,39 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "nocodb/update_records") { return { table_id: { type: "string", description: "NocoDB table id (m...)." }, record_id: { type: "string", description: "Record primary key (Id) to update, when using fields." }, fields: { type: "object", description: "Field values to update on record_id." }, records: { type: "array", items: { type: "object" }, description: "Array of objects, each carrying Id plus the fields to update (bulk alternative)." } }; }
   if (toolName === "nocodb/delete_records") { return { table_id: { type: "string", description: "NocoDB table id (m...)." }, record_id: { type: "string", description: "Record primary key (Id) to delete." }, records: { type: "array", items: { type: "object" }, description: "Array of { Id } objects to delete in bulk (alternative to record_id)." } }; }
 
+  // --- langsmith ---
+  if (toolName === "langsmith/list_workspaces") { return {}; }
+  if (toolName === "langsmith/list_projects") { return { name: { type: "string", description: "Exact tracing project name." }, name_contains: { type: "string", description: "Substring match on the project name." }, limit: { type: "number", description: "Max projects to return (default 20)." }, offset: { type: "number", description: "Projects to skip for pagination." } }; }
+  if (toolName === "langsmith/get_project") { return { project_id: { type: "string", description: "Tracing project (session) id (uuid)." } }; }
+  if (toolName === "langsmith/query_runs") {
+    return {
+      session: { type: "string", description: "Tracing project id (uuid) to search within." },
+      filter: { type: "string", description: "LangSmith filter expression, e.g. eq(run_type, \"llm\") or and(eq(status, \"error\"), gt(latency, 5))." },
+      trace_filter: { type: "string", description: "Filter applied to the root run of each trace." },
+      tree_filter: { type: "string", description: "Filter applied to any run in the trace tree." },
+      run_type: { type: "string", description: "Run type, e.g. llm, chain, tool, retriever." },
+      is_root: { type: "boolean", description: "Only root runs (whole traces) when true." },
+      trace: { type: "string", description: "Trace id (uuid) to return every run of one trace." },
+      parent_run: { type: "string", description: "Parent run id (uuid)." },
+      start_time: { type: "string", description: "ISO 8601 lower bound on run start time." },
+      end_time: { type: "string", description: "ISO 8601 upper bound on run end time." },
+      error: { type: "boolean", description: "Only errored runs when true; only successful runs when false." },
+      select: { type: "array", items: { type: "string" }, description: "Fields to return, e.g. [\"id\",\"name\",\"status\",\"latency\"]. Trims large inputs/outputs." },
+      order: { type: "string", description: "Sort order, e.g. desc (default) or asc by start time." },
+      limit: { type: "number", description: "Max runs to return (default 20)." },
+      cursor: { type: "string", description: "Pagination cursor returned by a previous query." },
+    };
+  }
+  if (toolName === "langsmith/get_run") { return { run_id: { type: "string", description: "Run id (uuid)." } }; }
+  if (toolName === "langsmith/list_datasets") { return { name: { type: "string", description: "Exact dataset name." }, name_contains: { type: "string", description: "Substring match on the dataset name." }, data_type: { type: "string", description: "Dataset data type, e.g. kv, llm, chat." }, limit: { type: "number", description: "Max datasets to return." }, offset: { type: "number", description: "Datasets to skip for pagination." } }; }
+  if (toolName === "langsmith/get_dataset") { return { dataset_id: { type: "string", description: "Dataset id (uuid)." } }; }
+  if (toolName === "langsmith/list_examples") { return { dataset_id: { type: "string", description: "Dataset id (uuid)." }, splits: { type: "string", description: "Comma-separated split names to filter by." }, full_text_contains: { type: "string", description: "Full-text search over example content." }, filter: { type: "string", description: "LangSmith filter expression over example metadata." }, limit: { type: "number", description: "Max examples to return." }, offset: { type: "number", description: "Examples to skip for pagination." } }; }
+  if (toolName === "langsmith/create_examples") { return { dataset_id: { type: "string", description: "Dataset id (uuid) the examples belong to." }, inputs: { type: "object", description: "Inputs for a single new example." }, outputs: { type: "object", description: "Reference outputs for the single new example." }, metadata: { type: "object", description: "Metadata for the single new example." }, examples: { type: "array", items: { type: "object" }, description: "Array of { inputs, outputs?, metadata? } objects to create in bulk (alternative to inputs)." } }; }
+  if (toolName === "langsmith/list_feedback") { return { run_id: { type: "string", description: "Only feedback attached to this run id (uuid)." }, project_id: { type: "string", description: "Only feedback within this tracing project id (uuid)." }, key: { type: "string", description: "Feedback key, e.g. correctness." }, limit: { type: "number", description: "Max feedback rows to return." }, offset: { type: "number", description: "Rows to skip for pagination." } }; }
+  if (toolName === "langsmith/create_feedback") { return { run_id: { type: "string", description: "Run id (uuid) to attach the feedback to." }, key: { type: "string", description: "Feedback key, e.g. correctness." }, score: { type: "number", description: "Numeric score, typically 0-1." }, value: { description: "Categorical feedback value (string, number, or boolean)." }, comment: { type: "string", description: "Free-text comment." } }; }
+  if (toolName === "langsmith/list_prompts") { return { query: { type: "string", description: "Search text matched against prompt names and descriptions." }, is_public: { type: "boolean", description: "Restrict to public (true) or private (false) prompts." }, limit: { type: "number", description: "Max prompts to return." }, offset: { type: "number", description: "Prompts to skip for pagination." } }; }
+  if (toolName === "langsmith/get_prompt") { return { owner: { type: "string", description: "Prompt owner handle, or - for the current workspace." }, repo: { type: "string", description: "Prompt (repo) handle." }, with_latest_manifest: { type: "boolean", description: "Include the latest prompt manifest (the actual template)." } }; }
+
   // --- monid ---
   if (toolName === "monid/whoami") { return { workspace_id: { type: "string", description: "Optional workspace id (org_...); only needed for OAuth tokens without workspace context." } }; }
   if (toolName === "monid/list_workspaces") { return { workspace_id: { type: "string", description: "Optional workspace id." } }; }
@@ -3013,6 +3047,19 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "nocodb/create_records") return ["table_id"];
   if (toolName === "nocodb/update_records") return ["table_id"];
   if (toolName === "nocodb/delete_records") return ["table_id"];
+  if (toolName === "langsmith/list_workspaces") return [];
+  if (toolName === "langsmith/list_projects") return [];
+  if (toolName === "langsmith/get_project") return ["project_id"];
+  if (toolName === "langsmith/query_runs") return [];
+  if (toolName === "langsmith/get_run") return ["run_id"];
+  if (toolName === "langsmith/list_datasets") return [];
+  if (toolName === "langsmith/get_dataset") return ["dataset_id"];
+  if (toolName === "langsmith/list_examples") return ["dataset_id"];
+  if (toolName === "langsmith/create_examples") return ["dataset_id"];
+  if (toolName === "langsmith/list_feedback") return [];
+  if (toolName === "langsmith/create_feedback") return ["run_id", "key"];
+  if (toolName === "langsmith/list_prompts") return [];
+  if (toolName === "langsmith/get_prompt") return ["owner", "repo"];
   if (toolName === "monid/whoami") return [];
   if (toolName === "monid/list_workspaces") return [];
   if (toolName === "monid/discover") return ["query"];
@@ -3321,6 +3368,7 @@ async function dispatchProviderTool(
   if (provider === "attio") return callAttioTool(toolName, args, token);
   if (provider === "twenty") return callTwentyTool(toolName, args, token);
   if (provider === "nocodb") return callNocodbTool(toolName, args, token);
+  if (provider === "langsmith") return callLangsmithTool(toolName, args, token);
   if (provider === "monid") return callMonidTool(toolName, args, token);
   if (provider === "youcanbookme") return callYouCanBookMeTool(toolName, args, token);
   if (provider === "calendly") return callCalendlyTool(toolName, args, token);

@@ -189,6 +189,9 @@ Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing scope):
   Scoped to one official account / channel.
 - **NocoDB**: paste an **API token** from Account Settings > Tokens. Self-hosted
   instances also enter their **Server URL**; NocoDB Cloud leaves it blank.
+- **LangSmith**: paste an **API key** from Settings > API keys
+  (`smith.langchain.com/settings`). EU-region and self-hosted installations also
+  enter their **API URL**; the US cloud leaves it blank.
 - **PAT (paste an API key / token)**: **Airtable** (PAT), **Linear** (personal API
   key, no Bearer prefix), **SendGrid** (API key), **Vercel** (token), **Stripe**
   (secret key), **Webflow** (token), **Intercom** (access token), **Customer.io**
@@ -641,6 +644,19 @@ plain `text` string is accepted and wrapped into a single text message.
 - `create_records` (write): `table_id`; one of `fields` (object) or `records` (array).
 - `update_records` (write): `table_id`; either `record_id` + `fields`, or `records` (array, each row carrying `Id`).
 - `delete_records` (destructive): `table_id`; either `record_id` or `records` (array of `{Id}`).
+
+### LangSmith tool arguments (besides `scope`)
+- Credential: `{"api_key": "lsv2_...", "base_url": "https://eu.api.smith.langchain.com"}` — `base_url` only for the EU region or self-hosted; the US cloud defaults to `https://api.smith.langchain.com`. Sent as the `X-Api-Key` header.
+- `list_workspaces` (read): none. Service keys are workspace-scoped and may not see this list.
+- `list_projects` (read): opt `name`, `name_contains`, `limit`, `offset`. `get_project` (read): `project_id`.
+- `query_runs` (read): opt `session` (project id), `filter` (e.g. `eq(run_type, "llm")`), `trace_filter`, `tree_filter`, `run_type`, `is_root`, `trace`, `parent_run`, `start_time`, `end_time`, `error`, `select`, `order`, `limit` (default 20), `cursor`.
+- `get_run` (read): `run_id`.
+- `list_datasets` (read): opt `name`, `name_contains`, `data_type`, `limit`, `offset`. `get_dataset` (read): `dataset_id`.
+- `list_examples` (read): `dataset_id`; opt `splits`, `full_text_contains`, `filter`, `limit`, `offset`.
+- `create_examples` (write): `dataset_id`; one of `inputs` (+ opt `outputs`, `metadata`) or `examples` (array).
+- `list_feedback` (read): opt `run_id`, `project_id`, `key`, `limit`, `offset`.
+- `create_feedback` (write): `run_id`, `key`; opt `score`, `value`, `comment`.
+- `list_prompts` (read): opt `query`, `is_public`, `limit`, `offset`. `get_prompt` (read): `owner`, `repo`; opt `with_latest_manifest`.
 
 ### Linear tool arguments (besides `scope`)
 - `get_me` / `list_teams` (read): none. `list_issues` (read): opt `first`.
