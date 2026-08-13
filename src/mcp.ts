@@ -92,6 +92,7 @@ import { callGenericCheckConnection, callGenericListCapabilities, callGenericPro
 import { connectableAgentsFor, userMayUseAgent } from "./workspaces.js";
 import { connectionCredentialData, providerCredentialData } from "./provider_credentials.js";
 import { adminToolDescriptor, isAdminTool } from "./admin_tools.js";
+import { agentIdIsToolTarget, stripActingAgentSelector } from "./acting_agent_args.js";
 import { callGrantryAdminTool } from "./connectors/grantry_admin.js";
 
 export const mcpApp = new Hono();
@@ -4582,7 +4583,9 @@ const handleMcpPost = async (c: any) => {
     let systemCtx: SystemToolContext | undefined = userPrincipal ? { userId: userPrincipal.userId, workspaceSlug: wsSlug } : undefined;
 
     if (userPrincipal && !["grantry/get_skill", "grantry/get_providers", "grantry/list_user_agents"].includes(toolName)) {
-      const selectionArgs = toolName === "grantry/delegate"
+      // `grantry/delegate` and the admin tools both take `agent_id` as the
+      // *target* agent, so it must not double as the acting-agent selector.
+      const selectionArgs = agentIdIsToolTarget(toolName)
         ? { acting_agent_id: (args as any).acting_agent_id ?? (args as any).actingAgentId }
         : args;
       const selected = await userModeToolContext(userPrincipal.userId, selectionArgs, wsSlug);
@@ -4634,11 +4637,7 @@ const handleMcpPost = async (c: any) => {
     const authType = args.auth_type !== undefined ? String(args.auth_type) : (args.authType !== undefined ? String(args.authType) : "");
     const connectionId = args.connection_id !== undefined ? String(args.connection_id) : (args.connectionId !== undefined ? String(args.connectionId) : "");
     const grantToken = args.grant_token !== undefined ? String(args.grant_token) : (args.grantToken !== undefined ? String(args.grantToken) : "");
-    const providerArgs: Record<string, unknown> = { ...args };
-    delete providerArgs.agent_id;
-    delete providerArgs.agentId;
-    delete providerArgs.acting_agent_id;
-    delete providerArgs.actingAgentId;
+    const providerArgs = stripActingAgentSelector(args as Record<string, unknown>, { userMode, toolName });
 
     if (rateLimitExceeded(agent.id)) {
       return c.json({
@@ -4822,13 +4821,9 @@ const handleMcpPost = async (c: any) => {
       const conn = await prisma.connection.findUnique({ where: { id: decision.connectionId! } });
       if (!conn) return c.json({ jsonrpc: "2.0", id, error: { code: -32011, message: "connection vanished" } }, 500);
 
-      const innerArgs: Record<string, unknown> = { ...args };
+      const innerArgs = stripActingAgentSelector(args as Record<string, unknown>, { userMode, toolName });
       delete innerArgs.grant_token;
       delete innerArgs.grantToken;
-      delete innerArgs.agent_id;
-      delete innerArgs.agentId;
-      delete innerArgs.acting_agent_id;
-      delete innerArgs.actingAgentId;
       try {
         const credential = await credentialForConnection(conn);
 
