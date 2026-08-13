@@ -16,7 +16,7 @@ import { connectionCredentialData, createTenantConnectionFromCredential, ensureP
 import { credentialMetadataForProviderDef, recordRuntimeCallHealth } from "./connection_health.js";
 import { isSweepRunning, runConnectionHealthSweep } from "./health_sweep.js";
 import { credentialForConnection } from "./mcp.js";
-import { sendSystemEmail } from "./email.js";
+import { agentAssignedEmail, sendSystemEmail } from "./email.js";
 import { adminWorkspacesFor, connectableAgentsFor, connectableAgentsForWorkspace, userMayUseAgent } from "./workspaces.js";
 import { t, htmlLang, currentLocale } from "./i18n.js";
 import nodeCrypto from "node:crypto";
@@ -2458,7 +2458,8 @@ dashboardApp.post("/workspaces/:id/invites/:inviteId/revoke", async (c) => {
 
 dashboardApp.post("/workspaces/:id/assign", async (c) => {
   const wsId = c.req.param("id");
-  if (!(await requireWsAdmin(c, wsId))) return c.redirect("/login");
+  const admin = await requireWsAdmin(c, wsId);
+  if (!admin) return c.redirect("/login");
   const form = await c.req.formData();
   const returnTo = safeFormReturnTo(form.get("returnTo"));
   const agentId = String(form.get("agentId") ?? "");
@@ -2468,11 +2469,43 @@ dashboardApp.post("/workspaces/:id/assign", async (c) => {
     prisma.workspaceMember.findFirst({ where: { workspaceId: wsId, userId } }),
   ]);
   if (agent && member) {
-    await prisma.agentAssignment.upsert({
-      where: { agentId_userId: { agentId, userId } },
-      create: { agentId, userId },
-      update: {},
-    });
+    // `create` rather than `upsert` so a duplicate press is distinguishable
+    // from a genuinely new assignment: only the latter notifies. Catching the
+    // unique violation (instead of reading first) keeps concurrent presses
+    // from both counting as new and sending two mails.
+    const created = await prisma.agentAssignment
+      .create({ data: { agentId, userId } })
+      .then(() => true)
+      .catch((err: any) => {
+        if (err?.code === "P2002") return false; // already assigned
+        throw err;
+      });
+    if (created) {
+      const [target, ws] = await Promise.all([
+        prisma.user.findUnique({ where: { id: userId }, select: { email: true, name: true } }),
+        prisma.workspace.findUnique({ where: { id: wsId }, select: { displayName: true } }),
+      ]);
+      if (target?.email) {
+        try {
+          const body = agentAssignedEmail({
+            recipientName: target.name || null,
+            assignedByEmail: admin.user.email,
+            agentId: agent.id,
+            agentName: agent.name,
+            // `description` is the column; "charter" is what the MCP admin API
+            // and the dashboard call it.
+            charter: agent.description,
+            workspaceName: ws?.displayName ?? "grantry",
+            baseUrl: BASE_URL(),
+          });
+          await sendSystemEmail({ to: target.email, ...body });
+        } catch (err) {
+          // The assignment itself already took effect; a failed notification
+          // must not turn that into an error the admin has to retry.
+          console.error("[workspace] assignment email failed:", err);
+        }
+      }
+    }
   }
   return c.redirect(appendOkParam(returnTo, t("Agent assigned")));
 });

@@ -192,6 +192,21 @@ export const ja: Record<string, string> = {
   "Invite someone new": "新しいメンバーを招待",
   "Could not update the assignment. Try again from the Assignments page.":
     "割り当てを更新できませんでした。Assignments ページからやり直してください。",
+
+  // ── Assignment notification email ──────────────────────────────────────
+  "Hi {name},": "{name} さん",
+  "Hi,": "こんにちは",
+  "You've been assigned the agent {agent} on grantry":
+    "grantry でエージェント「{agent}」が割り当てられました",
+  "{admin} assigned you the agent {agent} in the {workspace} workspace on grantry.":
+    "{admin} が、grantry の「{workspace}」ワークスペースでエージェント「{agent}」をあなたに割り当てました。",
+  "<b>{admin}</b> assigned you the agent <b>{agent}</b> in the <b>{workspace}</b> workspace on grantry.":
+    "<b>{admin}</b> が、grantry の <b>{workspace}</b> ワークスペースでエージェント <b>{agent}</b> をあなたに割り当てました。",
+  "What it does": "このエージェントの役割",
+  "Agent details": "エージェントの詳細ページ",
+  "Open the agent page": "エージェントの詳細ページを開く",
+  "It is usable from your personal MCP token right away — no new token to copy. If you have not created one yet, do it on the MCP tokens page.":
+    "あなた個人の MCP トークンからすぐに利用できます。新しいトークンを受け取る必要はありません。まだ作成していない場合は MCP トークンのページから作成してください。",
   "Invite": "招待",
   "member": "メンバー",
   "admin": "管理者",
