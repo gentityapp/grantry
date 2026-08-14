@@ -1150,6 +1150,23 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     tools: ["airtable/list_bases", "airtable/list_tables", "airtable/list_records", "airtable/get_record", "airtable/create_record", "airtable/update_record", "airtable/delete_record"],
     implemented: true,
   },
+  seminar_portal: {
+    key: "seminar_portal",
+    label: "Seminar Portal",
+    authTypes: ["pat"],
+    helpText: "Paste the portal's agent API key (AGENT_API_KEYS on the deployment). It is sent as Authorization: Bearer to /api/v1. A Japanese IT/SaaS/AI seminar aggregator: search upcoming seminars, read one, or rank them against a person's technologies. Call list_tech first — interests must be canonical names, and it reports how many upcoming seminars each has. To point at another deployment, paste JSON like {\"api_key\":\"...\",\"base_url\":\"https://example.com\"}.",
+    tools: [
+      "seminar_portal/list_tech",
+      "seminar_portal/search",
+      "seminar_portal/get",
+      "seminar_portal/recommend",
+    ],
+    credentialFields: [
+      { key: "api_key", label: "API key", required: true, secret: true, placeholder: "Paste the portal's agent API key" },
+      { key: "base_url", label: "Portal URL", required: false, placeholder: "https://web-production-5bf84b.up.railway.app", hint: "Only when running your own deployment." },
+    ],
+    implemented: true,
+  },
   nocodb: {
     key: "nocodb",
     label: "NocoDB",

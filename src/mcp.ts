@@ -72,6 +72,7 @@ import { callGoogleSlidesTool } from "./connectors/google_slides.js";
 import { callGoogleFormsTool } from "./connectors/google_forms.js";
 import { callTwentyTool } from "./connectors/twenty.js";
 import { callNocodbTool } from "./connectors/nocodb.js";
+import { callSeminarPortalTool } from "./connectors/seminar_portal.js";
 import { callLanggraphTool } from "./connectors/langgraph.js";
 import { callLangsmithTool } from "./connectors/langsmith.js";
 import { callMonidTool } from "./connectors/monid.js";
@@ -2502,6 +2503,30 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "twenty/create_record") { return { object: { type: "string", description: "Plural object name." }, data: { type: "object", description: "Field values, e.g. { name: { firstName, lastName } } for people." } }; }
   if (toolName === "twenty/update_record") { return { object: { type: "string", description: "Plural object name." }, record_id: { type: "string", description: "Record id (uuid)." }, data: { type: "object", description: "Field values to update." } }; }
 
+  // --- seminar_portal ---
+  if (toolName === "seminar_portal/list_tech") { return {}; }
+  if (toolName === "seminar_portal/search") {
+    return {
+      q: { type: "string", description: "Free text matched against title, organizer, summary and tags." },
+      category: { type: "string", description: "One of AI, SaaS, Infra, IT." },
+      tech: { type: "array", items: { type: "string" }, description: "Canonical technology names from seminar_portal/list_tech, e.g. [\"AWS\", \"生成AI\"]. A name outside that vocabulary matches nothing." },
+      tech_match: { type: "string", description: "any (default) matches seminars carrying at least one of tech; all demands every one." },
+      online: { type: "string", description: "\"true\" for online only, \"false\" for on-site only." },
+      from: { type: "string", description: "ISO date; seminars starting on or after it." },
+      to: { type: "string", description: "ISO date; seminars starting on or before it." },
+      include_past: { type: "string", description: "\"true\" to include seminars that already happened. Upcoming only by default." },
+      limit: { type: "number", description: "Max 100, default 20." },
+      offset: { type: "number", description: "For paging; the response carries total." },
+    };
+  }
+  if (toolName === "seminar_portal/get") { return { id: { type: "number", description: "Seminar id, as returned by search." } }; }
+  if (toolName === "seminar_portal/recommend") {
+    return {
+      tech: { type: "array", items: { type: "string" }, description: "The person's technologies, as canonical names from seminar_portal/list_tech. Required. Names outside the vocabulary come back in ignored_interests rather than failing the call." },
+      limit: { type: "number", description: "Max 50, default 10." },
+    };
+  }
+
   // --- nocodb ---
   if (toolName === "nocodb/get_me") { return {}; }
   if (toolName === "nocodb/list_bases") { return { workspace_id: { type: "string", description: "Optional NocoDB Cloud workspace id; omit on self-hosted instances." } }; }
@@ -3406,6 +3431,7 @@ async function dispatchProviderTool(
   if (provider === "attio") return callAttioTool(toolName, args, token);
   if (provider === "twenty") return callTwentyTool(toolName, args, token);
   if (provider === "nocodb") return callNocodbTool(toolName, args, token);
+  if (provider === "seminar_portal") return callSeminarPortalTool(toolName, args, token);
   if (provider === "langgraph") return callLanggraphTool(toolName, args, token);
   if (provider === "langsmith") return callLangsmithTool(toolName, args, token);
   if (provider === "monid") return callMonidTool(toolName, args, token);
