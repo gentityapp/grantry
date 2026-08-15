@@ -7,7 +7,7 @@
 //
 // The base URL is part of the credential: this is a self-hosted service, so a
 // workspace points its connection at its own deployment.
-const DEFAULT_BASE = "https://web-production-5bf84b.up.railway.app";
+const DEFAULT_BASE = "https://seminar.rootteam.co.jp";
 const SEMINAR_TIMEOUT_MS = 15_000;
 
 type SeminarArgs = Record<string, unknown>;
