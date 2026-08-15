@@ -36,6 +36,7 @@ export const ADMIN_TOOLS = [
   "grantry/create_tenant",
   "grantry/create_agent",
   "grantry/update_agent",
+  "grantry/delete_agent",
   "grantry/set_runbook",
   "grantry/rotate_agent_token",
   "grantry/grant_scope",
@@ -345,6 +346,54 @@ export async function callAdminTool(
     return { payload, summary: `updated agent ${updated.name} (${Object.keys(data).join(", ")})` };
   }
 
+  if (toolName === "grantry/delete_agent") {
+    const target = await targetAgent(ctx, requireString(args, "agent_id"));
+
+    // Deletion is the one admin action with no undo: the token hash goes with
+    // the row, so a deleted agent can never be re-enabled — only recreated with
+    // a new token. Three refusals keep that from happening by accident.
+    if (target.enabled) {
+      throw new Error(
+        `agent ${target.name} is still enabled — disable it first (grantry_update_agent enabled:false), confirm nothing broke, then delete. Deletion cannot be undone.`,
+      );
+    }
+    // grantry_admin is not a column: it means "holds a grantry-provider
+    // connection", i.e. this agent can drive these admin tools itself.
+    const holdsAdminKey = await prisma.agentConnectionGrant.count({
+      where: { agentId: target.id, connection: { provider: "grantry" } },
+    });
+    if (target.fullScopeManager || holdsAdminKey > 0) {
+      throw new Error(
+        `agent ${target.name} holds workspace-wide authority (${target.fullScopeManager ? "full_scope_manager" : "grantry admin key"}) — delete it from the dashboard, where a human confirms it.`,
+      );
+    }
+
+    // AuditLog.agentId is SetNull on delete, so the agent's history survives the
+    // row but loses its name. Record who this was *before* deleting, otherwise
+    // those entries become anonymous and the trail is unreadable.
+    const scopes = await agentScopes(target.id);
+    const grants = await prisma.agentConnectionGrant.count({ where: { agentId: target.id } });
+    const assignments = await prisma.agentAssignment.count({ where: { agentId: target.id } });
+
+    await prisma.agent.delete({ where: { id: target.id } });
+
+    const payload = {
+      agent_id: target.id,
+      name: target.name,
+      token_prefix: target.tokenPrefix,
+      last_used_at: target.lastUsedAt,
+      deleted: true,
+      removed_connection_grants: grants,
+      removed_assignments: assignments,
+      scopes_at_deletion: scopes,
+    };
+    return {
+      payload,
+      // The summary is what stays legible in the audit log after agentId is nulled.
+      summary: `deleted agent ${target.name} (${target.id}, token ${target.tokenPrefix}…, last used ${target.lastUsedAt ? target.lastUsedAt.toISOString() : "never"}; removed ${grants} connection grant(s), ${assignments} assignment(s), scopes: ${scopes.join(", ") || "none"})`,
+    };
+  }
+
   if (toolName === "grantry/set_runbook") {
     const target = await targetAgent(ctx, requireString(args, "agent_id"));
     if (args.markdown === undefined) {
@@ -627,6 +676,14 @@ export function adminToolDescriptor(toolName: AdminToolName): { description: str
           agent_id: { type: "string", description: "Agent id (from grantry_list_agents)." },
           enabled: { type: "boolean", description: "Enable or disable the agent's token." },
           charter: { type: "string", description: "New charter text (empty string clears it)." },
+        },
+        required: ["agent_id"],
+      };
+    case "grantry/delete_agent":
+      return {
+        description: "grantry admin: permanently delete a disabled agent. There is no undo — the token hash goes with the row, so the agent can only be recreated with a new token. Refuses an agent that is still enabled (disable it first with grantry_update_agent, confirm nothing broke, then delete), and refuses full_scope_manager / grantry_admin agents (delete those from the dashboard). The agent's audit-log entries are kept; the deletion itself is recorded with the agent's name and token prefix so the trail stays readable.",
+        properties: {
+          agent_id: { type: "string", description: "Agent id (from grantry_list_agents). The agent must already be disabled." },
         },
         required: ["agent_id"],
       };
