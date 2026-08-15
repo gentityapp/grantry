@@ -73,6 +73,7 @@ import { callGoogleFormsTool } from "./connectors/google_forms.js";
 import { callTwentyTool } from "./connectors/twenty.js";
 import { callNocodbTool } from "./connectors/nocodb.js";
 import { callSeminarPortalTool } from "./connectors/seminar_portal.js";
+import { callIntentEngineTool } from "./connectors/intent_engine.js";
 import { callLanggraphTool } from "./connectors/langgraph.js";
 import { callLangsmithTool } from "./connectors/langsmith.js";
 import { callMonidTool } from "./connectors/monid.js";
@@ -2503,6 +2504,43 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "twenty/create_record") { return { object: { type: "string", description: "Plural object name." }, data: { type: "object", description: "Field values, e.g. { name: { firstName, lastName } } for people." } }; }
   if (toolName === "twenty/update_record") { return { object: { type: "string", description: "Plural object name." }, record_id: { type: "string", description: "Record id (uuid)." }, data: { type: "object", description: "Field values to update." } }; }
 
+  // --- intent_engine ---
+  if (toolName === "intent_engine/health") { return {}; }
+  if (toolName === "intent_engine/list_signal_types") { return {}; }
+  if (toolName === "intent_engine/search_signals") {
+    return {
+      q: { type: "string", description: "Keyword match against the company name, title and quoted evidence." },
+      semantic: { type: "string", description: "Semantic search sentence, e.g. a description of the company you want. Only works when the deployment has embeddings." },
+      type: { type: "string", description: "Signal type. Accepts the Japanese label or the raw signal_type — call intent_engine/list_signal_types for the vocabulary." },
+      pref: { type: "string", description: "Prefecture, e.g. \u611b\u77e5\u770c." },
+      tag: { type: "string", description: "Tag, e.g. subsidy. internal_only marks signals that must not be quoted in outbound writing." },
+      min_strength: { type: "number", description: "Minimum strength, 1-5." },
+      include_expired: { type: "string", description: "Set to \"1\" to include signals past their expiry. Default excludes them." },
+      limit: { type: "number", description: "Max rows, default 50." },
+      offset: { type: "number", description: "Row offset for paging." },
+    };
+  }
+  if (toolName === "intent_engine/get_company") {
+    return {
+      key: { type: "string", description: "13-digit Japanese corporate number, jcn:<13 digits>, or a domain. Returns that company's signals plus its insured-employee history in one call." },
+    };
+  }
+  if (toolName === "intent_engine/stacked_companies") {
+    return {
+      min: { type: "number", description: "Minimum number of overlapping live signals, default 2. Overlap is a stronger buying indicator than any single signal." },
+      limit: { type: "number", description: "Max companies, default 100." },
+    };
+  }
+  if (toolName === "intent_engine/headcount_changes") {
+    return {
+      direction: { type: "string", enum: ["shrank", "grew"], description: "Filter to companies whose insured-employee count fell or rose since the previous monthly cycle. Omit for both. Note: a fall is for internal scoring only — do not quote it back to the company." },
+      min_diff: { type: "number", description: "Minimum absolute change in people, default 1." },
+      pref: { type: "string", description: "Prefecture, exact match." },
+      limit: { type: "number", description: "Max companies, default 50, max 500." },
+    };
+  }
+  if (toolName === "intent_engine/insured_summary") { return {}; }
+
   // --- seminar_portal ---
   if (toolName === "seminar_portal/list_tech") { return {}; }
   if (toolName === "seminar_portal/search") {
@@ -3432,6 +3470,7 @@ async function dispatchProviderTool(
   if (provider === "twenty") return callTwentyTool(toolName, args, token);
   if (provider === "nocodb") return callNocodbTool(toolName, args, token);
   if (provider === "seminar_portal") return callSeminarPortalTool(toolName, args, token);
+  if (provider === "intent_engine") return callIntentEngineTool(toolName, args, token);
   if (provider === "langgraph") return callLanggraphTool(toolName, args, token);
   if (provider === "langsmith") return callLangsmithTool(toolName, args, token);
   if (provider === "monid") return callMonidTool(toolName, args, token);

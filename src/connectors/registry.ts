@@ -1167,6 +1167,26 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  intent_engine: {
+    key: "intent_engine",
+    label: "intent-engine",
+    authTypes: ["pat"],
+    helpText: "Paste the deployment's API token (API_TOKEN on the intent-engine service). It is sent as Authorization: Bearer to /api. A Japanese corporate intent-signal warehouse: subsidy adoptions plus the monthly count of social-insurance-covered employees per company. get_company returns one company's signals and headcount history in a single call. To point at another deployment, paste JSON like {\"api_token\":\"...\",\"base_url\":\"https://example.com\"}.",
+    tools: [
+      "intent_engine/health",
+      "intent_engine/list_signal_types",
+      "intent_engine/search_signals",
+      "intent_engine/get_company",
+      "intent_engine/stacked_companies",
+      "intent_engine/headcount_changes",
+      "intent_engine/insured_summary",
+    ],
+    credentialFields: [
+      { key: "api_token", label: "API token", required: true, secret: true, placeholder: "Paste the intent-engine API token" },
+      { key: "base_url", label: "intent-engine URL", required: false, placeholder: "https://intent-engine-production-f43a.up.railway.app", hint: "Only when running your own deployment." },
+    ],
+    implemented: true,
+  },
   nocodb: {
     key: "nocodb",
     label: "NocoDB",
