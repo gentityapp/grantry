@@ -214,6 +214,28 @@ export const ja: Record<string, string> = {
   "Auto-assign agents on accept:": "承諾時に自動割り当てするエージェント:",
   "No agents in this workspace yet.": "このワークスペースにはまだエージェントがありません。",
   "Pending invites": "保留中の招待",
+  // ── Google Workspace ディレクトリからの一括招待 ──────────────────────────
+  "Invite from Google Workspace": "Google Workspace から招待",
+  "Pick people from your Google Workspace directory and invite them in one go.":
+    "Google Workspace のディレクトリからメンバーを選んで、まとめて招待できます。",
+  "Connect a Google Admin (google_admin) connection in this workspace to invite straight from your Google Workspace directory.":
+    "このワークスペースに Google Admin（google_admin）の接続を追加すると、Google Workspace のディレクトリから直接招待できます。",
+  "No google_admin connection in this workspace yet. Connect one on the Connections page, then come back.":
+    "このワークスペースにはまだ google_admin の接続がありません。接続ページで追加してから、このページに戻ってください。",
+  "Could not read the Google Workspace directory": "Google Workspace のディレクトリを取得できませんでした",
+  "The connected Google account must be a Workspace administrator with the Admin SDK Directory scope.":
+    "接続した Google アカウントは、Admin SDK Directory スコープを持つ Workspace 管理者である必要があります。",
+  "{total} accounts in the directory · {joined} already in this workspace or invited · {suspended} suspended (hidden)":
+    "ディレクトリ {total} 件 · うち {joined} 件はこのワークスペースのメンバーまたは招待済み · 停止中 {suspended} 件（非表示）",
+  "Filter by email, name, or org unit": "メールアドレス・氏名・組織部門で絞り込み",
+  "Send invites": "まとめて招待",
+  "Org unit": "組織部門",
+  "Up to {max} invites per submit.": "1 回の送信につき最大 {max} 件まで招待できます。",
+  "Everyone in the directory is already a member or has a pending invite.":
+    "ディレクトリの全員が、すでにメンバーか招待済みです。",
+  "Invited {count} people from Google Workspace": "Google Workspace から {count} 人を招待しました",
+  "{count} already a member or invited": "{count} 件はすでにメンバーまたは招待済みのためスキップ",
+  "{count} left out (max {max} per submit)": "{count} 件は上限（1 回あたり {max} 件）を超えたため未送信",
   "Expires": "有効期限",
   "Link": "リンク",
   "Revoke": "取り消し",

@@ -9,6 +9,7 @@ import { PROVIDERS, getProvider, getProviderForWorkspace, listProvidersForWorksp
 import { providerIcon, providerIconMap } from "./connectors/icons.js";
 import { credentialMetadataForStorage, deriveCredentialHealth } from "./connectors/credential_meta.js";
 import { callGenericCheckConnection, callGenericListCapabilities, templateVarNames } from "./connectors/generic_request.js";
+import { callGoogleAdminTool } from "./connectors/google_admin.js";
 import { parseServiceAccountInput, serviceAccountPublicMeta, invalidateDwdToken, mintDwdAccessToken, type ServiceAccountCredential } from "./google_dwd.js";
 import { connectionsForAgent, findCapableAgents, normalizeToolName } from "./policy.js";
 import { ensureTenant } from "./tenants.js";
@@ -2232,7 +2233,7 @@ dashboardApp.get("/workspaces", async (c) => {
         <div style="color:#687385;font-size:13px;margin-top:6px;">${t("Connector URL:")} <code>${escapeHtml(BASE_URL())}/mcp/w/${escapeHtml(ws.slug)}</code></div></div>`);
     } else {
 
-    const [members, agents, assignments, invites] = await Promise.all([
+    const [members, agents, assignments, invites, directoryConn] = await Promise.all([
       prisma.workspaceMember.findMany({
         where: { workspaceId: ws.id },
         include: { user: { select: { id: true, email: true, name: true } } },
@@ -2252,6 +2253,7 @@ dashboardApp.get("/workspaces", async (c) => {
         where: { workspaceId: ws.id, acceptedAt: null, expiresAt: { gt: new Date() } },
         orderBy: { createdAt: "desc" },
       }),
+      googleAdminConnectionForWorkspace(ws.id),
     ]);
 
     sections.push(`
@@ -2293,6 +2295,12 @@ dashboardApp.get("/workspaces", async (c) => {
       </form>
 
       <h3>${t("Invite")}</h3>
+      <div style="margin-bottom:12px;">
+        ${directoryConn
+          ? `<a class="btn secondary" href="/workspaces/${ws.id}/directory">${t("Invite from Google Workspace")}</a>
+             <span style="color:#687385;font-size:13px;margin-left:8px;">${t("Pick people from your Google Workspace directory and invite them in one go.")}</span>`
+          : `<span style="color:#687385;font-size:13px;">${t("Connect a Google Admin (google_admin) connection in this workspace to invite straight from your Google Workspace directory.")}</span>`}
+      </div>
       <form method="post" action="/workspaces/${ws.id}/invite">
         <div class="row" style="gap:8px;align-items:center;">
           <input type="email" name="email" placeholder="teammate@example.com" required style="flex:1;">
@@ -2410,6 +2418,50 @@ dashboardApp.post("/workspaces/:id/delete", async (c) => {
   return c.redirect(`/workspaces?ok=${encodeURIComponent(`Workspace "${current.workspace.displayName}" deleted`)}`);
 });
 
+// One invite: row + email. Shared by the single-address form and the Google
+// Workspace directory bulk invite, so both produce identical invites.
+async function createWorkspaceInvite(args: {
+  workspaceId: string;
+  workspaceName: string;
+  email: string;
+  role: string;
+  agentIds: string[];
+  invitedBy: { id: string; email: string };
+}) {
+  const token = nodeCrypto.randomBytes(24).toString("hex");
+  await prisma.workspaceInvite.create({
+    data: {
+      workspaceId: args.workspaceId,
+      email: args.email,
+      role: args.role,
+      token,
+      invitedById: args.invitedBy.id,
+      agentIds: JSON.stringify(args.agentIds),
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    },
+  });
+  const link = `${BASE_URL()}/invite/${token}`;
+  try {
+    await sendSystemEmail({
+      to: args.email,
+      subject: `You're invited to the ${args.workspaceName || "grantry"} workspace on grantry`,
+      text: `${args.invitedBy.email} invited you to the "${args.workspaceName}" workspace on grantry.\n\nAccept the invite (valid for 7 days):\n${link}\n\nAfter joining, connect Claude to grantry with the workspace connector URL shown on your Workspace page.`,
+      html: `<p><b>${escapeHtml(args.invitedBy.email)}</b> invited you to the <b>${escapeHtml(args.workspaceName)}</b> workspace on grantry.</p>
+<p><a href="${link}">Accept the invite</a> (valid for 7 days)</p>
+<p style="color:#888;font-size:13px;">After joining, connect Claude to grantry with the workspace connector URL shown on your Workspace page.</p>`,
+    });
+  } catch (err) {
+    console.error("[workspace] invite email failed:", err);
+  }
+}
+
+// Only agents that actually live in this workspace may be pre-assigned.
+async function validAgentIdsForWorkspace(workspaceId: string, agentIds: string[]): Promise<string[]> {
+  if (!agentIds.length) return [];
+  const rows = await prisma.agent.findMany({ where: { id: { in: agentIds }, workspaceId }, select: { id: true } });
+  return rows.map((r) => r.id);
+}
+
 dashboardApp.post("/workspaces/:id/invite", async (c) => {
   const wsId = c.req.param("id");
   const admin = await requireWsAdmin(c, wsId);
@@ -2420,35 +2472,231 @@ dashboardApp.post("/workspaces/:id/invite", async (c) => {
   const agentIds = form.getAll("agentIds").map(String).filter(Boolean);
   if (!email) return c.redirect("/workspaces");
 
-  // Only agents that actually live in this workspace may be pre-assigned.
-  const valid = await prisma.agent.findMany({ where: { id: { in: agentIds }, workspaceId: wsId }, select: { id: true } });
+  const valid = await validAgentIdsForWorkspace(wsId, agentIds);
   const ws = await prisma.workspace.findUnique({ where: { id: wsId } });
-  const token = nodeCrypto.randomBytes(24).toString("hex");
-  await prisma.workspaceInvite.create({
-    data: {
-      workspaceId: wsId,
-      email,
-      role,
-      token,
-      invitedById: admin.user.id,
-      agentIds: JSON.stringify(valid.map((v) => v.id)),
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-    },
+  await createWorkspaceInvite({
+    workspaceId: wsId,
+    workspaceName: ws?.displayName ?? "",
+    email,
+    role,
+    agentIds: valid,
+    invitedBy: { id: admin.user.id, email: admin.user.email },
   });
-  const link = `${BASE_URL()}/invite/${token}`;
-  try {
-    await sendSystemEmail({
-      to: email,
-      subject: `You're invited to the ${ws?.displayName ?? "grantry"} workspace on grantry`,
-      text: `${admin.user.email} invited you to the "${ws?.displayName}" workspace on grantry.\n\nAccept the invite (valid for 7 days):\n${link}\n\nAfter joining, connect Claude to grantry with the workspace connector URL shown on your Workspace page.`,
-      html: `<p><b>${escapeHtml(admin.user.email)}</b> invited you to the <b>${escapeHtml(ws?.displayName ?? "")}</b> workspace on grantry.</p>
-<p><a href="${link}">Accept the invite</a> (valid for 7 days)</p>
-<p style="color:#888;font-size:13px;">After joining, connect Claude to grantry with the workspace connector URL shown on your Workspace page.</p>`,
-    });
-  } catch (err) {
-    console.error("[workspace] invite email failed:", err);
-  }
   return c.redirect(`/workspaces?ok=${encodeURIComponent(`Invite sent to ${email}`)}`);
+});
+
+// ---------- Google Workspace directory → bulk invite ----------
+// Slack's "invite from Google Workspace": read the customer's Admin SDK
+// directory through an existing google_admin connection, then fan the picked
+// addresses into ordinary grantry invites. No new credential path — the
+// connection the workspace already granted is the only thing consulted.
+
+const MAX_BULK_INVITES = 100;
+const DIRECTORY_PAGE_LIMIT = 5; // ≤ 2500 accounts; Directory API caps a page at 500
+
+async function googleAdminConnectionForWorkspace(workspaceId: string) {
+  return prisma.connection.findFirst({
+    where: { workspaceId, provider: "google_admin", enabled: true },
+    orderBy: { updatedAt: "desc" },
+  });
+}
+
+type DirectoryUser = { email: string; name: string; orgUnitPath: string; suspended: boolean };
+
+async function fetchGoogleDirectoryUsers(conn: Parameters<typeof credentialForConnection>[0]): Promise<DirectoryUser[]> {
+  const accessToken = await credentialForConnection(conn);
+  const users: DirectoryUser[] = [];
+  let pageToken: string | undefined;
+  for (let page = 0; page < DIRECTORY_PAGE_LIMIT; page++) {
+    const res: any = await callGoogleAdminTool(
+      "google_admin/list_users",
+      { max_results: 500, order_by: "email", ...(pageToken ? { page_token: pageToken } : {}) },
+      accessToken,
+    );
+    const body = res?.structuredContent ?? {};
+    for (const u of (body.users ?? []) as any[]) {
+      const email = String(u?.primaryEmail ?? "").trim().toLowerCase();
+      if (!email) continue;
+      users.push({
+        email,
+        name: String(u?.name?.fullName ?? ""),
+        orgUnitPath: String(u?.orgUnitPath ?? ""),
+        suspended: !!u?.suspended || !!u?.archived,
+      });
+    }
+    pageToken = body.nextPageToken ? String(body.nextPageToken) : undefined;
+    if (!pageToken) break;
+  }
+  return users;
+}
+
+dashboardApp.get("/workspaces/:id/directory", async (c) => {
+  const wsId = c.req.param("id");
+  const admin = await requireWsAdmin(c, wsId);
+  if (!admin) return c.redirect("/login");
+  const ws = await prisma.workspace.findUnique({ where: { id: wsId } });
+  if (!ws) return c.redirect("/workspaces");
+
+  const [conn, members, invites, agents] = await Promise.all([
+    googleAdminConnectionForWorkspace(wsId),
+    prisma.workspaceMember.findMany({ where: { workspaceId: wsId }, include: { user: { select: { email: true } } } }),
+    prisma.workspaceInvite.findMany({ where: { workspaceId: wsId, acceptedAt: null, expiresAt: { gt: new Date() } }, select: { email: true } }),
+    prisma.agent.findMany({ where: { workspaceId: wsId, enabled: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+  ]);
+
+  let directory: DirectoryUser[] = [];
+  let error = "";
+  if (conn) {
+    try {
+      directory = await fetchGoogleDirectoryUsers(conn);
+    } catch (e: any) {
+      error = String(e?.message ?? e);
+      console.error("[workspace] google directory listing failed:", e);
+    }
+  }
+
+  const taken = new Set<string>([
+    ...members.map((m) => m.user.email.toLowerCase()),
+    ...invites.map((i) => i.email.toLowerCase()),
+  ]);
+  const active = directory.filter((u) => !u.suspended);
+  const suspendedCount = directory.length - active.length;
+  const alreadyIn = active.filter((u) => taken.has(u.email));
+  const invitable = active.filter((u) => !taken.has(u.email));
+
+  const body = !conn
+    ? `<div class="card"><div class="empty">${t("No google_admin connection in this workspace yet. Connect one on the Connections page, then come back.")}
+        <div style="margin-top:12px;"><a class="btn secondary" href="/connections">${t("Connections")}</a></div></div></div>`
+    : error
+    ? `<div class="card" style="border-color:#df1b41;background:rgba(223,27,65,0.08);">
+        <b>${t("Could not read the Google Workspace directory")}</b>
+        <div style="margin-top:6px;font-size:13px;">${escapeHtml(error)}</div>
+        <div style="margin-top:10px;color:#687385;font-size:13px;">${t("The connected Google account must be a Workspace administrator with the Admin SDK Directory scope.")}</div>
+      </div>`
+    : `<div class="card">
+        <div style="color:#687385;font-size:13px;">
+          ${t("{total} accounts in the directory · {joined} already in this workspace or invited · {suspended} suspended (hidden)", {
+            total: String(active.length + suspendedCount),
+            joined: String(alreadyIn.length + invites.length),
+            suspended: String(suspendedCount),
+          })}
+        </div>
+        ${invitable.length ? `
+        <form method="post" action="/workspaces/${ws.id}/invite-bulk">
+          <div class="row" style="gap:8px;align-items:center;margin:12px 0;">
+            <input type="search" id="directorySearch" placeholder="${escapeHtml(t("Filter by email, name, or org unit"))}" style="flex:1;">
+            <select name="role"><option value="member">${t("member")}</option><option value="admin">${t("admin")}</option></select>
+            <button type="submit">${t("Send invites")}</button>
+          </div>
+          <div style="color:#687385;font-size:13px;">${t("Auto-assign agents on accept:")}</div>
+          <div style="display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 12px;">
+            ${agents.map((a) => `<label style="font-size:13px;"><input type="checkbox" name="agentIds" value="${escapeHtml(a.id)}"> ${escapeHtml(a.name)}</label>`).join("")
+              || `<span style="color:#687385;font-size:13px;">${t("No agents in this workspace yet.")}</span>`}
+          </div>
+          <table>
+            <thead><tr>
+              <th style="width:32px;"><input type="checkbox" id="directorySelectAll" title="${escapeHtml(t("Select all"))}"></th>
+              <th>${t("Email")}</th><th>${t("Name")}</th><th>${t("Org unit")}</th>
+            </tr></thead>
+            <tbody>
+            ${invitable.map((u) => `<tr class="directory-row" data-search="${escapeHtml(`${u.email} ${u.name} ${u.orgUnitPath}`.toLowerCase())}">
+              <td><input type="checkbox" name="emails" value="${escapeHtml(u.email)}"></td>
+              <td>${escapeHtml(u.email)}</td>
+              <td>${escapeHtml(u.name)}</td>
+              <td><code style="font-size:11px;">${escapeHtml(u.orgUnitPath)}</code></td>
+            </tr>`).join("")}
+            </tbody>
+          </table>
+          <div style="margin-top:10px;color:#687385;font-size:13px;">${t("Up to {max} invites per submit.", { max: String(MAX_BULK_INVITES) })}</div>
+        </form>` : `<div class="empty" style="margin-top:12px;">${t("Everyone in the directory is already a member or has a pending invite.")}</div>`}
+      </div>`;
+
+  return c.html(`
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Invite from Google Workspace")} — grantry</title>
+    ${FAVICON}<style>${CSS}</style></head><body>
+    ${NAV("workspaces", admin.user.email)}
+    <main>
+      <div class="scope-page-header">
+        <div>
+          <div class="scope-page-kicker"><a href="/workspaces">${t("Workspace")}</a> / ${escapeHtml(ws.displayName)}</div>
+          <h1>${t("Invite from Google Workspace")}</h1>
+        </div>
+      </div>
+      ${body}
+      <script>
+        (function () {
+          const search = document.getElementById('directorySearch');
+          const selectAll = document.getElementById('directorySelectAll');
+          const rows = Array.from(document.querySelectorAll('.directory-row'));
+          if (search) search.addEventListener('input', () => {
+            const q = search.value.trim().toLowerCase();
+            for (const row of rows) row.hidden = q && !String(row.dataset.search || '').includes(q);
+          });
+          if (selectAll) selectAll.addEventListener('change', () => {
+            // Only the rows the filter currently shows, so a search + select-all
+            // picks exactly what the admin is looking at.
+            for (const row of rows) {
+              if (row.hidden) continue;
+              const box = row.querySelector('input[type=checkbox]');
+              if (box) box.checked = selectAll.checked;
+            }
+          });
+        })();
+      </script>
+    </main></body></html>
+  `);
+});
+
+dashboardApp.post("/workspaces/:id/invite-bulk", async (c) => {
+  const wsId = c.req.param("id");
+  const admin = await requireWsAdmin(c, wsId);
+  if (!admin) return c.redirect("/login");
+  const ws = await prisma.workspace.findUnique({ where: { id: wsId } });
+  if (!ws) return c.redirect("/workspaces");
+
+  const form = await c.req.formData();
+  const role = String(form.get("role") ?? "member") === "admin" ? "admin" : "member";
+  const agentIds = await validAgentIdsForWorkspace(wsId, form.getAll("agentIds").map(String).filter(Boolean));
+  const picked = [...new Set(
+    form.getAll("emails").map((e) => String(e).trim().toLowerCase()).filter((e) => e.includes("@")),
+  )];
+  if (!picked.length) return c.redirect(`/workspaces/${wsId}/directory`);
+  const overflow = Math.max(0, picked.length - MAX_BULK_INVITES);
+  const emails = picked.slice(0, MAX_BULK_INVITES);
+
+  // Re-check membership/invites server-side: the page may be minutes stale.
+  const [members, pending] = await Promise.all([
+    prisma.workspaceMember.findMany({ where: { workspaceId: wsId }, include: { user: { select: { email: true } } } }),
+    prisma.workspaceInvite.findMany({ where: { workspaceId: wsId, acceptedAt: null, expiresAt: { gt: new Date() } }, select: { email: true } }),
+  ]);
+  const taken = new Set<string>([
+    ...members.map((m) => m.user.email.toLowerCase()),
+    ...pending.map((i) => i.email.toLowerCase()),
+  ]);
+  const fresh = emails.filter((e) => !taken.has(e));
+
+  // Small concurrency: each invite costs one Resend call, and 100 sequential
+  // sends would outlive the request.
+  let sent = 0;
+  for (let i = 0; i < fresh.length; i += 5) {
+    await Promise.all(fresh.slice(i, i + 5).map(async (email) => {
+      await createWorkspaceInvite({
+        workspaceId: wsId,
+        workspaceName: ws.displayName,
+        email,
+        role,
+        agentIds,
+        invitedBy: { id: admin.user.id, email: admin.user.email },
+      });
+      sent++;
+    }));
+  }
+
+  const skipped = emails.length - fresh.length;
+  const parts = [t("Invited {count} people from Google Workspace", { count: String(sent) })];
+  if (skipped) parts.push(t("{count} already a member or invited", { count: String(skipped) }));
+  if (overflow) parts.push(t("{count} left out (max {max} per submit)", { count: String(overflow), max: String(MAX_BULK_INVITES) }));
+  return c.redirect(`/workspaces?ok=${encodeURIComponent(parts.join(" · "))}`);
 });
 
 dashboardApp.post("/workspaces/:id/invites/:inviteId/revoke", async (c) => {
