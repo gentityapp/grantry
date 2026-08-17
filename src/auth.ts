@@ -17,6 +17,15 @@ const googleSignInClientSecret =
   || process.env.GRANTRY_AUTH_GOOGLE_CLIENT_SECRET
   || "";
 
+// grantry's own Google OAuth client (the one behind "Sign in with Google").
+// Application features that talk to Google as grantry itself — the Google
+// Workspace directory link used for member invites — reuse this client instead
+// of a customer-supplied provider connection.
+export const googleSignInClient = {
+  clientId: googleSignInClientId,
+  clientSecret: googleSignInClientSecret,
+};
+
 // Consent screen for MCP OAuth (claude.ai / Claude Desktop connecting via
 // dynamic client registration). Rendered by the /mcp/authorize endpoint when
 // the logged-in user still has to approve the client. The page also lets the

@@ -2,7 +2,7 @@
 import { unzipSync } from "fflate";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
-import { auth } from "./auth.js";
+import { auth, googleSignInClient } from "./auth.js";
 import { prisma } from "./db.js";
 import { decrypt, encrypt } from "./crypto.js";
 import { PROVIDERS, getProvider, getProviderForWorkspace, listProvidersForWorkspace, normalizePathPrefixes, toolsForProviderForWorkspace, validateCustomProviderKey } from "./connectors/registry.js";
@@ -2233,7 +2233,7 @@ dashboardApp.get("/workspaces", async (c) => {
         <div style="color:#687385;font-size:13px;margin-top:6px;">${t("Connector URL:")} <code>${escapeHtml(BASE_URL())}/mcp/w/${escapeHtml(ws.slug)}</code></div></div>`);
     } else {
 
-    const [members, agents, assignments, invites, directoryConn] = await Promise.all([
+    const [members, agents, assignments, invites, directoryLink] = await Promise.all([
       prisma.workspaceMember.findMany({
         where: { workspaceId: ws.id },
         include: { user: { select: { id: true, email: true, name: true } } },
@@ -2253,7 +2253,7 @@ dashboardApp.get("/workspaces", async (c) => {
         where: { workspaceId: ws.id, acceptedAt: null, expiresAt: { gt: new Date() } },
         orderBy: { createdAt: "desc" },
       }),
-      googleAdminConnectionForWorkspace(ws.id),
+      prisma.workspaceDirectoryLink.findUnique({ where: { workspaceId: ws.id }, select: { googleEmail: true } }),
     ]);
 
     sections.push(`
@@ -2296,10 +2296,12 @@ dashboardApp.get("/workspaces", async (c) => {
 
       <h3>${t("Invite")}</h3>
       <div style="margin-bottom:12px;">
-        ${directoryConn
-          ? `<a class="btn secondary" href="/workspaces/${ws.id}/directory">${t("Invite from Google Workspace")}</a>
-             <span style="color:#687385;font-size:13px;margin-left:8px;">${t("Pick people from your Google Workspace directory and invite them in one go.")}</span>`
-          : `<span style="color:#687385;font-size:13px;">${t("Connect a Google Admin (google_admin) connection in this workspace to invite straight from your Google Workspace directory.")}</span>`}
+        <a class="btn secondary" href="/workspaces/${ws.id}/directory">${t("Invite from Google Workspace")}</a>
+        <span style="color:#687385;font-size:13px;margin-left:8px;">
+          ${directoryLink
+            ? t("Pick people from your Google Workspace directory and invite them in one go. Linked as {email}.", { email: directoryLink.googleEmail })
+            : t("Pick people from your Google Workspace directory and invite them in one go. Sign in with a Workspace admin account to start.")}
+        </span>
       </div>
       <form method="post" action="/workspaces/${ws.id}/invite">
         <div class="row" style="gap:8px;align-items:center;">
@@ -2494,17 +2496,69 @@ dashboardApp.post("/workspaces/:id/invite", async (c) => {
 const MAX_BULK_INVITES = 100;
 const DIRECTORY_PAGE_LIMIT = 5; // ≤ 2500 accounts; Directory API caps a page at 500
 
-async function googleAdminConnectionForWorkspace(workspaceId: string) {
-  return prisma.connection.findFirst({
-    where: { workspaceId, provider: "google_admin", enabled: true },
-    orderBy: { updatedAt: "desc" },
+// Read-only: listing people is all this feature ever does. Anything that
+// mutates the customer's Google directory stays in the google_admin provider,
+// where an agent grant is required.
+export const GOOGLE_DIRECTORY_SCOPES = [
+  "openid",
+  "email",
+  "https://www.googleapis.com/auth/admin.directory.user.readonly",
+];
+const GOOGLE_DIRECTORY_REQUIRED_SCOPE = "https://www.googleapis.com/auth/admin.directory.user.readonly";
+
+function googleDirectoryRedirectUri(c: any): string {
+  return `${publicOrigin(c)}/oauth/google-directory/callback`;
+}
+
+type DirectoryLink = {
+  workspaceId: string;
+  googleEmail: string;
+  domain: string | null;
+  encryptedAccessToken: string;
+  encryptedRefreshToken: string | null;
+  accessTokenExpiresAt: Date | null;
+  scope: string;
+};
+
+// The link's own token refresh. Deliberately separate from
+// credentialForConnection(): these tokens are grantry's, minted by grantry's
+// sign-in client, and must never travel the connection/grant code path.
+async function directoryAccessToken(link: DirectoryLink): Promise<string> {
+  if (link.accessTokenExpiresAt && link.accessTokenExpiresAt.getTime() > Date.now() + 60_000) {
+    return decrypt(link.encryptedAccessToken);
+  }
+  if (!link.encryptedRefreshToken) {
+    throw new Error("This Google Workspace link has no refresh token — link the directory again.");
+  }
+  const { clientId, clientSecret } = googleSignInClient;
+  const resp = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: decrypt(link.encryptedRefreshToken),
+      grant_type: "refresh_token",
+    }),
   });
+  const json: any = await resp.json().catch(() => ({}));
+  if (!resp.ok || !json?.access_token) {
+    throw new Error(`Google token refresh failed: ${resp.status} ${JSON.stringify(json).slice(0, 300)}`);
+  }
+  await prisma.workspaceDirectoryLink.update({
+    where: { workspaceId: link.workspaceId },
+    data: {
+      encryptedAccessToken: encrypt(String(json.access_token)),
+      accessTokenExpiresAt: json.expires_in ? new Date(Date.now() + Number(json.expires_in) * 1000) : null,
+    },
+  });
+  return String(json.access_token);
 }
 
 type DirectoryUser = { email: string; name: string; orgUnitPath: string; suspended: boolean };
 
-async function fetchGoogleDirectoryUsers(conn: Parameters<typeof credentialForConnection>[0]): Promise<DirectoryUser[]> {
-  const accessToken = await credentialForConnection(conn);
+async function fetchGoogleDirectoryUsers(link: DirectoryLink): Promise<DirectoryUser[]> {
+  const accessToken = await directoryAccessToken(link);
   const users: DirectoryUser[] = [];
   let pageToken: string | undefined;
   for (let page = 0; page < DIRECTORY_PAGE_LIMIT; page++) {
@@ -2537,8 +2591,8 @@ dashboardApp.get("/workspaces/:id/directory", async (c) => {
   const ws = await prisma.workspace.findUnique({ where: { id: wsId } });
   if (!ws) return c.redirect("/workspaces");
 
-  const [conn, members, invites, agents] = await Promise.all([
-    googleAdminConnectionForWorkspace(wsId),
+  const [link, members, invites, agents] = await Promise.all([
+    prisma.workspaceDirectoryLink.findUnique({ where: { workspaceId: wsId } }),
     prisma.workspaceMember.findMany({ where: { workspaceId: wsId }, include: { user: { select: { email: true } } } }),
     prisma.workspaceInvite.findMany({ where: { workspaceId: wsId, acceptedAt: null, expiresAt: { gt: new Date() } }, select: { email: true } }),
     prisma.agent.findMany({ where: { workspaceId: wsId, enabled: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
@@ -2546,9 +2600,9 @@ dashboardApp.get("/workspaces/:id/directory", async (c) => {
 
   let directory: DirectoryUser[] = [];
   let error = "";
-  if (conn) {
+  if (link) {
     try {
-      directory = await fetchGoogleDirectoryUsers(conn);
+      directory = await fetchGoogleDirectoryUsers(link);
     } catch (e: any) {
       error = String(e?.message ?? e);
       console.error("[workspace] google directory listing failed:", e);
@@ -2564,14 +2618,16 @@ dashboardApp.get("/workspaces/:id/directory", async (c) => {
   const alreadyIn = active.filter((u) => taken.has(u.email));
   const invitable = active.filter((u) => !taken.has(u.email));
 
-  const body = !conn
-    ? `<div class="card"><div class="empty">${t("No google_admin connection in this workspace yet. Connect one on the Connections page, then come back.")}
-        <div style="margin-top:12px;"><a class="btn secondary" href="/connections">${t("Connections")}</a></div></div></div>`
+  const linkButton = `<a class="btn" href="/oauth/google-directory/start?workspaceId=${encodeURIComponent(ws.id)}">${t("Link Google Workspace")}</a>`;
+  const body = !link
+    ? `<div class="card"><div class="empty">${t("Sign in with a Google Workspace administrator account to read your directory. grantry asks only for read-only access to the user list, and uses it just to invite people here.")}
+        <div style="margin-top:12px;">${linkButton}</div></div></div>`
     : error
     ? `<div class="card" style="border-color:#df1b41;background:rgba(223,27,65,0.08);">
         <b>${t("Could not read the Google Workspace directory")}</b>
         <div style="margin-top:6px;font-size:13px;">${escapeHtml(error)}</div>
-        <div style="margin-top:10px;color:#687385;font-size:13px;">${t("The connected Google account must be a Workspace administrator with the Admin SDK Directory scope.")}</div>
+        <div style="margin-top:10px;color:#687385;font-size:13px;">${t("The linked Google account must be a Workspace administrator. Link it again to renew access.")}</div>
+        <div style="margin-top:10px;">${linkButton}</div>
       </div>`
     : `<div class="card">
         <div style="color:#687385;font-size:13px;">
@@ -2580,6 +2636,12 @@ dashboardApp.get("/workspaces/:id/directory", async (c) => {
             joined: String(alreadyIn.length + invites.length),
             suspended: String(suspendedCount),
           })}
+        </div>
+        <div style="color:#687385;font-size:13px;margin-top:4px;">
+          ${t("Linked as {email}", { email: link.googleEmail })}
+          <form method="post" action="/workspaces/${ws.id}/directory/unlink" style="display:inline-block;margin:0 0 0 8px;">
+            <button type="submit" class="btn secondary" style="font-size:12px;padding:4px 8px;">${t("Unlink")}</button>
+          </form>
         </div>
         ${invitable.length ? `
         <form method="post" action="/workspaces/${ws.id}/invite-bulk">
@@ -2697,6 +2759,13 @@ dashboardApp.post("/workspaces/:id/invite-bulk", async (c) => {
   if (skipped) parts.push(t("{count} already a member or invited", { count: String(skipped) }));
   if (overflow) parts.push(t("{count} left out (max {max} per submit)", { count: String(overflow), max: String(MAX_BULK_INVITES) }));
   return c.redirect(`/workspaces?ok=${encodeURIComponent(parts.join(" · "))}`);
+});
+
+dashboardApp.post("/workspaces/:id/directory/unlink", async (c) => {
+  const wsId = c.req.param("id");
+  if (!(await requireWsAdmin(c, wsId))) return c.redirect("/login");
+  await prisma.workspaceDirectoryLink.deleteMany({ where: { workspaceId: wsId } });
+  return c.redirect(`/workspaces?ok=${encodeURIComponent("Google Workspace directory unlinked")}`);
 });
 
 dashboardApp.post("/workspaces/:id/invites/:inviteId/revoke", async (c) => {
@@ -8513,6 +8582,116 @@ dashboardApp.get("/audit", async (c) => {
 // when configured. Env fallback is only for providers that allow a Grantry-owned
 // OAuth app.
 // Stores the wizard data in OAuthState.payload keyed by the `state` param.
+// ---------- Google Workspace directory link (application feature) ----------
+// Registered before the generic /:provider routes so "google-directory" is not
+// mistaken for a provider key. This flow uses grantry's OWN Google sign-in
+// client and stores its tokens on WorkspaceDirectoryLink — it never creates a
+// Connection, so nothing here becomes grantable to an agent.
+
+oauthApp.get("/google-directory/start", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+  const workspaceId = String(c.req.query("workspaceId") ?? "");
+  const admin = await requireWsAdmin(c, workspaceId);
+  if (!admin) return c.html(`<h1>${t("workspace admin required")}</h1>`, 403);
+
+  const { clientId } = googleSignInClient;
+  if (!clientId) {
+    return c.html(`<h1>Google sign-in not configured</h1><p>Set <code>AUTH_GOOGLE_CLIENT_ID</code> / <code>AUTH_GOOGLE_CLIENT_SECRET</code>. <a href="/workspaces">← Back</a></p>`, 500);
+  }
+
+  const state = crypto.randomUUID().replace(/-/g, "");
+  await prisma.oAuthState.create({
+    data: {
+      state,
+      provider: "google-directory",
+      payload: JSON.stringify({ workspaceId, userId: user.id }),
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000),
+    },
+  });
+
+  const params = new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: googleDirectoryRedirectUri(c),
+    response_type: "code",
+    scope: GOOGLE_DIRECTORY_SCOPES.join(" "),
+    access_type: "offline",
+    // Force the consent screen: without it Google returns no refresh token for
+    // an account that already granted the sign-in scopes.
+    prompt: "consent",
+    include_granted_scopes: "true",
+    state,
+  });
+  return c.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`);
+});
+
+oauthApp.get("/google-directory/callback", async (c) => {
+  const backToWorkspaces = (msg: string) => c.redirect(`/workspaces?ok=${encodeURIComponent(msg)}`);
+  const error = c.req.query("error");
+  const code = c.req.query("code") ?? "";
+  const state = c.req.query("state") ?? "";
+  if (error) return backToWorkspaces(`Google directory link cancelled: ${error}`);
+
+  const row = await prisma.oAuthState.findUnique({ where: { state } });
+  if (!row || row.provider !== "google-directory" || row.expiresAt.getTime() < Date.now()) {
+    return backToWorkspaces("Google directory link expired — start again");
+  }
+  await prisma.oAuthState.delete({ where: { state } }).catch(() => {});
+  const payload = JSON.parse(row.payload ?? "{}") as { workspaceId?: string; userId?: string };
+  if (!payload.workspaceId || !payload.userId) return backToWorkspaces("Google directory link state was incomplete — start again");
+
+  // The state row proves which flow this is; the session still has to belong to
+  // an admin of that workspace when the callback lands.
+  const admin = await requireWsAdmin(c, payload.workspaceId);
+  if (!admin || admin.user.id !== payload.userId) return c.redirect("/login");
+
+  const { clientId, clientSecret } = googleSignInClient;
+  const tokenResp = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: clientId,
+      client_secret: clientSecret,
+      redirect_uri: googleDirectoryRedirectUri(c),
+      grant_type: "authorization_code",
+    }),
+  });
+  const token: any = await tokenResp.json().catch(() => ({}));
+  if (!tokenResp.ok || !token?.access_token) {
+    console.error("[workspace] google directory token exchange failed:", tokenResp.status, token);
+    return backToWorkspaces(`Google token exchange failed: ${tokenResp.status} ${String(token?.error_description ?? token?.error ?? "")}`);
+  }
+
+  const granted = String(token.scope ?? "");
+  if (!granted.split(/\s+/).includes(GOOGLE_DIRECTORY_REQUIRED_SCOPE)) {
+    return backToWorkspaces("Directory access was not granted — approve the read-only user list permission");
+  }
+
+  const meResp = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+    headers: { Authorization: `Bearer ${token.access_token}` },
+  });
+  const me: any = await meResp.json().catch(() => ({}));
+  const googleEmail = String(me?.email ?? "").toLowerCase();
+  const domain = me?.hd ? String(me.hd) : null;
+
+  const data = {
+    googleEmail,
+    domain,
+    linkedById: admin.user.id,
+    encryptedAccessToken: encrypt(String(token.access_token)),
+    ...(token.refresh_token ? { encryptedRefreshToken: encrypt(String(token.refresh_token)) } : {}),
+    accessTokenExpiresAt: token.expires_in ? new Date(Date.now() + Number(token.expires_in) * 1000) : null,
+    scope: granted,
+  };
+  await prisma.workspaceDirectoryLink.upsert({
+    where: { workspaceId: payload.workspaceId },
+    create: { workspaceId: payload.workspaceId, encryptedRefreshToken: null, ...data },
+    update: data,
+  });
+  return c.redirect(`/workspaces/${payload.workspaceId}/directory`);
+});
+
 oauthApp.get("/:provider/start", async (c) => {
   const providerKey = c.req.param("provider");
   const user = await getSessionUser(c);

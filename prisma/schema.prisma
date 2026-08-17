@@ -521,6 +521,7 @@ model Workspace {
 
   members     WorkspaceMember[]
   invites     WorkspaceInvite[]
+  directoryLink WorkspaceDirectoryLink?
   agents      Agent[]
   tenants     Tenant[]
   roles       Role[]
@@ -564,6 +565,27 @@ model WorkspaceInvite {
 
   @@index([email])
   @@map("workspace_invite")
+}
+
+// Google Workspace directory link — an application feature, NOT a grantry
+// connection. A workspace admin consents once with grantry's own Google
+// sign-in client for a read-only directory scope; the tokens live here purely
+// to list people for member invites. They are never a Connection, never
+// grantable to an agent, and never reachable from MCP.
+model WorkspaceDirectoryLink {
+  workspaceId           String    @id
+  workspace             Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  googleEmail           String // the admin account that consented
+  domain                String? // Google `hd` claim, when present
+  linkedById            String?
+  encryptedAccessToken  String
+  encryptedRefreshToken String?
+  accessTokenExpiresAt  DateTime?
+  scope                 String    @default("")
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@map("workspace_directory_link")
 }
 
 // Person -> agent distribution: which users may connect (via OAuth) as this

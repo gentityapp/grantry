@@ -216,15 +216,18 @@ export const ja: Record<string, string> = {
   "Pending invites": "保留中の招待",
   // ── Google Workspace ディレクトリからの一括招待 ──────────────────────────
   "Invite from Google Workspace": "Google Workspace から招待",
-  "Pick people from your Google Workspace directory and invite them in one go.":
-    "Google Workspace のディレクトリからメンバーを選んで、まとめて招待できます。",
-  "Connect a Google Admin (google_admin) connection in this workspace to invite straight from your Google Workspace directory.":
-    "このワークスペースに Google Admin（google_admin）の接続を追加すると、Google Workspace のディレクトリから直接招待できます。",
-  "No google_admin connection in this workspace yet. Connect one on the Connections page, then come back.":
-    "このワークスペースにはまだ google_admin の接続がありません。接続ページで追加してから、このページに戻ってください。",
+  "Pick people from your Google Workspace directory and invite them in one go. Linked as {email}.":
+    "Google Workspace のディレクトリからメンバーを選んで、まとめて招待できます。連携アカウント: {email}",
+  "Pick people from your Google Workspace directory and invite them in one go. Sign in with a Workspace admin account to start.":
+    "Google Workspace のディレクトリからメンバーを選んで、まとめて招待できます。まず Workspace 管理者アカウントでログインしてください。",
+  "Sign in with a Google Workspace administrator account to read your directory. grantry asks only for read-only access to the user list, and uses it just to invite people here.":
+    "Google Workspace 管理者アカウントでログインすると、ディレクトリを読み取れます。grantry が要求するのはユーザー一覧の読み取り専用権限のみで、用途はこのワークスペースへの招待だけです。",
+  "Link Google Workspace": "Google Workspace と連携",
+  "Linked as {email}": "連携アカウント: {email}",
+  "Unlink": "連携を解除",
   "Could not read the Google Workspace directory": "Google Workspace のディレクトリを取得できませんでした",
-  "The connected Google account must be a Workspace administrator with the Admin SDK Directory scope.":
-    "接続した Google アカウントは、Admin SDK Directory スコープを持つ Workspace 管理者である必要があります。",
+  "The linked Google account must be a Workspace administrator. Link it again to renew access.":
+    "連携した Google アカウントは Workspace 管理者である必要があります。アクセスを更新するには、もう一度連携してください。",
   "{total} accounts in the directory · {joined} already in this workspace or invited · {suspended} suspended (hidden)":
     "ディレクトリ {total} 件 · うち {joined} 件はこのワークスペースのメンバーまたは招待済み · 停止中 {suspended} 件（非表示）",
   "Filter by email, name, or org unit": "メールアドレス・氏名・組織部門で絞り込み",
