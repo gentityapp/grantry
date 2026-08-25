@@ -1401,6 +1401,47 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "dataforseo") {
+      let login = "";
+      let password = "";
+      try {
+        const parsed = JSON.parse(token.trim());
+        login = String(parsed?.login ?? parsed?.email ?? "").trim();
+        password = String(parsed?.password ?? "").trim();
+      } catch {
+        const raw = token.trim();
+        const sep = raw.indexOf(":");
+        if (sep > 0) {
+          login = raw.slice(0, sep).trim();
+          password = raw.slice(sep + 1).trim();
+        }
+      }
+      if (!login || !password) {
+        return { provider, authType, status: "error", checkedAt, error: 'DataForSEO credential must be JSON {"login","password"} (API login + API password)' };
+      }
+      // /v3/appendix/user_data is the free introspection endpoint: it reports the
+      // account balance and rate limits without spending credit.
+      const resp = await fetchWithTimeout("https://api.dataforseo.com/v3/appendix/user_data", {
+        headers: { Authorization: `Basic ${Buffer.from(`${login}:${password}`).toString("base64")}`, Accept: "application/json" },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok || (body?.status_code !== undefined && body.status_code !== 20000)) {
+        return { provider, authType, status: "error", checkedAt, error: `DataForSEO credential check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      }
+      const result = body?.tasks?.[0]?.result?.[0] ?? {};
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: { login: result.login ?? login, timezone: result.timezone },
+        notes: [
+          "DataForSEO is billed per API call against the account balance; user_data reports the remaining balance and per-minute rate limits.",
+          ...(result?.money?.balance !== undefined ? [`Balance at check time: ${result.money.balance}`] : []),
+        ],
+        checkedAt,
+      };
+    }
+
     if (provider === "higgsfield") {
       const cred = token.trim();
       if (!cred.includes(":")) return { provider, authType, status: "error", checkedAt, error: "Higgsfield credential must be in KEY_ID:KEY_SECRET format" };

@@ -288,6 +288,13 @@ function applyProviderSpecificAuth(provider: string, credential: string, headers
     headers.Authorization = basicAuth(`${userId}:${apiKey}`);
     return true;
   }
+  if (provider === "dataforseo") {
+    const login = credentialField(credential, ["login", "email", "username"]);
+    const password = credentialField(credential, ["password", "api_password", "apiPassword"]);
+    if (!login || !password) throw new Error('dataforseo/request requires JSON credential {"login","password"}');
+    headers.Authorization = basicAuth(`${login}:${password}`);
+    return true;
+  }
   if (provider === "calcom") {
     const parsed = parsedCredentialObject(credential);
     const apiKey = String(parsed?.api_key ?? parsed?.apiKey ?? credential).trim();

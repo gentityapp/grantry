@@ -52,6 +52,7 @@ function patTokenForProvider(providerKey: string) {
     channel_talk: JSON.stringify({ accessKey: "ct-test-key", accessSecret: "ct-test-secret" }),
     channel_talk_documents: JSON.stringify({ accessKey: "ctd-test-key", accessSecret: "ctd-test-secret" }),
     customerio: JSON.stringify({ token: "cio-test-token", region: "us" }),
+    dataforseo: JSON.stringify({ login: "ops@example.com", password: "dataforseo-test-password" }),
     godaddy: "godaddy-key:godaddy-secret",
     langgraph: JSON.stringify({ api_key: "lsv2-test-key", base_url: "https://grantry-test.us.langgraph.app" }),
     jira: JSON.stringify({ site: "https://acme.atlassian.net", email: "ops@example.com", token: "jira-test-token" }),
@@ -259,6 +260,12 @@ function patSuccessResponse(call: FetchCall) {
   }
   if (url === "https://api.intercom.io/me") {
     return jsonResponse({ type: "admin", email: "ops@example.com", name: "Ops", app: { name: "Root" } });
+  }
+  if (url === "https://api.dataforseo.com/v3/appendix/user_data") {
+    return jsonResponse({
+      status_code: 20000,
+      tasks: [{ status_code: 20000, result: [{ login: "ops@example.com", timezone: "Asia/Tokyo", money: { balance: 42.5, limits: {} }, rates: { limits: {} } }] }],
+    });
   }
   if (url === "https://api.customer.io/v1/campaigns") {
     return jsonResponse({ campaigns: [] });
