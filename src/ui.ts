@@ -5523,15 +5523,11 @@ dashboardApp.get("/tenants/:scope/connect/:provider", async (c) => {
   }
 
   // PAT path: minimal paste form that posts to the shared add_service handler.
-  const fields = providerDef.credentialFields;
-  const credentialInputs = fields && fields.length
-    ? fields.map((f) => `
-        <div class="field">
-          <label for="cf_${escapeHtml(f.key)}">${escapeHtml(f.label)}${f.required ? "" : ` ${t("(optional)")}`}</label>
-          <input type="${f.secret ? "password" : "text"}" name="${escapeHtml(f.key)}" id="cf_${escapeHtml(f.key)}" autocomplete="off"${f.required ? " required" : ""} placeholder="${escapeHtml(f.placeholder ?? "")}">
-          ${f.hint ? `<div class="field-hint">${escapeHtml(f.hint)}</div>` : ""}
-        </div>`).join("")
-    : `<div class="field">
+  // Structured fields MUST be named credfield_<key>: the shared add_service
+  // handler assembles the JSON credential from those names, so plain <key>
+  // inputs post nothing and the connection fails with "credential required".
+  const credentialInputs = renderCredentialFieldsHtml(providerDef, { enforceRequired: true, idPrefix: "cf" })
+    || `<div class="field">
          <label for="credential">${t("Credential")}</label>
          <textarea name="credential" id="credential" rows="3" required></textarea>
        </div>`;
