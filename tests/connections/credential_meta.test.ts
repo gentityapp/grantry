@@ -379,6 +379,9 @@ function patSuccessResponse(call: FetchCall) {
   if (url === "https://acme-test.supabase.co/rest/v1/") {
     return jsonResponse({ paths: {}, definitions: {} });
   }
+  if (url.startsWith("https://pasta.tldv.io/v1alpha1/meetings")) {
+    return jsonResponse({ page: 1, pages: 1, total: 1, pageSize: 1, results: [{ id: "meeting-1", name: "Weekly sync" }] });
+  }
   if (url === "https://timerex.net/api/beta/user/me/teams/primary") {
     return jsonResponse({ id: "team-1", name: "Root" });
   }

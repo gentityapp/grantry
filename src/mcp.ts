@@ -34,6 +34,7 @@ import { callChannelTalkTool, callChannelTalkDocumentsTool } from "./connectors/
 import { callRailwayTool } from "./connectors/railway.js";
 import { callResendTool } from "./connectors/resend.js";
 import { callGranolaTool } from "./connectors/granola.js";
+import { callTldvTool } from "./connectors/tldv.js";
 import { callCloudSignTool } from "./connectors/cloudsign.js";
 import { callSlackTool } from "./connectors/slack.js";
 import { callFreeeTool } from "./connectors/freee.js";
@@ -1718,6 +1719,49 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       page_size: { type: "integer", description: "Number of folders to return per page." },
     };
   }
+  if (toolName === "tldv/list_meetings") {
+    return {
+      query: { type: "string", description: "Free-text search over meeting names." },
+      page: { type: "integer", description: "1-based page number." },
+      limit: { type: "integer", description: "Results per page (tl;dv defaults to 50)." },
+      from: { type: "string", description: "Only meetings that happened after this ISO 8601 timestamp." },
+      to: { type: "string", description: "Only meetings that happened before this ISO 8601 timestamp." },
+      only_participated: { type: "boolean", description: "When true, only meetings the API key's user attended." },
+      meeting_type: { type: "string", enum: ["internal", "external"], description: "Filter by meeting type, derived from organizer vs invitee email domains." },
+    };
+  }
+  if (toolName === "tldv/get_meeting") {
+    return {
+      meeting_id: { type: "string", description: "tl;dv meeting id (from list_meetings)." },
+    };
+  }
+  if (toolName === "tldv/get_transcript") {
+    return {
+      meeting_id: { type: "string", description: "tl;dv meeting id. Returns the full transcript with speaker, text and timestamps." },
+    };
+  }
+  if (toolName === "tldv/get_notes") {
+    return {
+      meeting_id: { type: "string", description: "tl;dv meeting id. Returns AI notes as markdown plus structured notes and topics." },
+    };
+  }
+  if (toolName === "tldv/get_highlights") {
+    return {
+      meeting_id: { type: "string", description: "tl;dv meeting id. Deprecated by tl;dv in favour of tldv/get_notes." },
+    };
+  }
+  if (toolName === "tldv/get_download_url") {
+    return {
+      meeting_id: { type: "string", description: "tl;dv meeting id. Returns a signed, expiring URL for the recording file instead of streaming it." },
+    };
+  }
+  if (toolName === "tldv/import_meeting") {
+    return {
+      url: { type: "string", description: "Publicly accessible URL of the recording/media to import." },
+      name: { type: "string", description: "Name for the imported meeting, e.g. \"1:1 John x Sarah\"." },
+      data: { type: "object", description: "Optional extra fields merged into the import request body." },
+    };
+  }
   if (toolName === "slack/auth_test") {
     return {};
   }
@@ -3006,6 +3050,13 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "resend/send_email") return ["from", "to", "subject"];
   if (toolName === "resend/get_email") return ["email_id"];
   if (toolName === "granola/get_note") return ["note_id"];
+  if (toolName === "tldv/list_meetings") return [];
+  if (toolName === "tldv/get_meeting") return ["meeting_id"];
+  if (toolName === "tldv/get_transcript") return ["meeting_id"];
+  if (toolName === "tldv/get_notes") return ["meeting_id"];
+  if (toolName === "tldv/get_highlights") return ["meeting_id"];
+  if (toolName === "tldv/get_download_url") return ["meeting_id"];
+  if (toolName === "tldv/import_meeting") return ["url"];
   if (toolName === "resend/get_domain") return ["domain_id"];
   if (toolName === "slack/get_channel") return ["channel"];
   if (toolName === "slack/list_messages") return ["channel"];
@@ -3552,6 +3603,7 @@ async function dispatchProviderTool(
   if (provider === "google_maps") return callGoogleMapsTool(toolName, args, token);
   if (provider === "resend") return callResendTool(toolName, args, token);
   if (provider === "granola") return callGranolaTool(toolName, args, token);
+  if (provider === "tldv") return callTldvTool(toolName, args, token);
   if (provider === "cloudsign") return callCloudSignTool(toolName, args, token);
   if (provider === "slack") return callSlackTool(toolName, args, token);
   if (provider === "freee") return callFreeeTool(toolName, args, token);

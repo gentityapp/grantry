@@ -1776,6 +1776,26 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  tldv: {
+    key: "tldv",
+    label: "tl;dv",
+    authTypes: ["pat"],
+    helpText: "Create an API key in tl;dv at Settings > Personal Settings > API Keys and paste it here. It is sent as the x-api-key header to pasta.tldv.io/v1alpha1. API access requires a Pro or Business plan. Covers meetings (list/get), transcripts, AI notes, the deprecated highlights endpoint, a signed recording download URL, and importing a recording from a public URL.",
+    tokenUrl: "https://tldv.io/app/settings/personal-settings/api-keys",
+    tools: [
+      "tldv/list_meetings",
+      "tldv/get_meeting",
+      "tldv/get_transcript",
+      "tldv/get_notes",
+      "tldv/get_highlights",
+      "tldv/get_download_url",
+      "tldv/import_meeting",
+    ],
+    credentialFields: [
+      { key: "api_key", label: "API key", required: true, secret: true, hint: "Settings > Personal Settings > API Keys (Pro / Business plans)." },
+    ],
+    implemented: true,
+  },
   canva: {
     key: "canva",
     label: "Canva",
@@ -2112,6 +2132,14 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
     smokeTests: [{ id: "me", method: "GET", path: "/users/me" }],
+  },
+  tldv: {
+    baseUrl: "https://pasta.tldv.io",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/v1alpha1/"],
+    authScheme: "api_key",
+    apiKeyHeader: "x-api-key",
+    smokeTests: [{ id: "meetings", method: "GET", path: "/v1alpha1/meetings", query: { limit: 1 } }],
   },
   jicoo: {
     baseUrl: "https://api.jicoo.com",
