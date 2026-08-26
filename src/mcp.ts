@@ -845,6 +845,7 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       body: { type: "object", description: "Optional JSON request body for POST/PUT/PATCH/DELETE. Alias: data or json." },
       data: { type: "object", description: "Alias for body." },
       headers: { type: "object", description: "Optional extra scalar headers. Authorization/Cookie/Host/Content-Length cannot be overridden." },
+      timeout_ms: { type: "number", minimum: 1000, maximum: 120000, description: "Optional request timeout in milliseconds for this call. Defaults to the provider's own timeout. Raise it for reporting or query endpoints that are legitimately slow." },
     };
   }
   if (toolName.endsWith("/check_connection")) {

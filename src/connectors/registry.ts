@@ -53,6 +53,11 @@ export type ProviderDef = {
     baseUrl: string;
     baseUrls?: Record<string, string>;
     defaultMethods: string[];
+    /**
+     * Per-provider request timeout in ms, for APIs whose normal responses are
+     * slower than the shared default. Clamped by the generic request layer.
+     */
+    timeoutMs?: number;
     allowedPathPrefixes: string[];
     blockedPathPrefixes?: string[];
     authScheme?: "bearer" | "api_key" | "api_key_query";
@@ -1922,6 +1927,8 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
       data: "https://analyticsdata.googleapis.com",
       admin: "https://analyticsadmin.googleapis.com/v1beta",
     },
+    // Large GA4 runReport requests are slow by design.
+    timeoutMs: 60000,
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
     smokeTests: [
@@ -2124,6 +2131,8 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
   },
   dataforseo: {
     baseUrl: "https://api.dataforseo.com",
+    // SERP and Labs endpoints routinely take a minute on live tasks.
+    timeoutMs: 90000,
     defaultMethods: ["GET", "POST"],
     allowedPathPrefixes: ["/v3/"],
     smokeTests: [{ id: "user_data", method: "GET", path: "/v3/appendix/user_data" }],
@@ -2578,6 +2587,8 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
       // jobs.insert with a media body (load jobs) is served by the upload host.
       upload: "https://bigquery.googleapis.com/upload/bigquery/v2",
     },
+    // jobs.query blocks until the query finishes or its own timeout elapses.
+    timeoutMs: 60000,
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
   },

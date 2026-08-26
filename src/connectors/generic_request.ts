@@ -1,6 +1,12 @@
 import type { ProviderDef } from "./registry.js";
 
-const GENERIC_TIMEOUT_MS = 12_000;
+// 12s used to be the ceiling for every provider call, which cut off the slow
+// but perfectly normal ones: GA4 runReport, BigQuery query, DataForSEO task
+// endpoints. The default is now 30s, a manifest may raise its own, and a
+// caller may ask for more up to MAX_TIMEOUT_MS.
+const GENERIC_TIMEOUT_MS = 30_000;
+const MAX_TIMEOUT_MS = 120_000;
+const MIN_TIMEOUT_MS = 1_000;
 const MAX_RESPONSE_CHARS = 120_000;
 const MAX_FULL_JSON_PARSE_CHARS = 2_000_000;
 const BODYLESS_METHODS = new Set(["GET", "HEAD"]);
@@ -76,6 +82,23 @@ function requestBodyFromArgs(args: GenericRequestArgs) {
 
 function normalizeBaseUrl(url: string) {
   return url.replace(/\/+$/, "");
+}
+
+/**
+ * Effective request timeout: the caller's `timeout_ms` when given, else the
+ * manifest's own, else the default. Clamped so a caller can neither hang the
+ * worker nor abort faster than a healthy provider can answer.
+ */
+function resolveTimeoutMs(manifest: GenericManifest, requested?: unknown) {
+  const fallback = Number.isFinite(manifest.timeoutMs) && (manifest.timeoutMs as number) > 0
+    ? Math.min(Math.floor(manifest.timeoutMs as number), MAX_TIMEOUT_MS)
+    : GENERIC_TIMEOUT_MS;
+  if (requested === undefined || requested === null || requested === "") return fallback;
+  const value = Number(requested);
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`provider_timeout_invalid: timeout_ms must be a positive number of milliseconds (max ${MAX_TIMEOUT_MS})`);
+  }
+  return Math.min(Math.max(Math.floor(value), MIN_TIMEOUT_MS), MAX_TIMEOUT_MS);
 }
 
 // Expand {varName} placeholders in a templated baseUrl/path from the
@@ -538,6 +561,7 @@ async function executeGenericRequest(args: {
   headers?: Record<string, string>;
   serverCredential?: string | null;
   baseUrlKey?: unknown;
+  timeoutMs?: unknown;
   config?: Record<string, string>;
   logTool: string;
 }) {
@@ -589,7 +613,8 @@ async function executeGenericRequest(args: {
 
   const controller = new AbortController();
   init.signal = controller.signal;
-  const timeout = setTimeout(() => controller.abort(), GENERIC_TIMEOUT_MS);
+  const timeoutMs = resolveTimeoutMs(manifest, args.timeoutMs);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const started = Date.now();
   try {
     console.log("[provider-request] request", { provider: args.provider.key, method, path, baseUrlKey: args.baseUrlKey });
@@ -621,7 +646,7 @@ async function executeGenericRequest(args: {
       },
     };
   } catch (e: any) {
-    if (e?.name === "AbortError") throw new Error(`provider_request_timeout: ${args.provider.key} ${method} ${path} timed out after ${GENERIC_TIMEOUT_MS}ms`);
+    if (e?.name === "AbortError") throw new Error(`provider_request_timeout: ${args.provider.key} ${method} ${path} timed out after ${timeoutMs}ms (raise it with timeout_ms, max ${MAX_TIMEOUT_MS})`);
     throw e;
   } finally {
     clearTimeout(timeout);
@@ -648,6 +673,7 @@ export async function callGenericProviderRequest(args: {
     headers: headersFromArgs(args.requestArgs.headers),
     serverCredential: args.serverCredential,
     baseUrlKey: args.requestArgs.base_url_key ?? args.requestArgs.baseUrlKey,
+    timeoutMs: args.requestArgs.timeout_ms ?? args.requestArgs.timeoutMs,
     config: args.config,
     logTool: args.toolName,
   });
