@@ -1089,6 +1089,20 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       status: { type: "object", description: "Video status fields to set, e.g. privacyStatus, embeddable, license." },
     };
   }
+  if (toolName === "youtube/create_upload_session") {
+    return {
+      title: { type: "string", description: "Video title." },
+      description: { type: "string", description: "Optional video description." },
+      tags: { type: "array", items: { type: "string" }, description: "Optional video tags." },
+      category_id: { type: "string", description: "YouTube category id. Defaults to 22 (People & Blogs)." },
+      privacy_status: { type: "string", enum: ["private", "public", "unlisted"], description: "Visibility of the finished video. Defaults to private." },
+      publish_at: { type: "string", description: "Optional ISO 8601 timestamp to publish at. Only applies while privacy_status is private." },
+      made_for_kids: { type: "boolean", description: "Optional self-declared made-for-kids flag." },
+      notify_subscribers: { type: "boolean", description: "Optional: notify subscribers when the video is published." },
+      content_type: { type: "string", description: "MIME type of the file you will upload, e.g. video/mp4. Defaults to video/*." },
+      content_length: { type: "number", minimum: 1, description: "Optional byte size of the file, sent as X-Upload-Content-Length." },
+    };
+  }
   if (toolName === "youtube/create_playlist") {
     return {
       title: { type: "string", description: "Playlist title." },
@@ -2922,6 +2936,7 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "youtube/list_videos") return ["id"];
   if (toolName === "youtube/list_playlist_items") return ["playlist_id"];
   if (toolName === "youtube/update_video") return ["id"];
+  if (toolName === "youtube/create_upload_session") return ["title"];
   if (toolName === "youtube/create_playlist") return ["title"];
   if (toolName === "youtube/update_playlist") return ["id", "title"];
   if (toolName === "youtube/delete_playlist") return ["id"];

@@ -1,8 +1,11 @@
 // YouTube connector — YouTube Data API v3 using Google OAuth access tokens.
 // Read tools (channels, videos, search, playlists) plus management tools
-// (update video, create/update/delete playlist, add/remove playlist items).
+// (update video, create/update/delete playlist, add/remove playlist items) and
+// resumable upload session creation.
 // Management tools require the youtube.force-ssl scope.
 const YOUTUBE_API = "https://www.googleapis.com/youtube/v3";
+// Uploads live on a separate host; only the resumable session is created here.
+const YOUTUBE_UPLOAD_API = "https://www.googleapis.com/upload/youtube/v3";
 const YOUTUBE_TIMEOUT_MS = 10_000;
 
 type YouTubeArgs = Record<string, unknown>;
@@ -25,13 +28,13 @@ async function readJsonResponse(r: Response) {
   }
 }
 
-async function fetchYouTube(path: string, init: RequestInit, logContext: Record<string, unknown>) {
+async function fetchYouTube(path: string, init: RequestInit, logContext: Record<string, unknown>, base = YOUTUBE_API) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), YOUTUBE_TIMEOUT_MS);
   const started = Date.now();
   try {
     console.log("[youtube] request", { path, ...logContext });
-    const response = await fetch(`${YOUTUBE_API}${path}`, { ...init, signal: controller.signal });
+    const response = await fetch(`${base}${path}`, { ...init, signal: controller.signal });
     console.log("[youtube] response", { path, status: response.status, durationMs: Date.now() - started, ...logContext });
     return response;
   } catch (e: any) {
@@ -270,6 +273,68 @@ export async function callYouTubeTool(tool: string, args: YouTubeArgs, token: st
       throw new Error(`YouTube delete_playlist_item failed: ${r.status} ${JSON.stringify(j).slice(0, 800)}`);
     }
     return { structuredContent: { deleted: true, id } };
+  }
+
+  if (tool === "youtube/create_upload_session") {
+    const title = String(args.title ?? "").trim();
+    if (!title) throw new Error("title is required");
+    const snippet: Record<string, unknown> = { title };
+    const description = args.description;
+    if (description !== undefined) snippet.description = String(description);
+    const tags = args.tags;
+    if (Array.isArray(tags)) snippet.tags = tags.map((t) => String(t));
+    // Videos.insert requires a category; 22 ("People & Blogs") is the safe default.
+    snippet.categoryId = String(args.category_id ?? args.categoryId ?? "22").trim() || "22";
+    const status: Record<string, unknown> = {
+      privacyStatus: String(args.privacy_status ?? args.privacyStatus ?? "private").trim() || "private",
+    };
+    const publishAt = String(args.publish_at ?? args.publishAt ?? "").trim();
+    // publishAt only takes effect while the video is still private.
+    if (publishAt) status.publishAt = publishAt;
+    const madeForKids = args.made_for_kids ?? args.madeForKids;
+    if (madeForKids !== undefined) status.selfDeclaredMadeForKids = madeForKids === true || String(madeForKids) === "true";
+
+    const params = new URLSearchParams({ uploadType: "resumable", part: "snippet,status" });
+    const notify = args.notify_subscribers ?? args.notifySubscribers;
+    if (notify !== undefined) params.set("notifySubscribers", String(notify === true || String(notify) === "true"));
+
+    const contentType = String(args.content_type ?? args.contentType ?? "video/*").trim() || "video/*";
+    const uploadHeaders: Record<string, string> = { ...h, "X-Upload-Content-Type": contentType };
+    const contentLength = Number(args.content_length ?? args.contentLength ?? NaN);
+    if (Number.isFinite(contentLength) && contentLength > 0) {
+      uploadHeaders["X-Upload-Content-Length"] = String(Math.floor(contentLength));
+    }
+
+    const r = await fetchYouTube(
+      `/videos?${params.toString()}`,
+      { method: "POST", headers: uploadHeaders, body: JSON.stringify({ snippet, status }) },
+      { tool },
+      YOUTUBE_UPLOAD_API,
+    );
+    if (!r.ok) {
+      const j: any = await readJsonResponse(r);
+      throw new Error(`YouTube create_upload_session failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+    }
+    // The session URL carries its own upload credentials, so the bytes are sent
+    // by the caller and never pass through this service.
+    const uploadUrl = r.headers.get("location") ?? r.headers.get("Location") ?? "";
+    if (!uploadUrl) throw new Error("YouTube create_upload_session returned no Location header (no upload URL)");
+    return {
+      structuredContent: {
+        upload_url: uploadUrl,
+        upload_method: "PUT",
+        content_type: contentType,
+        snippet,
+        status,
+        instructions: [
+          `PUT the video bytes to upload_url with Content-Type: ${contentType}.`,
+          "Do NOT send an Authorization header: the session URL is already authorized.",
+          "A 200/201 response body is the created video resource (id is the video id).",
+          "A 308 response means the upload is incomplete; resume from the byte named in the Range header.",
+          "The session URL expires after about a week and must not be shared: anyone holding it can upload to this channel.",
+        ].join(" "),
+      },
+    };
   }
 
   throw new Error(`Unknown YouTube tool: ${tool}`);

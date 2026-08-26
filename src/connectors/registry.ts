@@ -423,7 +423,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "youtube",
     label: "YouTube",
     authTypes: ["oauth"],
-    helpText: "Connect the Google account that owns the YouTube channel. Read access lists channels, videos, playlists and runs searches; management access updates videos and manages playlists. Requires the youtube.force-ssl scope.",
+    helpText: "Connect the Google account that owns the YouTube channel. Read access lists channels, videos, playlists and runs searches; management access updates videos, manages playlists and starts resumable video uploads. Requires the youtube.force-ssl scope.",
     oauthSetupUrl: "https://console.cloud.google.com/apis/credentials",
     oauthScopes: [
       "https://www.googleapis.com/auth/youtube.force-ssl",
@@ -438,6 +438,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "youtube/list_playlists",
       "youtube/list_playlist_items",
       "youtube/update_video",
+      "youtube/create_upload_session",
       "youtube/create_playlist",
       "youtube/update_playlist",
       "youtube/delete_playlist",
@@ -446,6 +447,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     toolScopeRequirements: {
       "youtube/update_video": ["https://www.googleapis.com/auth/youtube.force-ssl"],
+      "youtube/create_upload_session": ["https://www.googleapis.com/auth/youtube.force-ssl"],
       "youtube/create_playlist": ["https://www.googleapis.com/auth/youtube.force-ssl"],
       "youtube/update_playlist": ["https://www.googleapis.com/auth/youtube.force-ssl"],
       "youtube/delete_playlist": ["https://www.googleapis.com/auth/youtube.force-ssl"],
@@ -1967,6 +1969,11 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
   },
   youtube: {
     baseUrl: "https://www.googleapis.com/youtube/v3",
+    baseUrls: {
+      data: "https://www.googleapis.com/youtube/v3",
+      // Resumable upload sessions are created against the upload host.
+      upload: "https://www.googleapis.com/upload/youtube/v3",
+    },
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
   },
