@@ -46,6 +46,42 @@ function patProviderKeys() {
     .sort();
 }
 
+/**
+ * Providers that can neither introspect a credential nor stand in a generic
+ * smoke test for one, so a freshly stored credential is honestly "unknown"
+ * until the first real call. They must still explain themselves in notes.
+ */
+const NO_CREDENTIAL_PROOF_PROVIDERS = new Set(["higgsfield"]);
+
+function assertStoredStatus(providerKey: string, metadata: any) {
+  if (NO_CREDENTIAL_PROOF_PROVIDERS.has(providerKey)) {
+    assert.equal(metadata.status, "unknown", `${providerKey} should report a documented unknown`);
+    assert.ok((metadata.notes ?? []).length > 0, `${providerKey} must explain why its credential cannot be verified`);
+    return;
+  }
+  assert.equal(metadata.status, "ok");
+}
+
+function assertStoredHealth(providerKey: string, metadata: any, result: any) {
+  if (NO_CREDENTIAL_PROOF_PROVIDERS.has(providerKey)) {
+    assert.equal(result.healthStatus, "unknown");
+    assert.equal(result.healthErrorCode, "check_unavailable");
+    return;
+  }
+  if (metadata.capabilities) {
+    assert.notEqual(metadata.capabilities.status, "error");
+  }
+  if (!metadata.capabilities || metadata.capabilities.status === "ok") {
+    assert.equal(result.healthStatus, "ok");
+    assert.ok(result.healthLastOkAt instanceof Date);
+    assert.equal(result.healthErrorCode, null);
+    assert.equal(result.healthErrorMessage, null);
+  } else {
+    assert.equal(result.healthStatus, "unknown");
+    assert.equal(result.healthErrorCode, "check_unavailable");
+  }
+}
+
 function patTokenForProvider(providerKey: string) {
   const jsonTokens: Record<string, string> = {
     aws: JSON.stringify({ accessKeyId: "AKIATEST", secretAccessKey: "secret", region: "us-east-1" }),
@@ -54,6 +90,7 @@ function patTokenForProvider(providerKey: string) {
     customerio: JSON.stringify({ token: "cio-test-token", region: "us" }),
     dataforseo: JSON.stringify({ login: "ops@example.com", password: "dataforseo-test-password" }),
     godaddy: "godaddy-key:godaddy-secret",
+    higgsfield: "hf-test-key-id:hf-test-key-secret",
     langgraph: JSON.stringify({ api_key: "lsv2-test-key", base_url: "https://grantry-test.us.langgraph.app" }),
     jira: JSON.stringify({ site: "https://acme.atlassian.net", email: "ops@example.com", token: "jira-test-token" }),
     microsoft_ads: JSON.stringify({ developer_token: "dev-token", access_token: "msads-token", customer_id: "customer", account_id: "account" }),
@@ -61,8 +98,11 @@ function patTokenForProvider(providerKey: string) {
     railway_api: "railway-api-test-token",
     salesforce: JSON.stringify({ instance_url: "https://acme.my.salesforce.com", token: "sf-test-token" }),
     shopify: JSON.stringify({ shop: "acme.myshopify.com", token: "shopify-test-token" }),
+    acuity: JSON.stringify({ user_id: "12345", api_key: "acuity-test-key" }),
     snowflake: JSON.stringify({ account: "acme-test", token: "snowflake-test-token" }),
+    supabase: JSON.stringify({ project_url: "https://acme-test.supabase.co", secret_key: "sb_secret_test" }),
     wordpress: JSON.stringify({ site: "https://blog.example.com", username: "admin", app_password: "wp-test-token" }),
+    youcanbookme: JSON.stringify({ account_email: "ops@example.com", api_key: "ycbm-test-key" }),
     zendesk: JSON.stringify({ subdomain: "acme", email: "ops@example.com", token: "zendesk-test-token" }),
   };
   if (jsonTokens[providerKey]) return jsonTokens[providerKey];
@@ -158,6 +198,15 @@ function oauthSuccessResponse({ url }: FetchCall) {
   }
   if (url === "https://api.x.com/2/users/me") {
     return jsonResponse({ data: { id: "x-id", username: "x_user", name: "X User" } });
+  }
+  if (url === "https://api.canva.com/rest/v1/users/me") {
+    return jsonResponse({ team_user: { user_id: "canva-user", team_id: "canva-team" } });
+  }
+  if (url === "https://api.figma.com/v1/me") {
+    return jsonResponse({ id: "figma-user", email: "ops@example.com", handle: "ops" });
+  }
+  if (url === "https://api.miro.com/v2/boards?limit=1") {
+    return jsonResponse({ data: [], total: 0, size: 0, offset: 0, limit: 1 });
   }
   throw new Error(`unexpected fetch ${url}`);
 }
@@ -300,6 +349,48 @@ function patSuccessResponse(call: FetchCall) {
       { status: 200, headers: { "content-type": "application/xml" } },
     );
   }
+  if (url === "https://acuityscheduling.com/api/v1/me") {
+    return jsonResponse({ id: 1, email: "ops@example.com", firstName: "Ops", lastName: "User" });
+  }
+  if (url === "https://api.apify.com/v2/users/me") {
+    return jsonResponse({ data: { id: "apify-user", username: "ops", plan: { id: "FREE" } } });
+  }
+  if (url === "https://api.cal.com/v2/me") {
+    return jsonResponse({ status: "success", data: { id: 1, email: "ops@example.com", username: "ops" } });
+  }
+  if (url === "https://api.calendly.com/users/me") {
+    return jsonResponse({ resource: { uri: "https://api.calendly.com/users/u1", email: "ops@example.com", name: "Ops" } });
+  }
+  if (url === "https://api.firecrawl.dev/v2/team/credit-usage") {
+    return jsonResponse({ success: true, data: { remaining_credits: 500 } });
+  }
+  if (url === "https://api.jicoo.com/v1/users/me") {
+    return jsonResponse({ uid: "jicoo-user", name: "Ops", email: "ops@example.com" });
+  }
+  if (url === "https://api.monid.ai/v1/auth/whoami") {
+    return jsonResponse({ workspace_id: "monid-ws", email: "ops@example.com" });
+  }
+  if (url === "https://api.ads.openai.com/v1/ad_account") {
+    return jsonResponse({ data: [{ id: "adacct-1", name: "Root" }] });
+  }
+  if (url === "https://seminar.rootteam.co.jp/api/v1/tech") {
+    return jsonResponse({ technologies: [{ name: "AWS", upcoming_count: 3 }] });
+  }
+  if (url === "https://acme-test.supabase.co/rest/v1/") {
+    return jsonResponse({ paths: {}, definitions: {} });
+  }
+  if (url === "https://timerex.net/api/beta/user/me/teams/primary") {
+    return jsonResponse({ id: "team-1", name: "Root" });
+  }
+  if (url === "https://api.twenty.com/rest/metadata/objects") {
+    return jsonResponse({ data: { objects: [] } });
+  }
+  if (url === "https://intent-engine-production-f43a.up.railway.app/api/health") {
+    return jsonResponse({ status: "ok", version: "1.0.0" });
+  }
+  if (url === "https://api.youcanbook.me/v1/profiles") {
+    return jsonResponse([{ id: "profile-1", subdomain: "ops" }]);
+  }
   return oauthSuccessResponse(call);
 }
 
@@ -333,23 +424,12 @@ test("all OAuth providers can build successful credential metadata with mocked p
 
       assert.equal(metadata.provider, providerKey);
       assert.equal(metadata.authType, "oauth");
-      assert.equal(metadata.status, "ok");
+      assertStoredStatus(providerKey, metadata);
       assert.ok(metadata.checkedAt);
       assert.ok(result.credentialValidatedAt instanceof Date);
       assert.ok(result.healthCheckedAt instanceof Date);
       assert.equal(result.healthMissingScopes, "[]");
-      if (metadata.capabilities) {
-        assert.notEqual(metadata.capabilities.status, "error");
-      }
-      if (!metadata.capabilities || metadata.capabilities.status === "ok") {
-        assert.equal(result.healthStatus, "ok");
-        assert.ok(result.healthLastOkAt instanceof Date);
-        assert.equal(result.healthErrorCode, null);
-        assert.equal(result.healthErrorMessage, null);
-      } else {
-        assert.equal(result.healthStatus, "unknown");
-        assert.equal(result.healthErrorCode, "check_unavailable");
-      }
+      assertStoredHealth(providerKey, metadata, result);
     });
   }
 });
@@ -365,23 +445,12 @@ test("all PAT providers can build successful credential metadata with mocked pro
 
       assert.equal(metadata.provider, providerKey);
       assert.equal(metadata.authType, "pat");
-      assert.equal(metadata.status, "ok");
+      assertStoredStatus(providerKey, metadata);
       assert.ok(metadata.checkedAt);
       assert.ok(result.credentialValidatedAt instanceof Date);
       assert.ok(result.healthCheckedAt instanceof Date);
       assert.equal(result.healthMissingScopes, "[]");
-      if (metadata.capabilities) {
-        assert.notEqual(metadata.capabilities.status, "error");
-      }
-      if (!metadata.capabilities || metadata.capabilities.status === "ok") {
-        assert.equal(result.healthStatus, "ok");
-        assert.ok(result.healthLastOkAt instanceof Date);
-        assert.equal(result.healthErrorCode, null);
-        assert.equal(result.healthErrorMessage, null);
-      } else {
-        assert.equal(result.healthStatus, "unknown");
-        assert.equal(result.healthErrorCode, "check_unavailable");
-      }
+      assertStoredHealth(providerKey, metadata, result);
     });
   }
 });

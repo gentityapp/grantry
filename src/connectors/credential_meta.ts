@@ -1442,6 +1442,29 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "intent_engine") {
+      // intent-engine is deliberately read-only and has no generic passthrough,
+      // so its own health route stands in for credential introspection.
+      const parsed = (() => { try { return JSON.parse(token); } catch { return null; } })();
+      const apiToken = String(parsed?.api_token ?? parsed?.apiToken ?? parsed?.token ?? (parsed ? "" : token)).trim();
+      if (!apiToken) return { provider, authType, status: "error", checkedAt, error: "intent-engine credential must include an api_token" };
+      const baseUrl = String(parsed?.base_url ?? parsed?.baseUrl ?? "https://intent-engine-production-f43a.up.railway.app").replace(/\/+$/, "");
+      const response = await fetchWithTimeout(`${baseUrl}/api/health`, {
+        headers: { Authorization: `Bearer ${apiToken}`, Accept: "application/json" },
+      });
+      if (!response.ok) {
+        return { provider, authType, status: "error", checkedAt, error: `intent-engine health check returned ${response.status}` };
+      }
+      const body: any = await response.json().catch(() => ({}));
+      return {
+        provider,
+        authType,
+        status: "ok",
+        notes: [`intent-engine health check passed against ${baseUrl}.`, ...(body?.version ? [`Version: ${body.version}`] : [])],
+        checkedAt,
+      };
+    }
+
     if (provider === "higgsfield") {
       const cred = token.trim();
       if (!cred.includes(":")) return { provider, authType, status: "error", checkedAt, error: "Higgsfield credential must be in KEY_ID:KEY_SECRET format" };
@@ -1499,6 +1522,17 @@ export async function credentialMetadataForStorage(provider: string, authType: s
         missingScopes,
         checkedAt,
       };
+      // A passing smoke test is an authenticated read that the provider
+      // answered, which is exactly what introspection would have proved. Most
+      // providers have no introspection endpoint, and leaving those credentials
+      // at "unknown" reported a working connection as unverified.
+      if (metadata.status === "unknown" && !metadata.error && metadata.capabilities.status === "ok") {
+        metadata.status = "ok";
+        metadata.notes = [
+          ...(Array.isArray(metadata.notes) ? metadata.notes : []),
+          "Verified by a passing read-only smoke test; this provider exposes no credential introspection endpoint.",
+        ];
+      }
     } catch (e: any) {
       metadata.capabilities = {
         status: "unknown",
