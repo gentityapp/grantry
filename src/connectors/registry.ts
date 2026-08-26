@@ -1884,6 +1884,12 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
   },
   google_drive: {
     baseUrl: "https://www.googleapis.com/drive/v3",
+    baseUrls: {
+      drive: "https://www.googleapis.com/drive/v3",
+      // File content (uploadType=media|multipart|resumable) is served by the
+      // upload host, not the metadata host.
+      upload: "https://www.googleapis.com/upload/drive/v3",
+    },
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
   },
@@ -1949,6 +1955,12 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
   },
   meta_ads: {
     baseUrl: "https://graph.facebook.com",
+    baseUrls: {
+      graph: "https://graph.facebook.com",
+      // Video creatives (advideos) must be posted to the video host; the
+      // main graph host rejects them.
+      video: "https://graph-video.facebook.com",
+    },
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
   },
@@ -1964,6 +1976,12 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
   },
   gmail: {
     baseUrl: "https://gmail.googleapis.com/gmail/v1",
+    baseUrls: {
+      gmail: "https://gmail.googleapis.com/gmail/v1",
+      // messages.send / messages.import above the 5 MB inline limit go to the
+      // upload host with uploadType=media|multipart|resumable.
+      upload: "https://gmail.googleapis.com/upload/gmail/v1",
+    },
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
   },
@@ -2555,6 +2573,11 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
   },
   bigquery: {
     baseUrl: "https://bigquery.googleapis.com/bigquery/v2",
+    baseUrls: {
+      bigquery: "https://bigquery.googleapis.com/bigquery/v2",
+      // jobs.insert with a media body (load jobs) is served by the upload host.
+      upload: "https://bigquery.googleapis.com/upload/bigquery/v2",
+    },
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
   },

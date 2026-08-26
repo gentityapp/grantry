@@ -828,10 +828,19 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
     const methods = PROVIDERS[providerKey]?.genericRequest?.defaultMethods?.length
       ? PROVIDERS[providerKey].genericRequest!.defaultMethods
       : ["GET", "POST", "PUT", "PATCH", "DELETE"];
+    // Advertising the host keys inline saves the agent a list_capabilities
+    // round-trip just to learn that an upload/video host exists.
+    const baseUrlKeys = Object.keys(PROVIDERS[providerKey]?.genericRequest?.baseUrls ?? {});
     return {
       path: { type: "string", description: "Provider API path relative to the provider base URL. Full URLs are rejected." },
       method: { type: "string", enum: methods, description: "HTTP method. Defaults to GET. Provider API permissions are enforced by the connected credential." },
-      base_url_key: { type: "string", description: "Optional manifest-defined base URL key for providers with multiple API hosts, e.g. google_analytics admin." },
+      base_url_key: baseUrlKeys.length
+        ? {
+            type: "string",
+            enum: baseUrlKeys,
+            description: `Optional alternate API host for this provider. One of: ${baseUrlKeys.join(", ")}. Omit for the default host.`,
+          }
+        : { type: "string", description: "Optional manifest-defined base URL key for providers with multiple API hosts. This provider exposes a single host, so omit it." },
       query: { type: "object", description: "Optional query parameters. Array values are repeated." },
       body: { type: "object", description: "Optional JSON request body for POST/PUT/PATCH/DELETE. Alias: data or json." },
       data: { type: "object", description: "Alias for body." },
