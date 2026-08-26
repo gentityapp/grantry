@@ -2052,6 +2052,14 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     apiKeyHeader: "xc-token",
     smokeTests: [{ id: "me", method: "GET", path: "/api/v1/auth/user/me" }],
   },
+  seminar_portal: {
+    // Self-hosted: the deployment URL is part of the credential, so the base is
+    // resolved from it rather than hardcoded. Routes all sit under /api/v1.
+    baseUrl: "credential.seminar_portal_api_v1",
+    defaultMethods: ["GET", "POST"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "tech", method: "GET", path: "/tech" }],
+  },
   langgraph: {
     baseUrl: "credential.langgraph_base",
     defaultMethods: ["GET", "POST"],

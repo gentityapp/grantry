@@ -195,6 +195,12 @@ function resolveBaseUrl(provider: string, manifest: GenericManifest, credential:
     const baseUrl = normalizeBaseUrl(credentialField(credential, ["base_url", "baseUrl"]));
     return baseUrl || "https://app.nocodb.com";
   }
+  if (manifest.baseUrl === "credential.seminar_portal_api_v1") {
+    // Self-hosted aggregator: the deployment URL rides in the credential, and
+    // every agent route lives under /api/v1 on it.
+    const site = normalizeBaseUrl(credentialField(credential, ["base_url", "baseUrl"]));
+    return `${site || "https://seminar.rootteam.co.jp"}/api/v1`;
+  }
   if (manifest.baseUrl === "credential.langgraph_base") {
     const baseUrl = normalizeBaseUrl(credentialField(credential, ["base_url", "baseUrl", "deployment_url"]));
     if (!baseUrl) throw new Error(`${provider}/request requires a JSON credential with base_url (the deployment URL)`);
@@ -224,6 +230,7 @@ function credentialToken(provider: string, credential: string) {
   if (provider === "openai" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "twenty" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "monid" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
+  if (provider === "seminar_portal" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "timerex" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "jicoo" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "nocodb" && parsed) return String(parsed.api_token ?? parsed.apiToken ?? parsed.token ?? credential);

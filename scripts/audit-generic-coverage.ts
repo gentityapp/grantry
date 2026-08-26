@@ -48,6 +48,10 @@ function manifestBases(provider: (typeof PROVIDERS)[string]) {
     } else if (generic.baseUrl === "credential.nocodb_base") {
       // Self-hosted server URL is credential-derived; cloud default below.
       bases.add("https://app.nocodb.com");
+    } else if (generic.baseUrl === "credential.seminar_portal_api_v1") {
+      // Self-hosted deployments carry their own URL in the credential; the
+      // hosted default is the one static base worth comparing against.
+      bases.add("https://seminar.rootteam.co.jp");
     } else if (generic.baseUrl === "credential.langgraph_base") {
       // Every LangGraph deployment has its own URL; nothing static to compare.
     } else if (generic.baseUrl === "credential.langsmith_base") {
