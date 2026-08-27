@@ -156,6 +156,7 @@ model Agent {
   oauthAgentGrants OauthAgentGrant[]
   assignments   AgentAssignment[]
   stagedFiles   StagedFile[]
+  uploadTickets UploadTicket[]
 
   @@index([workspaceId])
   @@map("agent")
@@ -673,4 +674,25 @@ model StagedFile {
   @@index([agentId])
   @@index([expiresAt])
   @@map("staged_file")
+}
+
+// One-shot permission to upload a staged file as a given agent. An agent that
+// reached grantry over OAuth (claude.ai, Claude Desktop) holds no static token
+// it could put in a curl command, and minting one for an upload would be a
+// permanent credential for a momentary need. It asks for a ticket instead
+// (grantry/create_upload_url), uploads to the returned URL, and the ticket
+// dies with the upload.
+model UploadTicket {
+  id          String   @id @default(cuid())
+  agentId     String
+  agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  tokenHash   String   @unique
+  maxUses     Int      @default(1)
+  usedCount   Int      @default(0)
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([agentId])
+  @@index([expiresAt])
+  @@map("upload_ticket")
 }

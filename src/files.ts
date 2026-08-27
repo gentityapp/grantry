@@ -25,6 +25,7 @@ export const filesApp = new Hono();
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const DEFAULT_TTL_SECONDS = 30 * 60;
 const MAX_TTL_SECONDS = 24 * 60 * 60;
+const MAX_TICKET_TTL_SECONDS = 60 * 60;
 const PUBLIC_ORIGIN = process.env.PUBLIC_MCP_ORIGIN ?? "https://api.grantry.ai";
 
 function sha256(value: string) {
@@ -47,11 +48,65 @@ async function resolveAgent(authHeader: string | null) {
   return agent;
 }
 
+/**
+ * Redeem a one-shot upload ticket (grantry/create_upload_url). This is the
+ * path for agents that authenticate to /mcp over OAuth and therefore have no
+ * static token to put in a curl command. A ticket is consumed on use.
+ */
+async function resolveTicketAgent(ticket: string) {
+  if (!ticket) return null;
+  const row = await prisma.uploadTicket.findUnique({
+    where: { tokenHash: sha256(ticket) },
+    include: { agent: true },
+  });
+  if (!row) return null;
+  if (row.expiresAt < new Date() || row.usedCount >= row.maxUses) {
+    await prisma.uploadTicket.delete({ where: { id: row.id } }).catch(() => {});
+    return null;
+  }
+  if (!row.agent.enabled) return null;
+  const used = await prisma.uploadTicket.update({
+    where: { id: row.id },
+    data: { usedCount: { increment: 1 } },
+    select: { usedCount: true, maxUses: true },
+  });
+  if (used.usedCount >= used.maxUses) {
+    await prisma.uploadTicket.delete({ where: { id: row.id } }).catch(() => {});
+  }
+  return row.agent;
+}
+
+/**
+ * Mint an upload ticket for an agent. Returns the plaintext token once: it is
+ * stored hashed, exactly like an agent token.
+ */
+export async function createUploadTicket(agentId: string, opts?: { ttlSeconds?: unknown; maxUses?: unknown }) {
+  await sweepExpired();
+  const token = randomBytes(24).toString("hex");
+  const ttlSeconds = Math.min(resolveTtlSeconds(opts?.ttlSeconds), MAX_TICKET_TTL_SECONDS);
+  const maxUsesRaw = Number(opts?.maxUses ?? 1);
+  const maxUses = Number.isFinite(maxUsesRaw) ? Math.min(Math.max(Math.floor(maxUsesRaw), 1), 10) : 1;
+  const ticket = await prisma.uploadTicket.create({
+    data: { agentId, tokenHash: sha256(token), maxUses, expiresAt: new Date(Date.now() + ttlSeconds * 1000) },
+    select: { expiresAt: true },
+  });
+  const uploadUrl = `${PUBLIC_ORIGIN}/files?ticket=${token}`;
+  return {
+    upload_url: uploadUrl,
+    max_uses: maxUses,
+    expires_at: ticket.expiresAt.toISOString(),
+    curl: `curl -F file=@/path/to/file "${uploadUrl}"`,
+  };
+}
+
 /** Best-effort purge of anything past its expiry. Cheap enough to run inline. */
 async function sweepExpired() {
   await prisma.stagedFile
     .deleteMany({ where: { expiresAt: { lt: new Date() } } })
     .catch((e) => console.error("[files] sweep failed", e));
+  await prisma.uploadTicket
+    .deleteMany({ where: { expiresAt: { lt: new Date() } } })
+    .catch((e) => console.error("[files] ticket sweep failed", e));
 }
 
 function resolveTtlSeconds(raw: unknown) {
@@ -62,9 +117,14 @@ function resolveTtlSeconds(raw: unknown) {
 }
 
 filesApp.post("/", async (c) => {
-  const agent = await resolveAgent(c.req.header("authorization") ?? null);
+  const agent =
+    (await resolveAgent(c.req.header("authorization") ?? null)) ??
+    (await resolveTicketAgent(c.req.query("ticket") ?? ""));
   if (!agent) {
-    return c.json({ error: "unauthorized: pass 'Authorization: Bearer gn_agt_...'" }, 401);
+    return c.json(
+      { error: "unauthorized: pass 'Authorization: Bearer gn_agt_...' or a ?ticket= from grantry/create_upload_url" },
+      401,
+    );
   }
 
   // Reject on the declared length before buffering the body.

@@ -294,6 +294,13 @@ the same provider+scope; disambiguate with `auth_type` (`service_account` vs
   curl -H "Authorization: Bearer gn_agt_..." -F file=@deck.pdf https://api.grantry.ai/files
   ```
 
+  With no static token at hand (OAuth clients), call `grantry/create_upload_url`
+  first and POST to the URL it returns — the ticket is single-use and expires:
+
+  ```bash
+  curl -F file=@deck.pdf "https://api.grantry.ai/files?ticket=..."
+  ```
+
   The response carries `file_id` plus a short-lived, unguessable `url`
   (30 min by default, override with a `ttl_seconds` form field, max 24h).
   Pass `files: [{ field: "file", file_id: "..." }]` to `<provider>/request` and

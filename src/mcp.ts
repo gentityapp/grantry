@@ -7,6 +7,7 @@ import { readFile, stat } from "node:fs/promises";
 import { prisma } from "./db.js";
 import { decrypt, encrypt } from "./crypto.js";
 import { recordRuntimeCallHealth } from "./connection_health.js";
+import { createUploadTicket } from "./files.js";
 import { checkPolicy, connectionsForAgent, delegatableToolsForAgent, findCapableAgents, guessToolsFromTask, normalizeToolName } from "./policy.js";
 import { PROVIDERS, getProviderForWorkspace, listProvidersForWorkspace } from "./connectors/registry.js";
 import { callNotionTool } from "./connectors/notion.js";
@@ -117,11 +118,12 @@ const SYSTEM_TOOLS = [
   "grantry/find_agent",
   "grantry/route",
   "grantry/delegate",
+  "grantry/create_upload_url",
 ] as const;
 
 // System tools that need the calling agent's identity (workspace boundary) and
 // therefore require authentication, unlike the public metadata tools.
-const AUTHED_SYSTEM_TOOLS = new Set<string>(["grantry/get_runbook", "grantry/get_runbook_file", "grantry/list_user_agents", "grantry/list_scopes", "grantry/find_agent", "grantry/route", "grantry/delegate"]);
+const AUTHED_SYSTEM_TOOLS = new Set<string>(["grantry/get_runbook", "grantry/get_runbook_file", "grantry/list_user_agents", "grantry/list_scopes", "grantry/find_agent", "grantry/route", "grantry/delegate", "grantry/create_upload_url"]);
 
 // Capability-scoped delegation TTL: short by design (single-use anyway).
 const DELEGATION_TTL_MS = 5 * 60 * 1000;
@@ -231,6 +233,13 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       tool: { type: "string", description: "Canonical tool name to route, e.g. 'railway/graphql' (the public 'railway_graphql' form is also accepted)." },
       scope: { type: "string", description: "Optional tenant scope the tool must target." },
       action: { type: "string", enum: ["read", "write"], description: "Optional intent hint. Advisory only — not yet used to filter results." },
+    };
+  }
+  if (toolName === "grantry/create_upload_url") {
+    return {
+      acting_agent_id: { type: "string", description: "Only on /mcp/u: agent id this authenticated user is acting through. Omit when the user has exactly one usable agent." },
+      ttl_seconds: { type: "number", description: "How long the upload URL stays valid. Default 1800, max 3600." },
+      max_uses: { type: "number", description: "How many uploads the URL accepts. Default 1, max 10." },
     };
   }
   if (toolName === "grantry/delegate") {
@@ -3748,6 +3757,14 @@ async function callSystemTool(toolName: string, args: Record<string, unknown>, c
     };
     return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], structuredContent: payload, isError: false };
   }
+  if (toolName === "grantry/create_upload_url") {
+    if (!ctx?.agentId) throw new Error("create_upload_url requires an authenticated or selected agent");
+    const payload = await createUploadTicket(ctx.agentId, {
+      ttlSeconds: (args as any)?.ttl_seconds ?? (args as any)?.ttlSeconds,
+      maxUses: (args as any)?.max_uses ?? (args as any)?.maxUses,
+    });
+    return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], structuredContent: payload, isError: false };
+  }
   if (toolName === "grantry/list_scopes") {
     if (!ctx?.agentId) throw new Error("list_scopes requires an authenticated or selected agent");
     const conns = await connectionsForAgent(ctx.agentId);
@@ -4022,6 +4039,15 @@ function buildToolList(
           type: "object",
           properties: toolSpecificInputProperties("grantry/delegate"),
           required: ["agent_id", "tool", "scope"],
+        },
+      },
+      {
+        name: publicToolName("grantry/create_upload_url"),
+        description: "grantry: mint a short-lived upload URL for sending a file to a provider that needs multipart or a downloadable URL. POST the file to it with curl (-F file=@path), then pass the returned file_id as `files: [{ field, file_id }]` on <provider>/request. Keeps file bytes out of the conversation.",
+        inputSchema: {
+          type: "object",
+          properties: toolSpecificInputProperties("grantry/create_upload_url"),
+          required: [],
         },
       },
     );
