@@ -292,7 +292,11 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     authTypes: ["oauth"],
     helpText: "Connect your Google account to access Search Console data for sites you own.",
     oauthSetupUrl: "https://console.cloud.google.com/apis/credentials",
+    // webmasters は readonly の上位互換。プロパティの追加・削除に要る。
+    // 読むだけの用途では readonly で足りるが、両方を要求しても
+    // Google 側の同意画面は「Search Console のデータの表示と管理」1項目にまとまる。
     oauthScopes: [
+      "https://www.googleapis.com/auth/webmasters",
       "https://www.googleapis.com/auth/webmasters.readonly",
       "https://www.googleapis.com/auth/userinfo.email",
     ],
@@ -1924,7 +1928,7 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
       searchconsole: "https://searchconsole.googleapis.com",
       webmasters: "https://www.googleapis.com/webmasters/v3",
     },
-    defaultMethods: ["GET"],
+    defaultMethods: ["GET", "PUT", "DELETE"],
     allowedPathPrefixes: ["/"],
     operations: [
       {
@@ -1938,6 +1942,28 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
         risk: "read",
         // Webmasters API /sites takes no query params and 400s on an unknown `limit`.
         probeQuery: {},
+      },
+      {
+        id: "add_site",
+        method: "PUT",
+        path: "/sites/{siteUrl}",
+        description:
+          "Add a site to Search Console. siteUrl must be URL-encoded " +
+          "(https%3A%2F%2Fexample.com%2F for a URL-prefix property, " +
+          "sc-domain%3Aexample.com for a domain property). " +
+          "Adding does not verify ownership; verification is a separate step.",
+        baseUrlKey: "webmasters",
+        requiredScopes: ["https://www.googleapis.com/auth/webmasters"],
+        risk: "write",
+      },
+      {
+        id: "delete_site",
+        method: "DELETE",
+        path: "/sites/{siteUrl}",
+        description: "Remove a site from Search Console. siteUrl must be URL-encoded.",
+        baseUrlKey: "webmasters",
+        requiredScopes: ["https://www.googleapis.com/auth/webmasters"],
+        risk: "write",
       },
     ],
   },
