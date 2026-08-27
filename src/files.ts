@@ -139,8 +139,10 @@ filesApp.post("/", async (c) => {
   } catch {
     return c.json({ error: "invalid_multipart: send multipart/form-data with a 'file' part" }, 400);
   }
-  const file = form.file;
-  if (!(file instanceof File)) {
+  // Duck-typed rather than `instanceof File`: the File global only exists from
+  // Node 20, and this must not depend on the runtime's vintage.
+  const file = form.file as { arrayBuffer?: () => Promise<ArrayBuffer>; name?: string; type?: string } | undefined;
+  if (!file || typeof file.arrayBuffer !== "function") {
     return c.json({ error: "file_required: send multipart/form-data with a 'file' part" }, 400);
   }
   const bytes = Buffer.from(await file.arrayBuffer());
