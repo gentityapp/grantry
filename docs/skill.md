@@ -286,6 +286,22 @@ the same provider+scope; disambiguate with `auth_type` (`service_account` vs
   with the provider's cursor query parameter when more pages are needed. Use `<provider>/check_connection`
   to run provider smoke tests, and `<provider>/list_capabilities` to inspect
   known operations, required scopes, and generic request guardrails.
+- **File uploads.** A provider endpoint that wants a multipart file (or an
+  https URL it downloads itself) cannot be fed over JSON-RPC. Upload the bytes
+  to grantry first, outside the MCP transport:
+
+  ```bash
+  curl -H "Authorization: Bearer gn_agt_..." -F file=@deck.pdf https://api.grantry.ai/files
+  ```
+
+  The response carries `file_id` plus a short-lived, unguessable `url`
+  (30 min by default, override with a `ttl_seconds` form field, max 24h).
+  Pass `files: [{ field: "file", file_id: "..." }]` to `<provider>/request` and
+  grantry streams the bytes into a multipart provider call — nothing is exposed
+  publicly and the file never passes through the model's context. Use `url`
+  only for providers that insist on fetching the file themselves. Uploads
+  expire on their own; `DELETE /files/{id}` with the agent token purges one
+  immediately.
 - **hubspot** (Private App token or OAuth): `list_deals`, `get_contact`,
   `create_deal`, `list_marketing_emails`, `get_marketing_email`,
   `get_marketing_email_statistics`, `request`

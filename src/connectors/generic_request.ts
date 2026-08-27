@@ -1,4 +1,5 @@
 import type { ProviderDef } from "./registry.js";
+import { loadStagedFile } from "../files.js";
 
 // 12s used to be the ceiling for every provider call, which cut off the slow
 // but perfectly normal ones: GA4 runReport, BigQuery query, DataForSEO task
@@ -10,6 +11,7 @@ const MIN_TIMEOUT_MS = 1_000;
 const MAX_RESPONSE_CHARS = 120_000;
 const MAX_FULL_JSON_PARSE_CHARS = 2_000_000;
 const BODYLESS_METHODS = new Set(["GET", "HEAD"]);
+const MAX_REQUEST_FILES = 5;
 const BLOCKED_EXTRA_HEADERS = new Set([
   "authorization",
   "cookie",
@@ -78,6 +80,69 @@ function requestBodyFromArgs(args: GenericRequestArgs) {
   if (Object.prototype.hasOwnProperty.call(args, "data")) return args.data;
   if (Object.prototype.hasOwnProperty.call(args, "json")) return args.json;
   return undefined;
+}
+
+type RequestFile = { field: string; fileId: string; filename?: string; contentType?: string };
+
+/**
+ * Normalize the `files` argument of a provider request. Each entry names a
+ * prior upload (POST /files) and the multipart field the provider expects it
+ * under, e.g. [{ field: "file", file_id: "cmt..." }]. The bytes are read from
+ * staging at call time, so they never travel through the MCP transport.
+ */
+function requestFilesFromArgs(args: GenericRequestArgs): RequestFile[] {
+  const raw = args.files;
+  if (raw === undefined || raw === null) return [];
+  if (!Array.isArray(raw)) throw new Error("provider_files_invalid: files must be an array of { field, file_id }");
+  if (raw.length > MAX_REQUEST_FILES) {
+    throw new Error(`provider_files_invalid: at most ${MAX_REQUEST_FILES} files per request`);
+  }
+  return raw.map((entry, index) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new Error(`provider_files_invalid: files[${index}] must be an object with field and file_id`);
+    }
+    const item = entry as Record<string, unknown>;
+    const field = String(item.field ?? item.name ?? "file").trim();
+    const fileId = String(item.file_id ?? item.fileId ?? "").trim();
+    if (!field) throw new Error(`provider_files_invalid: files[${index}].field is required`);
+    if (!fileId) throw new Error(`provider_files_invalid: files[${index}].file_id is required (upload it to POST /files first)`);
+    const filename = item.filename === undefined || item.filename === null ? undefined : String(item.filename);
+    const contentType = item.content_type ?? item.contentType;
+    return {
+      field,
+      fileId,
+      filename,
+      contentType: contentType === undefined || contentType === null ? undefined : String(contentType),
+    };
+  });
+}
+
+/**
+ * Build the multipart body for a request that carries uploads. Entries of
+ * `body` ride along as ordinary form fields (objects and arrays are serialized
+ * as JSON, which is what multipart APIs expect for structured values).
+ * Content-Type is deliberately left unset so fetch writes its own boundary.
+ */
+async function multipartBodyFromFiles(agentId: string | null | undefined, files: RequestFile[], body: unknown) {
+  if (!agentId) {
+    throw new Error("provider_files_unavailable: file uploads require an agent-authenticated call");
+  }
+  const form = new FormData();
+  if (body !== undefined && body !== null) {
+    if (typeof body !== "object" || Array.isArray(body)) {
+      throw new Error("provider_files_invalid: body must be an object when files are attached");
+    }
+    for (const [key, value] of Object.entries(body as Record<string, unknown>)) {
+      if (value === undefined || value === null) continue;
+      form.append(key, typeof value === "object" ? JSON.stringify(value) : String(value));
+    }
+  }
+  for (const file of files) {
+    const staged = await loadStagedFile(agentId, file.fileId);
+    const blob = new Blob([Buffer.from(staged.bytes)], { type: file.contentType ?? staged.contentType });
+    form.append(file.field, blob, file.filename ?? staged.filename);
+  }
+  return form;
 }
 
 function normalizeBaseUrl(url: string) {
@@ -564,6 +629,8 @@ async function executeGenericRequest(args: {
   baseUrlKey?: unknown;
   timeoutMs?: unknown;
   config?: Record<string, string>;
+  files?: RequestFile[];
+  agentId?: string | null;
   logTool: string;
 }) {
   const manifest = args.provider.genericRequest;
@@ -601,7 +668,14 @@ async function executeGenericRequest(args: {
   Object.assign(headers, args.headers ?? {});
 
   const init: RequestInit = { method, headers, signal: undefined };
-  if (args.body !== undefined) {
+  const files = args.files ?? [];
+  if (files.length) {
+    if (BODYLESS_METHODS.has(method)) throw new Error(`provider_files_not_allowed: ${method} requests cannot carry files`);
+    if (Object.keys(headers).some((key) => key.toLowerCase() === "content-type")) {
+      throw new Error("provider_files_invalid: do not set Content-Type when attaching files; the multipart boundary is generated");
+    }
+    init.body = await multipartBodyFromFiles(args.agentId, files, args.body);
+  } else if (args.body !== undefined) {
     if (BODYLESS_METHODS.has(method)) throw new Error(`provider_body_not_allowed: ${method} requests cannot include a body`);
     if (typeof args.body === "string") {
       init.body = args.body;
@@ -661,6 +735,7 @@ export async function callGenericProviderRequest(args: {
   credential: string;
   serverCredential?: string | null;
   config?: Record<string, string>;
+  agentId?: string | null;
 }) {
   return executeGenericRequest({
     provider: args.provider,
@@ -676,6 +751,8 @@ export async function callGenericProviderRequest(args: {
     baseUrlKey: args.requestArgs.base_url_key ?? args.requestArgs.baseUrlKey,
     timeoutMs: args.requestArgs.timeout_ms ?? args.requestArgs.timeoutMs,
     config: args.config,
+    files: requestFilesFromArgs(args.requestArgs),
+    agentId: args.agentId,
     logTool: args.toolName,
   });
 }

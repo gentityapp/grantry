@@ -9,6 +9,7 @@ import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-a
 import { auth } from "./auth.js";
 import { mcpApp } from "./mcp.js";
 import { dashboardApp, oauthApp, mcpAuthorizeGate } from "./ui.js";
+import { filesApp } from "./files.js";
 import { Scalar } from "@scalar/hono-api-reference";
 import { openApiDocument } from "./openapi.js";
 import { startHealthSweepScheduler } from "./health_sweep.js";
@@ -123,6 +124,10 @@ app.route("/mcp", mcpApp);
 
 // Mount OAuth flows (callback URLs must be stable public paths)
 app.route("/oauth", oauthApp);
+
+// Mount upload staging. Plain HTTP on purpose: it is the one part of the agent
+// surface that carries bytes, which JSON-RPC over /mcp cannot.
+app.route("/files", filesApp);
 
 // Global error handler — without this, any uncaught exception renders Hono's
 // opaque default "Internal Server Error" page with no diagnostics (see the

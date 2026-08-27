@@ -155,6 +155,7 @@ model Agent {
   auditLogs     AuditLog[]
   oauthAgentGrants OauthAgentGrant[]
   assignments   AgentAssignment[]
+  stagedFiles   StagedFile[]
 
   @@index([workspaceId])
   @@map("agent")
@@ -643,4 +644,33 @@ model WorkspaceProvider {
   @@index([workspaceId, enabled])
   @@index([createdById])
   @@map("workspace_provider")
+}
+
+// Short-lived upload staging. Providers that only accept a file (multipart) or
+// a downloadable https URL cannot be reached through the JSON-only MCP
+// transport: an agent would have to inline the bytes as base64 in its tool
+// call. Instead the agent PUTs the file here once over plain HTTP and then
+// references it by id, so bytes never travel through the model's context.
+//
+// Rows are transient by construction: they carry an expiry, are swept on
+// write, and a caller may delete one the moment a provider has consumed it.
+model StagedFile {
+  id            String   @id @default(cuid())
+  agentId       String
+  agent         Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  filename      String
+  contentType   String
+  size          Int
+  bytes         Bytes
+  // sha256 of the download token. The plaintext lives only in the upload
+  // response URL, so a leaked database row cannot be turned into a download.
+  downloadTokenHash String
+  expiresAt     DateTime
+  createdAt     DateTime @default(now())
+  lastFetchedAt DateTime?
+  fetchCount    Int      @default(0)
+
+  @@index([agentId])
+  @@index([expiresAt])
+  @@map("staged_file")
 }

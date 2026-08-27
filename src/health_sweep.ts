@@ -22,6 +22,7 @@ import { PROVIDERS, getProviderForWorkspace } from "./connectors/registry.js";
 import { invalidateDwdToken, mintDwdAccessToken, type ServiceAccountCredential } from "./google_dwd.js";
 import { rotateSharedCredential } from "./provider_credentials.js";
 import { credentialForConnection } from "./mcp.js";
+import { sweepExpiredStagedFiles } from "./files.js";
 import type { Connection } from "@prisma/client";
 
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000; // hourly tick
@@ -158,6 +159,9 @@ export function startHealthSweepScheduler() {
   }
   const tick = () => {
     runConnectionHealthSweep().catch((e) => console.error("[health-sweep] sweep crashed:", e));
+    // Staged uploads are swept on write too; this is the backstop for a host
+    // where nobody uploads again after an expiry passes.
+    sweepExpiredStagedFiles().catch((e) => console.error("[health-sweep] staged-file sweep crashed:", e));
   };
   setTimeout(tick, FIRST_SWEEP_DELAY_MS).unref?.();
   setInterval(tick, SWEEP_INTERVAL_MS).unref?.();

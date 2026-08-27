@@ -845,6 +845,20 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       query: { type: "object", description: "Optional query parameters. Array values are repeated." },
       body: { type: "object", description: "Optional JSON request body for POST/PUT/PATCH/DELETE. Alias: data or json." },
       data: { type: "object", description: "Alias for body." },
+      files: {
+        type: "array",
+        maxItems: 5,
+        items: {
+          type: "object",
+          properties: {
+            field: { type: "string", description: "Multipart field name the provider expects, e.g. file." },
+            file_id: { type: "string", description: "Id returned by POST /files on this grantry host." },
+            filename: { type: "string", description: "Optional filename override." },
+            content_type: { type: "string", description: "Optional content type override." },
+          },
+        },
+        description: "Attach previously uploaded files, turning this into a multipart/form-data request; `body` entries become form fields. Upload first with `curl -H 'Authorization: Bearer gn_agt_...' -F file=@path https://<grantry-host>/files`, then pass the returned file_id here — the bytes go straight from grantry to the provider and never travel through the model's context.",
+      },
       headers: { type: "object", description: "Optional extra scalar headers. Authorization/Cookie/Host/Content-Length cannot be overridden." },
       timeout_ms: { type: "number", minimum: 1000, maximum: 120000, description: "Optional request timeout in milliseconds for this call. Defaults to the provider's own timeout. Raise it for reporting or query endpoints that are legitimately slow." },
     };
@@ -3532,6 +3546,9 @@ async function dispatchProviderTool(
   args: Record<string, unknown>,
   token: string,
   conn: { provider?: string; encryptedServerCredential: string | null; workspaceId?: string | null; connectionConfig?: string | null },
+  // Identifies whose staged uploads a `files` argument may reach. Null for the
+  // paths that have no calling agent; those simply cannot attach files.
+  agentId: string | null = null,
 ): Promise<any> {
   const connectionConfig = parseConnectionConfig(conn.connectionConfig);
   if (toolName === `${provider}/request`) {
@@ -3544,6 +3561,7 @@ async function dispatchProviderTool(
       credential: token,
       serverCredential: conn.encryptedServerCredential ? decrypt(conn.encryptedServerCredential) : null,
       config: connectionConfig,
+      agentId,
     });
   }
   if (toolName === `${provider}/check_connection`) {
@@ -5001,7 +5019,7 @@ const handleMcpPost = async (c: any) => {
 
         // Burn the single use up front: a failed provider call still consumes the grant.
         await prisma.delegationGrant.update({ where: { id: grant!.id }, data: { status: "consumed", consumedAt: now } });
-        const result = await dispatchProviderTool(decision.provider, toolName, innerArgs, credential, conn);
+        const result = await dispatchProviderTool(decision.provider, toolName, innerArgs, credential, conn, agent.id);
         void recordRuntimeCallHealth(conn, { ok: true });
         await prisma.auditLog.create({ data: {
           agentId: grant!.targetAgentId, userId: agent.userId ?? undefined, delegatedById: agent.id, delegationId: grant!.id,
@@ -5110,7 +5128,7 @@ const handleMcpPost = async (c: any) => {
 
     // 4) Dispatch to provider-specific tool
     try {
-      const result = await dispatchProviderTool(decision.provider, toolName, providerArgs, token, conn);
+      const result = await dispatchProviderTool(decision.provider, toolName, providerArgs, token, conn, agent.id);
       void recordRuntimeCallHealth(conn, { ok: true });
 
       await prisma.auditLog.create({
