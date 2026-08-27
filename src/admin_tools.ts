@@ -44,6 +44,7 @@ export const ADMIN_TOOLS = [
   "grantry/grant_connection",
   "grantry/revoke_connection",
   "grantry/create_connection",
+  "grantry/set_connection_enabled",
   "grantry/get_connect_url",
 ] as const;
 
@@ -504,6 +505,37 @@ export async function callAdminTool(
     };
   }
 
+  if (toolName === "grantry/set_connection_enabled") {
+    const conn = await targetConnection(ctx, requireString(args, "target_connection_id"));
+    if (typeof args.enabled !== "boolean") throw new Error("enabled must be a boolean");
+    const enabled = args.enabled;
+    if (conn.enabled === enabled) {
+      return {
+        payload: { connection_id: conn.id, provider: conn.provider, scope: conn.scope, label: conn.label, enabled, changed: false },
+        summary: `connection ${conn.provider} @ ${conn.scope} (${conn.id}) already enabled=${enabled}`,
+      };
+    }
+    // 同じ (provider, scope) を有効に戻すと、他方も有効なら checkPolicy が
+    // ambiguous を返すようになる。戻す側で気づけるよう件数を返す。
+    const siblingsEnabled = await prisma.connection.count({
+      where: { ...boundaryWhere(ctx), provider: conn.provider, scope: conn.scope, enabled: true, id: { not: conn.id } },
+    });
+    await prisma.connection.update({ where: { id: conn.id }, data: { enabled } });
+    const payload = {
+      connection_id: conn.id,
+      provider: conn.provider,
+      scope: conn.scope,
+      label: conn.label,
+      enabled,
+      changed: true,
+      other_enabled_at_same_scope: siblingsEnabled,
+    };
+    return {
+      payload,
+      summary: `set connection ${conn.provider} @ ${conn.scope} (${conn.id}) enabled=${enabled}`,
+    };
+  }
+
   if (toolName === "grantry/revoke_scope") {
     const target = await targetAgent(ctx, requireString(args, "agent_id"));
     const scope = requireString(args, "target_scope");
@@ -751,6 +783,17 @@ export function adminToolDescriptor(toolName: AdminToolName): { description: str
           label: { type: "string", description: "Optional display label." },
         },
         required: ["provider", "target_scope", "credential"],
+      };
+    case "grantry/set_connection_enabled":
+      return {
+        description:
+          "grantry admin: enable or disable a connection. Disabling keeps the stored credential but takes the connection out of resolution, so calls stop seeing it. " +
+          "Use this to retire a superseded credential without deleting it — for example after reconnecting a provider with wider OAuth scopes, when the old and the new connection at the same (provider, scope) make every call ambiguous. Reversible: pass enabled=true to bring it back.",
+        properties: {
+          target_connection_id: { type: "string", description: "Connection to change (see grantry_list_connections). Named target_connection_id because 'scope' selects the admin connection itself." },
+          enabled: { type: "boolean", description: "true to enable, false to disable." },
+        },
+        required: ["target_connection_id", "enabled"],
       };
     case "grantry/get_connect_url":
       return {

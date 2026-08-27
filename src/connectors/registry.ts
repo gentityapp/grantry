@@ -150,6 +150,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "grantry/grant_connection",
       "grantry/revoke_connection",
       "grantry/create_connection",
+      "grantry/set_connection_enabled",
       "grantry/get_connect_url",
     ],
   },
