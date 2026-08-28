@@ -1881,6 +1881,7 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       return {
         domain_ids: { type: "array", items: { type: "string" }, description: "Domains to add a DMARC record to." },
         email: { type: "string", description: "Address that receives DMARC aggregate reports." },
+        status: { type: "array", items: { type: "string", enum: ["ACTIVE", "INACTIVE", "PENDING", "IN_PROGRESS", "EXPIRED"] }, description: "Restrict to domains in these statuses. Defaults to every status, so domain_ids alone decides what is touched." },
         ...workspace,
       };
     }

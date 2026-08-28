@@ -311,7 +311,17 @@ export async function callZapmailTool(tool: string, args: ZapmailArgs, credentia
     const domainIds = stringList(args, "domain_ids", ["domainIds", "domain_id", "domainId"]);
     if (!domainIds.length) throw new Error("domain_ids is required");
     const email = requireArg(args, "email", ["dmarc_email", "dmarcEmail"]);
-    return { structuredContent: await request(credential, "POST", "/v2/domains/dmarc", { domainIds, email, contains: "", tagIds: [] }, tool, args, { count: domainIds.length }) };
+    // Zapmail answers 422 unless status is present, and it filters the targeted domains,
+    // so every status is sent and domainIds alone decides what is touched.
+    const status = stringList(args, "status", ["statuses"]).map((v) => v.toUpperCase());
+    const body = {
+      domainIds,
+      email,
+      contains: "",
+      tagIds: [],
+      status: status.length ? status : ["ACTIVE", "INACTIVE", "PENDING", "IN_PROGRESS", "EXPIRED"],
+    };
+    return { structuredContent: await request(credential, "POST", "/v2/domains/dmarc", body, tool, args, { count: domainIds.length }) };
   }
 
   if (tool === "zapmail/add_forwarding") {
