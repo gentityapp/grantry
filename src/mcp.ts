@@ -1840,7 +1840,7 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
     if (toolName === "zapmail/get_name_servers") {
       return {
         domain_name: { type: "string", description: "Domain you already own, e.g. \"example.jp\". Returns the nameservers to set at its registrar." },
-        mask_forwarding: { type: "boolean", description: "Mask the forwarding target so visitors keep seeing this domain in the address bar." },
+        mask_forwarding: { type: "boolean", description: "Mask the forwarding target so visitors keep seeing this domain in the address bar. Defaults to false; Zapmail requires the field either way." },
         ...workspace,
       };
     }

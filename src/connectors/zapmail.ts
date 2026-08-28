@@ -252,9 +252,9 @@ export async function callZapmailTool(tool: string, args: ZapmailArgs, credentia
   if (tool === "zapmail/get_name_servers") {
     // Works for a domain bought anywhere - Zapmail hands back the nameservers to point at it.
     const domainName = requireArg(args, "domain_name", ["domainName", "domain"]);
-    const body: Record<string, unknown> = { domainName };
-    const maskForwarding = optionalArg(args, "mask_forwarding", ["maskForwarding"]);
-    if (maskForwarding) body.maskForwarding = maskForwarding === "true";
+    // Zapmail rejects the call outright when maskForwarding is absent, so it is always sent.
+    const maskForwarding = optionalArg(args, "mask_forwarding", ["maskForwarding"]) === "true";
+    const body: Record<string, unknown> = { domainName, maskForwarding };
     return { structuredContent: await request(credential, "POST", "/v2/domains/name-servers", body, tool, args, { domainName }) };
   }
 
