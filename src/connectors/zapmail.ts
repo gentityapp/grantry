@@ -17,6 +17,9 @@
 //   POST /v2/exports/mailboxes              - export mailboxes to a cold-email app or CSV
 // Endpoints that spend money (domain/mailbox/subscription purchase, wallet recharge) are
 // deliberately not exposed as tools; reach them through zapmail/request if ever needed.
+// Mailbox payloads carry live mailbox passwords, Google app passwords and TOTP secrets.
+// Those are redacted unless the caller explicitly asks for them, so routine listings do
+// not spray account credentials through agent transcripts and logs.
 const ZAPMAIL_API = "https://api.zapmail.ai/api";
 const ZAPMAIL_TIMEOUT_MS = 20_000;
 
@@ -140,6 +143,27 @@ function stringList(args: ZapmailArgs, key: string, aliases: string[] = []) {
   return [];
 }
 
+const MAILBOX_SECRET_KEYS = new Set(["password", "appPassword", "app_password", "secret", "totpSecret", "twoFactorSecret"]);
+
+// Zapmail returns mailbox credentials inline. Walk the payload and mask them unless the
+// caller opted in, so a plain listing never leaks a password an agent did not ask for.
+function redactSecrets(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactSecrets);
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+      out[key] = MAILBOX_SECRET_KEYS.has(key) && v ? "[redacted]" : redactSecrets(v);
+    }
+    return out;
+  }
+  return value;
+}
+
+function wantsSecrets(args: ZapmailArgs) {
+  const raw = args.include_secrets ?? args.includeSecrets;
+  return raw === true || String(raw ?? "").trim().toLowerCase() === "true";
+}
+
 export async function callZapmailTool(tool: string, args: ZapmailArgs, credential: string) {
   if (tool === "zapmail/get_user") {
     return { structuredContent: await request(credential, "GET", "/v2/users", undefined, tool, args) };
@@ -160,12 +184,14 @@ export async function callZapmailTool(tool: string, args: ZapmailArgs, credentia
       ["limit", "limit", ["page_size", "pageSize"]],
       ["contains", "contains", ["search", "query"]],
     ]);
-    return { structuredContent: await request(credential, "GET", `/v2/mailboxes/list${qs}`, undefined, tool, args) };
+    const body = await request(credential, "GET", `/v2/mailboxes/list${qs}`, undefined, tool, args);
+    return { structuredContent: wantsSecrets(args) ? body : redactSecrets(body) };
   }
 
   if (tool === "zapmail/get_mailbox") {
     const id = requireArg(args, "mailbox_id", ["mailboxId", "id"]);
-    return { structuredContent: await request(credential, "GET", `/v2/mailboxes?id=${encodeURIComponent(id)}`, undefined, tool, args, { mailboxId: id }) };
+    const body = await request(credential, "GET", `/v2/mailboxes?id=${encodeURIComponent(id)}`, undefined, tool, args, { mailboxId: id });
+    return { structuredContent: wantsSecrets(args) ? body : redactSecrets(body) };
   }
 
   if (tool === "zapmail/list_domains") {
@@ -217,7 +243,8 @@ export async function callZapmailTool(tool: string, args: ZapmailArgs, credentia
     });
     const contains = optionalArg(args, "contains", ["search", "query", "domain", "email"]);
     if (contains) params.set("contains", contains);
-    return { structuredContent: await request(credential, "GET", `/v2/global/mailbox-domain-search?${params.toString()}`, undefined, tool, args) };
+    const body = await request(credential, "GET", `/v2/global/mailbox-domain-search?${params.toString()}`, undefined, tool, args);
+    return { structuredContent: wantsSecrets(args) ? body : redactSecrets(body) };
   }
 
   if (tool === "zapmail/list_third_party_accounts") {

@@ -1798,15 +1798,35 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
     };
     if (toolName === "zapmail/get_user") return { ...workspace };
     if (toolName === "zapmail/list_workspaces") return { ...paging, search: { type: "string", description: "Filter workspaces by name." }, ...workspace };
-    if (toolName === "zapmail/list_mailboxes") return { ...paging, contains: { type: "string", description: "Filter mailboxes by substring, e.g. a domain like example.com." }, ...workspace };
-    if (toolName === "zapmail/get_mailbox") return { mailbox_id: { type: "string", description: "Zapmail mailbox id." }, ...workspace };
+    if (toolName === "zapmail/list_mailboxes") {
+      return {
+        ...paging,
+        contains: { type: "string", description: "Filter mailboxes by substring, e.g. a domain like example.com." },
+      include_secrets: { type: "boolean", description: "Return mailbox passwords, app passwords and TOTP secrets in clear text. Off by default - they are masked so a listing does not leak account credentials. Only set this when the credentials themselves are the point of the call." },
+        ...workspace,
+      };
+    }
+    if (toolName === "zapmail/get_mailbox") {
+      return {
+        mailbox_id: { type: "string", description: "Zapmail mailbox id." },
+      include_secrets: { type: "boolean", description: "Return mailbox passwords, app passwords and TOTP secrets in clear text. Off by default - they are masked so a listing does not leak account credentials. Only set this when the credentials themselves are the point of the call." },
+        ...workspace,
+      };
+    }
     if (toolName === "zapmail/list_domains") return { ...paging, contains: { type: "string", description: "Filter domains by substring." }, ...workspace };
     if (toolName === "zapmail/list_assignable_domains") return { ...paging, contains: { type: "string", description: "Filter domains by substring." }, ...workspace };
     if (toolName === "zapmail/get_domain_health") return { domain_id: { type: "string", description: "Optional domain id. Omit to score every domain in the workspace." }, ...workspace };
     if (toolName === "zapmail/get_dns_records") return { domain_id: { type: "string", description: "Zapmail domain id (from zapmail/list_domains)." }, ...workspace };
     if (toolName === "zapmail/list_subscriptions") return { ...paging, ...workspace };
     if (toolName === "zapmail/get_wallet_balance") return { ...workspace };
-    if (toolName === "zapmail/search") return { contains: { type: "string", description: "Domain or mailbox email to look up." }, ...paging, ...workspace };
+    if (toolName === "zapmail/search") {
+      return {
+        contains: { type: "string", description: "Domain or mailbox email to look up." },
+        ...paging,
+      include_secrets: { type: "boolean", description: "Return mailbox passwords, app passwords and TOTP secrets in clear text. Off by default - they are masked so a listing does not leak account credentials. Only set this when the credentials themselves are the point of the call." },
+        ...workspace,
+      };
+    }
     if (toolName === "zapmail/list_third_party_accounts") return { app: { type: "string", description: "Export app, e.g. SMARTLEAD, INSTANTLY, REACHINBOX, LEMLIST." }, ...workspace };
     if (toolName === "zapmail/get_export_status") return { export_id: { type: "string", description: "Export id returned by zapmail/export_mailboxes." }, ...workspace };
     if (toolName === "zapmail/export_mailboxes") {
