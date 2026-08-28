@@ -1815,6 +1815,28 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
     }
     if (toolName === "zapmail/list_domains") return { ...paging, contains: { type: "string", description: "Filter domains by substring." }, ...workspace };
     if (toolName === "zapmail/list_assignable_domains") return { ...paging, contains: { type: "string", description: "Filter domains by substring." }, ...workspace };
+    if (toolName === "zapmail/search_domains") {
+      return {
+        domain_name: { type: "string", description: "Name to price, e.g. \"onestream-hq.com\" or a bare keyword. Returns the exact match plus similar available names." },
+        tlds: { type: "array", items: { type: "string" }, description: "TLDs to search, e.g. [\"com\", \"io\"]. Defaults to Zapmail's own selection." },
+        years: { type: "integer", description: "Registration length used for pricing. Defaults to 1." },
+        ...workspace,
+      };
+    }
+    if (toolName === "zapmail/check_domains") {
+      return {
+        domain_names: { type: "array", items: { type: "string" }, description: "Up to 20 exact domain names to check for availability and price." },
+        ...workspace,
+      };
+    }
+    if (toolName === "zapmail/ai_find_domains") {
+      return {
+        keywords: { type: "array", items: { type: "string" }, description: "Keywords the generated names should build on." },
+        tlds: { type: "array", items: { type: "string" }, description: "TLDs to generate against. Defaults to [\"com\"]." },
+        desired_count: { type: "integer", description: "How many available names to return. Defaults to 10." },
+        ...workspace,
+      };
+    }
     if (toolName === "zapmail/get_domain_health") return { domain_id: { type: "string", description: "Optional domain id. Omit to score every domain in the workspace." }, ...workspace };
     if (toolName === "zapmail/get_dns_records") return { domain_id: { type: "string", description: "Zapmail domain id (from zapmail/list_domains)." }, ...workspace };
     if (toolName === "zapmail/list_subscriptions") return { ...paging, ...workspace };
@@ -3143,6 +3165,9 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "zapmail/list_third_party_accounts") return ["app"];
   if (toolName === "zapmail/get_export_status") return ["export_id"];
   if (toolName === "zapmail/export_mailboxes") return ["apps"];
+  if (toolName === "zapmail/search_domains") return ["domain_name"];
+  if (toolName === "zapmail/check_domains") return ["domain_names"];
+  if (toolName === "zapmail/ai_find_domains") return ["keywords"];
   if (toolName === "resend/get_domain") return ["domain_id"];
   if (toolName === "slack/get_channel") return ["channel"];
   if (toolName === "slack/list_messages") return ["channel"];

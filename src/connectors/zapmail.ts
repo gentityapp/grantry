@@ -15,8 +15,13 @@
 //   GET  /v2/exports/accounts/third-party   - third-party accounts registered for an app
 //   GET  /v2/exports/status?exportId=       - status of an export
 //   POST /v2/exports/mailboxes              - export mailboxes to a cold-email app or CSV
-// Endpoints that spend money (domain/mailbox/subscription purchase, wallet recharge) are
-// deliberately not exposed as tools; reach them through zapmail/request if ever needed.
+//   POST /v2/domains/available              - availability + similar names for one domain
+//   POST /v2/domains/available-bulk         - availability of up to 20 exact names
+//   POST /v2/domains/ai-finder              - AI-suggested available names (async, poll)
+// The domain searches above only price and reserve nothing. Endpoints that actually spend
+// money (POST /v2/domains/buy, /v2/quick-setup, mailbox and subscription purchase, wallet
+// recharge) are deliberately not exposed as tools, and the generic zapmail/request is
+// GET-only, so no agent can commit spend through this connector.
 // Mailbox payloads carry live mailbox passwords, Google app passwords and TOTP secrets.
 // Those are redacted unless the caller explicitly asks for them, so routine listings do
 // not spray account credentials through agent transcripts and logs.
@@ -210,6 +215,34 @@ export async function callZapmailTool(tool: string, args: ZapmailArgs, credentia
       ["contains", "contains", ["search", "query"]],
     ]);
     return { structuredContent: await request(credential, "GET", `/v2/domains/assignable${qs}`, undefined, tool, args) };
+  }
+
+  if (tool === "zapmail/search_domains") {
+    // Prices and checks availability only - nothing is registered or reserved by this call.
+    const domainName = requireArg(args, "domain_name", ["domainName", "domain", "keyword"]);
+    const body: Record<string, unknown> = { domainName };
+    const tlds = stringList(args, "tlds", ["tld"]).map((v) => v.replace(/^\./, ""));
+    if (tlds.length) body.tlds = tlds;
+    const years = optionalArg(args, "years");
+    if (years) body.years = Number(years);
+    return { structuredContent: await request(credential, "POST", "/v2/domains/available", body, tool, args, { domainName }) };
+  }
+
+  if (tool === "zapmail/check_domains") {
+    const domainNames = stringList(args, "domain_names", ["domainNames", "domains"]);
+    if (!domainNames.length) throw new Error("domain_names is required");
+    if (domainNames.length > 20) throw new Error("Zapmail checks at most 20 domain names per call");
+    return { structuredContent: await request(credential, "POST", "/v2/domains/available-bulk", { domainNames }, tool, args, { count: domainNames.length }) };
+  }
+
+  if (tool === "zapmail/ai_find_domains") {
+    // Generation is async: the first call starts it, later calls with the same input poll it.
+    const keywords = stringList(args, "keywords", ["keyword"]);
+    if (!keywords.length) throw new Error("keywords is required");
+    const tlds = stringList(args, "tlds", ["tld"]).map((v) => v.replace(/^\./, ""));
+    const desiredCount = Number(optionalArg(args, "desired_count", ["desiredCount", "count"]) || 10);
+    const body = { keywords, tlds: tlds.length ? tlds : ["com"], desiredCount };
+    return { structuredContent: await request(credential, "POST", "/v2/domains/ai-finder", body, tool, args, { keywords: keywords.join(",") }) };
   }
 
   if (tool === "zapmail/get_domain_health") {

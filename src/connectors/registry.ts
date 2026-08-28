@@ -1805,7 +1805,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "zapmail",
     label: "Zapmail",
     authTypes: ["pat"],
-    helpText: "Copy the API key from the Zapmail dashboard under Settings > Integrations > API and paste it here. It is sent as the x-auth-zapmail header to api.zapmail.ai/api. API access requires the Pro plan. Covers the account and its workspaces, mailboxes, domains (assignable, health score, DNS records), subscriptions, wallet balance, the global mailbox/domain search, and exporting mailboxes to cold-email apps such as Smartlead or Instantly. Optionally pin a workspace: leave the workspace key empty to use the primary workspace, or set it (and the service provider) to point every call at another workspace. Mailbox passwords, app passwords and TOTP secrets are masked in mailbox listings unless a call explicitly sets include_secrets. Endpoints that spend money - buying domains, mailboxes or subscriptions, recharging the wallet - are not exposed as tools; use zapmail/request for those.",
+    helpText: "Copy the API key from the Zapmail dashboard under Settings > Integrations > API and paste it here. It is sent as the x-auth-zapmail header to api.zapmail.ai/api. API access requires the Pro plan. Covers the account and its workspaces, mailboxes, domains (assignable, health score, DNS records), subscriptions, wallet balance, the global mailbox/domain search, and exporting mailboxes to cold-email apps such as Smartlead or Instantly. Optionally pin a workspace: leave the workspace key empty to use the primary workspace, or set it (and the service provider) to point every call at another workspace. Mailbox passwords, app passwords and TOTP secrets are masked in mailbox listings unless a call explicitly sets include_secrets. Domain availability search (single, bulk and the AI finder) is included and only prices names - it registers nothing. Endpoints that spend money - buying domains, mailboxes or subscriptions, quick setup, recharging the wallet - are not exposed as tools, and zapmail/request is GET-only, so no agent can commit spend through this connector.",
     tokenUrl: "https://app.zapmail.ai/settings/integrations",
     tools: [
       "zapmail/get_user",
@@ -1814,6 +1814,9 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "zapmail/get_mailbox",
       "zapmail/list_domains",
       "zapmail/list_assignable_domains",
+      "zapmail/search_domains",
+      "zapmail/check_domains",
+      "zapmail/ai_find_domains",
       "zapmail/get_domain_health",
       "zapmail/get_dns_records",
       "zapmail/list_subscriptions",
