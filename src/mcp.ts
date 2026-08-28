@@ -36,6 +36,7 @@ import { callRailwayTool } from "./connectors/railway.js";
 import { callResendTool } from "./connectors/resend.js";
 import { callGranolaTool } from "./connectors/granola.js";
 import { callTldvTool } from "./connectors/tldv.js";
+import { callZapmailTool } from "./connectors/zapmail.js";
 import { callCloudSignTool } from "./connectors/cloudsign.js";
 import { callSlackTool } from "./connectors/slack.js";
 import { callFreeeTool } from "./connectors/freee.js";
@@ -1785,6 +1786,43 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       data: { type: "object", description: "Optional extra fields merged into the import request body." },
     };
   }
+  if (toolName.startsWith("zapmail/")) {
+    // Every Zapmail call may be pointed at another workspace than the one pinned on the connection.
+    const workspace = {
+      workspace_key: { type: "string", description: "Optional workspace ID to act on (x-workspace-key). Defaults to the workspace pinned on the connection, else the primary one." },
+      service_provider: { type: "string", enum: ["GOOGLE", "MICROSOFT"], description: "Optional mailbox service provider (x-service-provider)." },
+    };
+    const paging = {
+      page: { type: "integer", description: "1-based page number." },
+      limit: { type: "integer", description: "Results per page." },
+    };
+    if (toolName === "zapmail/get_user") return { ...workspace };
+    if (toolName === "zapmail/list_workspaces") return { ...paging, search: { type: "string", description: "Filter workspaces by name." }, ...workspace };
+    if (toolName === "zapmail/list_mailboxes") return { ...paging, contains: { type: "string", description: "Filter mailboxes by substring, e.g. a domain like example.com." }, ...workspace };
+    if (toolName === "zapmail/get_mailbox") return { mailbox_id: { type: "string", description: "Zapmail mailbox id." }, ...workspace };
+    if (toolName === "zapmail/list_domains") return { ...paging, contains: { type: "string", description: "Filter domains by substring." }, ...workspace };
+    if (toolName === "zapmail/list_assignable_domains") return { ...paging, contains: { type: "string", description: "Filter domains by substring." }, ...workspace };
+    if (toolName === "zapmail/get_domain_health") return { domain_id: { type: "string", description: "Optional domain id. Omit to score every domain in the workspace." }, ...workspace };
+    if (toolName === "zapmail/get_dns_records") return { domain_id: { type: "string", description: "Zapmail domain id (from zapmail/list_domains)." }, ...workspace };
+    if (toolName === "zapmail/list_subscriptions") return { ...paging, ...workspace };
+    if (toolName === "zapmail/get_wallet_balance") return { ...workspace };
+    if (toolName === "zapmail/search") return { contains: { type: "string", description: "Domain or mailbox email to look up." }, ...paging, ...workspace };
+    if (toolName === "zapmail/list_third_party_accounts") return { app: { type: "string", description: "Export app, e.g. SMARTLEAD, INSTANTLY, REACHINBOX, LEMLIST." }, ...workspace };
+    if (toolName === "zapmail/get_export_status") return { export_id: { type: "string", description: "Export id returned by zapmail/export_mailboxes." }, ...workspace };
+    if (toolName === "zapmail/export_mailboxes") {
+      return {
+        apps: { type: "array", items: { type: "string" }, description: "Target apps, e.g. [\"SMARTLEAD\"]. Also accepts REACHINBOX, INSTANTLY, LEMLIST, EMELIA, REPLY_IO, WARMY, SNOV, EMAILBISON and the other apps Zapmail supports." },
+        ids: { type: "array", items: { type: "string" }, description: "Mailbox ids to export. Empty with a filter set exports everything the filter matches." },
+        exclude_ids: { type: "array", items: { type: "string" }, description: "Mailbox ids to skip." },
+        tag_ids: { type: "array", items: { type: "string" }, description: "Only mailboxes carrying these domain tags." },
+        status: { type: "string", enum: ["ACTIVE", "IN_PROGRESS", "CREATING_PASSWORD", "EXPIRED", "FAILED"], description: "Only mailboxes in this status." },
+        contains: { type: "string", description: "Only mailboxes matching this substring." },
+        third_party_account_id: { type: "string", description: "Pin the export to one third-party account. Required when the workspace holds several accounts for the same app." },
+        ...workspace,
+      };
+    }
+    return { ...workspace };
+  }
   if (toolName === "slack/auth_test") {
     return {};
   }
@@ -3080,6 +3118,11 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "tldv/get_highlights") return ["meeting_id"];
   if (toolName === "tldv/get_download_url") return ["meeting_id"];
   if (toolName === "tldv/import_meeting") return ["url"];
+  if (toolName === "zapmail/get_mailbox") return ["mailbox_id"];
+  if (toolName === "zapmail/get_dns_records") return ["domain_id"];
+  if (toolName === "zapmail/list_third_party_accounts") return ["app"];
+  if (toolName === "zapmail/get_export_status") return ["export_id"];
+  if (toolName === "zapmail/export_mailboxes") return ["apps"];
   if (toolName === "resend/get_domain") return ["domain_id"];
   if (toolName === "slack/get_channel") return ["channel"];
   if (toolName === "slack/list_messages") return ["channel"];
@@ -3631,6 +3674,7 @@ async function dispatchProviderTool(
   if (provider === "resend") return callResendTool(toolName, args, token);
   if (provider === "granola") return callGranolaTool(toolName, args, token);
   if (provider === "tldv") return callTldvTool(toolName, args, token);
+  if (provider === "zapmail") return callZapmailTool(toolName, args, token);
   if (provider === "cloudsign") return callCloudSignTool(toolName, args, token);
   if (provider === "slack") return callSlackTool(toolName, args, token);
   if (provider === "freee") return callFreeeTool(toolName, args, token);

@@ -322,6 +322,7 @@ function credentialToken(provider: string, credential: string) {
   if (provider === "timerex" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "jicoo" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "tldv" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
+  if (provider === "zapmail" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "nocodb" && parsed) return String(parsed.api_token ?? parsed.apiToken ?? parsed.token ?? credential);
   if (provider === "langgraph" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? parsed.token ?? credential);
   if (provider === "langsmith" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? parsed.token ?? credential);

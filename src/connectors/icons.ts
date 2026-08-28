@@ -143,6 +143,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   timerex: "#00A99D",
   jicoo: "#3E63DD",
   tldv: "#1D1DFF", // tl;dv blue
+  zapmail: "#5B3DF5", // Zapmail purple
   firecrawl: "#FA5D19",
   dataforseo: "#1C4ED8", // DataForSEO blue
   google_forms: "#7248B9",
