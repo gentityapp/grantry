@@ -1837,6 +1837,26 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
         ...workspace,
       };
     }
+    if (toolName === "zapmail/get_name_servers") {
+      return {
+        domain_name: { type: "string", description: "Domain you already own, e.g. \"example.jp\". Returns the nameservers to set at its registrar." },
+        mask_forwarding: { type: "boolean", description: "Mask the forwarding target so visitors keep seeing this domain in the address bar." },
+        ...workspace,
+      };
+    }
+    if (toolName === "zapmail/verify_name_servers") {
+      return {
+        domain_name: { type: "string", description: "Domain whose nameserver change should be checked for propagation." },
+        ...workspace,
+      };
+    }
+    if (toolName === "zapmail/connect_domain") {
+      return {
+        domain_names: { type: "array", items: { type: "string" }, description: "Domains to finish connecting, once their nameservers verify." },
+        ...workspace,
+      };
+    }
+    if (toolName === "zapmail/list_connection_requests") return { ...paging, ...workspace };
     if (toolName === "zapmail/get_domain_health") return { domain_id: { type: "string", description: "Optional domain id. Omit to score every domain in the workspace." }, ...workspace };
     if (toolName === "zapmail/get_dns_records") return { domain_id: { type: "string", description: "Zapmail domain id (from zapmail/list_domains)." }, ...workspace };
     if (toolName === "zapmail/list_subscriptions") return { ...paging, ...workspace };
@@ -3168,6 +3188,9 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "zapmail/search_domains") return ["domain_name"];
   if (toolName === "zapmail/check_domains") return ["domain_names"];
   if (toolName === "zapmail/ai_find_domains") return ["keywords"];
+  if (toolName === "zapmail/get_name_servers") return ["domain_name"];
+  if (toolName === "zapmail/verify_name_servers") return ["domain_name"];
+  if (toolName === "zapmail/connect_domain") return ["domain_names"];
   if (toolName === "resend/get_domain") return ["domain_id"];
   if (toolName === "slack/get_channel") return ["channel"];
   if (toolName === "slack/list_messages") return ["channel"];

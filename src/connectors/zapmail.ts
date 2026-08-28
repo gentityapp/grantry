@@ -18,6 +18,10 @@
 //   POST /v2/domains/available              - availability + similar names for one domain
 //   POST /v2/domains/available-bulk         - availability of up to 20 exact names
 //   POST /v2/domains/ai-finder              - AI-suggested available names (async, poll)
+//   POST /v2/domains/name-servers           - nameservers to point an owned domain at Zapmail
+//   POST /v2/domains/name-servers/verify    - check that the nameserver change propagated
+//   POST /v2/domains/connect-domain         - finish connecting an owned domain
+//   GET  /v2/domains/connection-requests    - domains still pending connection
 // The domain searches above only price and reserve nothing. Endpoints that actually spend
 // money (POST /v2/domains/buy, /v2/quick-setup, mailbox and subscription purchase, wallet
 // recharge) are deliberately not exposed as tools, and the generic zapmail/request is
@@ -243,6 +247,34 @@ export async function callZapmailTool(tool: string, args: ZapmailArgs, credentia
     const desiredCount = Number(optionalArg(args, "desired_count", ["desiredCount", "count"]) || 10);
     const body = { keywords, tlds: tlds.length ? tlds : ["com"], desiredCount };
     return { structuredContent: await request(credential, "POST", "/v2/domains/ai-finder", body, tool, args, { keywords: keywords.join(",") }) };
+  }
+
+  if (tool === "zapmail/get_name_servers") {
+    // Works for a domain bought anywhere - Zapmail hands back the nameservers to point at it.
+    const domainName = requireArg(args, "domain_name", ["domainName", "domain"]);
+    const body: Record<string, unknown> = { domainName };
+    const maskForwarding = optionalArg(args, "mask_forwarding", ["maskForwarding"]);
+    if (maskForwarding) body.maskForwarding = maskForwarding === "true";
+    return { structuredContent: await request(credential, "POST", "/v2/domains/name-servers", body, tool, args, { domainName }) };
+  }
+
+  if (tool === "zapmail/verify_name_servers") {
+    const domainName = requireArg(args, "domain_name", ["domainName", "domain"]);
+    return { structuredContent: await request(credential, "POST", "/v2/domains/name-servers/verify", { domainName }, tool, args, { domainName }) };
+  }
+
+  if (tool === "zapmail/connect_domain") {
+    const domainNames = stringList(args, "domain_names", ["domainNames", "domain_name", "domainName", "domains", "domain"]);
+    if (!domainNames.length) throw new Error("domain_names is required");
+    return { structuredContent: await request(credential, "POST", "/v2/domains/connect-domain", { domainNames }, tool, args, { count: domainNames.length }) };
+  }
+
+  if (tool === "zapmail/list_connection_requests") {
+    const qs = queryString(args, [
+      ["page", "page", []],
+      ["limit", "limit", ["page_size", "pageSize"]],
+    ]);
+    return { structuredContent: await request(credential, "GET", `/v2/domains/connection-requests${qs}`, undefined, tool, args) };
   }
 
   if (tool === "zapmail/get_domain_health") {
