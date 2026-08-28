@@ -1857,6 +1857,40 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       };
     }
     if (toolName === "zapmail/list_connection_requests") return { ...paging, ...workspace };
+    if (toolName === "zapmail/assign_mailboxes") {
+      return {
+        domain_id: { type: "string", description: "Zapmail domain id from zapmail/list_assignable_domains." },
+        domain_name: { type: "string", description: "The domain itself, e.g. \"example.com\"." },
+        mailboxes: {
+          type: "array",
+          description: "Mailboxes to create. Draws on the plan's prepaid quota; the call is refused when more are requested than remain unassigned.",
+          items: {
+            type: "object",
+            properties: {
+              username: { type: "string", description: "Local part, e.g. \"sample-user\" for sample-user@example.com." },
+              first_name: { type: "string", description: "Display first name." },
+              last_name: { type: "string", description: "Display last name." },
+            },
+            required: ["username", "first_name", "last_name"],
+          },
+        },
+        ...workspace,
+      };
+    }
+    if (toolName === "zapmail/add_dmarc") {
+      return {
+        domain_ids: { type: "array", items: { type: "string" }, description: "Domains to add a DMARC record to." },
+        email: { type: "string", description: "Address that receives DMARC aggregate reports." },
+        ...workspace,
+      };
+    }
+    if (toolName === "zapmail/add_forwarding") {
+      return {
+        domain_ids: { type: "array", items: { type: "string" }, description: "Domains to forward." },
+        forward_to: { type: "string", description: "Destination the domain redirects to, e.g. \"https://example.com/\"." },
+        ...workspace,
+      };
+    }
     if (toolName === "zapmail/get_domain_health") return { domain_id: { type: "string", description: "Optional domain id. Omit to score every domain in the workspace." }, ...workspace };
     if (toolName === "zapmail/get_dns_records") return { domain_id: { type: "string", description: "Zapmail domain id (from zapmail/list_domains)." }, ...workspace };
     if (toolName === "zapmail/list_subscriptions") return { ...paging, ...workspace };
@@ -3191,6 +3225,9 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "zapmail/get_name_servers") return ["domain_name"];
   if (toolName === "zapmail/verify_name_servers") return ["domain_name"];
   if (toolName === "zapmail/connect_domain") return ["domain_names"];
+  if (toolName === "zapmail/assign_mailboxes") return ["domain_id", "domain_name", "mailboxes"];
+  if (toolName === "zapmail/add_dmarc") return ["domain_ids", "email"];
+  if (toolName === "zapmail/add_forwarding") return ["domain_ids", "forward_to"];
   if (toolName === "resend/get_domain") return ["domain_id"];
   if (toolName === "slack/get_channel") return ["channel"];
   if (toolName === "slack/list_messages") return ["channel"];

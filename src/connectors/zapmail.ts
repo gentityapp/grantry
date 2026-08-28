@@ -22,6 +22,9 @@
 //   POST /v2/domains/name-servers/verify    - check that the nameserver change propagated
 //   POST /v2/domains/connect-domain         - finish connecting an owned domain
 //   GET  /v2/domains/connection-requests    - domains still pending connection
+//   POST /v2/mailboxes                      - assign mailboxes to a domain from prepaid quota
+//   POST /v2/domains/dmarc                  - add a DMARC record to domains
+//   POST /v2/domains/forwarding             - forward domains to a destination site
 // The domain searches above only price and reserve nothing. Endpoints that actually spend
 // money (POST /v2/domains/buy, /v2/quick-setup, mailbox and subscription purchase, wallet
 // recharge) are deliberately not exposed as tools, and the generic zapmail/request is
@@ -275,6 +278,47 @@ export async function callZapmailTool(tool: string, args: ZapmailArgs, credentia
       ["limit", "limit", ["page_size", "pageSize"]],
     ]);
     return { structuredContent: await request(credential, "GET", `/v2/domains/connection-requests${qs}`, undefined, tool, args) };
+  }
+
+  if (tool === "zapmail/assign_mailboxes") {
+    const domainId = requireArg(args, "domain_id", ["domainId"]);
+    const domainName = requireArg(args, "domain_name", ["domainName", "domain"]);
+    const raw = args.mailboxes;
+    if (!Array.isArray(raw) || !raw.length) throw new Error("mailboxes is required and must be a non-empty array");
+    const mailboxes = raw.map((entry: any, i: number) => {
+      const item = (entry && typeof entry === "object") ? entry : {};
+      const username = String(item.username ?? item.mailboxUsername ?? item.mailbox_username ?? "").trim();
+      if (!username) throw new Error(`mailboxes[${i}].username is required`);
+      const firstName = String(item.first_name ?? item.firstName ?? "").trim();
+      const lastName = String(item.last_name ?? item.lastName ?? "").trim();
+      if (!firstName || !lastName) throw new Error(`mailboxes[${i}] requires first_name and last_name`);
+      return { firstName, lastName, mailboxUsername: username, domainName };
+    });
+    // Assigning draws on the plan's prepaid mailbox quota. Checking it first turns an
+    // over-allocation into a refusal here rather than a surprise charge at Zapmail.
+    const user: any = await request(credential, "GET", "/v2/users", undefined, tool, args);
+    const purchased = Number(user?.data?.purchasedMailboxes ?? 0);
+    const assigned = Number(user?.data?.assignedMailboxes ?? 0);
+    const free = purchased - assigned;
+    if (Number.isFinite(free) && mailboxes.length > free) {
+      throw new Error(`Zapmail has ${free} unassigned mailbox(es) left (${assigned}/${purchased} in use) but ${mailboxes.length} were requested. Buy more mailboxes before assigning.`);
+    }
+    const body = { [domainId]: mailboxes };
+    return { structuredContent: await request(credential, "POST", "/v2/mailboxes", body, tool, args, { domainName, count: mailboxes.length }) };
+  }
+
+  if (tool === "zapmail/add_dmarc") {
+    const domainIds = stringList(args, "domain_ids", ["domainIds", "domain_id", "domainId"]);
+    if (!domainIds.length) throw new Error("domain_ids is required");
+    const email = requireArg(args, "email", ["dmarc_email", "dmarcEmail"]);
+    return { structuredContent: await request(credential, "POST", "/v2/domains/dmarc", { domainIds, email, contains: "", tagIds: [] }, tool, args, { count: domainIds.length }) };
+  }
+
+  if (tool === "zapmail/add_forwarding") {
+    const domainIds = stringList(args, "domain_ids", ["domainIds", "domain_id", "domainId"]);
+    if (!domainIds.length) throw new Error("domain_ids is required");
+    const forwardTo = requireArg(args, "forward_to", ["forwardTo", "destination"]);
+    return { structuredContent: await request(credential, "POST", "/v2/domains/forwarding", { domainIds, forwardTo, contains: "", tagIds: [] }, tool, args, { forwardTo, count: domainIds.length }) };
   }
 
   if (tool === "zapmail/get_domain_health") {
