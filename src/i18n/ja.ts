@@ -778,4 +778,275 @@ export const ja: Record<string, string> = {
   "No unassigned agents to add.": "追加できる未割り当てのエージェントがありません。",
   "Need a brand-new agent instead?": "新しいエージェントを作りたいですか？",
   "Back to scopes": "スコープ一覧に戻る",
+
+  // ── Assignments (people × agents) ──────────────────────────────────────
+  "Assignments": "割り当て",
+  "Only workspace owners and admins can manage person-to-agent assignments.":
+    "メンバーとエージェントの割り当てを管理できるのは、ワークスペースのオーナーと管理者のみです。",
+  "{count} assigned": "{count} 件割り当て済み",
+  "+{count} more": "ほか {count} 件",
+  "No agents assigned": "割り当てられたエージェントはありません",
+  "Search agents": "エージェントを検索",
+  "Search agents for {email}": "{email} に割り当てるエージェントを検索",
+  "Assigned to this person": "このメンバーに割り当て済み",
+  "Not assigned": "未割り当て",
+  "No enabled agents in this workspace yet.": "このワークスペースにはまだ有効なエージェントがありません。",
+  "No workspace members yet.": "まだワークスペースにメンバーがいません。",
+  "Open workspace settings": "ワークスペース設定を開く",
+  "People × Agents": "メンバー × エージェント",
+  "Manage which workspace members can act as which agents. Provider permissions still come from each agent's granted connections and each provider's own ACLs.":
+    "どのワークスペースメンバーがどのエージェントとして実行できるかを管理します。プロバイダー側の権限は、これまで通り各エージェントに付与された接続と各プロバイダー自身の ACL で決まります。",
+  "Workspace settings": "ワークスペース設定",
+  "Agent assigned": "エージェントを割り当てました",
+  "Agent unassigned": "エージェントの割り当てを解除しました",
+  "assigned": "割り当て済み",
+  "This agent is assigned to you. You can view its callable connections, but only workspace owners and admins can manage grants, tokens, charter, or runbook.":
+    "このエージェントはあなたに割り当てられています。呼び出し可能な接続は閲覧できますが、付与・トークン・チャーター・ランブックを管理できるのはワークスペースのオーナーと管理者のみです。",
+
+  // ── Email verification ─────────────────────────────────────────────────
+  "Verify <b>{email}</b> before accepting this workspace invite.":
+    "このワークスペース招待を承認する前に <b>{email}</b> を確認してください。",
+  "Open email verification": "メールアドレスの確認を開く",
+  "Verify email": "メールアドレスを確認",
+  "Verify your email": "メールアドレスを確認してください",
+  "Open the verification link we sent to <b>{email}</b>. You need a verified email address before using grantry dashboards, workspace invites, or MCP OAuth.":
+    "<b>{email}</b> に送信した確認リンクを開いてください。grantry のダッシュボード、ワークスペース招待、MCP OAuth を使うには、確認済みのメールアドレスが必要です。",
+  "your email": "あなたのメールアドレス",
+  "Resend verification email": "確認メールを再送",
+  "Verification email sent.": "確認メールを送信しました。",
+  "Could not send verification email": "確認メールを送信できませんでした",
+
+  // ── OAuth sign-in / OAuth apps ─────────────────────────────────────────
+  "Continue with Google": "Google で続行",
+  "Continue with GitHub": "GitHub で続行",
+  "or": "または",
+  "OAuth sign-in failed": "OAuth サインインに失敗しました",
+  "OAuth sign-in failed: {error}": "OAuth サインインに失敗しました: {error}",
+  "Save changes": "変更を保存",
+  "Remove this OAuth app?": "この OAuth アプリを削除しますか？",
+  "Add another OAuth app": "別の OAuth アプリを追加",
+  "Register this workspace's OAuth app": "このワークスペースの OAuth アプリを登録",
+  "via": "経由:",
+  "OAuth app removed — reconnect": "OAuth アプリが削除されました — 再接続してください",
+  "app unknown — reconnect to bind": "アプリ不明 — 再接続して紐付けてください",
+  "Connect from an OAuth app above": "上の OAuth アプリから接続してください",
+  "OAuth app not found": "OAuth アプリが見つかりません",
+
+  // ── Access / workspace guards ──────────────────────────────────────────
+  "Access limited": "アクセスが制限されています",
+  "Workspace required": "ワークスペースが必要です",
+  "Create or join a workspace before managing grantry admin API keys.":
+    "grantry 管理 API キーを管理するには、先にワークスペースを作成するか参加してください。",
+  "Workspace owner or admin required": "ワークスペースのオーナーまたは管理者権限が必要です",
+
+  // ── Connection config values ───────────────────────────────────────────
+  "This provider's API is scoped per connection. Provide the value(s) below — they are stored with this connection (not secret) and filled into the request path automatically.":
+    "このプロバイダーの API は接続ごとにスコープが分かれています。以下の値を入力してください。値はこの接続に保存され（シークレットではありません）、リクエストパスに自動的に埋め込まれます。",
+  "This provider's API is scoped per connection. Values are stored with this connection (not secret) and filled into the request path automatically.":
+    "このプロバイダーの API は接続ごとにスコープが分かれています。値はこの接続に保存され（シークレットではありません）、リクエストパスに自動的に埋め込まれます。",
+  "Configuration value required": "設定値が必要です",
+
+  // ── Agent page: individual connection grants ───────────────────────────
+  "Add individual connections": "接続を個別に追加",
+  "Every enabled connection available to this agent is already granted.":
+    "このエージェントが利用できる有効な接続は、すべて付与済みです。",
+  "Grant single connections instead of a whole scope — the agent reaches only what you tick. Use this when it needs one tool from a scope that also holds unrelated credentials.":
+    "スコープ全体ではなく接続を 1 件ずつ付与します。エージェントはチェックした接続にのみ到達できます。無関係な認証情報も含むスコープから 1 つのツールだけ使わせたい場合に使ってください。",
+  "Grant selected connections": "選択した接続を付与",
+  "No enabled connection is callable by this agent. Grant at least one connection to enable provider tools.":
+    "このエージェントが呼び出せる有効な接続がありません。プロバイダーツールを有効にするには、少なくとも 1 件の接続を付与してください。",
+  "Remove {provider} ({scope}) from agent {name}? The agent loses these tools on its next request.":
+    "エージェント {name} から {provider}（{scope}）を削除しますか？次のリクエストからこれらのツールは使えなくなります。",
+  "select at least one connection": "接続を 1 件以上選択してください",
+  "Granted {count} connection(s)": "{count} 件の接続を付与しました",
+  "Removed {count} connection(s)": "{count} 件の接続を削除しました",
+
+  // ── Runbook / skill bundle ─────────────────────────────────────────────
+  "Runbook": "ランブック",
+  "The instructions that define what this agent does and how. Served over MCP via <code>grantry_get_runbook</code>, so whoever holds this agent's token can run it by connecting the MCP alone — no repo handoff. Distinct from the grantry platform manual (<code>grantry_get_skill</code>).":
+    "このエージェントが「何を・どうやるか」を定義する指示書です。MCP 経由で <code>grantry_get_runbook</code> として配信されるため、このエージェントのトークンを持つ人は MCP に接続するだけで実行できます。リポジトリの引き渡しは不要です。grantry プラットフォームのマニュアル（<code>grantry_get_skill</code>）とは別物です。",
+  "Upload a skill bundle": "スキルバンドルをアップロード",
+  "a <code>.skill</code> or <code>.zip</code> (SKILL.md + references/ + scripts/ + assets/). Recipients fetch the files via <code>grantry_get_runbook_file</code> and reconstruct the skill directory.":
+    "<code>.skill</code> または <code>.zip</code>（SKILL.md + references/ + scripts/ + assets/）。受け取り側は <code>grantry_get_runbook_file</code> でファイルを取得し、スキルディレクトリを再構築します。",
+  "Upload skill bundle": "スキルバンドルをアップロード",
+  "Or a single SKILL.md": "または SKILL.md 単体",
+  "for a self-contained runbook with no bundled files.": "同梱ファイルのない自己完結型のランブック向け。",
+  "Save runbook": "ランブックを保存",
+  "Remove the uploaded skill bundle?": "アップロード済みのスキルバンドルを削除しますか？",
+  "Remove bundle": "バンドルを削除",
+  "No file uploaded": "ファイルがアップロードされていません",
+  "Could not read the file as a .zip/.skill archive": ".zip / .skill アーカイブとして読み込めませんでした",
+  "No SKILL.md found in the bundle": "バンドル内に SKILL.md が見つかりません",
+  "A skill bundle must contain a SKILL.md at its root.": "スキルバンドルのルートには SKILL.md が必要です。",
+  "agent name required": "エージェント名は必須です",
+
+  // ── MCP config block ───────────────────────────────────────────────────
+  "Copy {label}": "{label} をコピー",
+  "The full token is only shown when the agent is created or rotated.":
+    "トークンの全文は、エージェントの作成時またはローテーション時にのみ表示されます。",
+  "MCP config": "MCP 設定",
+  "This entry is locked to <code>{scope}</code> by <code>X-Grantry-Scope</code>: its tool list is trimmed to that scope, and a call passing any other <code>scope</code> is refused. Tool names stay stable.":
+    "このエントリは <code>X-Grantry-Scope</code> により <code>{scope}</code> に固定されています。ツール一覧はそのスコープに絞られ、別の <code>scope</code> を渡す呼び出しは拒否されます。ツール名は変わりません。",
+  "One entry per agent. The token decides what it can reach across every scope it holds, and each call picks its scope via the <code>scope</code> argument.":
+    "エージェントごとに 1 エントリです。トークンが保持する全スコープへの到達範囲を決め、各呼び出しは <code>scope</code> 引数でスコープを選びます。",
+  "MCP endpoint: <code>{origin}/mcp</code> — authenticate with <code>Authorization: Bearer &lt;token&gt;</code>.":
+    "MCP エンドポイント: <code>{origin}/mcp</code> — <code>Authorization: Bearer &lt;token&gt;</code> で認証します。",
+  "These snippets are <b>incomplete</b>: the token is stored hashed, so its plaintext exists only at the moment it is minted. Paste your saved token over <code>&lt;PASTE_YOUR_TOKEN_HERE&gt;</code>, or <a href=\"/agents\">rotate this agent</a> to mint a fresh one — rotating invalidates the current token immediately.":
+    "このスニペットは<b>未完成</b>です。トークンはハッシュ化して保存されるため、平文は発行された瞬間にしか存在しません。保存しておいたトークンを <code>&lt;PASTE_YOUR_TOKEN_HERE&gt;</code> に貼り付けるか、<a href=\"/agents\">このエージェントをローテーション</a>して新しいトークンを発行してください。ローテーションすると現在のトークンは即座に無効になります。",
+  "Recommended — fastest": "推奨 — 最速",
+  "Run this one line in your terminal. It registers the server in <code>~/.claude.json</code> and Claude Code can use it right away — no manual file editing.":
+    "ターミナルでこの 1 行を実行してください。サーバーが <code>~/.claude.json</code> に登録され、Claude Code からすぐに使えます。ファイルの手動編集は不要です。",
+  "Claude Code — manual JSON": "Claude Code — JSON を手動編集",
+  "Prefer editing the config file directly? Merge this entry under <code>mcpServers</code>.":
+    "設定ファイルを直接編集したい場合は、このエントリを <code>mcpServers</code> の下にマージしてください。",
+  "This config includes the newly minted token. <code>Mcp-Session-Id</code> is managed by the MCP client/server handshake.":
+    "この設定には発行されたばかりのトークンが含まれています。<code>Mcp-Session-Id</code> は MCP クライアント/サーバーのハンドシェイクが管理します。",
+
+  // ── Personal MCP tokens page ───────────────────────────────────────────
+  "MCP configuration": "MCP 設定",
+  "This is your personal MCP token. It can use only the agents currently assigned to you. Assignments change access immediately; this token never grants an unassigned agent.":
+    "これはあなた個人の MCP トークンです。現在あなたに割り当てられているエージェントだけを使用できます。割り当ての変更は即座にアクセスに反映され、未割り当てのエージェントがこのトークンで使えることはありません。",
+  "Endpoint:": "エンドポイント:",
+  "When more than one agent is available, MCP lists them and asks the client to pass <code>agent_id</code> for the provider call.":
+    "複数のエージェントが利用可能な場合、MCP が一覧を返し、プロバイダー呼び出し時に <code>agent_id</code> を渡すようクライアントに求めます。",
+  "MCP tokens": "MCP トークン",
+  "Create one personal token for this workspace, then use every agent assigned to you here from the same MCP connection.":
+    "このワークスペース用の個人トークンを 1 つ作成すれば、割り当てられたすべてのエージェントを同じ MCP 接続から使えます。",
+  "Joined <b>{workspace}</b>. Your assigned agents are ready below; create your personal MCP token to connect.":
+    "<b>{workspace}</b> に参加しました。割り当てられたエージェントは下に表示されています。接続するには個人の MCP トークンを作成してください。",
+  "Token revoked.": "トークンを無効化しました。",
+  "A new personal token was issued. It is shown below once.":
+    "新しい個人トークンを発行しました。下に一度だけ表示されます。",
+  "Your active token": "有効なトークン",
+  "For security the plaintext is shown only when it is created. Rotate it if you need a new copy.":
+    "セキュリティのため、平文は作成時にのみ表示されます。新しいコピーが必要な場合はローテーションしてください。",
+  "Rotate personal token": "個人トークンをローテーション",
+  "Create your personal token": "個人トークンを作成",
+  "This token belongs only to {email}. It is not visible to workspace admins.":
+    "このトークンは {email} だけのものです。ワークスペースの管理者からは見えません。",
+  "No agents are assigned yet": "まだエージェントが割り当てられていません",
+  "Create MCP token": "MCP トークンを作成",
+  "Personal MCP token": "個人 MCP トークン",
+  "Your personal MCP token": "あなたの個人 MCP トークン",
+  "This token is scoped to <b>{workspace}</b> and shown once. Workspace admins cannot retrieve it.":
+    "このトークンは <b>{workspace}</b> にスコープされ、一度だけ表示されます。ワークスペースの管理者は取得できません。",
+  "Save this token now. Rotating or revoking it disconnects every MCP client using it.":
+    "このトークンを今すぐ保存してください。ローテーションまたは無効化すると、これを使うすべての MCP クライアントが切断されます。",
+  "🔑 Personal MCP token (save this — shown once!)": "🔑 個人 MCP トークン（保存してください — 表示は一度だけ！）",
+  "Back to MCP tokens": "MCP トークン一覧に戻る",
+  "Agents available to you": "利用できるエージェント",
+  "Your token can act only through these agents in <b>{workspace}</b>. Workspace admins manage this list from Assignments.":
+    "あなたのトークンは、<b>{workspace}</b> のこれらのエージェントを通じてのみ実行できます。この一覧はワークスペース管理者が「割り当て」から管理します。",
+  "Personal": "個人",
+  "No assigned agents yet": "まだ割り当てられたエージェントがありません",
+  "Ask a workspace owner or admin to assign an agent to you. Issuing a token before that does not grant access.":
+    "ワークスペースのオーナーまたは管理者にエージェントの割り当てを依頼してください。割り当て前にトークンを発行してもアクセスは付与されません。",
+  "Token history": "トークン履歴",
+  "Token": "トークン",
+  "revoked": "無効化済み",
+  "active": "有効",
+  "Revoke this MCP token? Existing MCP clients will lose access immediately.":
+    "この MCP トークンを無効化しますか？既存の MCP クライアントは即座にアクセスを失います。",
+
+  // ── Custom provider form ───────────────────────────────────────────────
+  "Provider key": "プロバイダーキー",
+  "API base URL": "API ベース URL",
+  "Auth style": "認証方式",
+  "API key header": "API キーヘッダー",
+  "API key query parameter": "API キークエリパラメータ",
+  "API key header or query parameter": "API キーのヘッダー名またはクエリパラメータ名",
+  "Allowed path prefixes": "許可するパスプレフィックス",
+  "Connection check path": "接続チェック用パス",
+  "Token settings URL": "トークン設定ページの URL",
+  "Define a workspace-level provider that can be added to scopes from the service picker.":
+    "サービス選択画面からスコープに追加できる、ワークスペースレベルのプロバイダーを定義します。",
+  "Add default {label}": "既定の{label}を追加",
+  "Creates a <code>{scope}</code> scope connection. Leave blank only when one existing workspace credential can be reused.":
+    "<code>{scope}</code> スコープの接続を作成します。既存のワークスペース認証情報を 1 件再利用できる場合のみ空欄にしてください。",
+  "Create default connection": "既定の接続を作成",
+
+  // ── Connector agent picker ─────────────────────────────────────────────
+  "No agents": "エージェントがありません",
+  "No enabled agents": "有効なエージェントがありません",
+  "This connector must act as one of your grantry agents, but your account has none enabled. Create an agent in the <a href=\"/dashboard\">dashboard</a>, then retry the connection.":
+    "このコネクターは grantry エージェントのいずれかとして動作する必要がありますが、アカウントに有効なエージェントがありません。<a href=\"/dashboard\">ダッシュボード</a>でエージェントを作成し、接続をやり直してください。",
+  "Choose agent": "エージェントを選択",
+  "Connect {name}": "{name} を接続",
+  "{name} will act as the agent you choose, using that agent's granted connections exactly as configured in the dashboard. You can change or revoke this anytime.":
+    "{name} は選択したエージェントとして動作し、ダッシュボードで設定された通りにそのエージェントに付与された接続を使用します。この設定はいつでも変更・取り消しできます。",
+
+  // ── Scope wizard details ───────────────────────────────────────────────
+  "Creates a new scope-scoped connection that uses the selected workspace credential.":
+    "選択したワークスペース認証情報を使う、スコープ単位の接続を新規作成します。",
+  "♻️ Reusing the existing <code class=\"reusing-label\"></code> connection.":
+    "♻️ 既存の <code class=\"reusing-label\"></code> 接続を再利用します。",
+  "rotate credential": "認証情報をローテーション",
+  " to paste a new one.": "すると新しい値を貼り付けられます。",
+  "🔗 Register/manage your {label} OAuth app here →": "🔗 {label} の OAuth アプリの登録・管理はこちら →",
+
+  // ── Scope key validation page ──────────────────────────────────────────
+  "⚠️  Scope key {key}can't be used": "⚠️  スコープキー {key}は使用できません",
+  "The <b>scope key</b> is the immutable key your agents send with every API call, so it's restricted to <b>lowercase letters, numbers, hyphens, and underscores</b> (<code>a-z 0-9 - _</code>). Japanese and other non-ASCII characters aren't allowed here.":
+    "<b>スコープキー</b>はエージェントがすべての API 呼び出しで送信する不変のキーのため、<b>小文字英字・数字・ハイフン・アンダースコア</b>（<code>a-z 0-9 - _</code>）に制限されています。日本語などの非 ASCII 文字はここでは使えません。",
+  "👉 Put the Japanese (or any human-friendly) name in the <b>Display name</b> field instead — that's shown in dashboards and can be renamed anytime.":
+    "👉 日本語（や人間向けの名前）は<b>表示名</b>欄に入れてください。表示名はダッシュボードに表示され、いつでも変更できます。",
+  "Suggested scope key based on what you typed: <code>{suggestion}</code>":
+    "入力内容から提案するスコープキー: <code>{suggestion}</code>",
+  "Example: scope key <code>kaihatsu</code> · display name <code>{name}</code>":
+    "例: スコープキー <code>kaihatsu</code> · 表示名 <code>{name}</code>",
+  "← Back to the wizard": "← ウィザードに戻る",
+
+  // ── OAuth / error pages ────────────────────────────────────────────────
+  "Google sign-in not configured": "Google サインインが設定されていません",
+  "Set <code>AUTH_GOOGLE_CLIENT_ID</code> / <code>AUTH_GOOGLE_CLIENT_SECRET</code>.":
+    "<code>AUTH_GOOGLE_CLIENT_ID</code> / <code>AUTH_GOOGLE_CLIENT_SECRET</code> を設定してください。",
+  "← Back": "← 戻る",
+  "Scope must match <code>[a-z0-9_-]+</code>.": "スコープは <code>[a-z0-9_-]+</code> に一致する必要があります。",
+  "OAuth state expired or invalid": "OAuth の状態が期限切れか無効です",
+  "Try <a href=\"/tenants/new\">creating the scope</a> again.":
+    "もう一度<a href=\"/tenants/new\">スコープの作成</a>をお試しください。",
+  "connection not found for reconnect": "再接続対象の接続が見つかりません",
+  "The requested connection does not belong to this scope/provider.":
+    "指定された接続はこのスコープ/プロバイダーのものではありません。",
+  "No scope or connections found for scope '{scope}' (yours)":
+    "スコープ '{scope}' に該当するスコープまたは接続（あなたのもの）が見つかりません",
+
+  // ── Scope / agent success pages ────────────────────────────────────────
+  "✓ {label} connected · scope <code>{scope}</code> created":
+    "✓ {label} を接続 · スコープ <code>{scope}</code> を作成しました",
+  "Google Ads API token still required": "Google Ads API トークンがまだ必要です",
+  "Open scope settings →": "スコープ設定を開く →",
+  "Open Google Ads API Center →": "Google Ads API Center を開く →",
+  "granted {count} connection(s)": "{count} 件の接続を付与済み",
+  "← Back to scopes": "← スコープ一覧に戻る",
+  "Manage agents": "エージェントを管理",
+  "✓ Agent <code>{name}</code> can use <code>{scope}</code>":
+    "✓ エージェント <code>{name}</code> が <code>{scope}</code> を使えるようになりました",
+  "Granted {count} enabled connection(s) for this scope.":
+    "このスコープの有効な接続を {count} 件付与しました。",
+  "This agent keeps its existing token. The plaintext token cannot be shown again; rotate it from the agent page if you need a fresh copy.":
+    "このエージェントは既存のトークンを維持します。平文のトークンは再表示できません。新しいコピーが必要な場合はエージェントページからローテーションしてください。",
+  "Back to agent setup": "エージェント設定に戻る",
+  "Open agent": "エージェントを開く",
+  "✓ New agent <code>{name}</code> added to <code>{scope}</code>":
+    "✓ 新しいエージェント <code>{name}</code> を <code>{scope}</code> に追加しました",
+  "Reused the existing <code>{scope}</code> connection(s) — no new PAT/OAuth needed.":
+    "既存の <code>{scope}</code> 接続を再利用しました。新しい PAT や OAuth は不要です。",
+  "Granted {count} connection(s) for <code>{scope}</code>.":
+    "<code>{scope}</code> の接続を {count} 件付与しました。",
+  "Test it": "動作確認",
+  "← Back to {scope}": "← {scope} に戻る",
+  "Add another agent": "別のエージェントを追加",
+  "Manage all agents": "すべてのエージェントを管理",
+
+  // ── Delete notice pages ────────────────────────────────────────────────
+  "Deleted": "削除しました",
+  "✓ Deleted scope <code>{scope}</code>": "✓ スコープ <code>{scope}</code> を削除しました",
+  "Removed <b>{count}</b> connection(s). Related connection grants were removed automatically.":
+    "<b>{count}</b> 件の接続を削除しました。関連する接続付与は自動的に削除されました。",
+  "Also removed {count} legacy role row(s).": "レガシーなロール行も {count} 件削除しました。",
+  "← Back to all scopes": "← すべてのスコープに戻る",
+  "✓ Bulk deleted {count} scope(s)": "✓ {count} 件のスコープを一括削除しました",
+  "Total: <b>{count}</b> connection(s) removed. Related connection grants were removed automatically.":
+    "合計 <b>{count}</b> 件の接続を削除しました。関連する接続付与は自動的に削除されました。",
 };

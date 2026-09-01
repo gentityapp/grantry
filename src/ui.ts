@@ -236,7 +236,7 @@ function agentTokenCard(
           <pre style="background:#f6f9fc;border:1px solid #635bff;flex:1;margin:0;">${safe}</pre>
           <button type="button" class="secondary copy-token-btn" data-token="${safe}" style="white-space:nowrap;">📋 Copy</button>
         </div>
-        <p style="font-size:13px;color:#687385;margin-bottom:0;margin-top:12px;">Use as <code>Authorization: Bearer ${safe}</code> when calling <code>/mcp</code>.</p>
+        <p style="font-size:13px;color:#687385;margin-bottom:0;margin-top:12px;">${t('Use as <code>Authorization: Bearer {token}</code> when calling <code>/mcp</code>.', { token: safe })}</p>
         ${warningHtml ? `<p style="font-size:13px;color:#df1b41;margin-top:8px;">${warningHtml}</p>` : ""}
       </div>
       <script>
@@ -323,32 +323,32 @@ ${scope ? `X-Grantry-Scope = "${scope}"` : ""}`;
   // rather than silently handing over a config that cannot authenticate.
   const copyButton = (label: string, text: string) =>
     exactToken
-      ? `<button type="button" class="secondary copy-config-btn" data-copy="${escapeHtml(text)}" style="font-size:12px;padding:4px 10px;">Copy ${label}</button>`
-      : `<button type="button" class="secondary" disabled title="The full token is only shown when the agent is created or rotated." style="font-size:12px;padding:4px 10px;opacity:.5;cursor:not-allowed;">Copy ${label}</button>`;
+      ? `<button type="button" class="secondary copy-config-btn" data-copy="${escapeHtml(text)}" style="font-size:12px;padding:4px 10px;">${t("Copy {label}", { label })}</button>`
+      : `<button type="button" class="secondary" disabled title="${t("The full token is only shown when the agent is created or rotated.")}" style="font-size:12px;padding:4px 10px;opacity:.5;cursor:not-allowed;">${t("Copy {label}", { label })}</button>`;
   return `
-        <h2>MCP config</h2>
+        <h2>${t("MCP config")}</h2>
         <p style="font-size:13px;color:#687385;margin-top:0;">
           ${scope
-            ? `This entry is locked to <code>${escapeHtml(scope)}</code> by <code>X-Grantry-Scope</code>: its tool list is trimmed to that scope, and a call passing any other <code>scope</code> is refused. Tool names stay stable.`
-            : `One entry per agent. The token decides what it can reach across every scope it holds, and each call picks its scope via the <code>scope</code> argument.`}
+            ? t('This entry is locked to <code>{scope}</code> by <code>X-Grantry-Scope</code>: its tool list is trimmed to that scope, and a call passing any other <code>scope</code> is refused. Tool names stay stable.', { scope: escapeHtml(scope) })
+            : t("One entry per agent. The token decides what it can reach across every scope it holds, and each call picks its scope via the <code>scope</code> argument.")}
         </p>
-        <p style="font-size:13px;color:#3c4257;margin:0 0 4px;">MCP endpoint: <code>${escapeHtml(origin)}/mcp</code> — authenticate with <code>Authorization: Bearer &lt;token&gt;</code>.</p>
+        <p style="font-size:13px;color:#3c4257;margin:0 0 4px;">${t('MCP endpoint: <code>{origin}/mcp</code> — authenticate with <code>Authorization: Bearer &lt;token&gt;</code>.', { origin: escapeHtml(origin) })}</p>
         ${exactToken
           ? ""
-          : `<p style="font-size:13px;color:#df1b41;margin:12px 0 0;border-left:3px solid #df1b41;padding-left:10px;">These snippets are <b>incomplete</b>: the token is stored hashed, so its plaintext exists only at the moment it is minted. Paste your saved token over <code>&lt;PASTE_YOUR_TOKEN_HERE&gt;</code>, or <a href="/agents">rotate this agent</a> to mint a fresh one — rotating invalidates the current token immediately.</p>`}
+          : `<p style="font-size:13px;color:#df1b41;margin:12px 0 0;border-left:3px solid #df1b41;padding-left:10px;">${t('These snippets are <b>incomplete</b>: the token is stored hashed, so its plaintext exists only at the moment it is minted. Paste your saved token over <code>&lt;PASTE_YOUR_TOKEN_HERE&gt;</code>, or <a href="/agents">rotate this agent</a> to mint a fresh one — rotating invalidates the current token immediately.')}</p>`}
 
         <div class="row spread" style="margin:20px 0 6px;">
-          <h3 style="font-size:14px;margin:0;color:#3c4257;">Claude Code <span class="badge ok">Recommended — fastest</span></h3>
+          <h3 style="font-size:14px;margin:0;color:#3c4257;">Claude Code <span class="badge ok">${t("Recommended — fastest")}</span></h3>
           ${copyButton("CLI", claudeCli)}
         </div>
-        <p style="font-size:13px;color:#687385;margin:0 0 8px;">Run this one line in your terminal. It registers the server in <code>~/.claude.json</code> and Claude Code can use it right away — no manual file editing.</p>
+        <p style="font-size:13px;color:#687385;margin:0 0 8px;">${t('Run this one line in your terminal. It registers the server in <code>~/.claude.json</code> and Claude Code can use it right away — no manual file editing.')}</p>
         <pre>${escapeHtml(claudeCli)}</pre>
 
         <div class="row spread" style="margin:16px 0 6px;">
-          <h3 style="font-size:14px;margin:0;color:#3c4257;">Claude Code — manual JSON <code>~/.claude.json</code></h3>
+          <h3 style="font-size:14px;margin:0;color:#3c4257;">${t('Claude Code — manual JSON')} <code>~/.claude.json</code></h3>
           ${copyButton("JSON", claudeJson)}
         </div>
-        <p style="font-size:13px;color:#687385;margin:0 0 8px;">Prefer editing the config file directly? Merge this entry under <code>mcpServers</code>.</p>
+        <p style="font-size:13px;color:#687385;margin:0 0 8px;">${t('Prefer editing the config file directly? Merge this entry under <code>mcpServers</code>.')}</p>
         <pre>${escapeHtml(claudeJson)}</pre>
 
         <div class="row spread" style="margin:16px 0 6px;">
@@ -363,7 +363,7 @@ ${scope ? `X-Grantry-Scope = "${scope}"` : ""}`;
         </div>
         <pre>${escapeHtml(codexToml)}</pre>
         ${exactToken
-          ? '<p style="font-size:13px;color:#687385;margin-bottom:0;">This config includes the newly minted token. <code>Mcp-Session-Id</code> is managed by the MCP client/server handshake.</p>'
+          ? `<p style="font-size:13px;color:#687385;margin-bottom:0;">${t('This config includes the newly minted token. <code>Mcp-Session-Id</code> is managed by the MCP client/server handshake.')}</p>`
           : ""}
         <script>
           (function () {
@@ -400,15 +400,15 @@ function userMcpConfigCard(origin: string, workspaceSlug: string, token: string)
   const codexToml = `[mcp_servers.${serverName}]\ntype = "streamable-http"\nurl = "${endpoint}"\n\n[mcp_servers.${serverName}.http_headers]\nAuthorization = "Bearer ${token}"`;
   const claudeConfig = JSON.stringify({ mcpServers: { [serverName]: { type: "http", url: endpoint, headers: { Authorization: `Bearer ${token}` } } } }, null, 2);
   const claudeCli = `claude mcp add --scope user --transport http ${serverName} ${endpoint} --header "Authorization: Bearer ${token}"`;
-  const copy = (label: string, value: string) => `<button type="button" class="secondary copy-config-btn" data-copy="${escapeHtml(value)}" style="font-size:12px;padding:4px 10px;">Copy ${label}</button>`;
+  const copy = (label: string, value: string) => `<button type="button" class="secondary copy-config-btn" data-copy="${escapeHtml(value)}" style="font-size:12px;padding:4px 10px;">${t("Copy {label}", { label })}</button>`;
   return `<div class="card">
-    <h2>MCP configuration</h2>
-    <p style="color:var(--muted);font-size:14px;margin-top:0;">This is your personal MCP token. It can use only the agents currently assigned to you. Assignments change access immediately; this token never grants an unassigned agent.</p>
-    <p style="font-size:13px;color:#3c4257;">Endpoint: <code>${escapeHtml(endpoint)}</code></p>
+    <h2>${t("MCP configuration")}</h2>
+    <p style="color:var(--muted);font-size:14px;margin-top:0;">${t("This is your personal MCP token. It can use only the agents currently assigned to you. Assignments change access immediately; this token never grants an unassigned agent.")}</p>
+    <p style="font-size:13px;color:#3c4257;">${t("Endpoint:")} <code>${escapeHtml(endpoint)}</code></p>
     <div class="row spread"><h3 style="font-size:14px;margin:0;">Claude Code</h3>${copy("CLI", claudeCli)}</div><pre>${escapeHtml(claudeCli)}</pre>
     <div class="row spread"><h3 style="font-size:14px;margin:0;">Codex <code>~/.codex/config.toml</code></h3>${copy("Codex", codexToml)}</div><pre>${escapeHtml(codexToml)}</pre>
     <div class="row spread"><h3 style="font-size:14px;margin:0;">Claude Desktop</h3>${copy("JSON", claudeConfig)}</div><pre>${escapeHtml(claudeConfig)}</pre>
-    <p style="font-size:13px;color:var(--muted);margin-bottom:0;">When more than one agent is available, MCP lists them and asks the client to pass <code>agent_id</code> for the provider call.</p>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:0;">${t('When more than one agent is available, MCP lists them and asks the client to pass <code>agent_id</code> for the provider call.')}</p>
     <script>
       (function () {
         document.querySelectorAll('.copy-config-btn').forEach(function (btn) {
@@ -901,15 +901,15 @@ async function workspaceProviderEnabled(workspaceId: string | null | undefined, 
 function customProviderForm(action: string, prefix: string) {
   return `
     <form method="post" action="${escapeHtml(action)}">
-      <div class="field"><label for="${prefix}_key">Provider key</label><input type="text" name="key" id="${prefix}_key" pattern="[a-z0-9_-]+" placeholder="one_stream" required></div>
-      <div class="field"><label for="${prefix}_label">Label</label><input type="text" name="label" id="${prefix}_label" placeholder="OneStream" required></div>
-      <div class="field"><label for="${prefix}_base_url">API base URL</label><input type="url" name="base_url" id="${prefix}_base_url" placeholder="https://example.com/api" required></div>
-      <div class="field"><label for="${prefix}_auth_scheme">Auth style</label><select name="auth_scheme" id="${prefix}_auth_scheme"><option value="bearer">Authorization: Bearer token</option><option value="api_key">API key header</option><option value="api_key_query">API key query parameter</option></select></div>
-      <div class="field"><label for="${prefix}_api_key_header">API key header or query parameter</label><input type="text" name="api_key_header" id="${prefix}_api_key_header" placeholder="X-API-Key or api_key"></div>
-      <div class="field"><label for="${prefix}_allowed_path_prefixes">Allowed path prefixes</label><textarea name="allowed_path_prefixes" id="${prefix}_allowed_path_prefixes" rows="3">/</textarea></div>
-      <div class="field"><label for="${prefix}_smoke_path">Connection check path <span style="color:#687385;">(optional)</span></label><input type="text" name="smoke_path" id="${prefix}_smoke_path" placeholder="/v1/me"></div>
-      <div class="field"><label for="${prefix}_token_url">Token settings URL <span style="color:#687385;">(optional)</span></label><input type="url" name="token_url" id="${prefix}_token_url" placeholder="https://example.com/settings/api"></div>
-      <button type="submit" class="secondary">Add custom provider</button>
+      <div class="field"><label for="${prefix}_key">${t("Provider key")}</label><input type="text" name="key" id="${prefix}_key" pattern="[a-z0-9_-]+" placeholder="one_stream" required></div>
+      <div class="field"><label for="${prefix}_label">${t("Label")}</label><input type="text" name="label" id="${prefix}_label" placeholder="OneStream" required></div>
+      <div class="field"><label for="${prefix}_base_url">${t("API base URL")}</label><input type="url" name="base_url" id="${prefix}_base_url" placeholder="https://example.com/api" required></div>
+      <div class="field"><label for="${prefix}_auth_scheme">${t("Auth style")}</label><select name="auth_scheme" id="${prefix}_auth_scheme"><option value="bearer">Authorization: Bearer token</option><option value="api_key">${t("API key header")}</option><option value="api_key_query">${t("API key query parameter")}</option></select></div>
+      <div class="field"><label for="${prefix}_api_key_header">${t("API key header or query parameter")}</label><input type="text" name="api_key_header" id="${prefix}_api_key_header" placeholder="X-API-Key or api_key"></div>
+      <div class="field"><label for="${prefix}_allowed_path_prefixes">${t("Allowed path prefixes")}</label><textarea name="allowed_path_prefixes" id="${prefix}_allowed_path_prefixes" rows="3">/</textarea></div>
+      <div class="field"><label for="${prefix}_smoke_path">${t("Connection check path")} <span style="color:#687385;">${t("(optional)")}</span></label><input type="text" name="smoke_path" id="${prefix}_smoke_path" placeholder="/v1/me"></div>
+      <div class="field"><label for="${prefix}_token_url">${t("Token settings URL")} <span style="color:#687385;">${t("(optional)")}</span></label><input type="url" name="token_url" id="${prefix}_token_url" placeholder="https://example.com/settings/api"></div>
+      <button type="submit" class="secondary">${t("Add custom provider")}</button>
     </form>
   `;
 }
@@ -1068,14 +1068,14 @@ function defaultProviderConnectionAction(c: any, args: {
   if (!["pat", "service_account"].includes(authType)) return "";
   return `
     <details style="margin-top:6px;">
-      <summary class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;display:inline-block;cursor:pointer;">Add default ${escapeHtml(authLabel)}</summary>
+      <summary class="btn secondary" style="font-size:12px;padding:4px 10px;white-space:nowrap;display:inline-block;cursor:pointer;">${t("Add default {label}", { label: escapeHtml(authLabel) })}</summary>
       <form method="post" action="/providers/${encodeURIComponent(providerKey)}/default-connection" style="min-width:260px;margin-top:8px;">
         <input type="hidden" name="auth_type" value="${escapeHtml(authType)}">
         ${authType === "pat" && renderCredentialFieldsHtml(providerDef, { enforceRequired: true })
           ? renderCredentialFieldsHtml(providerDef, { enforceRequired: true })
           : `<textarea name="credential" rows="3" placeholder="${escapeHtml(credentialPlaceholder(providerKey, providerDef.label, authType))}" style="font-size:12px;"></textarea>`}
-        <div class="field-hint">Creates a <code>${DEFAULT_PROVIDER_SCOPE}</code> scope connection. Leave blank only when one existing workspace credential can be reused.</div>
-        <button type="submit" style="font-size:12px;padding:4px 10px;">Create default connection</button>
+        <div class="field-hint">${t("Creates a <code>{scope}</code> scope connection. Leave blank only when one existing workspace credential can be reused.", { scope: DEFAULT_PROVIDER_SCOPE })}</div>
+        <button type="submit" style="font-size:12px;padding:4px 10px;">${t("Create default connection")}</button>
       </form>
     </details>`;
 }
@@ -1847,10 +1847,10 @@ export async function mcpAuthorizeGate(c: any): Promise<Response | null> {
   }
   if (!agents.length) {
     return c.html(
-      `<!doctype html><html><head><meta charset="utf-8"><title>No agents — grantry</title>
+      `<!doctype html><html><head><meta charset="utf-8"><title>${t("No agents")} — grantry</title>
       ${FAVICON}<style>${CSS} body { max-width: 420px; margin: 80px auto; padding: 0 24px; }</style></head><body>
-      <h1>No enabled agents</h1>
-      <div class="card"><p>This connector must act as one of your grantry agents, but your account has none enabled. Create an agent in the <a href="/dashboard">dashboard</a>, then retry the connection.</p></div>
+      <h1>${t("No enabled agents")}</h1>
+      <div class="card"><p>${t('This connector must act as one of your grantry agents, but your account has none enabled. Create an agent in the <a href="/dashboard">dashboard</a>, then retry the connection.')}</p></div>
       </body></html>`,
       403,
     );
@@ -1866,16 +1866,16 @@ export async function mcpAuthorizeGate(c: any): Promise<Response | null> {
     )
     .join("");
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Choose agent — grantry</title>
+    <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${t("Choose agent")} — grantry</title>
     ${FAVICON}<style>${CSS} body { max-width: 440px; margin: 60px auto; padding: 0 24px; }
     .agent-opt { display:flex; gap:10px; align-items:flex-start; padding:10px 12px; border:1px solid #30343a; border-radius:8px; margin-bottom:8px; cursor:pointer; }
     .agent-opt:hover { border-color: #58a6ff; }
     </style></head><body>
-    <h1>Connect ${escapeHtml(clientName)}</h1>
+    <h1>${t("Connect {name}", { name: escapeHtml(clientName) })}</h1>
     <div class="card">
-      <p>${escapeHtml(clientName)} will act as the agent you choose, using that agent's granted connections exactly as configured in the dashboard. You can change or revoke this anytime.</p>
+      <p>${t("{name} will act as the agent you choose, using that agent's granted connections exactly as configured in the dashboard. You can change or revoke this anytime.", { name: escapeHtml(clientName) })}</p>
       <form id="pick">${options}
-        <button type="submit" style="width:100%;margin-top:8px;">Continue</button>
+        <button type="submit" style="width:100%;margin-top:8px;">${t("Continue")}</button>
         <div id="err" style="color:#df1b41;margin-top:8px;font-size:13px;"></div>
       </form>
     </div>
@@ -2964,18 +2964,18 @@ dashboardApp.get("/mcp-tokens", async (c) => {
   const created = c.req.query("created") === "1";
   const revoked = c.req.query("revoked") === "1";
   const agentRows = agents.length
-    ? `<div class="card"><h2>Agents available to you</h2><p style="color:var(--muted);font-size:14px;margin-top:0;">Your token can act only through these agents in <b>${escapeHtml(active.displayName)}</b>. Workspace admins manage this list from Assignments.</p><div class="table-wrap"><table><thead><tr><th>Agent</th><th>Workspace</th><th>Description</th></tr></thead><tbody>${agents.map((agent) => `<tr><td><code>${escapeHtml(agent.name)}</code></td><td>${escapeHtml(agent.workspace?.displayName ?? "Personal")}</td><td>${escapeHtml(agent.description ?? "—")}</td></tr>`).join("")}</tbody></table></div></div>`
-    : `<div class="card"><h2>No assigned agents yet</h2><p style="color:var(--muted);margin-bottom:0;">Ask a workspace owner or admin to assign an agent to you. Issuing a token before that does not grant access.</p></div>`;
+    ? `<div class="card"><h2>${t("Agents available to you")}</h2><p style="color:var(--muted);font-size:14px;margin-top:0;">${t("Your token can act only through these agents in <b>{workspace}</b>. Workspace admins manage this list from Assignments.", { workspace: escapeHtml(active.displayName) })}</p><div class="table-wrap"><table><thead><tr><th>${t("Agent")}</th><th>${t("Workspace")}</th><th>${t("Description")}</th></tr></thead><tbody>${agents.map((agent) => `<tr><td><code>${escapeHtml(agent.name)}</code></td><td>${escapeHtml(agent.workspace?.displayName ?? t("Personal"))}</td><td>${escapeHtml(agent.description ?? "—")}</td></tr>`).join("")}</tbody></table></div></div>`
+    : `<div class="card"><h2>${t("No assigned agents yet")}</h2><p style="color:var(--muted);margin-bottom:0;">${t("Ask a workspace owner or admin to assign an agent to you. Issuing a token before that does not grant access.")}</p></div>`;
   const tokenRows = tokens.length
-    ? `<div class="card"><h2>Token history</h2><div class="table-wrap"><table><thead><tr><th>Token</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr></thead><tbody>${tokens.map((token) => `<tr><td><code>${escapeHtml(token.tokenPrefix)}...</code></td><td>${token.createdAt.toISOString().slice(0, 10)}</td><td>${token.lastUsedAt ? token.lastUsedAt.toISOString().slice(0, 16).replace("T", " ") : "—"}</td><td>${token.revokedAt ? '<span class="badge denied">revoked</span>' : '<span class="badge ok">active</span>'}</td><td>${token.revokedAt ? "" : `<form method="post" action="/mcp-tokens/${escapeHtml(token.id)}/revoke" style="margin:0;" onsubmit="return confirm('Revoke this MCP token? Existing MCP clients will lose access immediately.')"><button class="secondary" type="submit">Revoke</button></form>`}</td></tr>`).join("")}</tbody></table></div></div>`
+    ? `<div class="card"><h2>${t("Token history")}</h2><div class="table-wrap"><table><thead><tr><th>${t("Token")}</th><th>${t("Created")}</th><th>${t("Last used")}</th><th>${t("Status")}</th><th></th></tr></thead><tbody>${tokens.map((token) => `<tr><td><code>${escapeHtml(token.tokenPrefix)}...</code></td><td>${token.createdAt.toISOString().slice(0, 10)}</td><td>${token.lastUsedAt ? token.lastUsedAt.toISOString().slice(0, 16).replace("T", " ") : "—"}</td><td>${token.revokedAt ? `<span class="badge denied">${t("revoked")}</span>` : `<span class="badge ok">${t("active")}</span>`}</td><td>${token.revokedAt ? "" : `<form method="post" action="/mcp-tokens/${escapeHtml(token.id)}/revoke" style="margin:0;" onsubmit="return confirm(${jsString(t("Revoke this MCP token? Existing MCP clients will lose access immediately."))})"><button class="secondary" type="submit">${t("Revoke")}</button></form>`}</td></tr>`).join("")}</tbody></table></div></div>`
     : "";
-  return c.html(`<!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>MCP tokens — grantry</title>${FAVICON}<style>${CSS}</style></head><body>
+  return c.html(`<!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("MCP tokens")} — grantry</title>${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("mcp-tokens", user.email)}
-    <main><div class="scope-page-header"><div><div class="scope-page-kicker">${escapeHtml(active.displayName)}</div><h1>MCP tokens</h1><p class="scope-page-copy">Create one personal token for this workspace, then use every agent assigned to you here from the same MCP connection.</p></div></div>
-    ${joined ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">Joined <b>${escapeHtml(joined)}</b>. Your assigned agents are ready below; create your personal MCP token to connect.</div>` : ""}
-    ${revoked ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">Token revoked.</div>` : ""}
-    ${created ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">A new personal token was issued. It is shown below once.</div>` : ""}
-    ${activeToken ? `<div class="card"><h2>Your active token</h2><p style="margin:0;color:var(--muted);">For security the plaintext is shown only when it is created. Rotate it if you need a new copy.</p><form method="post" action="/mcp-tokens/rotate" style="margin-top:16px;"><button type="submit">Rotate personal token</button></form></div>` : `<div class="card"><h2>Create your personal token</h2><p style="color:var(--muted);">This token belongs only to ${escapeHtml(user.email)}. It is not visible to workspace admins.</p><form method="post" action="/mcp-tokens/rotate"><button type="submit" ${agents.length ? "" : "disabled title=\"No agents are assigned yet\""}>Create MCP token</button></form></div>`}
+    <main><div class="scope-page-header"><div><div class="scope-page-kicker">${escapeHtml(active.displayName)}</div><h1>${t("MCP tokens")}</h1><p class="scope-page-copy">${t("Create one personal token for this workspace, then use every agent assigned to you here from the same MCP connection.")}</p></div></div>
+    ${joined ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">${t("Joined <b>{workspace}</b>. Your assigned agents are ready below; create your personal MCP token to connect.", { workspace: escapeHtml(joined) })}</div>` : ""}
+    ${revoked ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">${t("Token revoked.")}</div>` : ""}
+    ${created ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">${t("A new personal token was issued. It is shown below once.")}</div>` : ""}
+    ${activeToken ? `<div class="card"><h2>${t("Your active token")}</h2><p style="margin:0;color:var(--muted);">${t("For security the plaintext is shown only when it is created. Rotate it if you need a new copy.")}</p><form method="post" action="/mcp-tokens/rotate" style="margin-top:16px;"><button type="submit">${t("Rotate personal token")}</button></form></div>` : `<div class="card"><h2>${t("Create your personal token")}</h2><p style="color:var(--muted);">${t("This token belongs only to {email}. It is not visible to workspace admins.", { email: escapeHtml(user.email) })}</p><form method="post" action="/mcp-tokens/rotate"><button type="submit" ${agents.length ? "" : `disabled title="${t("No agents are assigned yet")}"`}>${t("Create MCP token")}</button></form></div>`}
     ${agentRows}${tokenRows}
     </main></body></html>`);
 });
@@ -2993,7 +2993,7 @@ dashboardApp.post("/mcp-tokens/rotate", async (c) => {
     prisma.userMcpToken.updateMany({ where: { userId: user.id, workspaceId: active.id, revokedAt: null }, data: { revokedAt: new Date() } }),
     prisma.userMcpToken.create({ data: { userId: user.id, workspaceId: active.id, label: "Personal MCP token", hashedToken, tokenPrefix: token.slice(0, 16) } }),
   ]);
-  return c.html(`<!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>Personal MCP token — grantry</title>${FAVICON}<style>${CSS}</style></head><body>${NAV("mcp-tokens", user.email)}<main><h1>Your personal MCP token</h1><div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">This token is scoped to <b>${escapeHtml(active.displayName)}</b> and shown once. Workspace admins cannot retrieve it.</div>${agentTokenCard(token, "Save this token now. Rotating or revoking it disconnects every MCP client using it.", "🔑 Personal MCP token (save this — shown once!)")}${userMcpConfigCard(mcpOrigin(c), active.slug, token)}<p><a href="/mcp-tokens">Back to MCP tokens</a></p></main></body></html>`);
+  return c.html(`<!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Personal MCP token")} — grantry</title>${FAVICON}<style>${CSS}</style></head><body>${NAV("mcp-tokens", user.email)}<main><h1>${t("Your personal MCP token")}</h1><div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">${t("This token is scoped to <b>{workspace}</b> and shown once. Workspace admins cannot retrieve it.", { workspace: escapeHtml(active.displayName) })}</div>${agentTokenCard(token, t("Save this token now. Rotating or revoking it disconnects every MCP client using it."), t("🔑 Personal MCP token (save this — shown once!)"))}${userMcpConfigCard(mcpOrigin(c), active.slug, token)}<p><a href="/mcp-tokens">${t("Back to MCP tokens")}</a></p></main></body></html>`);
 });
 
 dashboardApp.post("/mcp-tokens/:id/revoke", async (c) => {
@@ -3258,10 +3258,10 @@ dashboardApp.get("/providers/custom/new", async (c) => {
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("providers", user?.email)}
     <main>
-      <p style="margin:0 0 12px;"><a href="/providers">&larr; Providers</a></p>
-      <h1>Add custom provider</h1>
+      <p style="margin:0 0 12px;"><a href="/providers">&larr; ${t("Providers")}</a></p>
+      <h1>${t("Add custom provider")}</h1>
       <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
-        Define a workspace-level provider that can be added to scopes from the service picker.
+        ${t("Define a workspace-level provider that can be added to scopes from the service picker.")}
       </p>
       <div class="card">
         ${customProviderForm("/providers/custom/new", "providers_custom")}
@@ -7060,12 +7060,12 @@ dashboardApp.get("/tenants/new", async (c) => {
               ${authType === "pat" ? `
               <div class="field cred-row">
                 ${reusableOptions.length ? `
-                <label for="reuse_${p.key}_${authType}">Connection</label>
+                <label for="reuse_${p.key}_${authType}">${t("Connection")}</label>
                 <select name="reuse_connection_${p.key}_${authType}" id="reuse_${p.key}_${authType}" class="reuse-select">
-                  ${reusableOptions.map((cn) => `<option value="${escapeHtml(cn.id)}">Use existing: ${escapeHtml(cn.label)} (${escapeHtml(cn.scope)})</option>`).join("")}
-                  <option value="">Paste a new credential instead</option>
+                  ${reusableOptions.map((cn) => `<option value="${escapeHtml(cn.id)}">${t("Use existing:")} ${escapeHtml(cn.label)} (${escapeHtml(cn.scope)})</option>`).join("")}
+                  <option value="">${t("Paste a new credential instead")}</option>
                 </select>
-                <div class="field-hint">Creates a new scope-scoped connection that uses the selected workspace credential.</div>
+                <div class="field-hint">${t("Creates a new scope-scoped connection that uses the selected workspace credential.")}</div>
                 ` : ""}
                 <label>${t("Credential")}</label>
                 ${renderCredentialFieldsHtml(p, { suffix: `${p.key}_${authType}` })
@@ -7074,7 +7074,7 @@ dashboardApp.get("/tenants/new", async (c) => {
                 <div class="field-hint">${escapeHtml(p.helpText)}</div>
                 ${p.tokenUrl ? `<div style="margin-top:4px;"><a href="${p.tokenUrl}" target="_blank" rel="noopener" style="font-size:13px;">${escapeHtml(tokenLinkLabel(p.key, p.label))}</a></div>` : ""}
                 <div class="reusing-notice" style="display:none;margin-top:6px;padding:8px;background:rgba(99,91,255,0.08);border-radius:6px;font-size:13px;">
-                  ♻️ Reusing the existing <code class="reusing-label"></code> connection. <a href="#" class="rotate-link" style="margin-left:4px;">rotate credential</a> to paste a new one.
+                  ${t('♻️ Reusing the existing <code class="reusing-label"></code> connection.')} <a href="#" class="rotate-link" style="margin-left:4px;">${t("rotate credential")}</a>${t(" to paste a new one.")}
                 </div>
               </div>` : ""}
               ${authType === "oauth" ? `
@@ -7083,23 +7083,23 @@ dashboardApp.get("/tenants/new", async (c) => {
                 ${requiresWorkspaceOAuthApp ? `
                 <label>${t("OAuth app settings")}</label>
                 <div class="field" style="margin-bottom:10px;">
-                  <label for="oauth_redirect_${p.key}_${authType}">Redirect URI</label>
+                  <label for="oauth_redirect_${p.key}_${authType}">${t("Redirect URI")}</label>
                   <div style="display:flex;gap:8px;align-items:center;">
                     <input type="text" id="oauth_redirect_${p.key}_${authType}" class="oauth-redirect-uri" readonly value="${escapeHtml(redirectUri)}" style="font-family:monospace;">
-                    <button type="button" class="secondary copy-oauth-redirect" data-copy-target="oauth_redirect_${p.key}_${authType}" style="white-space:nowrap;">Copy</button>
+                    <button type="button" class="secondary copy-oauth-redirect" data-copy-target="oauth_redirect_${p.key}_${authType}" style="white-space:nowrap;">${t("Copy")}</button>
                   </div>
                   <div class="field-hint">${t("Copy this redirect URI into the OAuth application settings in {provider}.", { provider: escapeHtml(p.label) })}</div>
                 </div>
                 <div class="field" style="margin-bottom:10px;">
-                  <label for="oauth_client_id_${p.key}_${authType}">Client ID</label>
+                  <label for="oauth_client_id_${p.key}_${authType}">${t("Client ID")}</label>
                   <input type="text" name="oauth_client_id_${p.key}_${authType}" id="oauth_client_id_${p.key}_${authType}" autocomplete="off" placeholder="Client ID" data-oauth-required="${requiresWorkspaceOAuthApp ? "1" : "0"}">
                 </div>
                 <div class="field" style="margin-bottom:10px;">
-                  <label for="oauth_client_secret_${p.key}_${authType}">Client Secret</label>
+                  <label for="oauth_client_secret_${p.key}_${authType}">${t("Client Secret")}</label>
                   <input type="password" name="oauth_client_secret_${p.key}_${authType}" id="oauth_client_secret_${p.key}_${authType}" autocomplete="off" placeholder="Client Secret" data-oauth-required="${requiresWorkspaceOAuthApp ? "1" : "0"}">
                 </div>
                 <div class="field" style="margin-bottom:0;">
-                  <label for="oauth_client_auth_method_${p.key}_${authType}">Client authentication method</label>
+                  <label for="oauth_client_auth_method_${p.key}_${authType}">${t("Client authentication method")}</label>
                   <select name="oauth_client_auth_method_${p.key}_${authType}" id="oauth_client_auth_method_${p.key}_${authType}">
                     <option value="CLIENT_SECRET_BASIC" ${defaultClientAuthMethod === "CLIENT_SECRET_BASIC" ? "selected" : ""}>CLIENT_SECRET_BASIC</option>
                     <option value="CLIENT_SECRET_POST" ${defaultClientAuthMethod === "CLIENT_SECRET_POST" ? "selected" : ""}>CLIENT_SECRET_POST</option>
@@ -7107,7 +7107,7 @@ dashboardApp.get("/tenants/new", async (c) => {
                 </div>
                 <div class="field-hint">${t("Stored on this workspace and used for this provider's OAuth redirects and token refreshes.")}</div>
                 ${serverCredentialHint(p.key)}
-                ${p.oauthSetupUrl ? `<div style="margin-top:4px;"><a href="${p.oauthSetupUrl}" target="_blank" rel="noopener" style="font-size:13px;">${p.key === "google_ads" ? "🔗 Register/manage Google OAuth client here →" : p.key === "yahoo_ads" ? "🔗 Register/manage LINE Yahoo Ads application here →" : `🔗 Register/manage your ${p.label} OAuth app here →`}</a></div>` : ""}
+                ${p.oauthSetupUrl ? `<div style="margin-top:4px;"><a href="${p.oauthSetupUrl}" target="_blank" rel="noopener" style="font-size:13px;">${p.key === "google_ads" ? "🔗 Register/manage Google OAuth client here →" : p.key === "yahoo_ads" ? "🔗 Register/manage LINE Yahoo Ads application here →" : t("🔗 Register/manage your {label} OAuth app here →", { label: p.label })}</a></div>` : ""}
                 ` : ""}
               </div>` : ""}
               <p class="field-hint" style="margin-bottom:0;">${t("This connection exposes provider tools according to the credential's own permissions.")}</p>
@@ -7409,12 +7409,12 @@ dashboardApp.post("/tenants/new", async (c) => {
       ${FAVICON}<style>${CSS}</style></head><body>
       ${NAV("tenants", user?.email)}
       <main>
-        <h1>⚠️  Scope key ${tenant ? `<code>${escapeHtml(tenant)}</code> ` : ""}can't be used</h1>
+        <h1>${t("⚠️  Scope key {key}can't be used", { key: tenant ? `<code>${escapeHtml(tenant)}</code> ` : "" })}</h1>
         <div class="card" style="border-color:#df1b41;">
-          <p>The <b>scope key</b> is the immutable key your agents send with every API call, so it's restricted to <b>lowercase letters, numbers, hyphens, and underscores</b> (<code>a-z 0-9 - _</code>). Japanese and other non-ASCII characters aren't allowed here.</p>
-          <p>👉 Put the Japanese (or any human-friendly) name in the <b>Display name</b> field instead — that's shown in dashboards and can be renamed anytime.</p>
-          ${hasSuggestion ? `<p>Suggested scope key based on what you typed: <code>${escapeHtml(suggestion)}</code></p>` : `<p>Example: scope key <code>kaihatsu</code> · display name <code>${escapeHtml(tenant || "開発環境")}</code></p>`}
-          <p><a href="/tenants/new">← Back to the wizard</a></p>
+          <p>${t("The <b>scope key</b> is the immutable key your agents send with every API call, so it's restricted to <b>lowercase letters, numbers, hyphens, and underscores</b> (<code>a-z 0-9 - _</code>). Japanese and other non-ASCII characters aren't allowed here.")}</p>
+          <p>${t("👉 Put the Japanese (or any human-friendly) name in the <b>Display name</b> field instead — that's shown in dashboards and can be renamed anytime.")}</p>
+          ${hasSuggestion ? `<p>${t("Suggested scope key based on what you typed: <code>{suggestion}</code>", { suggestion: escapeHtml(suggestion) })}</p>` : `<p>${t("Example: scope key <code>kaihatsu</code> · display name <code>{name}</code>", { name: escapeHtml(tenant || "開発環境") })}</p>`}
+          <p><a href="/tenants/new">${t("← Back to the wizard")}</a></p>
         </div>
       </main></body></html>
     `, 400);
@@ -8613,7 +8613,7 @@ oauthApp.get("/google-directory/start", async (c) => {
 
   const { clientId } = googleSignInClient;
   if (!clientId) {
-    return c.html(`<h1>Google sign-in not configured</h1><p>Set <code>AUTH_GOOGLE_CLIENT_ID</code> / <code>AUTH_GOOGLE_CLIENT_SECRET</code>. <a href="/workspaces">← Back</a></p>`, 500);
+    return c.html(`<h1>${t("Google sign-in not configured")}</h1><p>${t("Set <code>AUTH_GOOGLE_CLIENT_ID</code> / <code>AUTH_GOOGLE_CLIENT_SECRET</code>.")} <a href="/workspaces">${t("← Back")}</a></p>`, 500);
   }
 
   const state = crypto.randomUUID().replace(/-/g, "");
@@ -8754,7 +8754,7 @@ oauthApp.get("/:provider/start", async (c) => {
     payload.pkce_code_verifier = pkceVerifier;
   }
   if (!providerCredentialMode && !/^[a-z0-9_-]+$/.test(payload.tenant)) {
-    return c.html(`<h1>invalid scope</h1><p>Scope must match <code>[a-z0-9_-]+</code>. <a href="/tenants/new">← Back</a></p>`, 400);
+    return c.html(`<h1>${t("invalid scope")}</h1><p>${t("Scope must match <code>[a-z0-9_-]+</code>.")} <a href="/tenants/new">${t("← Back")}</a></p>`, 400);
   }
   const workspaceId = await resolveOAuthWorkspaceId(c, user.id, providerKey, payload);
   if (providerCredentialMode) {
@@ -8864,7 +8864,7 @@ oauthApp.get("/:provider/callback", async (c) => {
   // Look up + consume state
   const oauthState = await prisma.oAuthState.findUnique({ where: { state } });
   if (!oauthState || oauthState.expiresAt < new Date()) {
-    return c.html(`<h1>OAuth state expired or invalid</h1><p>Try <a href="/tenants/new">creating the scope</a> again.</p>`, 400);
+    return c.html(`<h1>${t("OAuth state expired or invalid")}</h1><p>${t('Try <a href="/tenants/new">creating the scope</a> again.')}</p>`, 400);
   }
   await prisma.oAuthState.delete({ where: { state } });
   if (oauthState.provider !== providerKey) {
@@ -9109,7 +9109,7 @@ oauthApp.get("/:provider/callback", async (c) => {
           orderBy: { createdAt: "desc" },
         });
     if (requestedConnectionId && !conn) {
-      return c.html(`<h1>connection not found for reconnect</h1><p>The requested connection does not belong to this scope/provider. <a href="/tenants/${effectiveTenant}/edit">Back</a></p>`, 404);
+      return c.html(`<h1>${t("connection not found for reconnect")}</h1><p>${t("The requested connection does not belong to this scope/provider.")} <a href="/tenants/${effectiveTenant}/edit">${t("Back")}</a></p>`, 404);
     }
     const data = {
       encryptedCredential: encrypt(accessToken),
@@ -9253,25 +9253,25 @@ oauthApp.get("/:provider/callback", async (c) => {
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
-      <h1>✓ ${escapeHtml(providerDef.label)} connected · scope <code>${effectiveTenant}</code> created</h1>
+      <h1>${t("✓ {label} connected · scope <code>{scope}</code> created", { label: escapeHtml(providerDef.label), scope: effectiveTenant })}</h1>
       ${googleAdsConnectionNeedsDeveloperToken ? `
       <div class="card" style="border-color:#f0b429;background:rgba(240,180,41,0.08);">
-        <h2>Google Ads API token still required</h2>
+        <h2>${t("Google Ads API token still required")}</h2>
         <p>OAuth は完了しましたが、Google Ads API を呼ぶには Google Ads API Center の <b>Developer token</b> も必要です。</p>
         <p>次の画面で <code>google_ads</code> connection の <b>Developer token</b> 欄に貼って保存してください。</p>
-        <p><a href="/tenants/${effectiveTenant}/edit">Open scope settings →</a> · <a href="https://ads.google.com/aw/apicenter" target="_blank" rel="noopener">Open Google Ads API Center →</a></p>
+        <p><a href="/tenants/${effectiveTenant}/edit">${t("Open scope settings →")}</a> · <a href="https://ads.google.com/aw/apicenter" target="_blank" rel="noopener">${t("Open Google Ads API Center →")}</a></p>
       </div>` : ""}
       <div class="card">
-        <h2>Connections (${allConns.length})</h2>
+        <h2>${t("Connections")} (${allConns.length})</h2>
         ${allConns.map((cn) => `<p><code>${escapeHtml(cn.label)}</code> · auth=<code>${escapeHtml(cn.authType)}</code> · scope=<code>${escapeHtml(cn.scope)}</code></p>`).join("")}
       </div>
       <div class="card">
-        <h2>Agent</h2>
-        <p><code>${agentRow.name}</code> · granted ${granted} connection(s)</p>
+        <h2>${t("Agent")}</h2>
+        <p><code>${agentRow.name}</code> · ${t("granted {count} connection(s)", { count: granted })}</p>
       </div>
       ${agentTokenCard(token, "")}
       ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true, effectiveTenant)}
-      <p><a href="/tenants">← Back to scopes</a> · <a href="/agents">Manage agents</a></p>
+      <p><a href="/tenants">${t("← Back to scopes")}</a> · <a href="/agents">${t("Manage agents")}</a></p>
     </main></body></html>
   `);
  } catch (err) {
@@ -9538,21 +9538,21 @@ dashboardApp.post("/tenants/:scope/agents/assign-existing", async (c) => {
   const granted = await grantTenantConnectionsToAgent(rowsWhere, agent.id, scope, user.id);
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Agent assigned — grantry</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>${t("Agent assigned")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
-      <h1>✓ Agent <code>${escapeHtml(agent.name)}</code> can use <code>${escapeHtml(scope)}</code></h1>
+      <h1>${t("✓ Agent <code>{name}</code> can use <code>{scope}</code>", { name: escapeHtml(agent.name), scope: escapeHtml(scope) })}</h1>
       <div class="card">
-        <h2>Connection grants</h2>
-        <p>Granted ${granted} enabled connection(s) for this scope.</p>
+        <h2>${t("Connection grants")}</h2>
+        <p>${t("Granted {count} enabled connection(s) for this scope.", { count: granted })}</p>
       </div>
       <div class="card">
-        <h2>Token</h2>
-        <p>This agent keeps its existing token. The plaintext token cannot be shown again; rotate it from the agent page if you need a fresh copy.</p>
+        <h2>${t("Token")}</h2>
+        <p>${t("This agent keeps its existing token. The plaintext token cannot be shown again; rotate it from the agent page if you need a fresh copy.")}</p>
         ${mcpConfigCard(mcpOrigin(c), agent.name, "", false, scope)}
       </div>
-      <p><a href="/tenants/${scope}/agents/setup?assigned=${granted}">Back to agent setup</a> · <a href="/agents/${agent.id}">Open agent</a></p>
+      <p><a href="/tenants/${scope}/agents/setup?assigned=${granted}">${t("Back to agent setup")}</a> · <a href="/agents/${agent.id}">${t("Open agent")}</a></p>
     </main></body></html>
   `);
 });
@@ -9609,32 +9609,32 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
   const granted = await grantTenantConnectionsToAgent(rowsWhere, agentRow.id, scope, user.id);
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Agent created — grantry</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>${t("Agent created")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
-      <h1>✓ New agent <code>${agentRow.name}</code> added to <code>${scope}</code></h1>
+      <h1>${t("✓ New agent <code>{name}</code> added to <code>{scope}</code>", { name: agentRow.name, scope })}</h1>
       <div class="card">
-        <h2>Connection</h2>
-        <p>Reused the existing <code>${scope}</code> connection(s) — no new PAT/OAuth needed.</p>
+        <h2>${t("Connection")}</h2>
+        <p>${t("Reused the existing <code>{scope}</code> connection(s) — no new PAT/OAuth needed.", { scope })}</p>
       </div>
       <div class="card">
-        <h2>Connection grants</h2>
-        <p>Granted ${granted} connection(s) for <code>${escapeHtml(scope)}</code>.</p>
+        <h2>${t("Connection grants")}</h2>
+        <p>${t("Granted {count} connection(s) for <code>{scope}</code>.", { count: granted, scope: escapeHtml(scope) })}</p>
       </div>
       ${agentTokenCard(token)}
       ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true, scope)}
       <div class="card">
-        <h2>Test it</h2>
+        <h2>${t("Test it")}</h2>
         <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
   -H "Authorization: Bearer ${token}" \\
   -H "Content-Type: application/json" \\
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping"}}'</pre>
       </div>
       <p>
-        <a href="/tenants/${scope}/edit">← Back to ${scope}</a> ·
-        <a href="/tenants/${scope}/edit">Add another agent</a> ·
-        <a href="/agents">Manage all agents</a>
+        <a href="/tenants/${scope}/edit">${t("← Back to {scope}", { scope })}</a> ·
+        <a href="/tenants/${scope}/edit">${t("Add another agent")}</a> ·
+        <a href="/agents">${t("Manage all agents")}</a>
       </p>
     </main></body></html>
   `);
@@ -9656,7 +9656,7 @@ dashboardApp.post("/tenants/:scope/delete", async (c) => {
     select: { id: true, label: true },
   });
   if (conns.length === 0 && !access) {
-    return c.html(`<h1>No scope or connections found for scope '${scope}' (yours)</h1>`, 404);
+    return c.html(`<h1>${t("No scope or connections found for scope '{scope}' (yours)", { scope })}</h1>`, 404);
   }
 
   // 2) Find legacy role rows for this scope so deleting the tenant also cleans
@@ -9684,16 +9684,16 @@ dashboardApp.post("/tenants/:scope/delete", async (c) => {
   await prisma.tenant.deleteMany({ where: { slug: scope, ...rowsWhere } });
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Deleted — grantry</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>${t("Deleted")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
-      <h1>✓ Deleted scope <code>${scope}</code></h1>
+      <h1>${t("✓ Deleted scope <code>{scope}</code>", { scope })}</h1>
       <div class="card">
-        <p>Removed <b>${connDelete.count}</b> connection(s). Related connection grants were removed automatically.</p>
-        ${roleDelete.count ? `<p class="field-hint">Also removed ${roleDelete.count} legacy role row(s).</p>` : ""}
+        <p>${t("Removed <b>{count}</b> connection(s). Related connection grants were removed automatically.", { count: connDelete.count })}</p>
+        ${roleDelete.count ? `<p class="field-hint">${t("Also removed {count} legacy role row(s).", { count: roleDelete.count })}</p>` : ""}
       </div>
-      <p><a href="/tenants">← Back to all scopes</a></p>
+      <p><a href="/tenants">${t("← Back to all scopes")}</a></p>
     </main></body></html>
   `);
 });
@@ -9731,17 +9731,17 @@ dashboardApp.post("/tenants/bulk-delete", async (c) => {
     detail.push(`<li><code>${escapeHtml(scope)}</code>: ${connDelete.count} connection(s)</li>`);
   }
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Bulk deleted — grantry</title>
+    <!doctype html><html><head><meta charset="utf-8"><title>${t("Bulk deleted")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("tenants", user?.email)}
     <main>
-      <h1>✓ Bulk deleted ${scopes.length} scope(s)</h1>
+      <h1>${t("✓ Bulk deleted {count} scope(s)", { count: scopes.length })}</h1>
       <div class="card">
-        <p>Total: <b>${conns}</b> connection(s) removed. Related connection grants were removed automatically.</p>
-        ${legacyRoles ? `<p class="field-hint">Also removed ${legacyRoles} legacy role row(s).</p>` : ""}
+        <p>${t("Total: <b>{count}</b> connection(s) removed. Related connection grants were removed automatically.", { count: conns })}</p>
+        ${legacyRoles ? `<p class="field-hint">${t("Also removed {count} legacy role row(s).", { count: legacyRoles })}</p>` : ""}
         <ul>${detail.join("")}</ul>
       </div>
-      <p><a href="/tenants">← Back to all scopes</a></p>
+      <p><a href="/tenants">${t("← Back to all scopes")}</a></p>
     </main></body></html>
   `);
 });
