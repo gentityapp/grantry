@@ -18,7 +18,7 @@ import { credentialMetadataForProviderDef, recordRuntimeCallHealth } from "./con
 import { isSweepRunning, runConnectionHealthSweep } from "./health_sweep.js";
 import { credentialForConnection } from "./mcp.js";
 import { agentAssignedEmail, sendSystemEmail } from "./email.js";
-import { adminWorkspacesFor, connectableAgentsFor, connectableAgentsForWorkspace, userMayUseAgent } from "./workspaces.js";
+import { adminWorkspacesFor, connectableAgentsFor, connectableAgentsForWorkspace, ensurePersonalWorkspace, userMayUseAgent } from "./workspaces.js";
 import { t, htmlLang, currentLocale } from "./i18n.js";
 import nodeCrypto from "node:crypto";
 
@@ -1624,11 +1624,31 @@ async function requireVerifiedDbSessionUser(c: any, nextPath = requestPathWithQu
 // rides through the OAuth provider redirect back to /oauth/:p/callback). Falls
 // back to the user's owner (personal) workspace, then their first membership.
 async function resolveActiveWorkspace(c: any, userId: string) {
-  const memberships = await prisma.workspaceMember.findMany({
+  let memberships = await prisma.workspaceMember.findMany({
     where: { userId },
     include: { workspace: true },
     orderBy: { createdAt: "asc" },
   });
+  if (!memberships.length) {
+    // An account with no workspace cannot own anything: tenants, agents and
+    // connections all need a workspaceId, and provider credentials refuse to
+    // be created without one. Signup provisions it, but heal older accounts
+    // (and any failed hook) here rather than let the next OAuth callback die
+    // after the provider has already issued tokens.
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true, email: true, name: true } });
+    if (user) {
+      try {
+        await ensurePersonalWorkspace(user);
+        memberships = await prisma.workspaceMember.findMany({
+          where: { userId },
+          include: { workspace: true },
+          orderBy: { createdAt: "asc" },
+        });
+      } catch (e) {
+        console.error(`[workspaces] failed to provision personal workspace for ${userId}:`, e);
+      }
+    }
+  }
   if (!memberships.length) return { memberships, active: null as (typeof memberships)[number]["workspace"] | null };
   const cookieId = getCookie(c, "gn_ws");
   const active =

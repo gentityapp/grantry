@@ -95,3 +95,60 @@ export async function adminWorkspacesFor(userId: string) {
     select: { role: true, workspace: { select: { id: true, slug: true, displayName: true } } },
   });
 }
+
+// ---------- Personal workspace provisioning ----------
+// Every user needs at least one workspace: tenants, agents and connections all
+// carry a workspaceId, and provider credentials refuse to be created without
+// one (provider_credentials.ts). scripts/backfill-workspaces.mjs covers this on
+// every boot, but a user who signs up between two boots has none — and the
+// failure only surfaces at the *end* of an OAuth flow, after the provider has
+// already issued tokens ("workspace_id is required to share provider
+// credentials"). So provision it at signup, and heal lazily on session too.
+//
+// Idempotent by design: an existing owner membership short-circuits, and the
+// slug loop mirrors the backfill script so wire keys (/mcp/w/<slug>) match.
+function slugifyWorkspace(base: string): string {
+  return (
+    base
+      .toLowerCase()
+      .replace(/@.*$/, "")
+      .replace(/[^a-z0-9-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 40) || "workspace"
+  );
+}
+
+export async function ensurePersonalWorkspace(user: { id: string; email?: string | null; name?: string | null }): Promise<string> {
+  const existing = await prisma.workspaceMember.findFirst({
+    where: { userId: user.id, role: "owner" },
+    select: { workspaceId: true },
+  });
+  if (existing) return existing.workspaceId;
+
+  const base = slugifyWorkspace(user.email || user.name || user.id);
+  for (let i = 1; ; i++) {
+    const slug = i === 1 ? base : `${base}-${i}`;
+    if (await prisma.workspace.findUnique({ where: { slug }, select: { id: true } })) continue;
+    try {
+      const ws = await prisma.workspace.create({
+        data: {
+          slug,
+          displayName: user.name ? `${user.name}'s workspace` : slug,
+          members: { create: { userId: user.id, role: "owner" } },
+        },
+        select: { id: true },
+      });
+      return ws.id;
+    } catch (e: any) {
+      // Slug taken between the check and the create, or a concurrent request
+      // already provisioned this user's workspace — re-read, else try the next
+      // slug.
+      if (e?.code !== "P2002") throw e;
+      const raced = await prisma.workspaceMember.findFirst({
+        where: { userId: user.id, role: "owner" },
+        select: { workspaceId: true },
+      });
+      if (raced) return raced.workspaceId;
+    }
+  }
+}

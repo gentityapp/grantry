@@ -5,6 +5,7 @@ import { prismaAdapter } from "better-auth/adapters/prisma";
 import { mcp } from "better-auth/plugins";
 import { prisma } from "./db.js";
 import { sendSystemEmail } from "./email.js";
+import { ensurePersonalWorkspace } from "./workspaces.js";
 import { t, htmlLang } from "./i18n.js";
 
 const googleSignInClientId =
@@ -124,6 +125,26 @@ function consentHTML(props: {
 
 export const auth = betterAuth({
   database: prismaAdapter(prisma, { provider: "postgresql" }),
+  databaseHooks: {
+    user: {
+      create: {
+        // Give every new account its personal workspace immediately. Without
+        // one, the first OAuth connect dies at the callback — after the
+        // provider already issued tokens — with "workspace_id is required to
+        // share provider credentials". scripts/backfill-workspaces.mjs only
+        // closes that gap at the next boot.
+        after: async (user) => {
+          try {
+            await ensurePersonalWorkspace(user as { id: string; email?: string | null; name?: string | null });
+          } catch (e) {
+            // Never block signup on this; resolveActiveWorkspace heals it on
+            // the next authenticated request, and the boot backfill after that.
+            console.error(`[auth] failed to provision personal workspace for ${user.id}:`, e);
+          }
+        },
+      },
+    },
+  },
   secret: process.env.BETTER_AUTH_SECRET,
   baseURL: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
   // Extra origins that may serve the dashboard (e.g. the legacy Railway
