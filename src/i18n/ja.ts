@@ -241,6 +241,8 @@ export const ja: Record<string, string> = {
   "{count} left out (max {max} per submit)": "{count} 件は上限（1 回あたり {max} 件）を超えたため未送信",
   "Expires": "有効期限",
   "Link": "リンク",
+  "Resend": "再送信",
+  "Invite resent to {email}": "{email} に招待を再送信しました",
   "Revoke": "取り消し",
   "Delete workspace": "ワークスペースを削除",
   "This permanently deletes this workspace and its members, invites, agents, connections, tenants, provider settings, and credentials.":

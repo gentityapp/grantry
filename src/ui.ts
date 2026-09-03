@@ -2341,7 +2341,16 @@ dashboardApp.get("/workspaces", async (c) => {
         <td>${escapeHtml(inv.email)}</td><td>${escapeHtml(inv.role)}</td>
         <td><code>${inv.expiresAt.toISOString().slice(0, 10)}</code></td>
         <td><code style="font-size:11px;">${escapeHtml(BASE_URL())}/invite/${escapeHtml(inv.token)}</code></td>
-        <td><form method="post" action="/workspaces/${ws.id}/invites/${inv.id}/revoke" style="margin:0;"><button type="submit" class="secondary" style="font-size:12px;padding:4px 8px;">${t("Revoke")}</button></form></td>
+        <td>
+          <div class="row" style="gap:6px;justify-content:flex-end;flex-wrap:nowrap;">
+            <form method="post" action="/workspaces/${ws.id}/invites/${inv.id}/resend" style="margin:0;">
+              <button type="submit" class="secondary" style="font-size:12px;padding:4px 8px;">${t("Resend")}</button>
+            </form>
+            <form method="post" action="/workspaces/${ws.id}/invites/${inv.id}/revoke" style="margin:0;">
+              <button type="submit" class="secondary" style="font-size:12px;padding:4px 8px;">${t("Revoke")}</button>
+            </form>
+          </div>
+        </td>
       </tr>`).join("")}
       </tbody></table>` : ""}
 
@@ -2442,6 +2451,35 @@ dashboardApp.post("/workspaces/:id/delete", async (c) => {
 
 // One invite: row + email. Shared by the single-address form and the Google
 // Workspace directory bulk invite, so both produce identical invites.
+function newWorkspaceInviteToken() {
+  return nodeCrypto.randomBytes(24).toString("hex");
+}
+
+function newWorkspaceInviteExpiresAt() {
+  return new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+}
+
+async function sendWorkspaceInviteEmail(args: {
+  workspaceName: string;
+  email: string;
+  token: string;
+  invitedByEmail: string;
+}) {
+  const link = `${BASE_URL()}/invite/${args.token}`;
+  try {
+    await sendSystemEmail({
+      to: args.email,
+      subject: `You're invited to the ${args.workspaceName || "grantry"} workspace on grantry`,
+      text: `${args.invitedByEmail} invited you to the "${args.workspaceName}" workspace on grantry.\n\nAccept the invite (valid for 7 days):\n${link}\n\nAfter joining, connect Claude to grantry with the workspace connector URL shown on your Workspace page.`,
+      html: `<p><b>${escapeHtml(args.invitedByEmail)}</b> invited you to the <b>${escapeHtml(args.workspaceName)}</b> workspace on grantry.</p>
+<p><a href="${link}">Accept the invite</a> (valid for 7 days)</p>
+<p style="color:#888;font-size:13px;">After joining, connect Claude to grantry with the workspace connector URL shown on your Workspace page.</p>`,
+    });
+  } catch (err) {
+    console.error("[workspace] invite email failed:", err);
+  }
+}
+
 async function createWorkspaceInvite(args: {
   workspaceId: string;
   workspaceName: string;
@@ -2450,7 +2488,7 @@ async function createWorkspaceInvite(args: {
   agentIds: string[];
   invitedBy: { id: string; email: string };
 }) {
-  const token = nodeCrypto.randomBytes(24).toString("hex");
+  const token = newWorkspaceInviteToken();
   await prisma.workspaceInvite.create({
     data: {
       workspaceId: args.workspaceId,
@@ -2459,22 +2497,15 @@ async function createWorkspaceInvite(args: {
       token,
       invitedById: args.invitedBy.id,
       agentIds: JSON.stringify(args.agentIds),
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      expiresAt: newWorkspaceInviteExpiresAt(),
     },
   });
-  const link = `${BASE_URL()}/invite/${token}`;
-  try {
-    await sendSystemEmail({
-      to: args.email,
-      subject: `You're invited to the ${args.workspaceName || "grantry"} workspace on grantry`,
-      text: `${args.invitedBy.email} invited you to the "${args.workspaceName}" workspace on grantry.\n\nAccept the invite (valid for 7 days):\n${link}\n\nAfter joining, connect Claude to grantry with the workspace connector URL shown on your Workspace page.`,
-      html: `<p><b>${escapeHtml(args.invitedBy.email)}</b> invited you to the <b>${escapeHtml(args.workspaceName)}</b> workspace on grantry.</p>
-<p><a href="${link}">Accept the invite</a> (valid for 7 days)</p>
-<p style="color:#888;font-size:13px;">After joining, connect Claude to grantry with the workspace connector URL shown on your Workspace page.</p>`,
-    });
-  } catch (err) {
-    console.error("[workspace] invite email failed:", err);
-  }
+  await sendWorkspaceInviteEmail({
+    workspaceName: args.workspaceName,
+    email: args.email,
+    token,
+    invitedByEmail: args.invitedBy.email,
+  });
 }
 
 // Only agents that actually live in this workspace may be pre-assigned.
@@ -2793,6 +2824,35 @@ dashboardApp.post("/workspaces/:id/invites/:inviteId/revoke", async (c) => {
   if (!(await requireWsAdmin(c, wsId))) return c.redirect("/login");
   await prisma.workspaceInvite.deleteMany({ where: { id: c.req.param("inviteId"), workspaceId: wsId } });
   return c.redirect("/workspaces?ok=Invite%20revoked");
+});
+
+dashboardApp.post("/workspaces/:id/invites/:inviteId/resend", async (c) => {
+  const wsId = c.req.param("id");
+  const admin = await requireWsAdmin(c, wsId);
+  if (!admin) return c.redirect("/login");
+
+  const invite = await prisma.workspaceInvite.findFirst({
+    where: { id: c.req.param("inviteId"), workspaceId: wsId, acceptedAt: null },
+    include: { workspace: { select: { displayName: true } } },
+  });
+  if (!invite) return c.redirect(`/workspaces?ok=${encodeURIComponent("Invite not found")}`);
+
+  const token = newWorkspaceInviteToken();
+  await prisma.workspaceInvite.update({
+    where: { id: invite.id },
+    data: {
+      token,
+      invitedById: admin.user.id,
+      expiresAt: newWorkspaceInviteExpiresAt(),
+    },
+  });
+  await sendWorkspaceInviteEmail({
+    workspaceName: invite.workspace.displayName,
+    email: invite.email,
+    token,
+    invitedByEmail: admin.user.email,
+  });
+  return c.redirect(`/workspaces?ok=${encodeURIComponent(t("Invite resent to {email}", { email: invite.email }))}`);
 });
 
 dashboardApp.post("/workspaces/:id/assign", async (c) => {
