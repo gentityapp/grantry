@@ -83,13 +83,13 @@ export async function sendSystemEmail(args: {
   subject: string;
   text: string;
   html?: string;
-}): Promise<void> {
+}): Promise<string | null> {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.SYSTEM_EMAIL_FROM ?? "grantry <noreply@app.grantry.ai>";
 
   if (!apiKey) {
     console.warn(`[email] RESEND_API_KEY unset — NOT sending to ${args.to} (${args.subject}). Body:\n${args.text}`);
-    return;
+    return null;
   }
 
   const res = await fetch("https://api.resend.com/emails", {
@@ -110,4 +110,6 @@ export async function sendSystemEmail(args: {
     const body = await res.text().catch(() => "");
     throw new Error(`resend send failed: ${res.status} ${body.slice(0, 300)}`);
   }
+  const body = await res.json().catch(() => null) as { id?: string } | null;
+  return body?.id ?? null;
 }

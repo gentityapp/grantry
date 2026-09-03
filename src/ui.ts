@@ -2464,17 +2464,23 @@ async function sendWorkspaceInviteEmail(args: {
   email: string;
   token: string;
   invitedByEmail: string;
+  resend?: boolean;
 }) {
   const link = `${BASE_URL()}/invite/${args.token}`;
+  const workspaceName = args.workspaceName || "grantry";
+  const subject = args.resend
+    ? `New invite link for the ${workspaceName} workspace on grantry`
+    : `You're invited to the ${workspaceName} workspace on grantry`;
   try {
-    await sendSystemEmail({
+    const resendId = await sendSystemEmail({
       to: args.email,
-      subject: `You're invited to the ${args.workspaceName || "grantry"} workspace on grantry`,
-      text: `${args.invitedByEmail} invited you to the "${args.workspaceName}" workspace on grantry.\n\nAccept the invite (valid for 7 days):\n${link}\n\nAfter joining, connect Claude to grantry with the workspace connector URL shown on your Workspace page.`,
-      html: `<p><b>${escapeHtml(args.invitedByEmail)}</b> invited you to the <b>${escapeHtml(args.workspaceName)}</b> workspace on grantry.</p>
+      subject,
+      text: `${args.invitedByEmail} invited you to the "${workspaceName}" workspace on grantry.\n\nAccept the invite (valid for 7 days):\n${link}\n\nAfter joining, connect Claude to grantry with the workspace connector URL shown on your Workspace page.`,
+      html: `<p><b>${escapeHtml(args.invitedByEmail)}</b> invited you to the <b>${escapeHtml(workspaceName)}</b> workspace on grantry.</p>
 <p><a href="${link}">Accept the invite</a> (valid for 7 days)</p>
 <p style="color:#888;font-size:13px;">After joining, connect Claude to grantry with the workspace connector URL shown on your Workspace page.</p>`,
     });
+    console.log("[workspace] invite email sent", { to: args.email, resendId, resent: Boolean(args.resend) });
   } catch (err) {
     console.error("[workspace] invite email failed:", err);
   }
@@ -2851,6 +2857,7 @@ dashboardApp.post("/workspaces/:id/invites/:inviteId/resend", async (c) => {
     email: invite.email,
     token,
     invitedByEmail: admin.user.email,
+    resend: true,
   });
   return c.redirect(`/workspaces?ok=${encodeURIComponent(t("Invite resent to {email}", { email: invite.email }))}`);
 });
