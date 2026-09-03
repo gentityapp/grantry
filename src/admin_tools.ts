@@ -28,6 +28,7 @@ import { ensureTenant } from "./tenants.js";
 import { getProviderForWorkspace } from "./connectors/registry.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
 import { connectionCredentialData } from "./provider_credentials.js";
+import { agentAssignedEmail, sendSystemEmail } from "./email.js";
 
 export const ADMIN_TOOLS = [
   "grantry/list_agents",
@@ -37,6 +38,8 @@ export const ADMIN_TOOLS = [
   "grantry/create_agent",
   "grantry/update_agent",
   "grantry/delete_agent",
+  "grantry/assign_agent",
+  "grantry/unassign_agent",
   "grantry/set_runbook",
   "grantry/rotate_agent_token",
   "grantry/grant_scope",
@@ -94,6 +97,13 @@ function requireString(args: Record<string, unknown>, key: string): string {
   return v.trim();
 }
 
+function optionalBoolean(args: Record<string, unknown>, key: string, fallback: boolean): boolean {
+  const v = args[key];
+  if (v === undefined || v === null) return fallback;
+  if (typeof v !== "boolean") throw new Error(`'${key}' must be a boolean`);
+  return v;
+}
+
 /** Resolve a target agent inside the key's boundary. */
 async function targetAgent(ctx: AdminContext, agentId: string) {
   const target = await prisma.agent.findFirst({
@@ -101,6 +111,36 @@ async function targetAgent(ctx: AdminContext, agentId: string) {
   });
   if (!target) throw new Error(`agent not found in this workspace: ${agentId}`);
   return target;
+}
+
+function requireWorkspace(ctx: AdminContext): string {
+  if (!ctx.workspaceId) {
+    throw new Error("agent assignment requires a workspace-scoped grantry admin key");
+  }
+  return ctx.workspaceId;
+}
+
+async function targetWorkspaceMember(ctx: AdminContext, args: Record<string, unknown>) {
+  const workspaceId = requireWorkspace(ctx);
+  const userId = typeof args.user_id === "string" ? args.user_id.trim() : "";
+  const userEmail = typeof args.user_email === "string" ? args.user_email.trim().toLowerCase() : "";
+  if (!userId && !userEmail) throw new Error("'user_id' or 'user_email' is required");
+
+  const member = await prisma.workspaceMember.findFirst({
+    where: {
+      workspaceId,
+      user: userId ? { id: userId } : { email: userEmail },
+    },
+    include: { user: { select: { id: true, email: true, name: true } }, workspace: { select: { displayName: true } } },
+  });
+  if (!member) {
+    throw new Error(
+      userId
+        ? `user is not a member of this workspace: ${userId}`
+        : `user is not a member of this workspace: ${userEmail}`,
+    );
+  }
+  return member;
 }
 
 async function agentScopes(agentId: string): Promise<string[]> {
@@ -392,6 +432,83 @@ export async function callAdminTool(
       payload,
       // The summary is what stays legible in the audit log after agentId is nulled.
       summary: `deleted agent ${target.name} (${target.id}, token ${target.tokenPrefix}…, last used ${target.lastUsedAt ? target.lastUsedAt.toISOString() : "never"}; removed ${grants} connection grant(s), ${assignments} assignment(s), scopes: ${scopes.join(", ") || "none"})`,
+    };
+  }
+
+  if (toolName === "grantry/assign_agent") {
+    const workspaceId = requireWorkspace(ctx);
+    const target = await targetAgent(ctx, requireString(args, "agent_id"));
+    if (target.workspaceId !== workspaceId) throw new Error(`agent is not in this workspace: ${target.id}`);
+    if (!target.enabled) throw new Error(`agent is disabled: ${target.name} (${target.id})`);
+    const member = await targetWorkspaceMember(ctx, args);
+    const notify = optionalBoolean(args, "notify", true);
+    const created = await prisma.agentAssignment
+      .create({ data: { agentId: target.id, userId: member.userId } })
+      .then(() => true)
+      .catch((err: any) => {
+        if (err?.code === "P2002") return false;
+        throw err;
+      });
+
+    let notification: "sent" | "skipped" | "already_assigned" | "failed" = created ? "skipped" : "already_assigned";
+    if (created && notify) {
+      try {
+        const admin = await prisma.user.findUnique({ where: { id: ctx.ownerId }, select: { email: true } });
+        const body = agentAssignedEmail({
+          recipientName: member.user.name || null,
+          assignedByEmail: admin?.email ?? "grantry admin",
+          agentId: target.id,
+          agentName: target.name,
+          charter: target.description,
+          workspaceName: member.workspace.displayName,
+          baseUrl: dashboardOrigin(),
+        });
+        await sendSystemEmail({ to: member.user.email, ...body });
+        notification = "sent";
+      } catch (err) {
+        notification = "failed";
+        console.error("[grantry admin] assignment email failed:", err);
+      }
+    }
+
+    const payload = {
+      agent_id: target.id,
+      name: target.name,
+      user_id: member.user.id,
+      user_email: member.user.email,
+      user_name: member.user.name,
+      assigned: true,
+      created,
+      already_assigned: !created,
+      notification,
+    };
+    return {
+      payload,
+      summary: `${created ? "assigned" : "already assigned"} agent ${target.name} to ${member.user.email}`,
+    };
+  }
+
+  if (toolName === "grantry/unassign_agent") {
+    const workspaceId = requireWorkspace(ctx);
+    const target = await targetAgent(ctx, requireString(args, "agent_id"));
+    if (target.workspaceId !== workspaceId) throw new Error(`agent is not in this workspace: ${target.id}`);
+    const member = await targetWorkspaceMember(ctx, args);
+    const res = await prisma.agentAssignment.deleteMany({
+      where: { agentId: target.id, userId: member.userId, agent: { workspaceId } },
+    });
+    const payload = {
+      agent_id: target.id,
+      name: target.name,
+      user_id: member.user.id,
+      user_email: member.user.email,
+      user_name: member.user.name,
+      assigned: false,
+      revoked: res.count > 0,
+      already_unassigned: res.count === 0,
+    };
+    return {
+      payload,
+      summary: `${res.count > 0 ? "unassigned" : "already unassigned"} agent ${target.name} from ${member.user.email}`,
     };
   }
 
@@ -716,6 +833,27 @@ export function adminToolDescriptor(toolName: AdminToolName): { description: str
         description: "grantry admin: permanently delete a disabled agent. There is no undo — the token hash goes with the row, so the agent can only be recreated with a new token. Refuses an agent that is still enabled (disable it first with grantry_update_agent, confirm nothing broke, then delete), and refuses full_scope_manager / grantry_admin agents (delete those from the dashboard). The agent's audit-log entries are kept; the deletion itself is recorded with the agent's name and token prefix so the trail stays readable.",
         properties: {
           agent_id: { type: "string", description: "Agent id (from grantry_list_agents). The agent must already be disabled." },
+        },
+        required: ["agent_id"],
+      };
+    case "grantry/assign_agent":
+      return {
+        description: "grantry admin: assign an enabled agent to one workspace member so that person's user-mode MCP token may act through it. Idempotent. Sends the same assignment email as the dashboard unless notify=false.",
+        properties: {
+          agent_id: { type: "string", description: "Agent id (from grantry_list_agents). The agent must live in the admin key's workspace." },
+          user_id: { type: "string", description: "Workspace member user id. Pass either user_id or user_email." },
+          user_email: { type: "string", description: "Workspace member email. Pass either user_id or user_email." },
+          notify: { type: "boolean", description: "Whether to email the assigned user on a new assignment. Defaults to true. Duplicate assignments never email." },
+        },
+        required: ["agent_id"],
+      };
+    case "grantry/unassign_agent":
+      return {
+        description: "grantry admin: remove one person's assignment to an agent in this workspace. The person's existing user-mode MCP token loses access on the next request. Idempotent.",
+        properties: {
+          agent_id: { type: "string", description: "Agent id (from grantry_list_agents). The agent must live in the admin key's workspace." },
+          user_id: { type: "string", description: "Workspace member user id. Pass either user_id or user_email." },
+          user_email: { type: "string", description: "Workspace member email. Pass either user_id or user_email." },
         },
         required: ["agent_id"],
       };

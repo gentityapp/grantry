@@ -269,8 +269,8 @@ the same provider+scope; disambiguate with `auth_type` (`service_account` vs
 - **grantry (admin)** (gn_adm_ admin API key from `/api-keys`, connected as a
   normal `provider="grantry"` connection — see the Self-management section):
   `list_agents`, `list_tenants`, `list_connections`, `create_tenant`,
-  `create_agent`, `update_agent`, `rotate_agent_token`, `grant_scope`,
-  `revoke_scope`, `create_connection`
+  `create_agent`, `update_agent`, `assign_agent`, `unassign_agent`,
+  `rotate_agent_token`, `grant_scope`, `revoke_scope`, `create_connection`
 - **github** (PAT or OAuth; scopes `repo`, `read:user`):
   `list_repos`, `get_repo`, `get_file_contents`, `list_issues`, `create_issue`, `git_push_repo`, `create_repo`
 - **notion** (PAT): `list_dbs`, `get_page`, `query_db`, `create_page`,
@@ -826,6 +826,12 @@ Write (confirm before calling):
   hash is persisted. `scopes` grants every enabled non-admin connection at
   each scope.
 - `grantry_update_agent` (`agent_id`, `enabled?`, `charter?`).
+- `grantry_assign_agent` (`agent_id`, `user_email?`, `user_id?`, `notify?`) —
+  assigns an enabled agent to one workspace member for user-mode MCP access.
+  Idempotent. `notify` defaults to `true`; duplicate assignments do not email.
+- `grantry_unassign_agent` (`agent_id`, `user_email?`, `user_id?`) — removes
+  one member's assignment. Existing user-mode MCP tokens lose access on the
+  next request.
 - `grantry_rotate_agent_token` (`agent_id`) — returns the new token once; the
   old token dies immediately.
 - `grantry_grant_scope` / `grantry_revoke_scope` (`agent_id`, `target_scope`)

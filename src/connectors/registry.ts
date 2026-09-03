@@ -143,6 +143,8 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "grantry/create_agent",
       "grantry/update_agent",
       "grantry/delete_agent",
+      "grantry/assign_agent",
+      "grantry/unassign_agent",
       "grantry/set_runbook",
       "grantry/rotate_agent_token",
       "grantry/grant_scope",
