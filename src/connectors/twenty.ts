@@ -85,9 +85,34 @@ function idArg(args: TwentyArgs, snake: string, aliases: string[] = []) {
   throw new Error(`${snake} is required`);
 }
 
+function metadataPathArg(args: TwentyArgs) {
+  const raw = String(args.path ?? "").trim();
+  if (!raw) throw new Error("path is required (metadata path, e.g. /objects)");
+  const value = raw.startsWith("/") ? raw : `/${raw}`;
+  if (!/^\/[a-zA-Z0-9_/?=&.-]+$/.test(value)) throw new Error("path contains unsupported characters");
+  if (value.includes("..")) throw new Error("path must not contain '..'");
+  return value.startsWith("/metadata/") ? value : `/metadata${value}`;
+}
+
+function metadataMethodArg(args: TwentyArgs) {
+  const method = String(args.method ?? "GET").trim().toUpperCase();
+  if (!["GET", "POST", "PATCH"].includes(method)) throw new Error("method must be GET, POST, or PATCH");
+  return method;
+}
+
 export async function callTwentyTool(tool: string, args: TwentyArgs, credential: string) {
   if (tool === "twenty/list_objects") {
     return { structuredContent: await request(credential, "GET", "/rest/metadata/objects", undefined, tool) };
+  }
+
+  if (tool === "twenty/metadata_request") {
+    const method = metadataMethodArg(args);
+    const path = metadataPathArg(args);
+    const data = args.data;
+    if (method !== "GET" && (!data || typeof data !== "object" || Array.isArray(data))) {
+      throw new Error("data (object) is required for POST and PATCH metadata requests");
+    }
+    return { structuredContent: await request(credential, method, `/rest${path}`, method === "GET" ? undefined : data, tool, { path }) };
   }
 
   if (tool === "twenty/list_records") {

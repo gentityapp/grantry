@@ -2726,6 +2726,7 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
 
   // --- twenty ---
   if (toolName === "twenty/list_objects") { return {}; }
+  if (toolName === "twenty/metadata_request") { return { method: { type: "string", description: "Metadata API method: GET, POST, or PATCH." }, path: { type: "string", description: "Path under /rest/metadata, e.g. /objects or /fields." }, data: { type: "object", description: "Request body for POST/PATCH metadata calls." } }; }
   if (toolName === "twenty/list_records") { return { object: { type: "string", description: "Plural object name, e.g. people, companies, opportunities, or a custom object." }, filter: { type: "string", description: "Optional filter, e.g. name[ilike]:%acme% or emails.primaryEmail[eq]:a@b.com." }, order_by: { type: "string", description: "Optional sort, e.g. createdAt[DescNullsLast]." }, limit: { type: "number", description: "Max records (up to 60)." }, starting_after: { type: "string", description: "Cursor from a previous page (endCursor)." }, depth: { type: "number", description: "Relation depth 0-2." } }; }
   if (toolName === "twenty/get_record") { return { object: { type: "string", description: "Plural object name." }, record_id: { type: "string", description: "Record id (uuid)." }, }; }
   if (toolName === "twenty/create_record") { return { object: { type: "string", description: "Plural object name." }, data: { type: "object", description: "Field values, e.g. { name: { firstName, lastName } } for people." } }; }
@@ -3381,6 +3382,7 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "google_forms/list_responses") return ["form_id"];
   if (toolName === "google_forms/get_response") return ["form_id", "response_id"];
   if (toolName === "twenty/list_objects") return [];
+  if (toolName === "twenty/metadata_request") return ["path"];
   if (toolName === "twenty/list_records") return ["object"];
   if (toolName === "twenty/get_record") return ["object", "record_id"];
   if (toolName === "twenty/create_record") return ["object", "data"];
