@@ -508,9 +508,13 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       "hubspot/get_marketing_email_statistics",
       "hubspot/update_marketing_email",
       "hubspot/publish_marketing_email",
+      "hubspot/list_flows",
+      "hubspot/get_flow",
+      "hubspot/update_flow",
     ],
     toolScopeRequirements: {
       "hubspot/create_deal": ["crm.objects.deals.write"],
+      "hubspot/update_flow": ["automation"],
     },
     implemented: true,
   },
@@ -2757,6 +2761,20 @@ export function getProvider(key: string): ProviderDef | undefined {
 
 export function listProviders(): ProviderDef[] {
   return Object.values(PROVIDERS).filter((p) => p.implemented !== false);
+}
+
+export function providerCoverageStats(): {
+  implementedProviderCount: number;
+  runtimeMcpToolNameCount: number;
+} {
+  const providers = listProviders();
+  return {
+    implementedProviderCount: providers.length,
+    // Count the runtime registry after generic request helpers are appended.
+    // Use distinct names for public copy because a small number of aliases are
+    // intentionally exposed by more than one provider.
+    runtimeMcpToolNameCount: new Set(providers.flatMap((p) => p.tools)).size,
+  };
 }
 
 export function toolsForProvider(providerKey: string): string[] {

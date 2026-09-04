@@ -5,7 +5,7 @@ import { getCookie, setCookie } from "hono/cookie";
 import { auth, googleSignInClient } from "./auth.js";
 import { prisma } from "./db.js";
 import { decrypt, encrypt } from "./crypto.js";
-import { PROVIDERS, getProvider, getProviderForWorkspace, listProvidersForWorkspace, normalizePathPrefixes, toolsForProviderForWorkspace, validateCustomProviderKey } from "./connectors/registry.js";
+import { PROVIDERS, getProvider, getProviderForWorkspace, listProvidersForWorkspace, normalizePathPrefixes, providerCoverageStats, toolsForProviderForWorkspace, validateCustomProviderKey } from "./connectors/registry.js";
 import { providerIcon, providerIconMap } from "./connectors/icons.js";
 import { credentialMetadataForStorage, deriveCredentialHealth } from "./connectors/credential_meta.js";
 import { callGenericCheckConnection, callGenericListCapabilities, templateVarNames } from "./connectors/generic_request.js";
@@ -3687,7 +3687,9 @@ function envStatus(names: string[]): { present: boolean; variable: string; candi
 }
 
 // --- Public pages required for OAuth app review ---
-dashboardApp.get("/", (c) => c.html(publicPage(t("AI agent access control plane"), `
+dashboardApp.get("/", (c) => {
+  const stats = providerCoverageStats();
+  return c.html(publicPage(t("AI agent access control plane"), `
   <main class="public-main">
     <section class="public-hero">
       <p class="public-kicker">${t("Tenant-scoped MCP gateway")}</p>
@@ -3698,8 +3700,8 @@ dashboardApp.get("/", (c) => c.html(publicPage(t("AI agent access control plane"
         <a class="btn secondary" href="/docs">${t("View API docs")}</a>
       </div>
       <div class="public-stats" aria-label="${t("grantry platform coverage")}">
-        <div class="public-stat"><strong>90</strong><span>${t("implemented providers")}</span></div>
-        <div class="public-stat"><strong>700+</strong><span>${t("MCP tool names")}</span></div>
+        <div class="public-stat"><strong>${stats.implementedProviderCount}</strong><span>${t("implemented providers")}</span></div>
+        <div class="public-stat"><strong>${stats.runtimeMcpToolNameCount}</strong><span>${t("MCP tool names")}</span></div>
         <div class="public-stat"><strong>${t("Audit")}</strong><span>${t("tool calls by agent, scope, and connection")}</span></div>
       </div>
     </section>
@@ -3720,7 +3722,8 @@ dashboardApp.get("/", (c) => c.html(publicPage(t("AI agent access control plane"
       </div>
     </section>
   </main>
-`)));
+`));
+});
 
 dashboardApp.get("/privacy", (c) => c.html(publicPage("Privacy Policy", `
   <main class="legal-main">
