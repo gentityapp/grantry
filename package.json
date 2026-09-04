@@ -4,6 +4,9 @@
   "type": "module",
   "private": true,
   "description": "OAuth credential broker for AI agents (MCP-compatible)",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
