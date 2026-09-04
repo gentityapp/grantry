@@ -254,21 +254,26 @@ export const ja: Record<string, string> = {
     "まだワークスペースがありません。サイドバーの <b>+ 新しいワークスペース</b> から作成してください。",
 
   // ── Public home ────────────────────────────────────────────────────────
-  "OAuth credential broker for AI agents": "AI エージェントのための OAuth 認証情報ブローカー",
-  "OAuth credential broker for AI agents.": "AI エージェントのための OAuth 認証情報ブローカー。",
-  "grantry lets teams connect third-party services such as Google Analytics, Google Ads, Google Search Console, GitHub, Slack, HubSpot, and other business tools, then grant specific AI agents access to only the connections they are allowed to use.":
-    "grantry を使うと、Google Analytics、Google Ads、Google Search Console、GitHub、Slack、HubSpot などのサードパーティサービスをチームで接続し、特定の AI エージェントに、利用を許可した接続だけへのアクセスを付与できます。",
+  "AI agent access control plane": "AI エージェントのアクセス制御プレーン",
+  "Tenant-scoped MCP gateway": "テナントスコープ付き MCP ゲートウェイ",
+  "Control what AI agents can do in each customer environment.":
+    "AI エージェントが各顧客環境で何をしてよいかを制御する。",
+  "grantry centralizes OAuth, PAT, API key, service-account, and JSON credentials, exposes them as MCP tools, and lets teams grant each agent only the business-tool connections it should use.":
+    "grantry は OAuth、PAT、API キー、サービスアカウント、JSON 認証情報を一元管理し、MCP ツールとして公開します。チームは各エージェントに、利用すべき業務ツール接続だけを付与できます。",
   "Open dashboard": "ダッシュボードを開く",
-  "Read privacy policy": "プライバシーポリシーを読む",
-  "Connection control": "接続の制御",
-  "Workspace owners decide which provider connections each agent can use.":
-    "ワークスペースのオーナーが、各エージェントが使えるプロバイダー接続を決定します。",
-  "Provider-backed access": "プロバイダーに裏付けられたアクセス",
-  "Provider APIs continue to enforce their own account permissions and scopes.":
-    "プロバイダーの API は、独自のアカウント権限とスコープを引き続き適用します。",
-  "Audit visibility": "監査の可視性",
-  "Agent tool calls and connection usage are logged so teams can review activity.":
-    "エージェントのツール呼び出しと接続の利用はログに記録され、チームがアクティビティを確認できます。",
+  "View API docs": "API ドキュメントを見る",
+  "grantry platform coverage": "grantry プラットフォームのカバレッジ",
+  "implemented providers": "実装済みプロバイダー",
+  "MCP tool names": "MCP ツール名",
+  "tool calls by agent, scope, and connection": "エージェント・スコープ・接続ごとのツール実行",
+  "Give analysis agents read-only data, give operator agents write-capable connections, and revoke either without touching local MCP configs.":
+    "分析エージェントには読み取り専用データを、運用エージェントには書き込み可能な接続を付与できます。ローカル MCP 設定を触らずに、どちらも取り消せます。",
+  "Credential vault": "認証情報ボールト",
+  "Keep refresh tokens and API keys in grantry, not in prompts, repos, desktops, or individual agent environments.":
+    "refresh token や API キーを、プロンプト・リポジトリ・デスクトップ・個別エージェント環境ではなく grantry に保持します。",
+  "Model-neutral MCP": "モデル非依存 MCP",
+  "Use the same tenant-scoped tool gateway from Codex, Claude Code, Claude Desktop, or any compatible MCP client.":
+    "Codex、Claude Code、Claude Desktop、その他の互換 MCP クライアントから、同じテナントスコープ付きツールゲートウェイを使えます。",
 
   // ── Reset password ─────────────────────────────────────────────────────
   "Reset password": "パスワードの再設定",

@@ -680,8 +680,13 @@ const CSS = `
   .public-links { display: inline-flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 14px; }
   .public-main { margin: 0; max-width: none; padding: 0; }
   .public-hero { padding: clamp(56px, 9vw, 104px) clamp(20px, 5vw, 72px) clamp(44px, 6vw, 72px); max-width: 1080px; }
+  .public-kicker { color: var(--muted); font-size: 13px; font-weight: 700; letter-spacing: 0.08em; margin: 0 0 16px; text-transform: uppercase; }
   .public-hero h1 { font-size: clamp(36px, 6vw, 72px); line-height: 1.02; max-width: 900px; margin-bottom: 20px; }
   .public-hero p { max-width: 720px; font-size: 18px; color: var(--muted); margin: 0 0 28px; }
+  .public-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; max-width: 760px; margin: 30px 0 0; }
+  .public-stat { border-left: 2px solid var(--border); padding: 4px 0 4px 14px; }
+  .public-stat strong { display: block; color: var(--ink); font-size: 24px; line-height: 1.1; }
+  .public-stat span { color: var(--muted); font-size: 13px; }
   .public-band { border-top: 1px solid var(--border); background: var(--bg); padding: 34px clamp(20px, 5vw, 72px); }
   .public-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; max-width: 1080px; }
   .public-feature { background: var(--surface); border: 1px solid var(--border-default); border-radius: 12px; padding: 24px; box-shadow: var(--shadow-xs); }
@@ -711,6 +716,7 @@ const CSS = `
     .connection-table { min-width: 860px; }
     .connection-health-table { min-width: 1040px; }
     .public-topbar { align-items: flex-start; flex-direction: column; }
+    .public-stats { grid-template-columns: 1fr; }
     .public-grid { grid-template-columns: 1fr; }
   }
 `;
@@ -3651,29 +3657,35 @@ function envStatus(names: string[]): { present: boolean; variable: string; candi
 }
 
 // --- Public pages required for OAuth app review ---
-dashboardApp.get("/", (c) => c.html(publicPage(t("OAuth credential broker for AI agents"), `
+dashboardApp.get("/", (c) => c.html(publicPage(t("AI agent access control plane"), `
   <main class="public-main">
     <section class="public-hero">
-      <h1>${t("OAuth credential broker for AI agents.")}</h1>
-      <p>${t("grantry lets teams connect third-party services such as Google Analytics, Google Ads, Google Search Console, GitHub, Slack, HubSpot, and other business tools, then grant specific AI agents access to only the connections they are allowed to use.")}</p>
+      <p class="public-kicker">${t("Tenant-scoped MCP gateway")}</p>
+      <h1>${t("Control what AI agents can do in each customer environment.")}</h1>
+      <p>${t("grantry centralizes OAuth, PAT, API key, service-account, and JSON credentials, exposes them as MCP tools, and lets teams grant each agent only the business-tool connections it should use.")}</p>
       <div class="row">
         <a class="btn" href="/login">${t("Open dashboard")}</a>
-        <a class="btn secondary" href="/privacy">${t("Read privacy policy")}</a>
+        <a class="btn secondary" href="/docs">${t("View API docs")}</a>
+      </div>
+      <div class="public-stats" aria-label="${t("grantry platform coverage")}">
+        <div class="public-stat"><strong>90</strong><span>${t("implemented providers")}</span></div>
+        <div class="public-stat"><strong>700+</strong><span>${t("MCP tool names")}</span></div>
+        <div class="public-stat"><strong>${t("Audit")}</strong><span>${t("tool calls by agent, scope, and connection")}</span></div>
       </div>
     </section>
     <section class="public-band">
       <div class="public-grid">
         <div class="public-feature">
-          <h2>${t("Connection control")}</h2>
-          <p>${t("Workspace owners decide which provider connections each agent can use.")}</p>
+          <h2>${t("Connection grants")}</h2>
+          <p>${t("Give analysis agents read-only data, give operator agents write-capable connections, and revoke either without touching local MCP configs.")}</p>
         </div>
         <div class="public-feature">
-          <h2>${t("Provider-backed access")}</h2>
-          <p>${t("Provider APIs continue to enforce their own account permissions and scopes.")}</p>
+          <h2>${t("Credential vault")}</h2>
+          <p>${t("Keep refresh tokens and API keys in grantry, not in prompts, repos, desktops, or individual agent environments.")}</p>
         </div>
         <div class="public-feature">
-          <h2>${t("Audit visibility")}</h2>
-          <p>${t("Agent tool calls and connection usage are logged so teams can review activity.")}</p>
+          <h2>${t("Model-neutral MCP")}</h2>
+          <p>${t("Use the same tenant-scoped tool gateway from Codex, Claude Code, Claude Desktop, or any compatible MCP client.")}</p>
         </div>
       </div>
     </section>
