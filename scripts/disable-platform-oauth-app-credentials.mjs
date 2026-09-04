@@ -35,6 +35,7 @@ const PLATFORM_OAUTH_PROVIDERS = [
 const WORKSPACE_OAUTH_APP_PROVIDERS = [
   "moneyforward",
   "meta_ads",
+  "microsoft_teams",
 ];
 
 try {

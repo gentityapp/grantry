@@ -1344,6 +1344,25 @@ export async function inspectCredential(provider: string, authType: string, toke
       return { provider, authType, status: "ok", notes: ["Microsoft Ads is SOAP-based; the credential is validated on the first call.", "The access_token is short-lived and must be refreshed externally via the Microsoft identity platform."], checkedAt };
     }
 
+    if (provider === "microsoft_teams") {
+      const resp = await fetchWithTimeout("https://graph.microsoft.com/v1.0/me", {
+        headers: { Authorization: `Bearer ${token}`, Accept: "application/json" },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `Microsoft Teams token check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: { id: body.id, displayName: body.displayName, userPrincipalName: body.userPrincipalName, mail: body.mail },
+        notes: [
+          "Microsoft Teams uses delegated Microsoft Graph permissions and acts as the signed-in work or school user.",
+          "Reading channel messages usually requires Microsoft Entra admin consent for ChannelMessage.Read.All.",
+        ],
+        checkedAt,
+      };
+    }
+
     if (provider === "aws") {
       let p: any; try { p = JSON.parse(token.trim()); } catch { return { provider, authType, status: "error", checkedAt, error: 'AWS credential must be JSON {"accessKeyId","secretAccessKey","region"}' }; }
       if (!p.accessKeyId || !p.secretAccessKey) return { provider, authType, status: "error", checkedAt, error: "AWS JSON must include accessKeyId and secretAccessKey" };

@@ -9140,6 +9140,11 @@ oauthApp.get("/:provider/callback", async (c) => {
     } else if (providerKey === "zoom") {
       const u: any = await (await fetch("https://api.zoom.us/v2/users/me", { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } })).json();
       if (u?.email) userLogin = u.email;
+    } else if (providerKey === "microsoft_teams") {
+      const u: any = await (await fetch("https://graph.microsoft.com/v1.0/me", { headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" } })).json();
+      if (u?.userPrincipalName) userLogin = u.userPrincipalName;
+      else if (u?.mail) userLogin = u.mail;
+      else if (u?.displayName) userLogin = u.displayName;
     } else if (providerKey === "figma") {
       const u: any = await (await fetch("https://api.figma.com/v1/me", { headers: { Authorization: `Bearer ${accessToken}` } })).json();
       if (u?.email) userLogin = u.email;

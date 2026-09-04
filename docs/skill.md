@@ -6,7 +6,7 @@ description: |
   Chatwork, Channel Talk, Railway, Resend, Slack, Reddit, X, Discord, LINE, Airtable, Linear,
   SendGrid, Vercel, Stripe, Webflow, Intercom, Customer.io, Mailchimp, Zendesk,
   WordPress, Shopify, Jira, Salesforce, LinkedIn Ads, TikTok Ads, Microsoft Ads,
-  AWS, Snowflake, Google Calendar/Sheets/Tag Manager/Cloud, BigQuery) under OAuth/PAT authentication
+  Microsoft Teams, AWS, Snowflake, Google Calendar/Sheets/Tag Manager/Cloud, BigQuery) under OAuth/PAT authentication
   with tenant isolation. grantry (formerly "grantry-auth", deployed as "agent-oauth") is a
   Hono/TypeScript service that holds encrypted credentials and exposes them as
   MCP tools, so the agent never sees raw tokens. Triggers: mentions of
@@ -209,6 +209,10 @@ Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing scope):
 - **Google OAuth (via `/oauth/<provider>/start`, reuse `GOOGLE_CLIENT_ID/SECRET`)**:
   **google_calendar**, **google_sheets**, **google_tag_manager**, **google_cloud**,
   **bigquery** — enable the matching API in the Google Cloud project.
+- **Microsoft Teams OAuth**: create a Microsoft identity platform app in Entra,
+  register `https://app.grantry.ai/oauth/microsoft_teams/callback`, paste that
+  app's client ID/secret as a workspace OAuth app, then connect the user. Teams
+  message read scopes usually require Microsoft Entra admin consent.
 Set the connection's **scope to the scope name**; that's the scope callers must pass.
 
 ### 5a. Google Workspace via Service Account + Domain-Wide Delegation (DWD)
@@ -378,6 +382,9 @@ the same provider+scope; disambiguate with `auth_type` (`service_account` vs
 - **linkedin_ads** (access token; read): `list_ad_accounts`, `get_ad_account`, `list_campaigns`, `get_campaign`, `get_analytics`
 - **tiktok_ads** (access token; read): `get_user_info`, `get_advertiser_info`, `list_campaigns`, `list_adgroups`, `list_ads`, `get_report`
 - **microsoft_ads** (JSON cred; read; SOAP): `get_user`, `get_accounts_info`
+- **microsoft_teams** (OAuth via Microsoft Graph; read + write): `get_me`,
+  `list_joined_teams`, `list_channels`, `list_messages`, `get_message`,
+  `list_replies`, `send_message`, `send_reply`
 - **aws** (JSON cred; SigV4; read): `get_caller_identity`, `s3_list_buckets`, `s3_list_objects`
 - **snowflake** (JSON cred; read+write): `execute_statement`, `get_statement`, `cancel_statement`
 - **google_calendar** (OAuth; read+write): `list_calendars`, `list_events`, `get_event`, `create_event`, `update_event`, `delete_event`
@@ -765,6 +772,18 @@ plain `text` string is accepted and wrapped into a single text message.
 
 ### Microsoft Ads tool arguments (besides `scope`)
 - SOAP-based. `get_user` (read): none. `get_accounts_info` (read): opt `customer_id` (defaults to the credential).
+
+### Microsoft Teams tool arguments (besides `scope`)
+- `get_me` / `list_joined_teams` (read): none.
+- `list_channels` (read): `team_id`.
+- `list_messages` (read): `team_id`, `channel_id`; optional `top` (max 50),
+  `expand` (for Microsoft Graph `$expand`, e.g. `replies`).
+- `get_message` (read): `team_id`, `channel_id`, `message_id`.
+- `list_replies` (read): `team_id`, `channel_id`, `message_id`; optional `top`.
+- `send_message` (write): `team_id`, `channel_id`, `content`; optional
+  `content_type` (`text` default, or `html`).
+- `send_reply` (write): `team_id`, `channel_id`, `message_id`, `content`;
+  optional `content_type` (`text` default, or `html`).
 
 ### AWS tool arguments (besides `scope`)
 - `get_caller_identity` / `s3_list_buckets` (read): none. `s3_list_objects` (read): `bucket`. Requests are SigV4-signed; permissions follow the IAM identity.

@@ -166,6 +166,9 @@ function oauthSuccessResponse({ url }: FetchCall) {
   if (url === "https://api.zoom.us/v2/users/me") {
     return jsonResponse({ email: "ops@example.com", account_id: "zoom-account", type: 2 });
   }
+  if (url === "https://graph.microsoft.com/v1.0/me") {
+    return jsonResponse({ id: "ms-user", displayName: "Ops User", userPrincipalName: "ops@example.com", mail: "ops@example.com" });
+  }
   if (url === "https://api.hubapi.com/oauth/v1/access-tokens/oauth-test-token") {
     return jsonResponse({ user: "ops@example.com", hub_id: 12345, app_id: 67890, scopes: ["oauth", "content", "crm.objects.deals.read", "crm.objects.contacts.read"] });
   }

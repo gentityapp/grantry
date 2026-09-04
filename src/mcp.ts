@@ -67,6 +67,7 @@ import { callSalesforceTool } from "./connectors/salesforce.js";
 import { callLinkedinAdsTool } from "./connectors/linkedin_ads.js";
 import { callTiktokAdsTool } from "./connectors/tiktok_ads.js";
 import { callMicrosoftAdsTool } from "./connectors/microsoft_ads.js";
+import { callMicrosoftTeamsTool } from "./connectors/microsoft_teams.js";
 import { callAwsTool } from "./connectors/aws.js";
 import { callSnowflakeTool } from "./connectors/snowflake.js";
 import { callGoogleCalendarTool } from "./connectors/google_calendar.js";
@@ -2663,6 +2664,50 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "tiktok_ads/get_report") { return { advertiser_id: { type: "string", description: "TikTok advertiser account id." }, params: { type: "object", description: "Report params (report_type, dimensions, metrics, start_date, end_date). Arrays/objects are JSON-encoded." } }; }
   // --- microsoft_ads ---
   if (toolName === "microsoft_ads/get_accounts_info") { return { customer_id: { type: "string", description: "Customer id (defaults to the value in the credential)." } }; }
+  // --- microsoft_teams ---
+  if (toolName === "microsoft_teams/list_channels") {
+    return { team_id: { type: "string", description: "Microsoft Teams team id." } };
+  }
+  if (toolName === "microsoft_teams/list_messages") {
+    return {
+      team_id: { type: "string", description: "Microsoft Teams team id." },
+      channel_id: { type: "string", description: "Channel id." },
+      top: { type: "number", description: "Max messages to return (Microsoft Graph supports up to 50)." },
+      expand: { type: "string", description: "Optional Microsoft Graph $expand value, e.g. replies." },
+    };
+  }
+  if (toolName === "microsoft_teams/get_message") {
+    return {
+      team_id: { type: "string", description: "Microsoft Teams team id." },
+      channel_id: { type: "string", description: "Channel id." },
+      message_id: { type: "string", description: "Channel message id." },
+    };
+  }
+  if (toolName === "microsoft_teams/list_replies") {
+    return {
+      team_id: { type: "string", description: "Microsoft Teams team id." },
+      channel_id: { type: "string", description: "Channel id." },
+      message_id: { type: "string", description: "Parent channel message id." },
+      top: { type: "number", description: "Max replies to return." },
+    };
+  }
+  if (toolName === "microsoft_teams/send_message") {
+    return {
+      team_id: { type: "string", description: "Microsoft Teams team id." },
+      channel_id: { type: "string", description: "Channel id." },
+      content: { type: "string", description: "Message body." },
+      content_type: { type: "string", description: "text or html (default: text)." },
+    };
+  }
+  if (toolName === "microsoft_teams/send_reply") {
+    return {
+      team_id: { type: "string", description: "Microsoft Teams team id." },
+      channel_id: { type: "string", description: "Channel id." },
+      message_id: { type: "string", description: "Parent channel message id." },
+      content: { type: "string", description: "Reply body." },
+      content_type: { type: "string", description: "text or html (default: text)." },
+    };
+  }
   // --- aws ---
   if (toolName === "aws/s3_list_objects") { return { bucket: { type: "string", description: "S3 bucket name." } }; }
   // --- snowflake ---
@@ -3241,6 +3286,12 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "slack/open_group_dm") return ["users"];
   if (toolName === "slack/invite_shared") return ["channel"];
   if (toolName === "slack/get_user") return ["user"];
+  if (toolName === "microsoft_teams/list_channels") return ["team_id"];
+  if (toolName === "microsoft_teams/list_messages") return ["team_id", "channel_id"];
+  if (toolName === "microsoft_teams/get_message") return ["team_id", "channel_id", "message_id"];
+  if (toolName === "microsoft_teams/list_replies") return ["team_id", "channel_id", "message_id"];
+  if (toolName === "microsoft_teams/send_message") return ["team_id", "channel_id", "content"];
+  if (toolName === "microsoft_teams/send_reply") return ["team_id", "channel_id", "message_id", "content"];
   if (toolName === "freee/list_deals") return ["company_id"];
   if (toolName === "freee/get_deal") return ["company_id", "deal_id"];
   if (toolName === "freee/create_deal") return ["company_id", "issue_date", "type"];
@@ -3813,6 +3864,7 @@ async function dispatchProviderTool(
   if (provider === "linkedin_ads") return callLinkedinAdsTool(toolName, args, token);
   if (provider === "tiktok_ads") return callTiktokAdsTool(toolName, args, token);
   if (provider === "microsoft_ads") return callMicrosoftAdsTool(toolName, args, token);
+  if (provider === "microsoft_teams") return callMicrosoftTeamsTool(toolName, args, token);
   if (provider === "aws") return callAwsTool(toolName, args, token);
   if (provider === "snowflake") return callSnowflakeTool(toolName, args, token);
   if (provider === "google_calendar") return callGoogleCalendarTool(toolName, args, token);

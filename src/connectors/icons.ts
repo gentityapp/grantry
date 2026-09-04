@@ -126,6 +126,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   linkedin_ads: "#0A66C2",
   tiktok_ads: "#000000",
   microsoft_ads: "#0078D4",
+  microsoft_teams: "#6264A7",
   aws: "#FF9900",
   snowflake: "#29B5E8",
   google_calendar: "#4285F4",
@@ -163,6 +164,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
 const LETTER_TILE_LETTERS: Record<string, string> = {
   clarity: "C", // label is "Microsoft Clarity"
   yahoo_ads: "Y", // label is "LINE Yahoo Ads"
+  microsoft_teams: "T",
   freee: "f", // freee is stylized lowercase
   moneyforward: "M",
 };
