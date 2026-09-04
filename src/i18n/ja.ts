@@ -68,6 +68,32 @@ export const ja: Record<string, string> = {
   "Scope": "スコープ",
   "Status": "ステータス",
   "Duration": "所要時間",
+  "Setup checklist": "セットアップチェックリスト",
+  "Workspace selected": "ワークスペースを選択",
+  "Choose the management boundary that owns scopes, agents, and credentials.":
+    "スコープ、エージェント、認証情報を所有する管理境界を選びます。",
+  "Open": "開く",
+  "Create a scope": "スコープを作成",
+  "Scopes are the stable keys agents pass as <code>scope</code> on every provider call.":
+    "スコープは、エージェントが各プロバイダー呼び出しで <code>scope</code> として渡す安定キーです。",
+  "Add an enabled connection": "有効な接続を追加",
+  "Attach one provider credential to a scope. Provider health stays visible on the Connections page.":
+    "プロバイダー認証情報をスコープに紐づけます。プロバイダーのヘルス状態は接続ページで確認できます。",
+  "Add connection": "接続を追加",
+  "Create an agent": "エージェントを作成",
+  "Mint a token for the actor that will call Grantry over MCP.":
+    "MCP 経由で Grantry を呼び出す主体のトークンを発行します。",
+  "Create agent": "エージェントを作成",
+  "Grant a connection to an agent": "接続をエージェントに付与",
+  "Runtime authorization is connection-grant based, so the agent only sees explicitly granted credentials.":
+    "実行時認可は接続付与ベースなので、エージェントには明示的に付与された認証情報だけが見えます。",
+  "Review grants": "付与を確認",
+  "Run the MCP smoke test": "MCP smoke test を実行",
+  "Call <code>connections/list</code>, then run a read-only tool with the returned scope exactly.":
+    "<code>connections/list</code> を呼び出し、返ったスコープをそのまま使って読み取り専用ツールを実行します。",
+  "Smoke test": "Smoke test",
+  "First prove the token can list its granted connections, then run one read-only call using the returned scope exactly.":
+    "まずトークンが付与済み接続を列挙できることを確認し、次に返ったスコープをそのまま使って読み取り専用呼び出しを実行します。",
 
   // ── Login / register / password reset ──────────────────────────────────
   "Sign in to grantry": "grantry にログイン",

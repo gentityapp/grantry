@@ -872,6 +872,36 @@ function safeJsonObject(s: string | null | undefined): Record<string, any> {
   }
 }
 
+function setupChecklistStep(done: boolean, title: string, detail: string, href: string, action: string): string {
+  return `
+    <li style="display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:12px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--border);">
+      <span class="badge ${done ? "ok" : "unscoped"}" style="width:24px;height:24px;padding:0;display:inline-flex;align-items:center;justify-content:center;border-radius:9999px;">${done ? "✓" : "○"}</span>
+      <span style="min-width:0;">
+        <strong style="display:block;color:var(--ink);font-size:14px;">${title}</strong>
+        <span style="display:block;color:var(--muted);font-size:13px;margin-top:3px;line-height:1.45;">${detail}</span>
+      </span>
+      <a class="btn secondary" href="${href}" style="font-size:12px;padding:4px 10px;white-space:nowrap;">${action}</a>
+    </li>`;
+}
+
+function smokeTestCard(origin: string, token: string, scope: string | undefined, tool: string | undefined): string {
+  const tokenText = token || "YOUR_FULL_AGENT_TOKEN";
+  const firstArgs = tool && scope ? `,"params":{"name":"${escapeHtml(tool)}","arguments":{"scope":"${escapeHtml(scope)}"}}` : "";
+  return `
+      <div class="card" id="smoke-test">
+        <h2>${t("Smoke test")}</h2>
+        <p class="field-hint" style="margin-top:0;">${t("First prove the token can list its granted connections, then run one read-only call using the returned scope exactly.")}</p>
+        <pre>curl -X POST ${origin}/mcp \\
+  -H "Authorization: Bearer ${escapeHtml(tokenText)}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"jsonrpc":"2.0","id":1,"method":"connections/list","params":{}}'</pre>
+        <pre>curl -X POST ${origin}/mcp \\
+  -H "Authorization: Bearer ${escapeHtml(tokenText)}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call"${firstArgs || ',"params":{"name":"ping"}'}}'</pre>
+      </div>`;
+}
+
 async function listWorkspaceProviderCatalog(workspaceId: string | null | undefined) {
   const providers = await listProvidersForWorkspace(workspaceId);
   if (!workspaceId) {
@@ -3775,11 +3805,29 @@ dashboardApp.get("/dashboard", async (c) => {
   const ws = await getWorkspaceAccess(c, user.id);
   const wsId = ws.wsId;
   const mw = manageableWhere(user.id, ws);
-  const [connectionCount, agentCount, grantCount, recentAudits] = await Promise.all([
+  const [tenantCount, connectionCount, enabledConnectionCount, agentCount, enabledAgentCount, grantCount, recentOkAuditCount, firstCallableAgent, recentAudits] = await Promise.all([
+    prisma.tenant.count({ where: mw }),
     prisma.connection.count({ where: mw }),
+    prisma.connection.count({ where: { ...mw, enabled: true, scope: { not: "" } } }),
     prisma.agent.count({ where: mw }),
+    prisma.agent.count({ where: { ...mw, enabled: true } }),
     prisma.agentConnectionGrant.count({
       where: { agent: mw, connection: mw },
+    }),
+    prisma.auditLog.count({
+      where: {
+        agent: mw,
+        status: "ok",
+      },
+    }),
+    prisma.agent.findFirst({
+      where: {
+        ...mw,
+        enabled: true,
+        connectionGrants: { some: { connection: { ...mw, enabled: true, scope: { not: "" } } } },
+      },
+      select: { id: true, name: true },
+      orderBy: { updatedAt: "desc" },
     }),
     prisma.auditLog.findMany({
       // Scope the feed to the active workspace so it never shows another
@@ -3795,6 +3843,14 @@ dashboardApp.get("/dashboard", async (c) => {
       include: { agent: true },
     }),
   ]);
+  const setupSteps = [
+    setupChecklistStep(!!wsId, t("Workspace selected"), t("Choose the management boundary that owns scopes, agents, and credentials."), "/workspaces", t("Open")),
+    setupChecklistStep(tenantCount > 0, t("Create a scope"), t("Scopes are the stable keys agents pass as <code>scope</code> on every provider call."), "/tenants/new", t("Create")),
+    setupChecklistStep(enabledConnectionCount > 0, t("Add an enabled connection"), t("Attach one provider credential to a scope. Provider health stays visible on the Connections page."), "/connections/new", t("Add connection")),
+    setupChecklistStep(enabledAgentCount > 0, t("Create an agent"), t("Mint a token for the actor that will call Grantry over MCP."), "/agents/new", t("Create agent")),
+    setupChecklistStep(grantCount > 0, t("Grant a connection to an agent"), t("Runtime authorization is connection-grant based, so the agent only sees explicitly granted credentials."), firstCallableAgent ? `/agents/${firstCallableAgent.id}` : "/agents", t("Review grants")),
+    setupChecklistStep(recentOkAuditCount > 0, t("Run the MCP smoke test"), t("Call <code>connections/list</code>, then run a read-only tool with the returned scope exactly."), firstCallableAgent ? `/agents/${firstCallableAgent.id}#smoke-test` : "/agents", t("Smoke test")),
+  ];
 
   return c.html(`
     <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>grantry</title>
@@ -3811,6 +3867,12 @@ dashboardApp.get("/dashboard", async (c) => {
         <div class="scope-summary-card"><span>${t("Connections")}</span><strong>${connectionCount}</strong></div>
         <div class="scope-summary-card"><span>${t("Agents")}</span><strong>${agentCount}</strong></div>
         <div class="scope-summary-card"><span>${t("Connection grants")}</span><strong>${grantCount}</strong></div>
+      </div>
+      <h2>${t("Setup checklist")}</h2>
+      <div class="card">
+        <ol style="list-style:none;margin:0;padding:0;">
+          ${setupSteps.join("")}
+        </ol>
       </div>
       <h2>${t("Recent activity")}</h2>
       <div class="card">
@@ -8008,6 +8070,8 @@ dashboardApp.post("/agents/new", async (c) => {
     });
     granted = await grantConnectionsToAgent(agentRow.id, conns.map((cn) => cn.id), user.id);
   }
+  const grantedConnections = await connectionsForAgent(agentRow.id);
+  const smokeConnection = grantedConnections.find((conn) => conn.tools.length > 0);
 
   // Hand the new agent to a person right here. The token is shown once, so a
   // plain form POST (which redirects to /workspaces) would blow it away — these
@@ -8027,14 +8091,7 @@ dashboardApp.post("/agents/new", async (c) => {
       ${assignCard}
       ${agentTokenCard(token)}
       ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true)}
-      <div class="card">
-        <h2>${t("Cross-scope calls")}</h2>
-        <p class="field-hint" style="margin-top:0;">${t("This config has <b>no</b> <code>X-Grantry-Scope</code> lock. Pass the target scope per call:")}</p>
-        <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
-  -H "Authorization: Bearer ${token}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"jsonrpc":"2.0","id":1,"method":"connections/list","params":{}}'</pre>
-      </div>
+      ${smokeTestCard(mcpOrigin(c), token, smokeConnection?.scope, smokeConnection?.tools[0])}
       <p><a href="/agents">← ${t("Back to agents")}</a></p>
     </main></body></html>
   `);
@@ -8082,6 +8139,7 @@ dashboardApp.get("/agents/:id", async (c) => {
   for (const conn of connections) {
     scopeSet.add(conn.scope);
   }
+  const smokeConnection = connections.find((conn) => conn.tools.length > 0);
   const scopes = Array.from(scopeSet).sort();
   const okNotice = c.req.query("ok");
   const grantableConnectionWhere: any = {
@@ -8255,17 +8313,7 @@ dashboardApp.get("/agents/:id", async (c) => {
           }).join("")}
         </details>
       </div>` : ""}
-      <div class="card">
-        <h2>${t("Quick checks")}</h2>
-        <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
-  -H "Authorization: Bearer YOUR_FULL_AGENT_TOKEN" \\
-  -H "Content-Type: application/json" \\
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'</pre>
-        <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
-  -H "Authorization: Bearer YOUR_FULL_AGENT_TOKEN" \\
-  -H "Content-Type: application/json" \\
-  -d '{"jsonrpc":"2.0","id":2,"method":"connections/list"}'</pre>
-      </div>
+      ${smokeTestCard(mcpOrigin(c), "", smokeConnection?.scope, smokeConnection?.tools[0])}
       <p><a href="/agents">← ${t("Back to agents")}</a></p>
     </main></body></html>
   `);
@@ -9686,6 +9734,8 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
     },
   });
   const granted = await grantTenantConnectionsToAgent(rowsWhere, agentRow.id, scope, user.id);
+  const grantedConnections = await connectionsForAgent(agentRow.id);
+  const smokeConnection = grantedConnections.find((conn) => conn.tools.length > 0);
 
   return c.html(`
     <!doctype html><html><head><meta charset="utf-8"><title>${t("Agent created")} — grantry</title>
@@ -9703,13 +9753,7 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
       </div>
       ${agentTokenCard(token)}
       ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true, scope)}
-      <div class="card">
-        <h2>${t("Test it")}</h2>
-        <pre>curl -X POST ${mcpOrigin(c)}/mcp \\
-  -H "Authorization: Bearer ${token}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"ping"}}'</pre>
-      </div>
+      ${smokeTestCard(mcpOrigin(c), token, smokeConnection?.scope, smokeConnection?.tools[0])}
       <p>
         <a href="/tenants/${scope}/edit">${t("← Back to {scope}", { scope })}</a> ·
         <a href="/tenants/${scope}/edit">${t("Add another agent")}</a> ·
