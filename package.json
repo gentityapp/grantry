@@ -10,8 +10,9 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "check": "npm run audit:provider-scopes && npm run audit:provider-request-coverage && npm run audit:generic-coverage && npm run audit:i18n-coverage && npm run build && DATABASE_URL=${DATABASE_URL:-postgresql://user:pass@localhost:5432/grantry} prisma validate",
+    "check": "npm run audit:provider-scopes && npm run audit:provider-request-coverage && npm run audit:generic-coverage && npm run audit:i18n-coverage && npm run audit:gtm-evidence && npm run build && DATABASE_URL=${DATABASE_URL:-postgresql://user:pass@localhost:5432/grantry} prisma validate",
     "audit:i18n-coverage": "tsx scripts/audit-i18n-coverage.ts",
+    "audit:gtm-evidence": "tsx scripts/audit-gtm-evidence.ts",
     "audit:provider-scopes": "tsx scripts/audit-provider-scopes.ts",
     "audit:provider-request-coverage": "tsx scripts/audit-provider-request-coverage.ts",
     "audit:generic-coverage": "tsx scripts/audit-generic-coverage.ts",
