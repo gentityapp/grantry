@@ -80,7 +80,7 @@ curl -X POST http://localhost:3000/mcp \
 
 OpenAI, Anthropic, and agent frameworks build the agents. grantry controls what those agents are allowed to do in each customer environment.
 
-See [docs/business-positioning.md](docs/business-positioning.md) and [docs/competitive-landscape.md](docs/competitive-landscape.md) for the longer positioning notes.
+See [PO.md](PO.md) for the product-owner source of truth, plus [docs/business-positioning.md](docs/business-positioning.md) and [docs/competitive-landscape.md](docs/competitive-landscape.md) for the longer positioning notes.
 
 ## License
 
