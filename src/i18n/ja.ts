@@ -369,6 +369,9 @@ export const ja: Record<string, string> = {
   "delegation": "委任",
   "User": "ユーザー",
   "Agent token call — showing the agent owner": "エージェントトークンによる呼び出し。エージェントの所有者を表示しています",
+  "provider disabled for this workspace": "このワークスペースではプロバイダーが無効です",
+  "Opening the provider's consent screen…": "プロバイダーの同意画面を開いています…",
+  "Could not start the OAuth flow:": "OAuth を開始できませんでした:",
   "No events yet.": "まだイベントはありません。",
   "Error": "エラー",
 

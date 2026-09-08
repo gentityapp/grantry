@@ -6229,22 +6229,56 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
           });
         });
         if (addConnForm) {
+          // OAuth: open the popup synchronously (popup blockers need the click),
+          // then POST via fetch and steer the popup to the consent URL. Errors
+          // close the popup and show up next to the button instead of leaving
+          // a blank window behind.
+          let oauthErrorBox = document.getElementById('oauthSubmitError');
+          if (!oauthErrorBox && addServiceButton) {
+            oauthErrorBox = document.createElement('p');
+            oauthErrorBox.id = 'oauthSubmitError';
+            oauthErrorBox.className = 'field-hint';
+            oauthErrorBox.style.cssText = 'color:#df1b41;margin-top:10px;';
+            oauthErrorBox.hidden = true;
+            addServiceButton.insertAdjacentElement('afterend', oauthErrorBox);
+          }
           addConnForm.addEventListener('submit', (event) => {
             if (providerAuth.value !== 'oauth') return;
             if (!addConnForm.reportValidity()) return;
+            event.preventDefault();
+            if (oauthErrorBox) oauthErrorBox.hidden = true;
             const popup = openOAuthPopup('');
-            if (!popup) {
-              if (oauthPopup) oauthPopup.value = '';
-              addConnForm.removeAttribute('target');
-              return;
+            if (popup) {
+              try {
+                popup.document.write('<!doctype html><title>grantry</title><p style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;padding:24px;color:#444;">' + ${jsString(t("Opening the provider's consent screen…"))} + '</p>');
+                popup.document.close();
+              } catch (_) {}
+              popup.focus();
             }
-            if (oauthPopup) oauthPopup.value = '1';
-            addConnForm.target = oauthPopupName;
-            popup.focus();
-            setTimeout(() => {
-              addConnForm.removeAttribute('target');
-              if (oauthPopup) oauthPopup.value = '';
-            }, 0);
+            const fd = new FormData(addConnForm);
+            fd.set('oauth_popup', popup ? '1' : '');
+            fd.set('oauth_json', '1');
+            if (addServiceButton) addServiceButton.disabled = true;
+            fetch(addConnForm.action, { method: 'POST', body: fd, credentials: 'same-origin', headers: { Accept: 'application/json' } })
+              .then(async (res) => {
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok || !data.redirect) throw new Error(data.error || ('HTTP ' + res.status));
+                if (popup && !popup.closed) {
+                  popup.location.href = data.redirect;
+                  popup.focus();
+                  if (addServiceButton) addServiceButton.disabled = false;
+                } else {
+                  window.location.href = data.redirect;
+                }
+              })
+              .catch((err) => {
+                if (popup && !popup.closed) popup.close();
+                if (addServiceButton) addServiceButton.disabled = false;
+                if (oauthErrorBox) {
+                  oauthErrorBox.textContent = ${jsString(t("Could not start the OAuth flow:") + " ")} + (err && err.message ? err.message : String(err));
+                  oauthErrorBox.hidden = false;
+                }
+              });
           });
         }
 
@@ -6753,6 +6787,15 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     const authMethod = String(body.auth_method ?? "").trim();
     let credential = String(body.credential ?? "").trim();
     const reuseConnectionId = String(body.reuse_connection_id ?? "").trim();
+    // The OAuth popup flow posts with oauth_json=1 and expects JSON back
+    // ({ redirect } or { error }) so the page can steer the popup itself and
+    // surface rejections inline instead of inside a blank popup window.
+    const wantsJson = String(body.oauth_json ?? "") === "1";
+    const reject = (status: number, message: string, html?: string) => {
+      console.warn("[add-service] rejected", { scope, provider, authMethod, status, reason: message });
+      if (wantsJson) return c.json({ ok: false, error: message }, status as any);
+      return c.html(html ?? `<h1>${escapeHtml(message)}</h1><p><a href="/tenants/${scope}/edit">← Back</a></p>`, status as any);
+    };
 
     // Set by the provider-first flow (/connections/new): land back on the
     // connection list instead of the scope page it routed through.
@@ -6763,11 +6806,11 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
         : c.redirect(tenantEditUrl(scope, message, "ok", "#connections"));
 
     const providerDef = await getProviderForWorkspace(provider, wsId);
-    if (!providerDef) return c.html(`<h1>${t("unknown provider")}</h1>`, 400);
+    if (!providerDef) return reject(400, t("unknown provider"));
     if (!(await workspaceProviderEnabled(wsId, provider))) {
-      return c.html(`<h1>provider disabled for this workspace</h1><p>Enable <code>${escapeHtml(provider)}</code> from <a href="/providers">Providers</a> before adding it to a scope.</p>`, 400);
+      return reject(400, t("provider disabled for this workspace"), `<h1>provider disabled for this workspace</h1><p>Enable <code>${escapeHtml(provider)}</code> from <a href="/providers">Providers</a> before adding it to a scope.</p>`);
     }
-    if (providerDef.implemented === false) return c.html(`<h1>${t("provider not implemented")}</h1>`, 400);
+    if (providerDef.implemented === false) return reject(400, t("provider not implemented"));
     // Structured JSON-credential providers post one input per field; assemble.
     const structuredCredential = patCredentialFromStructuredFields(body, providerDef);
     if (structuredCredential) credential = structuredCredential;
@@ -6777,10 +6820,10 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     const wantsOauth = authMethod === "oauth" || (!authMethod && providerDef.authTypes.includes("oauth") && !providerDef.authTypes.includes("pat") && !providerDef.authTypes.includes("service_account"));
     const wantsPat = authMethod === "pat" || (!authMethod && providerDef.authTypes.includes("pat") && !providerDef.authTypes.includes("oauth"));
     if (reuseConnectionId && !wantsPat) {
-      return c.html(`<h1>${t("existing connection reuse is only supported for paste-token providers")}</h1>`, 400);
+      return reject(400, t("existing connection reuse is only supported for paste-token providers"));
     }
     if (reuseConnectionId && credential) {
-      return c.html(`<h1>${t("choose an existing connection or paste a new credential, not both")}</h1>`, 400);
+      return reject(400, t("choose an existing connection or paste a new credential, not both"));
     }
     if (wantsOauth) {
       const structuredOAuthAppCredential = oauthAppCredentialFromStructuredFields(body, "", defaultOAuthClientAuthMethod(provider, providerDef));
@@ -6829,10 +6872,10 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     }
 
     if (!wantsPat && !wantsSa && !wantsOauth && credential) {
-      return c.html(`<h1>${t("pasted credentials are not accepted for this OAuth-only provider")}</h1>`, 400);
+      return reject(400, t("pasted credentials are not accepted for this OAuth-only provider"));
     }
     if (wantsOauth) {
-      if (!providerDef.authTypes.includes("oauth")) return c.html(`<h1>${t("OAuth is not supported for this provider")}</h1>`, 400);
+      if (!providerDef.authTypes.includes("oauth")) return reject(400, t("OAuth is not supported for this provider"));
       // The workspace may hold several OAuth apps for this provider; honour an
       // explicit pick, otherwise register/refresh the app from pasted credentials.
       let oauthAppCredentialId = String(body.oauth_app_credential_id ?? "").trim();
@@ -6843,7 +6886,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
               select: { id: true },
             })
           : null;
-        if (!picked) return c.html(`<h1>${t("OAuth app not found")}</h1><p><a href="/tenants/${scope}/edit">← Back</a></p>`, 404);
+        if (!picked) return reject(404, t("OAuth app not found"));
       }
       if (credential) {
         try {
@@ -6858,14 +6901,16 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
           });
           oauthAppCredentialId = oauthAppCredential?.id || oauthAppCredentialId;
         } catch (e: any) {
-          return c.html(`<h1>Invalid OAuth app credential</h1><p>${escapeHtml(String(e?.message ?? e))}</p><p><a href="/tenants/${scope}/edit">← Back</a></p>`, 400);
+          return reject(400, `Invalid OAuth app credential: ${String(e?.message ?? e)}`, `<h1>Invalid OAuth app credential</h1><p>${escapeHtml(String(e?.message ?? e))}</p><p><a href="/tenants/${scope}/edit">← Back</a></p>`);
         }
       }
       const params = new URLSearchParams({ tenant: scope });
       if (returnTo) params.set("return_to", returnTo);
       if (body.oauth_popup === "1") params.set("popup", "1");
       if (oauthAppCredentialId) params.set("oauth_app_credential_id", oauthAppCredentialId);
-      return c.redirect(`/oauth/${provider}/start?${params.toString()}`);
+      const startUrl = `/oauth/${provider}/start?${params.toString()}`;
+      if (wantsJson) return c.json({ ok: true, redirect: startUrl });
+      return c.redirect(startUrl);
     }
     if (!wantsPat || !providerDef.authTypes.includes("pat")) return c.html(`<h1>${t("paste token is not supported for this provider")}</h1>`, 400);
 
