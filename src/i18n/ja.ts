@@ -1101,4 +1101,32 @@ export const ja: Record<string, string> = {
   "✓ Bulk deleted {count} scope(s)": "✓ {count} 件のスコープを一括削除しました",
   "Total: <b>{count}</b> connection(s) removed. Related connection grants were removed automatically.":
     "合計 <b>{count}</b> 件の接続を削除しました。関連する接続付与は自動的に削除されました。",
+
+  // ── Usage page (usage.ts) ──────────────────────────────────────────────
+  "Active workspace": "アクティブなワークスペース",
+  "Tool-call activity for agents in the active workspace, from the audit log.":
+    "アクティブなワークスペース内のエージェントによるツール呼び出しの状況（監査ログ集計）。",
+  "7 days": "7日間",
+  "30 days": "30日間",
+  "90 days": "90日間",
+  "No tool calls in the last {days} days for this workspace.": "このワークスペースでは直近 {days} 日間にツール呼び出しがありません。",
+  "Tool calls": "ツール呼び出し",
+  "last {days} days": "直近 {days} 日間",
+  "Success rate": "成功率",
+  "{errors} error / {denied} denied": "エラー {errors} / 拒否 {denied}",
+  "Peak day": "ピーク日",
+  "Active agents": "稼働エージェント",
+  "distinct, in range": "期間内のユニーク数",
+  "Daily tool calls": "日別ツール呼び出し数",
+  "ok": "成功",
+  "error / denied": "エラー / 拒否",
+  "Daily tool calls over the last {days} days, successful versus failed": "直近 {days} 日間の日別ツール呼び出し数（成功と失敗）",
+  "Daily active agents": "日別稼働エージェント数",
+  "Distinct active agents per day over the last {days} days": "直近 {days} 日間の日別ユニーク稼働エージェント数",
+  "Top tools": "利用の多いツール",
+  "Top scopes": "利用の多いスコープ",
+  "Top agents": "利用の多いエージェント",
+  "Calls": "呼び出し数",
+  "No data.": "データがありません。",
+  "(unscoped)": "（スコープなし）",
 };

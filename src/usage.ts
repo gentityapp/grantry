@@ -14,11 +14,12 @@
 //      have ui.ts + this file import them.
 //   2. To surface the page in the sidebar on EVERY route, add one line to the
 //      NAV link list in ui.ts (this page's own copy of NAV already has it):
-//        <a href="/usage" class="${current === "usage" ? "active" : ""}">Usage</a>
+//        <a href="/usage" class="${current === "usage" ? "active" : ""}">${t("Usage")}</a>
 import { getCookie } from "hono/cookie";
 import { auth } from "./auth.js";
 import { prisma } from "./db.js";
 import { dashboardApp } from "./ui.js";
+import { t, htmlLang } from "./i18n.js";
 
 // ---------- chrome (duplicated from ui.ts, see header note) ----------
 
@@ -125,9 +126,9 @@ const NAV = (current: string, email?: string) => `
 <nav>
   <span class="brand"><svg class="brand-mark" viewBox="0 0 176 176" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><circle cx="88" cy="88" r="76" stroke="currentColor" stroke-width="24"/><line x1="100" y1="88" x2="100" y2="169" stroke="currentColor" stroke-width="24"/><line x1="76" y1="7" x2="76" y2="88" stroke="currentColor" stroke-width="24"/><rect x="64" y="75" width="48" height="24" fill="currentColor"/></svg>grantry</span>
   <div class="ws-switcher">
-    <label for="gnWs">Workspace</label>
-    <select id="gnWs" aria-label="Active workspace"><option>…</option></select>
-    <button type="button" class="ws-new-btn" id="gnWsNew">+ New workspace</button>
+    <label for="gnWs">${t("Workspace")}</label>
+    <select id="gnWs" aria-label="${t("Active workspace")}"><option>…</option></select>
+    <button type="button" class="ws-new-btn" id="gnWsNew">${t("+ New workspace")}</button>
   </div>
   <script>
   (function(){
@@ -153,21 +154,21 @@ const NAV = (current: string, email?: string) => `
   })();
   </script>
   <div class="nav-links">
-    <a href="/dashboard" class="${current === "dashboard" ? "active" : ""}">Dashboard</a>
-    <a href="/tenants" class="${current === "tenants" ? "active" : ""}">Scopes</a>
-    <a href="/connections" class="${current === "connections" ? "active" : ""}">Connections</a>
-    <a href="/providers" class="${current === "providers" ? "active" : ""}">Providers</a>
-    <a href="/agents" class="${current === "agents" ? "active" : ""}">Agents</a>
-    <a href="/workspaces" class="${current === "workspaces" ? "active" : ""}">Workspace</a>
+    <a href="/dashboard" class="${current === "dashboard" ? "active" : ""}">${t("Dashboard")}</a>
+    <a href="/tenants" class="${current === "tenants" ? "active" : ""}">${t("Scopes")}</a>
+    <a href="/connections" class="${current === "connections" ? "active" : ""}">${t("Connections")}</a>
+    <a href="/providers" class="${current === "providers" ? "active" : ""}">${t("Providers")}</a>
+    <a href="/agents" class="${current === "agents" ? "active" : ""}">${t("Agents")}</a>
+    <a href="/workspaces" class="${current === "workspaces" ? "active" : ""}">${t("Workspace")}</a>
     <a href="/usage" class="${current === "usage" ? "active" : ""}">Usage</a>
-    <a href="/audit" class="${current === "audit" ? "active" : ""}">Audit</a>
-    <a href="/api-keys" class="${current === "api-keys" ? "active" : ""}">API keys</a>
-    <a href="/account" class="${current === "account" ? "active" : ""}">Account</a>
+    <a href="/audit" class="${current === "audit" ? "active" : ""}">${t("Audit")}</a>
+    <a href="/api-keys" class="${current === "api-keys" ? "active" : ""}">${t("API keys")}</a>
+    <a href="/account" class="${current === "account" ? "active" : ""}">${t("Account")}</a>
   </div>
   <div class="nav-foot">
-    ${email ? `<a href="/account" class="nav-user" title="Signed in as ${escapeHtml(email)}">\u{1F464} <code style="font-size:12px;">${escapeHtml(email)}</code></a>` : ""}
+    ${email ? `<a href="/account" class="nav-user" title="${escapeHtml(t("Signed in as {email}", { email }))}">\u{1F464} <code style="font-size:12px;">${escapeHtml(email)}</code></a>` : ""}
     <form method="post" action="/logout" style="margin:0;">
-      <button type="submit" class="secondary" style="font-size:13px;padding:6px 10px;">Sign out</button>
+      <button type="submit" class="secondary" style="font-size:13px;padding:6px 10px;">${t("Sign out")}</button>
     </form>
   </div>
 </nav>`;
@@ -285,7 +286,7 @@ function barChart(labels: string[], vals: number[], aria: string): string {
 }
 
 function topTable(title: string, rows: { name: string; count: number }[], total: number, mono: boolean): string {
-  if (!rows.length) return `<div class="card"><h2 style="margin-top:0;">${escapeHtml(title)}</h2><div class="empty">No data.</div></div>`;
+  if (!rows.length) return `<div class="card"><h2 style="margin-top:0;">${escapeHtml(title)}</h2><div class="empty">${t("No data.")}</div></div>`;
   const max = Math.max(1, ...rows.map((r) => r.count));
   const body = rows.map((r) => {
     const pct = total > 0 ? (r.count / total) * 100 : 0;
@@ -299,7 +300,7 @@ function topTable(title: string, rows: { name: string; count: number }[], total:
   }).join("");
   return `<div class="table-wrap" style="margin-bottom:16px;">
     <table>
-      <thead><tr><th>${escapeHtml(title)}</th><th style="text-align:right;">Calls</th><th></th></tr></thead>
+      <thead><tr><th>${escapeHtml(title)}</th><th style="text-align:right;">${t("Calls")}</th><th></th></tr></thead>
       <tbody>${body}</tbody>
     </table>
   </div>`;
@@ -366,7 +367,7 @@ dashboardApp.get("/usage", async (c) => {
 
     const toolLabel = `${r.provider}/${(r.tool.split("/").pop() ?? r.tool)}`;
     toolCounts.set(toolLabel, (toolCounts.get(toolLabel) ?? 0) + 1);
-    const scopeLabel = r.scope || "(unscoped)";
+    const scopeLabel = r.scope || t("(unscoped)");
     scopeCounts.set(scopeLabel, (scopeCounts.get(scopeLabel) ?? 0) + 1);
     const agentLabel = r.agent?.name ?? "<system>";
     agentCounts.set(agentLabel, (agentCounts.get(agentLabel) ?? 0) + 1);
@@ -387,45 +388,45 @@ dashboardApp.get("/usage", async (c) => {
     `<a href="/usage?days=${d}" class="${days === d ? "active" : ""}">${lbl}</a>`;
 
   const body = total === 0
-    ? `<div class="card"><div class="empty">No tool calls in the last ${days} days for this workspace.</div></div>`
+    ? `<div class="card"><div class="empty">${t("No tool calls in the last {days} days for this workspace.", { days })}</div></div>`
     : `
       <div class="scope-summary-grid">
-        <div class="scope-summary-card"><span>Tool calls</span><strong>${fmt(total)}</strong><em>last ${days} days</em></div>
-        <div class="scope-summary-card"><span>Success rate</span><strong>${successRate.toFixed(1)}%</strong><em>${fmt(errTotal)} error / ${fmt(denTotal)} denied</em></div>
-        <div class="scope-summary-card"><span>Peak day</span><strong>${fmt(peakVal)}</strong><em>${escapeHtml(peakDay)}</em></div>
-        <div class="scope-summary-card"><span>Active agents</span><strong>${fmt(distinctAgents.size)}</strong><em>distinct, in range</em></div>
+        <div class="scope-summary-card"><span>${t("Tool calls")}</span><strong>${fmt(total)}</strong><em>${t("last {days} days", { days })}</em></div>
+        <div class="scope-summary-card"><span>${t("Success rate")}</span><strong>${successRate.toFixed(1)}%</strong><em>${t("{errors} error / {denied} denied", { errors: fmt(errTotal), denied: fmt(denTotal) })}</em></div>
+        <div class="scope-summary-card"><span>${t("Peak day")}</span><strong>${fmt(peakVal)}</strong><em>${escapeHtml(peakDay)}</em></div>
+        <div class="scope-summary-card"><span>${t("Active agents")}</span><strong>${fmt(distinctAgents.size)}</strong><em>${t("distinct, in range")}</em></div>
       </div>
 
       <div class="card">
-        <h2 style="margin-top:0;">Daily tool calls</h2>
+        <h2 style="margin-top:0;">${t("Daily tool calls")}</h2>
         <div class="chart-legend">
-          <span><i style="background:var(--success);"></i> ok</span>
-          <span><i style="background:var(--danger-token);"></i> error / denied</span>
+          <span><i style="background:var(--success);"></i> ${t("ok")}</span>
+          <span><i style="background:var(--danger-token);"></i> ${t("error / denied")}</span>
         </div>
-        ${stackedBarChart(shortLabels, okByDay, badByDay, `Daily tool calls over the last ${days} days, successful versus failed`)}
+        ${stackedBarChart(shortLabels, okByDay, badByDay, t("Daily tool calls over the last {days} days, successful versus failed", { days }))}
       </div>
 
       <div class="card">
-        <h2 style="margin-top:0;">Daily active agents</h2>
-        ${barChart(shortLabels, activeAgentsPerDay, `Distinct active agents per day over the last ${days} days`)}
+        <h2 style="margin-top:0;">${t("Daily active agents")}</h2>
+        ${barChart(shortLabels, activeAgentsPerDay, t("Distinct active agents per day over the last {days} days", { days }))}
       </div>
 
       <div class="usage-grid2">
-        ${topTable("Top tools", topN(toolCounts), total, true)}
-        ${topTable("Top scopes", topN(scopeCounts), total, false)}
+        ${topTable(t("Top tools"), topN(toolCounts), total, true)}
+        ${topTable(t("Top scopes"), topN(scopeCounts), total, false)}
       </div>
-      ${topTable("Top agents", topN(agentCounts), total, false)}
+      ${topTable(t("Top agents"), topN(agentCounts), total, false)}
     `;
 
   return c.html(`
-    <!doctype html><html><head><meta charset="utf-8"><title>Usage — grantry</title>
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Usage")} — grantry</title>
     ${FAVICON}<style>${CSS}</style></head><body>
     ${NAV("usage", user?.email)}
     <main>
-      <h1>Usage</h1>
-      <p style="color:var(--muted);margin-top:-14px;">Tool-call activity for agents in the active workspace, from the audit log.</p>
+      <h1>${t("Usage")}</h1>
+      <p style="color:var(--muted);margin-top:-14px;">${t("Tool-call activity for agents in the active workspace, from the audit log.")}</p>
       <div class="usage-range">
-        ${rangeLink(7, "7 days")}${rangeLink(30, "30 days")}${rangeLink(90, "90 days")}
+        ${rangeLink(7, t("7 days"))}${rangeLink(30, t("30 days"))}${rangeLink(90, t("90 days"))}
       </div>
       ${body}
     </main></body></html>
