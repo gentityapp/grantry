@@ -791,6 +791,20 @@ export const ja: Record<string, string> = {
   "Set up agents for": "次のスコープのエージェントを設定:",
   "Step 2: create an agent for this scope, or assign an existing agent to this scope's enabled connections.":
     "ステップ 2: このスコープ用のエージェントを作成するか、既存のエージェントをこのスコープの有効な接続に割り当てます。",
+  "Step 2 (optional): hand this scope to people, create an agent for it, or assign an existing agent. You can skip this and come back later.":
+    "ステップ 2（任意）: このスコープを人に渡す、このスコープ用のエージェントを作る、既存のエージェントを割り当てる、のいずれかを行います。スキップして後から戻ってきても構いません。",
+  "Skip for now →": "今はスキップ →",
+  "✓ {count} member(s) can now use <code>{scope}</code> with their personal MCP token.":
+    "✓ {count} 人のメンバーが個人用 MCP トークンで <code>{scope}</code> を使えるようになりました。",
+  "Give this scope to people": "このスコープを人に渡す",
+  "No agent setup needed on their side: checked members reach this scope through the workspace connector URL with their own personal MCP token.":
+    "相手側でのエージェント設定は不要です。チェックしたメンバーは、自分の個人用 MCP トークンでワークスペースのコネクタ URL からこのスコープを使えます。",
+  "Backed by the role agent <code>{name}</code>.": "裏側はロール用エージェント <code>{name}</code> です。",
+  "This scope has no enabled connections yet, so members will not see any tools until you add a service.":
+    "このスコープにはまだ有効な接続がないため、サービスを追加するまでメンバーにはツールが表示されません。",
+  "Save who can use this scope": "このスコープを使える人を保存",
+  "Could not create a role agent for this scope: every candidate name is taken.":
+    "このスコープのロール用エージェントを作成できませんでした。候補名がすべて使用済みです。",
   "✓ Scope <code>{scope}</code> is ready.": "✓ スコープ <code>{scope}</code> の準備ができました。",
   "Connected <code>{connected}</code>.": "<code>{connected}</code> を接続しました。",
   "✓ Existing agent granted {count} connection(s).":

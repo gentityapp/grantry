@@ -9534,6 +9534,146 @@ dashboardApp.get("/api/capabilities", async (c) => {
   return c.json({ tool, scope: scope ?? null, candidates });
 });
 
+// People-first path for a scope. A person can only reach a scope through an
+// agent they are assigned to (personal MCP token → AgentAssignment → agent's
+// connection grants), so "hand this scope to people" needs an agent under
+// the hood. We keep exactly one per scope+workspace — the "role agent" —
+// named after the scope. Its token is minted (the column is required) but
+// never shown: members use their own personal MCP token instead.
+async function findScopeRoleAgent(workspaceId: string, scope: string) {
+  const ws = await prisma.workspace.findUnique({ where: { id: workspaceId }, select: { slug: true } });
+  const candidates = [scope, `${scope}-people`, ...(ws ? [`${scope}-${ws.slug}`] : [])];
+  const existing = await prisma.agent.findFirst({
+    where: { workspaceId, name: { in: candidates } },
+    orderBy: { createdAt: "asc" },
+  });
+  return { existing, candidates };
+}
+
+async function ensureScopeRoleAgent(workspaceId: string, scope: string, ownerId: string) {
+  const { existing, candidates } = await findScopeRoleAgent(workspaceId, scope);
+  if (existing) {
+    if (!existing.enabled) await prisma.agent.update({ where: { id: existing.id }, data: { enabled: true } });
+    return existing;
+  }
+  // Agent.name is globally unique, so a sibling workspace may already own the
+  // bare scope name. Walk the candidates and take the first free one.
+  let name: string | null = null;
+  for (const candidate of candidates) {
+    if (!(await prisma.agent.findUnique({ where: { name: candidate }, select: { id: true } }))) { name = candidate; break; }
+  }
+  if (!name) return null;
+  const token = `gn_agt_${crypto.randomUUID().replace(/-/g, "")}`;
+  const tokenHash = await import("node:crypto").then((m) => m.createHash("sha256").update(token).digest("hex"));
+  return prisma.agent.create({
+    data: {
+      name,
+      description: `Role agent for scope "${scope}". Members assigned here use it through their personal MCP token.`,
+      hashedToken: tokenHash,
+      tokenPrefix: token.slice(0, 16),
+      ownerId,
+      workspaceId,
+    },
+  });
+}
+
+// Card on the scope setup page: pick workspace members who should be able to
+// use this scope. Only workspace owners/admins may assign, so others get "".
+async function scopePeopleCard(c: any, workspaceId: string, scope: string, hasConnections: boolean): Promise<string> {
+  if (!(await requireWsAdmin(c, workspaceId))) return "";
+  const [members, { existing }] = await Promise.all([
+    prisma.workspaceMember.findMany({
+      where: { workspaceId },
+      include: { user: { select: { id: true, email: true, name: true } } },
+      orderBy: [{ role: "asc" }, { createdAt: "asc" }],
+    }),
+    findScopeRoleAgent(workspaceId, scope),
+  ]);
+  if (members.length === 0) return "";
+  const assigned = new Set(
+    existing ? (await prisma.agentAssignment.findMany({ where: { agentId: existing.id }, select: { userId: true } })).map((a) => a.userId) : [],
+  );
+  const rows = members.map((m) => `
+      <label class="assignment-agent-row" style="cursor:pointer;">
+        <div class="assignment-agent-main">
+          <strong>${escapeHtml(m.user.email)}</strong>
+          <small>${m.user.name ? `${escapeHtml(m.user.name)} · ` : ""}${escapeHtml(m.role)}</small>
+        </div>
+        <div class="assignment-agent-actions">
+          <input type="checkbox" name="user_ids" value="${escapeHtml(m.user.id)}" ${assigned.has(m.user.id) ? "checked" : ""}>
+        </div>
+      </label>`).join("");
+  return `
+    <div class="card" id="scope-people-card">
+      <h2>${t("Give this scope to people")}</h2>
+      <p class="field-hint" style="margin-top:0;">${t("No agent setup needed on their side: checked members reach this scope through the workspace connector URL with their own personal MCP token.")}</p>
+      ${existing ? `<p class="field-hint" style="margin-top:0;">${t("Backed by the role agent <code>{name}</code>.", { name: escapeHtml(existing.name) })}</p>` : ""}
+      ${hasConnections ? "" : `<div class="empty">${t("This scope has no enabled connections yet, so members will not see any tools until you add a service.")}</div>`}
+      <form method="post" action="/tenants/${scope}/people/grant">
+        <div class="assignment-agent-list">${rows}</div>
+        <button type="submit">${t("Save who can use this scope")}</button>
+      </form>
+      <p style="margin-bottom:0;"><a href="/workspaces/assignments">${t("Manage all assignments")}</a> · <a href="/workspaces">${t("Invite someone new")}</a> · <a href="/mcp-tokens">${t("Personal MCP token")}</a></p>
+    </div>`;
+}
+
+// --- /tenants/:scope/people/grant (POST) — sync who can use this scope ---
+dashboardApp.post("/tenants/:scope/people/grant", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.json({ error: "not authenticated" }, 401);
+  const scope = c.req.param("scope");
+  if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
+  const access = await scopeAccessFor(user.id, scope);
+  if (!access) return c.html(`<h1>${escapeHtml(t("scope '{scope}' not found", { scope }))}</h1>`, 404);
+  const { tenant, rowsWhere } = access;
+  const wsId = tenant.workspaceId;
+  if (!wsId) return c.html("<h1>scope has no workspace</h1>", 400);
+  const admin = await requireWsAdmin(c, wsId);
+  if (!admin) return c.html("<h1>forbidden</h1>", 403);
+
+  const form = await c.req.formData();
+  const selected = new Set(form.getAll("user_ids").map((v) => String(v)));
+  const members = await prisma.workspaceMember.findMany({ where: { workspaceId: wsId }, select: { userId: true } });
+  const memberIds = new Set(members.map((m) => m.userId));
+  const wanted = [...selected].filter((id) => memberIds.has(id));
+
+  const agent = await ensureScopeRoleAgent(wsId, scope, user.id);
+  if (!agent) return c.html(`<h1>${escapeHtml(t("Could not create a role agent for this scope: every candidate name is taken."))}</h1>`, 409);
+  await grantTenantConnectionsToAgent(rowsWhere, agent.id, scope, user.id);
+
+  const existing = new Set((await prisma.agentAssignment.findMany({ where: { agentId: agent.id }, select: { userId: true } })).map((a) => a.userId));
+  const toAdd = wanted.filter((id) => !existing.has(id));
+  // Unchecked members are removed: the card is the full picture of who has
+  // this scope, not an append-only list.
+  const toRemove = [...existing].filter((id) => memberIds.has(id) && !selected.has(id));
+  if (toRemove.length) await prisma.agentAssignment.deleteMany({ where: { agentId: agent.id, userId: { in: toRemove } } });
+  if (toAdd.length) {
+    await prisma.agentAssignment.createMany({ data: toAdd.map((userId) => ({ agentId: agent.id, userId })), skipDuplicates: true });
+    const [targets, ws] = await Promise.all([
+      prisma.user.findMany({ where: { id: { in: toAdd } }, select: { email: true, name: true } }),
+      prisma.workspace.findUnique({ where: { id: wsId }, select: { displayName: true } }),
+    ]);
+    for (const target of targets) {
+      if (!target.email) continue;
+      try {
+        const body = agentAssignedEmail({
+          recipientName: target.name || null,
+          assignedByEmail: admin.user.email,
+          agentId: agent.id,
+          agentName: agent.name,
+          charter: agent.description,
+          workspaceName: ws?.displayName ?? "grantry",
+          baseUrl: BASE_URL(),
+        });
+        await sendSystemEmail({ to: target.email, ...body });
+      } catch (err) {
+        console.error("[scope] people grant email failed:", err);
+      }
+    }
+  }
+  return c.redirect(`/tenants/${scope}/agents/setup?people=${wanted.length}`);
+});
+
 // --- /tenants/:scope/agents/setup (GET) — step 2 after scope creation ---
 dashboardApp.get("/tenants/:scope/agents/setup", async (c) => {
   const user = await getSessionUser(c);
@@ -9579,7 +9719,9 @@ dashboardApp.get("/tenants/:scope/agents/setup", async (c) => {
   const created = c.req.query("created") === "1";
   const connected = c.req.query("connected");
   const assigned = c.req.query("assigned");
+  const people = c.req.query("people") ?? null;
   const showName = tenant.displayName && tenant.displayName !== tenant.slug;
+  const peopleCard = tenant.workspaceId ? await scopePeopleCard(c, tenant.workspaceId, scope, connections.length > 0) : "";
 
   return c.html(`
     <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Set up agents")} — grantry</title>
@@ -9588,10 +9730,12 @@ dashboardApp.get("/tenants/:scope/agents/setup", async (c) => {
     <main>
       <h1>${t("Set up agents for")} ${showName ? `${escapeHtml(tenant.displayName)} ` : ""}<code>${escapeHtml(scope)}</code></h1>
       <p style="color:#687385;margin-top:-16px;margin-bottom:24px;">
-        ${t("Step 2: create an agent for this scope, or assign an existing agent to this scope's enabled connections.")}
+        ${t("Step 2 (optional): hand this scope to people, create an agent for it, or assign an existing agent. You can skip this and come back later.")}
+        <a href="/tenants/${scope}/edit">${t("Skip for now →")}</a>
       </p>
       ${created ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">${t("✓ Scope <code>{scope}</code> is ready.", { scope: escapeHtml(scope) })}${connected ? ` ${t("Connected <code>{connected}</code>.", { connected: escapeHtml(connected) })}` : ""}</div>` : ""}
       ${assigned ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">${t("✓ Existing agent granted {count} connection(s).", { count: escapeHtml(assigned) })}</div>` : ""}
+      ${people !== null ? `<div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">${t("✓ {count} member(s) can now use <code>{scope}</code> with their personal MCP token.", { count: escapeHtml(people), scope: escapeHtml(scope) })}</div>` : ""}
 
       <div class="card">
         <h2>${t("Scope")}</h2>
@@ -9608,6 +9752,8 @@ dashboardApp.get("/tenants/:scope/agents/setup", async (c) => {
           </ul>
         `}
       </div>
+
+      ${peopleCard}
 
       <div class="card">
         <h2>${t("Create new agent")}</h2>
@@ -9760,6 +9906,7 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
         <p>${t("Granted {count} connection(s) for <code>{scope}</code>.", { count: granted, scope: escapeHtml(scope) })}</p>
       </div>
       ${agentTokenCard(token)}
+      ${wsId ? await agentAssignCard(c, wsId, agentRow.id) : ""}
       ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true, scope)}
       ${smokeTestCard(mcpOrigin(c), token, smokeConnection?.scope, smokeConnection?.tools[0])}
       <p>
