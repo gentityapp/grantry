@@ -787,7 +787,7 @@ const NAV = (current: string, email?: string) => `
     <a href="/providers" class="${current === "providers" ? "active" : ""}">${t("Providers")}</a>
     <a href="/agents" class="${current === "agents" ? "active" : ""}">${t("Agents")}</a>
     <a href="/workspaces/assignments" class="${current === "assignments" ? "active" : ""}">${t("Assignments")}</a>
-    <a href="/mcp-tokens" class="${current === "mcp-tokens" ? "active" : ""}">MCP tokens</a>
+    <a href="/mcp-tokens" class="${current === "mcp-tokens" ? "active" : ""}">MCP</a>
     <a href="/workspaces" class="${current === "workspaces" ? "active" : ""}">${t("Workspace")}</a>
     <a href="/audit" class="${current === "audit" ? "active" : ""}">${t("Audit")}</a>
     <a href="/api-keys" class="${current === "api-keys" ? "active" : ""}">${t("API keys")}</a>
