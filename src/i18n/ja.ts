@@ -367,6 +367,8 @@ export const ja: Record<string, string> = {
   "Response summary": "レスポンス要約",
   "Delegated by": "委任元",
   "delegation": "委任",
+  "User": "ユーザー",
+  "Agent token call — showing the agent owner": "エージェントトークンによる呼び出し。エージェントの所有者を表示しています",
   "No events yet.": "まだイベントはありません。",
   "Error": "エラー",
 

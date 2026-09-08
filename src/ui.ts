@@ -8643,7 +8643,12 @@ dashboardApp.get("/audit", async (c) => {
       : { OR: [{ userId: user.id }, { agent: { ownerId: user.id } }] },
     take: 100,
     orderBy: { createdAt: "desc" },
-    include: { agent: true },
+    include: {
+      // `user` is set when a person acted through their personal MCP token;
+      // agent-token calls have no user, so we fall back to the agent owner.
+      user: { select: { email: true } },
+      agent: { include: { owner: { select: { email: true } } } },
+    },
   });
 
   // requestArgs is stored as JSON text (masked at write time); pretty-print it
@@ -8679,15 +8684,23 @@ dashboardApp.get("/audit", async (c) => {
       ${logs.length === 0 ? `<div class="card"><div class="empty">${t("No events yet.")}</div></div>` : `
       <div class="table-wrap">
         <table class="audit-table">
-          <thead><tr><th></th><th>${t("When")}</th><th>${t("Agent")}</th><th>${t("Tool")}</th><th>${t("Scope")}</th><th>${t("Status")}</th><th>${t("Duration")}</th><th>${t("Error")}</th></tr></thead>
+          <thead><tr><th></th><th>${t("When")}</th><th>${t("Agent")}</th><th>${t("User")}</th><th>${t("Tool")}</th><th>${t("Scope")}</th><th>${t("Status")}</th><th>${t("Duration")}</th><th>${t("Error")}</th></tr></thead>
           <tbody>
           ${logs.map((l) => {
+            const actorEmail = l.user?.email ?? null;
+            const ownerEmail = l.agent?.owner?.email ?? null;
+            const who = actorEmail
+              ? `<span style="font-size:13px;">${escapeHtml(actorEmail)}</span>`
+              : ownerEmail
+                ? `<span style="font-size:12px;color:var(--muted);" title="${escapeHtml(t("Agent token call — showing the agent owner"))}">${escapeHtml(ownerEmail)}</span>`
+                : "";
             const hasDetail = Boolean(l.requestArgs || l.responseSummary || l.delegatedById);
             return `
             <tr${hasDetail ? ` class="expandable" data-toggle="detail-${l.id}"` : ""}>
               <td class="chevron">${hasDetail ? "▸" : ""}</td>
               <td><code>${l.createdAt.toISOString().slice(0, 19).replace("T", " ")}</code></td>
               <td>${escapeHtml(l.agent?.name ?? "<system>")}</td>
+              <td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${who}</td>
               <td><code>${escapeHtml(`${l.provider}/${l.tool.split("/").pop() ?? l.tool}`)}</code></td>
               <td>${l.scope ? `<span class="badge scoped">${escapeHtml(l.scope)}</span>` : `<span class="badge unscoped">-</span>`}</td>
               <td>${l.status === "ok" ? '<span class="badge ok">ok</span>' : l.status === "denied" ? '<span class="badge denied">denied</span>' : `<span class="badge denied">${escapeHtml(l.status)}</span>`}</td>
@@ -8696,7 +8709,7 @@ dashboardApp.get("/audit", async (c) => {
             </tr>
             ${hasDetail ? `
             <tr class="audit-detail" id="detail-${l.id}" hidden>
-              <td colspan="8">
+              <td colspan="9">
                 ${l.requestArgs ? `<div class="audit-detail-label">${t("Request args")}</div><pre>${escapeHtml(prettyArgs(l.requestArgs))}</pre>` : ""}
                 ${l.responseSummary ? `<div class="audit-detail-label">${t("Response summary")}</div><pre>${escapeHtml(l.responseSummary)}</pre>` : ""}
                 ${l.delegatedById ? `<div class="audit-detail-label">${t("Delegated by")}</div><pre>${escapeHtml(l.delegatedById)}${l.delegationId ? ` (${t("delegation")}: ${escapeHtml(l.delegationId)})` : ""}</pre>` : ""}
