@@ -97,7 +97,9 @@ async function readBody(c: any): Promise<Record<string, unknown>> {
 function splitName(full: string): { firstName: string; lastName: string } {
   const parts = full.split(/[\s　]+/).filter(Boolean);
   if (parts.length >= 2) return { lastName: parts[0], firstName: parts.slice(1).join(" ") };
-  return { firstName: full, lastName: "" };
+  // Single token: Japanese names go in the family-name slot ("澤井てすと"),
+  // Latin ones in the given-name slot ("Alice").
+  return /[\u3040-\u30ff\u3400-\u9fff]/.test(full) ? { firstName: "", lastName: full } : { firstName: full, lastName: "" };
 }
 
 function firstArray(obj: any): any[] {
