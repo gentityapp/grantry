@@ -9,6 +9,7 @@ import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-a
 import { auth } from "./auth.js";
 import { mcpApp } from "./mcp.js";
 import { dashboardApp, oauthApp, mcpAuthorizeGate } from "./ui.js";
+import { publicFormsApp } from "./public_forms.js";
 import { filesApp } from "./files.js";
 import { Scalar } from "@scalar/hono-api-reference";
 import { openApiDocument } from "./openapi.js";
@@ -124,6 +125,9 @@ app.route("/mcp", mcpApp);
 
 // Mount OAuth flows (callback URLs must be stable public paths)
 app.route("/oauth", oauthApp);
+
+// Public form endpoints for the static marketing site (grantry.ai).
+app.route("/public/forms", publicFormsApp);
 
 // Mount upload staging. Plain HTTP on purpose: it is the one part of the agent
 // surface that carries bytes, which JSON-RPC over /mcp cannot.
