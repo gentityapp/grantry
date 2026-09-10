@@ -1187,7 +1187,10 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
     return {};
   }
   if (toolName === "clay/search_reference") {
-    return {};
+    return {
+      section: { type: "string", description: "Heading substring, e.g. \"People fields\", \"Operators\", \"Location filtering\". Returns just that part of the grammar. Omit to get the heading index plus the first max_chars." },
+      max_chars: { type: "number", minimum: 500, maximum: 100000, description: "Cap on returned reference text (default 12000). The full reference is ~170k chars and does not fit in one tool result." },
+    };
   }
   if (toolName === "clay/search") {
     return {

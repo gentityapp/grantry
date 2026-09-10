@@ -158,6 +158,21 @@ function itemsArg(args: ClayArgs) {
   });
 }
 
+function splitMarkdownSections(markdown: string) {
+  const sections: Array<{ heading: string; text: string }> = [];
+  let current: { heading: string; lines: string[] } | null = null;
+  for (const line of markdown.split("\n")) {
+    if (/^#{1,6}\s/.test(line)) {
+      if (current) sections.push({ heading: current.heading, text: current.lines.join("\n") });
+      current = { heading: line.replace(/^#+\s*/, "").trim(), lines: [line] };
+    } else if (current) {
+      current.lines.push(line);
+    }
+  }
+  if (current) sections.push({ heading: current.heading, text: current.lines.join("\n") });
+  return sections;
+}
+
 function spread(body: unknown, fallbackKey: string) {
   return body && typeof body === "object" && !Array.isArray(body) ? (body as Record<string, unknown>) : { [fallbackKey]: body };
 }
@@ -179,7 +194,41 @@ export async function callClayTool(tool: string, args: ClayArgs, apiKey: string)
 
   if (tool === "clay/search_reference") {
     const result = await requestJson(apiKey, "GET", `${CLAY_PUBLIC_PREFIX}/search/query-mode/reference`, undefined, tool);
-    return { structuredContent: result.body };
+    const reference = typeof (result.body as any)?.reference === "string" ? String((result.body as any).reference) : "";
+    // Clay returns the whole query grammar as one markdown blob (~173k chars on
+    // 2026-09-10), which is far past what a tool result can carry. Return the
+    // heading index by default and let callers pull one section at a time.
+    if (!reference) return { structuredContent: result.body };
+    const sections = splitMarkdownSections(reference);
+    const wanted = optionalString(args, "section");
+    const maxChars = boundedInteger(args.max_chars, 12_000, 500, 100_000);
+    if (wanted) {
+      const needle = wanted.toLowerCase();
+      const hits = sections.filter((s) => s.heading.toLowerCase().includes(needle));
+      if (!hits.length) {
+        throw new Error(`no reference section matches ${JSON.stringify(wanted)}; call clay/search_reference without a section to list the ${sections.length} headings`);
+      }
+      const text = hits.map((s) => s.text).join("\n\n");
+      return {
+        structuredContent: {
+          sections: hits.map((s) => s.heading),
+          total_chars: reference.length,
+          chars: Math.min(text.length, maxChars),
+          truncated: text.length > maxChars,
+          reference: text.slice(0, maxChars),
+        },
+      };
+    }
+    return {
+      structuredContent: {
+        sections: sections.map((s) => s.heading),
+        total_chars: reference.length,
+        chars: Math.min(reference.length, maxChars),
+        truncated: reference.length > maxChars,
+        note: `Full reference is ${reference.length} chars. Pass section="<heading substring>" (e.g. "People fields") to read one part, or raise max_chars.`,
+        reference: reference.slice(0, maxChars),
+      },
+    };
   }
 
   if (tool === "clay/search") {

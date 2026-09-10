@@ -505,8 +505,11 @@ a same-owner peer) `delegate` to get a one-time grant and run it yourself.
 
 ### Clay tool arguments (besides `scope`)
 - `me` (read): no additional arguments. Returns the user/workspace behind the key.
-- `search_reference` (read): no additional arguments. Returns the Clay search
-  query syntax (markdown). Call it before writing a `search` query.
+- `search_reference` (read): optional `section` (heading substring, e.g.
+  "People fields", "Operators") and `max_chars` (default 12000). The full Clay
+  grammar is ~170k chars, so with no `section` you get the heading index plus a
+  truncated head; pass `section` to read one part. Call it before writing a
+  `search` query.
 - `search` (read, consumes plan result budget): `query`; optional `limit`
   (first page, default 20, free plans cap at 50). Returns `search_id`,
   `source_type` and the first page.

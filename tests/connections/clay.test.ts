@@ -77,6 +77,36 @@ test("clay/search creates the search then fetches the first page", async (t) => 
   assert.equal(content.results.length, 1);
 });
 
+test("clay/search_reference returns a heading index instead of the whole 170k-char grammar", async (t) => {
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  const reference = [
+    "# Clay search query reference",
+    "intro line",
+    "## Operators",
+    "eq, contains, in",
+    "### People fields",
+    "x".repeat(5000),
+  ].join("\n");
+  installFetchMock(() => jsonResponse({ reference }));
+
+  const index = await callClayTool("clay/search_reference", { max_chars: 500 }, "k");
+  const content = index.structuredContent as any;
+  assert.deepEqual(content.sections, ["Clay search query reference", "Operators", "People fields"]);
+  assert.equal(content.total_chars, reference.length);
+  assert.equal(content.reference.length, 500);
+  assert.equal(content.truncated, true);
+
+  const section = await callClayTool("clay/search_reference", { section: "operators" }, "k");
+  const sectionContent = section.structuredContent as any;
+  assert.deepEqual(sectionContent.sections, ["Operators"]);
+  assert.equal(sectionContent.reference, "## Operators\neq, contains, in");
+  assert.equal(sectionContent.truncated, false);
+
+  await assert.rejects(() => callClayTool("clay/search_reference", { section: "nope" }, "k"), /no reference section matches/);
+});
+
 test("clay/query_tables builds a structured query from table_id shortcuts", async (t) => {
   t.after(() => {
     globalThis.fetch = originalFetch;
