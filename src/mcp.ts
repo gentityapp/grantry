@@ -1177,41 +1177,69 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "clay/raw_request") {
     return {
       method: { type: "string", enum: ["GET", "POST", "PUT", "PATCH", "DELETE"], description: "HTTP method. Defaults to GET." },
-      path: { type: "string", description: "Clay API path, e.g. /v1/tables/{table_id}/rows. Do not include the host." },
+      path: { type: "string", description: "Clay Public API path under /public/v0, e.g. /me, /search/query-mode/reference, /routines/{routine_id}/run-batch/upload-url. Paths without the prefix are prefixed automatically; legacy /v1 and /v3 paths are rejected. Do not include the host." },
+      query: { type: "object", description: "Optional query parameters." },
       data: { type: "object", description: "Optional JSON body for POST/PUT/PATCH." },
       body: { type: "object", description: "Alias for data." },
     };
   }
-  if (toolName === "clay/lookup_row") {
+  if (toolName === "clay/me") {
+    return {};
+  }
+  if (toolName === "clay/search_reference") {
+    return {};
+  }
+  if (toolName === "clay/search") {
     return {
-      table_id: { type: "string", description: "Clay table ID." },
-      column: { type: "string", description: "Column to match." },
-      value: { type: "string", description: "Value to match." },
-      limit: { type: "number", minimum: 1, maximum: 100, description: "Rows to return." },
-      data: { type: "object", description: "Raw Clay lookup request body; overrides individual fields." },
+      query: { type: "string", description: "Clay search query (people or companies). Call clay/search_reference first for the field catalog and syntax." },
+      limit: { type: "number", minimum: 1, maximum: 500, description: "Results in the first page (default 20; free plans cap at 50). Counts against the workspace's plan result budget." },
     };
   }
-  if (toolName === "clay/create_row") {
+  if (toolName === "clay/search_next") {
     return {
-      table_id: { type: "string", description: "Clay table ID." },
-      data: { type: "object", description: "Row data to create." },
+      search_id: { type: "string", description: "search_id returned by clay/search." },
+      limit: { type: "number", minimum: 1, maximum: 500, description: "Results in this page (default 20)." },
     };
   }
-  if (toolName === "clay/update_row") {
+  if (toolName === "clay/query_tables") {
     return {
-      table_id: { type: "string", description: "Clay table ID." },
-      row_id: { type: "string", description: "Clay row ID." },
-      data: { type: "object", description: "Row data to patch." },
+      table_id: { type: "string", description: "Clay table id from the table URL (t_...). Shortcut for query.tables=[{id}]." },
+      select: { type: "array", description: "Optional field selection, e.g. [{ field: \"Company Name\", as: \"company\" }]." },
+      filter: { type: "object", description: "Optional filter expression, e.g. { field: \"Domain\", op: \"is_not_empty\" }; ops: =, !=, >, >=, <, <=, contains, not_contains, starts_with, ends_with, in, not_in, is_empty, is_not_empty; combine with { and: [...] } / { or: [...] } / { not: ... }." },
+      order_by: { type: "array", description: "Optional [{ field, direction }] (disables cursor pagination)." },
+      field_mode: { type: "string", enum: ["names", "ids"], description: "Whether select/filter reference columns by name (default) or id." },
+      query: { type: "object", description: "Full structured query (tables/select/filter/order_by/group_by/join); overrides table_id/select/filter/order_by." },
+      limit: { type: "number", minimum: 1, maximum: 100, description: "Page size (default 50)." },
+      cursor: { type: "string", description: "Cursor from the previous page." },
     };
   }
-  if (toolName === "clay/enrich_person") {
+  if (toolName === "clay/run_routine") {
     return {
-      data: { type: "object", description: "Clay person enrichment request body." },
+      routine_id: { type: "string", description: "Routine id, e.g. function:t_... or a workflow id from Clay." },
+      items: { type: "array", description: "1-100 items: [{ id: \"row-1\", inputs: { domain: \"example.com\" } }]. Each run consumes Clay credits." },
+      webhook_id: { type: "string", description: "Optional registered Clay webhook id notified when the run finishes." },
     };
   }
-  if (toolName === "clay/enrich_company") {
+  if (toolName === "clay/get_routine_run") {
     return {
-      data: { type: "object", description: "Clay company enrichment request body." },
+      routine_run_id: { type: "string", description: "routine_run_id returned by clay/run_routine (or a batch start)." },
+      batch: { type: "boolean", description: "Set true for run-batch ids (uploaded JSONL runs)." },
+      cursor: { type: "string", description: "Cursor from a previous results page." },
+      limit: { type: "number", minimum: 1, maximum: 1000, description: "Results per page." },
+    };
+  }
+  if (toolName === "clay/query_workflow_runs") {
+    return {
+      query: { type: "string", description: "Clay workflow-run query (beta). GET /workflows/runs/query/reference via clay/raw_request for the syntax." },
+      limit: { type: "number", minimum: 1, maximum: 100, description: "Page size." },
+      cursor: { type: "string", description: "Cursor from the previous page." },
+    };
+  }
+  if (toolName === "clay/push_webhook") {
+    return {
+      webhook_url: { type: "string", description: "The table's Webhook source URL from Clay (https://api.clay.com/v3/sources/webhook/...). No API key is used; anyone holding the URL can write to that table." },
+      data: { type: "object", description: "One row: column name -> value. Clay maps keys to the table's webhook fields." },
+      rows: { type: "array", description: "Multiple rows (objects); posted one by one in order. Overrides data." },
     };
   }
   // --- apollo ---

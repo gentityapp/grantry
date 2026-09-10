@@ -124,7 +124,7 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
   if (authType === "service_account") return "Paste the full service account JSON key file";
   if (providerKey === "hubspot") return "Paste your HubSpot Private App access token here (starts with pat-)";
   if (providerKey === "attio") return "Paste your Attio access token from Settings > Developers";
-  if (providerKey === "clay") return "Paste your Clay API key from Settings > Account > API key";
+  if (providerKey === "clay") return "Paste your Clay Public API key from Settings > Account > API keys (beta)";
   if (providerKey === "heyreach") return "Paste your HeyReach Public API key";
   if (providerKey === "chatwork") return "Paste your Chatwork API token";
   if (providerKey === "railway") return "Paste your Railway Project Token from Project Settings > Tokens";
@@ -164,7 +164,7 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
 function tokenLinkLabel(providerKey: string, providerLabel: string): string {
   if (providerKey === "hubspot") return "🔗 Get a new HubSpot Private App access token here →";
   if (providerKey === "attio") return "🔗 Manage Attio access tokens here →";
-  if (providerKey === "clay") return "🔗 Open Clay API key settings →";
+  if (providerKey === "clay") return "🔗 Open Clay API keys (beta) settings →";
   if (providerKey === "heyreach") return "🔗 Open HeyReach app →";
   if (providerKey === "chatwork") return "🔗 Open Chatwork API token settings →";
   if (providerKey === "channel_talk") return "🔗 Open Channel Talk Open API docs →";
@@ -6329,7 +6329,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
             : (sel.value === "attio"
               ? "Attio access token"
               : (sel.value === "clay"
-                ? "Clay API key"
+                ? "Clay Public API key"
                 : (sel.value === "heyreach"
                   ? "HeyReach Public API key"
                   : (sel.value === "railway"
@@ -7382,7 +7382,7 @@ dashboardApp.get("/tenants/new", async (c) => {
                   : (key === "attio"
                     ? "Paste a new Attio access token here (rotates credential)"
                     : (key === "clay"
-                      ? "Paste a new Clay API key here (rotates credential)"
+                      ? "Paste a new Clay Public API key here (rotates credential)"
                       : (key === "heyreach"
                         ? "Paste a new HeyReach Public API key here (rotates credential)"
                         : (key === "railway"

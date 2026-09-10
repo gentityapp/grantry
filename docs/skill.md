@@ -135,7 +135,9 @@ Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing scope):
   + Domain-Wide Delegation (DWD)** — the multi-tenant approach. See §5a.
 - **HubSpot**: paste a Private App access token.
 - **Attio**: paste a workspace access token from Settings > Developers > Access tokens.
-- **Clay**: paste the API key from Clay Settings > Account > API key.
+- **Clay**: paste a Public API key from Clay Settings > Account > API keys (beta)
+  (sent as `clay-api-key` to `https://api.clay.com/public/v0`; the legacy "API key"
+  on the same page is rejected).
 - **HeyReach**: paste a Public API key.
 - **Chatwork**: paste a Chatwork API token.
 - **Channel Talk**: paste JSON `{"accessKey":"…","accessSecret":"…"}` from the
@@ -321,8 +323,9 @@ the same provider+scope; disambiguate with `auth_type` (`service_account` vs
   `create_note`, `delete_note`, `list_tasks`, `get_task`, `create_task`,
   `update_task`, `delete_task`, `list_threads`, `get_thread`, `create_comment`,
   `get_comment`, `delete_comment`, `list_meetings`, `get_meeting`
-- **clay** (API key): `raw_request`, `lookup_row`, `create_row`, `update_row`,
-  `enrich_person`, `enrich_company`
+- **clay** (Public API key): `me`, `search_reference`, `search`, `search_next`,
+  `query_tables` (Enterprise), `run_routine`, `get_routine_run`,
+  `query_workflow_runs`, `push_webhook`, `raw_request`
 - **heyreach** (Public API key): `check_api_key`, `list_campaigns`,
   `get_campaign`, `pause_campaign`, `resume_campaign`, `add_leads_to_campaign`,
   `list_leads`, `list_conversations`, `list_lead_lists`, `create_empty_list`,
@@ -501,14 +504,29 @@ a same-owner peer) `delegate` to get a one-time grant and run it yourself.
 - `get_meeting` (read): `meeting_id`.
 
 ### Clay tool arguments (besides `scope`)
-- `raw_request` (read/write depending on method): `path`; optional `method`
-  (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`) and `data`/`body`. The path must be a
-  Clay API path, not a full URL.
-- `lookup_row` (read): `table_id`; optional `column`, `value`, `limit`, or raw `data`.
-- `create_row` (write): `table_id`, `data`.
-- `update_row` (write): `table_id`, `row_id`, `data`.
-- `enrich_person` (write): `data` Clay person enrichment request body.
-- `enrich_company` (write): `data` Clay company enrichment request body.
+- `me` (read): no additional arguments. Returns the user/workspace behind the key.
+- `search_reference` (read): no additional arguments. Returns the Clay search
+  query syntax (markdown). Call it before writing a `search` query.
+- `search` (read, consumes plan result budget): `query`; optional `limit`
+  (first page, default 20, free plans cap at 50). Returns `search_id`,
+  `source_type` and the first page.
+- `search_next` (read, consumes plan result budget): `search_id`; optional `limit`.
+  Clay returns 402 when the plan's result budget is exhausted.
+- `query_tables` (read, Enterprise plans only): `table_id` (from the Clay URL,
+  `t_...`) with optional `select`, `filter`, `order_by`, `field_mode`; or a full
+  structured `query`; optional `limit` (max 100), `cursor`.
+- `run_routine` (write, consumes Clay credits): `routine_id`, `items`
+  (1-100 `{ id, inputs }`); optional `webhook_id`.
+- `get_routine_run` (read): `routine_run_id`; optional `batch`, `cursor`, `limit`.
+  `in_progress: true` (HTTP 202) means poll again.
+- `query_workflow_runs` (read, beta): `query`; optional `limit`, `cursor`.
+- `push_webhook` (write, no API key): `webhook_url` (the table's Webhook source
+  URL, `https://api.clay.com/v3/sources/webhook/...`) plus `data` (one row) or
+  `rows` (array). This is the only way to add rows to a Clay table; the Public
+  API has no row write endpoint.
+- `raw_request` (read/write depending on method): `path` under `/public/v0`
+  (auto-prefixed; legacy `/v1` and `/v3` paths are rejected); optional `method`,
+  `query`, `data`/`body`.
 
 ### HeyReach tool arguments (besides `scope`)
 - `check_api_key` (read): no additional arguments.
@@ -880,8 +898,8 @@ When asked to act via grantry:
    `attio/upsert_record`, `attio/update_record`, `attio/create_note`,
    `attio/delete_note`, `attio/create_task`, `attio/update_task`,
    `attio/delete_task`, `attio/create_comment`, `attio/delete_comment`,
-   `clay/raw_request` with non-GET methods, `clay/create_row`,
-   `clay/update_row`, `clay/enrich_person`, `clay/enrich_company`,
+   `clay/raw_request` with non-GET methods, `clay/run_routine`,
+   `clay/push_webhook`,
    `heyreach/pause_campaign`,
    `heyreach/resume_campaign`, `heyreach/add_leads_to_campaign`,
    `heyreach/create_empty_list`, `chatwork/send_message`,

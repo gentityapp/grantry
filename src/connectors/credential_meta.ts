@@ -625,16 +625,27 @@ export async function inspectCredential(provider: string, authType: string, toke
           authType,
           status: "error",
           checkedAt,
-          error: "Clay expects the API key from Settings > Account > API key, not a webhook URL.",
+          error: "Clay expects a Public API key from Settings > Account > API keys (beta), not a webhook URL. Table webhook URLs go in the clay/push_webhook webhook_url argument instead.",
         };
+      }
+      const resp = await fetchWithTimeout("https://api.clay.com/public/v0/me", {
+        headers: { "clay-api-key": token.trim(), Accept: "application/json" },
+      });
+      const body: any = await readJson(resp);
+      if (!resp.ok) {
+        const hint = resp.status === 401 || resp.status === 403
+          ? " The Public API only accepts keys created under Settings > Account > API keys (beta); the legacy 'API key' on the same page is rejected."
+          : "";
+        return { provider, authType, status: "error", checkedAt, error: `Clay /public/v0/me failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}.${hint}` };
       }
       return {
         provider,
         authType,
         status: "ok",
+        subject: typeof body === "object" && body ? body : undefined,
         notes: [
-          "Clay API keys are stored server-side and sent as a Bearer token to the Clay API.",
-          "No non-consuming Clay token introspection endpoint is called during save; validate with clay/raw_request or a read-only lookup.",
+          "Clay Public API key sent as the clay-api-key header; /me returned the owning user and workspace.",
+          "Searches and routine runs consume the workspace's plan budget/credits; table queries need an Enterprise plan; table rows are written only via clay/push_webhook.",
         ],
         checkedAt,
       };
