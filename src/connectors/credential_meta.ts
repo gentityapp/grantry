@@ -1156,7 +1156,7 @@ export async function inspectCredential(provider: string, authType: string, toke
       const key = body?.data ?? {};
       const notes = [
         "OpenRouter API keys are sent as Authorization: Bearer against openrouter.ai/api/v1.",
-        "Every openrouter/chat call spends prepaid credits; use openrouter/get_credits to see the balance.",
+        "Every openrouter/chat call spends prepaid credits. openrouter/get_credits (account balance) only works with a management key; an inference key sees its own spend cap via openrouter/get_key (limit / limit_remaining / usage).",
       ];
       if (key.is_provisioning_key || key.is_management_key) notes.push("This is a PROVISIONING (management) key: it can read /auth/key, /credits and manage keys, but openrouter/chat will fail with 401 \"User not found\". Create a regular inference API key at openrouter.ai/settings/keys (or POST /keys with this key) and connect that instead.");
       if (key.is_free_tier) notes.push("Account is on the free tier: only :free models and low rate limits are available until credits are purchased.");

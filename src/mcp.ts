@@ -2543,8 +2543,8 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
     };
   }
   if (toolName === "openrouter/get_key") { return {}; }
-  if (toolName === "openrouter/get_credits") { return {}; }
-  if (toolName === "openrouter/get_generation") { return { id: { type: "string", description: "Generation id returned by openrouter/chat (gen-...). Returns token counts, cost and latency for that call." } }; }
+  if (toolName === "openrouter/get_credits") { return {}; } // account balance; OpenRouter answers 403 "Only management keys can fetch credits" for plain inference keys — use get_key for the per-key cap
+  if (toolName === "openrouter/get_generation") { return { id: { type: "string", description: "Generation id returned by openrouter/chat (gen-...). Returns token counts, cost and latency for that call. OpenRouter indexes generations asynchronously: immediately after the chat call this returns 404 \"Generation ... not found\"; retry after ~5-10 seconds. openrouter/chat already includes usage.cost inline, so this is only needed for native token counts / latency." } }; }
   // --- higgsfield ---
   if (toolName === "higgsfield/generate_image") {
     return {
