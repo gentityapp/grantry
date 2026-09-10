@@ -27,7 +27,7 @@ import { encrypt } from "./crypto.js";
 import { ensureTenant } from "./tenants.js";
 import { getProviderForWorkspace } from "./connectors/registry.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
-import { connectionCredentialData } from "./provider_credentials.js";
+import { connectionCredentialData, createTenantConnectionFromCredential } from "./provider_credentials.js";
 import { agentAssignedEmail, sendSystemEmail } from "./email.js";
 
 export const ADMIN_TOOLS = [
@@ -77,6 +77,15 @@ export type AdminToolResult = {
 
 const SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/;
 const AGENT_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
+
+function credentialStatusFromMetadata(raw: string | null | undefined): string {
+  try {
+    const parsed = raw ? JSON.parse(raw) : null;
+    return typeof parsed?.status === "string" ? parsed.status : "unknown";
+  } catch {
+    return "unknown";
+  }
+}
 
 function boundaryWhere(ctx: AdminContext): Record<string, unknown> {
   return ctx.workspaceId ? { workspaceId: ctx.workspaceId } : { ownerId: ctx.ownerId };
@@ -672,13 +681,65 @@ export async function callAdminTool(
   if (toolName === "grantry/create_connection") {
     const provider = requireString(args, "provider").toLowerCase();
     const scope = requireString(args, "target_scope").toLowerCase();
-    const credential = requireString(args, "credential");
+    const reuseConnectionId = String(args.reuse_connection_id ?? "").trim();
+    if (reuseConnectionId && String(args.credential ?? "").trim()) {
+      throw new Error("pass either credential (a new key) or reuse_connection_id (share an existing connection's key), not both");
+    }
+    const credential = reuseConnectionId ? "" : requireString(args, "credential");
     if (!SLUG_RE.test(scope)) throw new Error(`invalid scope: must match ${SLUG_RE}`);
     if (provider === "grantry") {
       throw new Error("grantry admin connections are created from the dashboard only (mint a key on /api-keys and add it via the connection wizard) — admin access cannot be spread by admin tools");
     }
     const providerDef = await getProviderForWorkspace(provider, ctx.workspaceId);
     if (!providerDef || providerDef.implemented === false) throw new Error(`provider not implemented: ${provider}`);
+
+    if (reuseConnectionId) {
+      // Same thing the dashboard's "Use existing: <label> (<scope>)" option
+      // does: a new connection at the target scope that shares the source
+      // connection's ProviderCredential. The key never travels through the
+      // agent — only the source connection id does.
+      const source = await prisma.connection.findFirst({
+        where: { id: reuseConnectionId, ...boundaryWhere(ctx) },
+      });
+      if (!source) throw new Error(`connection not found in this workspace: ${reuseConnectionId}`);
+      if (source.provider !== provider) throw new Error(`reuse_connection_id ${source.id} is a ${source.provider} connection, not ${provider}`);
+      if (source.authType === "oauth") throw new Error("existing connection reuse is only supported for PAT/API-key connections; OAuth connections need their own consent flow (dashboard)");
+      if (!source.enabled) throw new Error(`connection ${source.id} (${source.provider} @ ${source.scope}) is disabled`);
+      const tenant = await ensureTenant(ctx.ownerId, scope, undefined, ctx.workspaceId);
+      const conn = await createTenantConnectionFromCredential({ tenant, sourceConnection: source, createdById: ctx.ownerId });
+      // Dashboard parity: every agent that already reaches this scope gets the
+      // new connection too, so a rotated/deleted provider comes back for the
+      // whole scope instead of one agent. Pass grant_to_scope_agents=false to
+      // create it ungranted.
+      const grantedAgents: Array<{ agent_id: string; name: string }> = [];
+      if (args.grant_to_scope_agents !== false) {
+        const agents = await prisma.agent.findMany({
+          where: { ...boundaryWhere(ctx), enabled: true, connectionGrants: { some: { connection: { scope } } } },
+          select: { id: true, name: true },
+        });
+        for (const agent of agents) {
+          const res = await prisma.agentConnectionGrant.createMany({
+            data: [{ agentId: agent.id, connectionId: conn.id }],
+            skipDuplicates: true,
+          });
+          if (res.count > 0) grantedAgents.push({ agent_id: agent.id, name: agent.name });
+        }
+      }
+      const payload = {
+        connection_id: conn.id,
+        provider: conn.provider,
+        auth_type: conn.authType,
+        scope: conn.scope,
+        label: conn.label,
+        reused_from: { connection_id: source.id, label: source.label, scope: source.scope },
+        credential_status: credentialStatusFromMetadata(conn.credentialMetadata),
+        granted_agents: grantedAgents,
+        note: grantedAgents.length
+          ? "shares the source connection's stored credential; granted to every enabled agent that already had a connection at this scope."
+          : "shares the source connection's stored credential. Grant it to an agent with grantry_grant_scope or grantry_grant_connection.",
+      };
+      return { payload, summary: `created ${provider} connection at scope ${scope} reusing ${source.label} (${source.scope}); granted to ${grantedAgents.length} agent(s)` };
+    }
     const authType = args.auth_type ? String(args.auth_type) : (providerDef.authTypes.find((t) => t !== "oauth") ?? "pat");
     if (authType === "oauth") {
       throw new Error(`oauth connections require a browser consent flow — use the dashboard (/tenants/${scope}/edit). Pass a PAT/API key here instead${providerDef.tokenUrl ? ` (get one at ${providerDef.tokenUrl})` : ""}.`);
@@ -912,15 +973,17 @@ export function adminToolDescriptor(toolName: AdminToolName): { description: str
       };
     case "grantry/create_connection":
       return {
-        description: "grantry admin: register a PAT/API-key credential as a connection at a scope (creates the tenant if needed). The credential is encrypted at rest and never returned. OAuth providers and grantry admin keys must be connected via the dashboard.",
+        description: "grantry admin: register a PAT/API-key credential as a connection at a scope (creates the tenant if needed), OR share an existing PAT connection's stored credential with another scope via reuse_connection_id (the key never passes through the agent; new connection is auto-granted to the scope's existing agents unless grant_to_scope_agents=false). The credential is encrypted at rest and never returned. OAuth providers and grantry admin connections must be added from the dashboard.",
         properties: {
           provider: { type: "string", description: "Provider key, e.g. 'github', 'notion', 'attio' (see grantry_get_providers)." },
           target_scope: { type: "string", description: "Scope for the new connection; created if missing. (Named target_scope because 'scope' selects the admin connection itself.)" },
-          credential: { type: "string", description: "The PAT / API key / token. Redacted from audit logs." },
+          credential: { type: "string", description: "The PAT / API key / token. Redacted from audit logs. Omit when reuse_connection_id is given." },
+          reuse_connection_id: { type: "string", description: "Existing enabled PAT connection (any scope in this workspace, from grantry_list_connections) whose stored credential the new connection should share. Same as the dashboard's 'Use existing:' option; use it after a key rotation to bring a provider back at a scope without re-pasting the key." },
+          grant_to_scope_agents: { type: "boolean", description: "reuse_connection_id only. Default true: grant the new connection to every enabled agent that already holds a connection at target_scope." },
           auth_type: { type: "string", description: "Optional auth type. Defaults to the provider's non-OAuth auth type (usually 'pat')." },
-          label: { type: "string", description: "Optional display label." },
+          label: { type: "string", description: "Optional display label (new-credential path only)." },
         },
-        required: ["provider", "target_scope", "credential"],
+        required: ["provider", "target_scope"],
       };
     case "grantry/set_connection_enabled":
       return {

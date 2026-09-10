@@ -20,3 +20,12 @@ test("person-to-agent assignment admin tools are described", () => {
     assert.ok(descriptor.properties.user_email);
   }
 });
+
+test("create_connection can share an existing PAT connection's credential with another scope", () => {
+  const descriptor = adminToolDescriptor("grantry/create_connection");
+  assert.equal(descriptor.required.includes("credential"), false, "credential is optional when reuse_connection_id is given");
+  assert.deepEqual(descriptor.required, ["provider", "target_scope"]);
+  assert.ok(descriptor.properties.reuse_connection_id);
+  assert.ok(descriptor.properties.grant_to_scope_agents);
+  assert.ok(descriptor.description.includes("reuse_connection_id"));
+});
