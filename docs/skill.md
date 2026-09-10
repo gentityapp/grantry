@@ -515,9 +515,12 @@ a same-owner peer) `delegate` to get a one-time grant and run it yourself.
   `source_type` and the first page.
 - `search_next` (read, consumes plan result budget): `search_id`; optional `limit`.
   Clay returns 402 when the plan's result budget is exhausted.
-- `query_tables` (read, Enterprise plans only): `table_id` (from the Clay URL,
-  `t_...`) with optional `select`, `filter`, `order_by`, `field_mode`; or a full
-  structured `query`; optional `limit` (max 100), `cursor`.
+- `query_tables` (read): `table_id` (from the Clay URL, `t_...`) with optional
+  `select`, `filter`, `order_by`, `field_mode`; or a full structured `query`;
+  optional `limit` (max 100), `cursor`. This endpoint reads Clay's Enterprise
+  ClickHouse sync; on non-Enterprise workspaces read tables with the Clay CLI
+  instead (`clay tables rows list <tableId>`, `clay tables query-live <tableId>
+  --query "SELECT {{Column}} LIMIT 10"`), which runs against live Postgres.
 - `run_routine` (write, consumes Clay credits): `routine_id`, `items`
   (1-100 `{ id, inputs }`); optional `webhook_id`.
 - `get_routine_run` (read): `routine_run_id`; optional `batch`, `cursor`, `limit`.

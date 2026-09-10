@@ -1206,7 +1206,7 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   }
   if (toolName === "clay/query_tables") {
     return {
-      table_id: { type: "string", description: "Clay table id from the table URL (t_...). Shortcut for query.tables=[{id}]." },
+      table_id: { type: "string", description: "Clay table id from the table URL (t_...). Shortcut for query.tables=[{id}]. This endpoint reads Clay's Enterprise ClickHouse sync; on other plans use the Clay CLI (`clay tables rows list <tableId>` / `clay tables query-live`), which reads live Postgres." },
       select: { type: "array", description: "Optional field selection, e.g. [{ field: \"Company Name\", as: \"company\" }]." },
       filter: { type: "object", description: "Optional filter expression, e.g. { field: \"Domain\", op: \"is_not_empty\" }; ops: =, !=, >, >=, <, <=, contains, not_contains, starts_with, ends_with, in, not_in, is_empty, is_not_empty; combine with { and: [...] } / { or: [...] } / { not: ... }." },
       order_by: { type: "array", description: "Optional [{ field, direction }] (disables cursor pagination)." },

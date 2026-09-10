@@ -137,7 +137,7 @@ async function requestJson(apiKey: string, method: string, path: string, body: u
     if (r.status === 401 || r.status === 403) hint = " (Clay Public API keys come from Settings > Account > API keys (beta); the legacy workspace API key is not accepted.)";
     else if (r.status === 402) hint = " (plan search/result budget exhausted; wait for the reset or ask Clay to raise the limit.)";
     else if (r.status === 429) hint = ` (rate limited; retry after ${r.headers.get("retry-after") ?? "a few"} seconds.)`;
-    else if (r.status === 404 && path.startsWith(`${CLAY_PUBLIC_PREFIX}/tables/`)) hint = " (table queries are Enterprise-only and need a table id from the Clay URL.)";
+    else if ((r.status === 403 || r.status === 404) && path.startsWith(`${CLAY_PUBLIC_PREFIX}/tables/`)) hint = " (the Public API's /tables/query reads the Enterprise ClickHouse sync and needs a table id from the Clay URL; on non-Enterprise plans read tables with the Clay CLI instead — `clay tables rows list <tableId>` or `clay tables query-live <tableId> --query '...'`, which run against live Postgres.)";
     throw new Error(`Clay ${tool} failed: ${r.status} ${message}${hint}`);
   }
   return { status: r.status, body: j };

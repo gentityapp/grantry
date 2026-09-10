@@ -751,7 +751,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "clay",
     label: "Clay",
     authTypes: ["pat"],
-    helpText: "Create a Clay Public API key at Settings > Account > API keys (beta) and paste it here. It is sent as the clay-api-key header to https://api.clay.com/public/v0 (the legacy 'API key' on the same page is for Clay's in-table HTTP enrichments and is rejected by the Public API). Covers /me, GTM-database search, routine runs, workflow-run queries, and table queries (Enterprise plans only). Table rows cannot be written through the Public API; clay/push_webhook posts rows to a table's Webhook source URL instead. Searches and routine runs consume plan budget/credits.",
+    helpText: "Create a Clay Public API key at Settings > Account > API keys (beta) and paste it here. It is sent as the clay-api-key header to https://api.clay.com/public/v0 (the legacy 'API key' on the same page is for Clay's in-table HTTP enrichments and is rejected by the Public API). Covers /me, GTM-database search, routine runs, workflow-run queries, and table queries (clay/query_tables needs the Enterprise ClickHouse sync; on other plans read tables with the Clay CLI, which queries live Postgres). Table rows cannot be written through the Public API or the CLI; clay/push_webhook posts rows to a table's Webhook source URL instead. Searches and routine runs consume plan budget/credits.",
     tokenUrl: "https://app.clay.com/workspaces/~/settings/account?accountTab=api-keys-beta",
     tools: [
       "clay/me",
@@ -2333,7 +2333,7 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
       { id: "search_reference", tools: ["clay/search_reference"], method: "GET", path: "/public/v0/search/query-mode/reference", description: "Clay search query syntax reference (markdown).", risk: "read", probeQuery: {} },
       { id: "search_create", tools: ["clay/search"], method: "POST", path: "/public/v0/search/query-mode", description: "Create a people/companies search from a Clay search query (consumes plan result budget when paged).", risk: "read" },
       { id: "search_run", tools: ["clay/search", "clay/search_next"], method: "POST", path: "/public/v0/search/query-mode/{search_id}/run", description: "Fetch the next page of a search (counts against plan result limits; 402 when exhausted).", risk: "read" },
-      { id: "tables_query", tools: ["clay/query_tables"], method: "POST", path: "/public/v0/tables/query", description: "Structured read-only query across known Clay tables (Enterprise plans only).", risk: "read" },
+      { id: "tables_query", tools: ["clay/query_tables"], method: "POST", path: "/public/v0/tables/query", description: "Structured read-only query across known Clay tables (needs the Enterprise ClickHouse sync; non-Enterprise workspaces read tables with the Clay CLI instead).", risk: "read" },
       { id: "routine_run", tools: ["clay/run_routine"], method: "POST", path: "/public/v0/routines/{routine_id}/run", description: "Run a Clay routine (function/workflow) over 1-100 items; consumes Clay credits.", risk: "write" },
       { id: "routine_run_results", tools: ["clay/get_routine_run"], method: "GET", path: "/public/v0/routines/run/{routine_run_id}/results", description: "Progress (202) or results (200) of a routine run.", risk: "read" },
       { id: "workflow_runs_query", tools: ["clay/query_workflow_runs"], method: "POST", path: "/public/v0/workflows/runs/query", description: "Query workflow-run history (beta).", risk: "read" },
