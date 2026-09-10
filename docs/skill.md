@@ -182,7 +182,7 @@ Go to `/tenants/new` (or `/tenants/:scope/edit` to add to an existing scope):
 - **X (Twitter)**: OAuth only, via `/oauth/x/start`. Needs `X_CLIENT_ID` /
   `X_CLIENT_SECRET` (OAuth 2.0 Confidential client / Web App with callback
   `https://app.grantry.ai/oauth/x/callback`). Grants read + posting and deleting
-  tweets as the authorized account.
+  tweets, and following / unfollowing accounts, as the authorized account.
 - **Discord**: paste a **Bot Token** from `discord.com/developers/applications` >
   your app > Bot. Invite the bot to the target server with the needed permissions
   (and enable the Server Members Intent for `list_members`).
@@ -354,7 +354,8 @@ the same provider+scope; disambiguate with `auth_type` (`service_account` vs
 - **reddit** (OAuth; read + write): `get_me`, `get_subreddit`, `list_posts`,
   `search`, `get_comments`, `submit_post`, `submit_comment`, `vote`
 - **x** (OAuth; read + write): `get_me`, `get_user`, `get_user_tweets`,
-  `search_recent`, `get_tweet`, `post_tweet`, `delete_tweet`
+  `search_recent`, `get_tweet`, `post_tweet`, `delete_tweet`, `get_following`,
+  `follow_user`, `unfollow_user`
 - **zoom** (OAuth; needs `ZOOM_CLIENT_ID` / `ZOOM_CLIENT_SECRET`, callback
   `/oauth/zoom/callback`): `get_me`, `list_users`, `list_recordings`,
   `get_meeting_recordings`, `list_meetings`, `get_meeting`, `create_meeting`,
@@ -649,6 +650,14 @@ All tools are read-only and send the API key as the `key` query parameter.
   optional `image_urls` / `image_base64` / `media_ids` (≤4 images total),
   `reply_to`, `quote_tweet_id`. Images require the `media.write` scope.
 - `delete_tweet` (write): `id` (a tweet owned by the authorized account).
+- `get_following` (read): optional `user_id` (defaults to the authorized account),
+  `max_results` (1-1000), `pagination_token`, `user_fields`. Needs `follows.read`.
+- `follow_user` (write): `target_user_id` or `username`. Follows as the authorized
+  account. Needs `follows.write`; connections authorized before 2026-09-11 do not
+  have it and return 403 until re-authorized.
+- `unfollow_user` (write): `target_user_id` or `username`. Needs `follows.write`.
+- `x/request` (raw): the base URL is `https://api.x.com` with no version, so paths
+  must start with `/2/...` (`/users/me` is a 404, `/2/users/me` works).
 
 ### Discord tool arguments (besides `scope`)
 - `get_me` (read): no additional arguments. Returns the bot user.
@@ -914,7 +923,8 @@ When asked to act via grantry:
    `railway/graphql` with mutations,
    `resend/send_email`, `slack/post_message`, `slack/update_message`,
    `reddit/submit_post`, `reddit/submit_comment`, `reddit/vote`,
-   `x/post_tweet`, `x/delete_tweet`, `discord/send_message`,
+   `x/post_tweet`, `x/delete_tweet`, `x/follow_user`, `x/unfollow_user`,
+   `discord/send_message`,
    `discord/edit_message`, `discord/delete_message`, `line/push_message`,
    `line/reply_message`, `line/multicast`, `line/broadcast`,
    `airtable/create_record`, `airtable/update_record`, `airtable/delete_record`,

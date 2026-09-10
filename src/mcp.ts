@@ -2257,6 +2257,26 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       id: { type: "string", description: "ID of a tweet owned by the authorized account to delete." },
     };
   }
+  if (toolName === "x/get_following") {
+    return {
+      user_id: { type: "string", description: "Numeric X user ID whose following list to read. Defaults to the authorized account." },
+      max_results: { type: "number", minimum: 1, maximum: 1000, description: "Users per page, 1-1000." },
+      pagination_token: { type: "string", description: "next_token from a previous page for pagination." },
+      user_fields: { type: "string", description: "Optional comma-separated user.fields to expand." },
+    };
+  }
+  if (toolName === "x/follow_user") {
+    return {
+      target_user_id: { type: "string", description: "Numeric X user ID to follow. Either this or username is required." },
+      username: { type: "string", description: "Handle to follow (with or without @); resolved to an id with one extra lookup." },
+    };
+  }
+  if (toolName === "x/unfollow_user") {
+    return {
+      target_user_id: { type: "string", description: "Numeric X user ID to unfollow. Either this or username is required." },
+      username: { type: "string", description: "Handle to unfollow (with or without @)." },
+    };
+  }
   if (toolName === "discord/get_me") {
     return {};
   }
@@ -3381,6 +3401,9 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "x/get_tweet") return ["id"];
   if (toolName === "x/post_tweet") return [];
   if (toolName === "x/delete_tweet") return ["id"];
+  if (toolName === "x/get_following") return [];
+  if (toolName === "x/follow_user") return [];
+  if (toolName === "x/unfollow_user") return [];
   if (toolName === "discord/get_guild") return ["guild_id"];
   if (toolName === "discord/list_channels") return ["guild_id"];
   if (toolName === "discord/get_channel") return ["channel_id"];

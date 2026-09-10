@@ -176,6 +176,28 @@ async function request(token: string, method: string, path: string, body: unknow
   return j;
 }
 
+// The follow endpoints need the authorized account's numeric id in the path.
+// X only hands it out via /users/me, so resolve it once per call.
+async function authorizedUserId(token: string, tool: string): Promise<string> {
+  const me: any = await request(token, "GET", "/users/me", undefined, tool);
+  const id = me?.data?.id;
+  if (!id) throw new Error(`X ${tool}: could not resolve the authorized user id from /users/me`);
+  return String(id);
+}
+
+// Follow targets may be given as a numeric id or a handle; handles cost one
+// extra lookup.
+async function resolveTargetUserId(token: string, args: XArgs, tool: string): Promise<string> {
+  const explicit = strArg(args, "target_user_id", ["user_id", "id"]);
+  if (explicit) return explicit;
+  const username = strArg(args, "username", ["handle"]).replace(/^@/, "");
+  if (!username) throw new Error("target_user_id or username is required");
+  const user: any = await request(token, "GET", `/users/by/username/${encodeURIComponent(username)}`, undefined, tool);
+  const id = user?.data?.id;
+  if (!id) throw new Error(`X ${tool}: no user found for @${username}`);
+  return String(id);
+}
+
 export async function callXTool(tool: string, args: XArgs, token: string) {
   if (tool === "x/get_me") {
     const qs = buildQuery({ "user.fields": strArg(args, "user_fields") || DEFAULT_USER_FIELDS });
@@ -232,6 +254,36 @@ export async function callXTool(tool: string, args: XArgs, token: string) {
   if (tool === "x/delete_tweet") {
     const id = requireArg(args, "id", ["tweet_id"]);
     return { structuredContent: await request(token, "DELETE", `/tweets/${encodeURIComponent(id)}`, undefined, tool) };
+  }
+
+  if (tool === "x/get_following") {
+    const userId = strArg(args, "user_id", ["id"]) || (await authorizedUserId(token, tool));
+    const qs = buildQuery({
+      max_results: args.max_results,
+      pagination_token: args.pagination_token,
+      "user.fields": strArg(args, "user_fields") || DEFAULT_USER_FIELDS,
+    });
+    return { structuredContent: await request(token, "GET", `/users/${encodeURIComponent(userId)}/following${qs}`, undefined, tool) };
+  }
+
+  if (tool === "x/follow_user") {
+    const target = await resolveTargetUserId(token, args, tool);
+    const source = await authorizedUserId(token, tool);
+    const result = await request(token, "POST", `/users/${encodeURIComponent(source)}/following`, { target_user_id: target }, tool);
+    return { structuredContent: { source_user_id: source, target_user_id: target, ...result } };
+  }
+
+  if (tool === "x/unfollow_user") {
+    const target = await resolveTargetUserId(token, args, tool);
+    const source = await authorizedUserId(token, tool);
+    const result = await request(
+      token,
+      "DELETE",
+      `/users/${encodeURIComponent(source)}/following/${encodeURIComponent(target)}`,
+      undefined,
+      tool,
+    );
+    return { structuredContent: { source_user_id: source, target_user_id: target, ...result } };
   }
 
   throw new Error(`Unknown X tool: ${tool}`);
