@@ -1788,7 +1788,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "openrouter",
     label: "OpenRouter",
     authTypes: ["pat"],
-    helpText: "Paste an OpenRouter API key (starts with sk-or-v1-) from openrouter.ai/settings/keys. It is sent as Authorization: Bearer against openrouter.ai/api/v1. openrouter/chat runs a chat completion on any catalog model (default openrouter/auto; pass model like anthropic/claude-sonnet-4 or openai/gpt-4o) and returns text plus usage/cost. To attach app attribution headers, paste JSON like {\"api_key\":\"sk-or-v1-...\",\"referer\":\"https://app.example.com\",\"title\":\"Your App\"}. Every completion spends prepaid credits; check openrouter/get_credits before large batches.",
+    helpText: "Paste an OpenRouter API key (starts with sk-or-v1-) from openrouter.ai/settings/keys. It is sent as Authorization: Bearer against openrouter.ai/api/v1. openrouter/chat runs a chat completion on any catalog model (default openrouter/auto; pass model like anthropic/claude-sonnet-4 or openai/gpt-4o) and returns text plus usage/cost. To attach app attribution headers, paste JSON like {\"api_key\":\"sk-or-v1-...\",\"referer\":\"https://app.example.com\",\"title\":\"Your App\"}. Every completion spends prepaid credits; check openrouter/get_credits before large batches. Use a regular inference key, not a provisioning (management) key: provisioning keys pass the health check but openrouter/chat returns 401 User not found.",
     tokenUrl: "https://openrouter.ai/settings/keys",
     tools: [
       "openrouter/chat",
