@@ -155,6 +155,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   godaddy: "#1BDBDB", // GoDaddy teal
   openai: "#000000", // OpenAI black
   openai_ads: "#000000", // OpenAI black
+  openrouter: "#6467F2", // OpenRouter indigo
   higgsfield: "#000000", // Higgsfield black
   figma: "#F24E1E", // Figma orange-red
   miro: "#FFD02F", // Miro yellow

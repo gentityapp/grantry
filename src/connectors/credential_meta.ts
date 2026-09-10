@@ -1140,6 +1140,37 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "openrouter") {
+      let apiKey = token.trim();
+      const extraHeaders: Record<string, string> = {};
+      if (apiKey.startsWith("{")) {
+        let p: any; try { p = JSON.parse(apiKey); } catch { return { provider, authType, status: "error", checkedAt, error: 'OpenRouter credential JSON is invalid; expected {"api_key":"sk-or-v1-..."}' }; }
+        apiKey = String(p.api_key ?? p.apiKey ?? p.token ?? "").trim();
+        if (p.referer ?? p.http_referer ?? p.site_url) extraHeaders["HTTP-Referer"] = String(p.referer ?? p.http_referer ?? p.site_url);
+        if (p.title ?? p.x_title ?? p.app_name) extraHeaders["X-Title"] = String(p.title ?? p.x_title ?? p.app_name);
+      }
+      if (!apiKey) return { provider, authType, status: "error", checkedAt, error: "OpenRouter API key is required" };
+      const resp = await fetchWithTimeout("https://openrouter.ai/api/v1/auth/key", { headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json", ...extraHeaders } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `OpenRouter API key check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      const key = body?.data ?? {};
+      const notes = [
+        "OpenRouter API keys are sent as Authorization: Bearer against openrouter.ai/api/v1.",
+        "Every openrouter/chat call spends prepaid credits; use openrouter/get_credits to see the balance.",
+      ];
+      if (key.is_free_tier) notes.push("Account is on the free tier: only :free models and low rate limits are available until credits are purchased.");
+      if (key.limit !== null && key.limit !== undefined) notes.push(`This key has a spend limit of ${key.limit} USD (used ${key.usage ?? 0}).`);
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: { label: key.label, is_free_tier: key.is_free_tier, is_provisioning_key: key.is_provisioning_key },
+        resources: [{ key_limit_usd: key.limit ?? null, key_usage_usd: key.usage ?? 0, rate_limit: key.rate_limit }],
+        notes,
+        checkedAt,
+      };
+    }
+
     if (provider === "vercel") {
       const resp = await fetchWithTimeout("https://api.vercel.com/v2/user", { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
       const body: any = await readJson(resp);

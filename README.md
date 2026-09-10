@@ -16,7 +16,7 @@ grantry lets teams connect SaaS credentials once, keep tokens out of agents, and
 
 Passing raw API keys or OAuth tokens to every local MCP server does not scale for agency, B2B, or multi-client AI operations. grantry centralizes the credential, keeps provider permissions intact, filters `tools/list` by agent grants, and records tool-call audit history.
 
-The public provider and tool counts are rendered from `providerCoverageStats()` in `src/connectors/registry.ts`, after generic request helper tools are attached to implemented providers. Current `origin/main` includes GitHub, Notion, Google Search Console, Google Analytics, Google Ads, Gmail, YouTube, HubSpot, Attio, Twenty CRM, Slack, Cloudflare, LINE Yahoo Ads, Meta Ads, Airtable, Linear, Vercel, Stripe, Salesforce, BigQuery, OpenAI, Higgsfield, Figma, and Miro.
+The public provider and tool counts are rendered from `providerCoverageStats()` in `src/connectors/registry.ts`, after generic request helper tools are attached to implemented providers. Current `origin/main` includes GitHub, Notion, Google Search Console, Google Analytics, Google Ads, Gmail, YouTube, HubSpot, Attio, Twenty CRM, Slack, Cloudflare, LINE Yahoo Ads, Meta Ads, Airtable, Linear, Vercel, Stripe, Salesforce, BigQuery, OpenAI, OpenRouter, Higgsfield, Figma, and Miro.
 
 ## Core flow
 

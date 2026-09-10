@@ -52,6 +52,7 @@ import { callLinearTool } from "./connectors/linear.js";
 import { callSendGridTool } from "./connectors/sendgrid.js";
 import { callOpenAITool } from "./connectors/openai.js";
 import { callOpenAIAdsTool } from "./connectors/openai_ads.js";
+import { callOpenRouterTool } from "./connectors/openrouter.js";
 import { callHiggsfieldTool } from "./connectors/higgsfield.js";
 import { callVercelTool } from "./connectors/vercel.js";
 import { callStripeTool } from "./connectors/stripe.js";
@@ -2510,6 +2511,40 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       query: { type: "object", description: "Insights params, e.g. { time_granularity, fields: ['impressions','clicks','spend'], time_ranges, filters, sort, segments, limit }. Array values are repeated." },
     };
   }
+  // --- openrouter ---
+  if (toolName === "openrouter/chat") {
+    return {
+      model: { type: "string", description: "Model id from the OpenRouter catalog, e.g. anthropic/claude-sonnet-4, openai/gpt-4o, google/gemini-2.5-pro. Default openrouter/auto (OpenRouter picks). Use openrouter/list_models to browse." },
+      messages: { type: "array", items: { type: "object" }, description: "OpenAI-style chat messages [{ role: system|user|assistant|tool, content }]. Use this OR prompt." },
+      prompt: { type: "string", description: "Shortcut for a single user message when messages is omitted." },
+      system: { type: "string", description: "Optional system prompt, used with prompt." },
+      temperature: { type: "number", description: "Sampling temperature (0-2)." },
+      top_p: { type: "number", description: "Nucleus sampling." },
+      max_tokens: { type: "number", description: "Maximum completion tokens." },
+      seed: { type: "number", description: "Optional seed for reproducible sampling (model-dependent)." },
+      stop: { type: "array", items: { type: "string" }, description: "Stop sequences." },
+      response_format: { type: "object", description: "e.g. { type: 'json_object' } or a json_schema spec (model must support structured outputs)." },
+      tools: { type: "array", items: { type: "object" }, description: "OpenAI-style function tool definitions." },
+      tool_choice: { description: "OpenAI-style tool_choice (auto | none | { type: 'function', function: { name } })." },
+      models: { type: "array", items: { type: "string" }, description: "OpenRouter fallback chain: tried in order if the primary model fails." },
+      provider: { type: "object", description: "OpenRouter provider preferences, e.g. { order: ['Anthropic'], allow_fallbacks: false, data_collection: 'deny' }." },
+      reasoning: { type: "object", description: "Reasoning controls for thinking models, e.g. { effort: 'high' } or { max_tokens: 2000 }." },
+      transforms: { type: "array", items: { type: "string" }, description: "OpenRouter prompt transforms, e.g. ['middle-out'] to fit long prompts." },
+      user: { type: "string", description: "Optional end-user identifier for abuse monitoring." },
+      extra: { type: "object", description: "Any additional request body fields merged as-is." },
+    };
+  }
+  if (toolName === "openrouter/list_models") {
+    return {
+      search: { type: "string", description: "Case-insensitive substring filter on model id/name, e.g. 'claude' or 'gemini'." },
+      category: { type: "string", description: "Optional OpenRouter category filter, e.g. programming." },
+      supported_parameters: { type: "array", items: { type: "string" }, description: "Only models supporting all of these parameters, e.g. ['tools','response_format']." },
+      limit: { type: "number", description: "Maximum models to return after filtering." },
+    };
+  }
+  if (toolName === "openrouter/get_key") { return {}; }
+  if (toolName === "openrouter/get_credits") { return {}; }
+  if (toolName === "openrouter/get_generation") { return { id: { type: "string", description: "Generation id returned by openrouter/chat (gen-...). Returns token counts, cost and latency for that call." } }; }
   // --- higgsfield ---
   if (toolName === "higgsfield/generate_image") {
     return {
@@ -3350,6 +3385,7 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "sendgrid/get_template") return ["template_id"];
   if (toolName === "sendgrid/get_stats") return ["start_date"];
   if (toolName === "openai/generate_image") return ["prompt"];
+  if (toolName === "openrouter/get_generation") return ["id"];
   if (toolName === "higgsfield/generate_image") return ["prompt"];
   if (toolName === "higgsfield/get_request") return ["request_id"];
   if (toolName === "higgsfield/cancel_request") return ["request_id"];
@@ -3849,6 +3885,7 @@ async function dispatchProviderTool(
   if (provider === "sendgrid") return callSendGridTool(toolName, args, token);
   if (provider === "openai") return callOpenAITool(toolName, args, token);
   if (provider === "openai_ads") return callOpenAIAdsTool(toolName, args, token);
+  if (provider === "openrouter") return callOpenRouterTool(toolName, args, token);
   if (provider === "higgsfield") return callHiggsfieldTool(toolName, args, token);
   if (provider === "vercel") return callVercelTool(toolName, args, token);
   if (provider === "stripe") return callStripeTool(toolName, args, token);

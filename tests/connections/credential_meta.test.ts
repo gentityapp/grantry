@@ -267,6 +267,9 @@ function patSuccessResponse(call: FetchCall) {
   if (url === "https://api.openai.com/v1/models") {
     return jsonResponse({ object: "list", data: [{ id: "gpt-image-1", object: "model" }] });
   }
+  if (url === "https://openrouter.ai/api/v1/auth/key") {
+    return jsonResponse({ data: { label: "grantry-test", usage: 0.12, limit: null, is_free_tier: false, rate_limit: { requests: 200, interval: "10s" } } });
+  }
   if (url === "https://api.chatwork.com/v2/me") {
     return jsonResponse({ account_id: 1, name: "Ops", chatwork_id: "ops", organization_id: 2, organization_name: "Root" });
   }

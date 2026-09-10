@@ -316,6 +316,7 @@ function credentialToken(provider: string, credential: string) {
   if (provider === "customerio" && parsed) return String(parsed.token ?? credential);
   if (provider === "microsoft_ads" && parsed) return String(parsed.access_token ?? credential);
   if (provider === "openai" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
+  if (provider === "openrouter" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? parsed.token ?? credential);
   if (provider === "twenty" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "monid" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "seminar_portal" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
@@ -445,6 +446,15 @@ function applyProviderSpecificAuth(provider: string, credential: string, headers
     headers.Authorization = `Bearer ${credentialToken(provider, credential)}`;
     if (parsed?.organization) headers["OpenAI-Organization"] = String(parsed.organization);
     if (parsed?.project) headers["OpenAI-Project"] = String(parsed.project);
+    return true;
+  }
+  if (provider === "openrouter") {
+    const parsed = parsedCredentialObject(credential);
+    headers.Authorization = `Bearer ${credentialToken(provider, credential)}`;
+    const referer = parsed?.referer ?? parsed?.http_referer ?? parsed?.site_url;
+    const title = parsed?.title ?? parsed?.x_title ?? parsed?.app_name;
+    if (referer) headers["HTTP-Referer"] = String(referer);
+    if (title) headers["X-Title"] = String(title);
     return true;
   }
   if (provider === "notion") {

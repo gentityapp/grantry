@@ -1784,6 +1784,21 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  openrouter: {
+    key: "openrouter",
+    label: "OpenRouter",
+    authTypes: ["pat"],
+    helpText: "Paste an OpenRouter API key (starts with sk-or-v1-) from openrouter.ai/settings/keys. It is sent as Authorization: Bearer against openrouter.ai/api/v1. openrouter/chat runs a chat completion on any catalog model (default openrouter/auto; pass model like anthropic/claude-sonnet-4 or openai/gpt-4o) and returns text plus usage/cost. To attach app attribution headers, paste JSON like {\"api_key\":\"sk-or-v1-...\",\"referer\":\"https://app.example.com\",\"title\":\"Your App\"}. Every completion spends prepaid credits; check openrouter/get_credits before large batches.",
+    tokenUrl: "https://openrouter.ai/settings/keys",
+    tools: [
+      "openrouter/chat",
+      "openrouter/list_models",
+      "openrouter/get_key",
+      "openrouter/get_credits",
+      "openrouter/get_generation",
+    ],
+    implemented: true,
+  },
   higgsfield: {
     key: "higgsfield",
     label: "Higgsfield",
@@ -2744,6 +2759,14 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
     smokeTests: [{ id: "ad_account", method: "GET", path: "/ad_account" }],
+  },
+  openrouter: {
+    baseUrl: "https://openrouter.ai/api/v1",
+    // Chat completions on large/reasoning models routinely run past the shared default.
+    timeoutMs: 120000,
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "auth_key", method: "GET", path: "/auth/key" }],
   },
   apify: {
     baseUrl: "https://api.apify.com/v2",
