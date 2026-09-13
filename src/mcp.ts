@@ -102,7 +102,7 @@ import { connectionCredentialData, providerCredentialData } from "./provider_cre
 import { adminToolDescriptor, isAdminTool } from "./admin_tools.js";
 import { agentIdIsToolTarget, stripActingAgentSelector } from "./acting_agent_args.js";
 import { callGrantryAdminTool } from "./connectors/grantry_admin.js";
-import { applyToolFilter, toolAllowedByFilter, toolFilterFromRequest } from "./tool_filter.js";
+import { applyToolFilter, consolidateHelperTools, expandConsolidatedHelper, helpersConsolidated, toolAllowedByFilter, toolFilterFromRequest } from "./tool_filter.js";
 
 export const mcpApp = new Hono();
 
@@ -870,7 +870,7 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
             content_type: { type: "string", description: "Optional content type override." },
           },
         },
-        description: "Attach previously uploaded files, turning this into a multipart/form-data request; `body` entries become form fields. Upload first with `curl -H 'Authorization: Bearer gn_agt_...' -F file=@path https://<grantry-host>/files`, then pass the returned file_id here — the bytes go straight from grantry to the provider and never travel through the model's context.",
+        description: "Uploaded files (file_id from grantry_create_upload_url); makes the request multipart, `body` becomes form fields.",
       },
       headers: { type: "object", description: "Optional extra scalar headers. Authorization/Cookie/Host/Content-Length cannot be overridden." },
       timeout_ms: { type: "number", minimum: 1000, maximum: 120000, description: "Optional request timeout in milliseconds for this call. Defaults to the provider's own timeout. Raise it for reporting or query endpoints that are legitimately slow." },
@@ -4353,8 +4353,22 @@ function buildToolList(
   const authTypesByTool = new Map<string, Set<string>>();
   const connectionIdsByTool = new Map<string, Set<string>>();
   const providerLabelsByTool = new Map<string, Set<string>>();
+  // Tools where one scope has 2+ connections (or auth types) — only those need
+  // the connection_id / auth_type disambiguators in their schema.
+  const connsByToolScope = new Map<string, number>();
+  const authTypesByToolScope = new Map<string, Set<string>>();
+  const ambiguousConnTools = new Set<string>();
+  const ambiguousAuthTools = new Set<string>();
   for (const conn of connections) {
     for (const tool of conn.tools) {
+      const key = `${tool}\0${conn.scope}`;
+      const n = (connsByToolScope.get(key) ?? 0) + 1;
+      connsByToolScope.set(key, n);
+      if (n > 1) ambiguousConnTools.add(tool);
+      const at = authTypesByToolScope.get(key) ?? new Set<string>();
+      at.add(conn.authType);
+      authTypesByToolScope.set(key, at);
+      if (at.size > 1) ambiguousAuthTools.add(tool);
       if (!scopesByTool.has(tool)) scopesByTool.set(tool, new Set());
       if (!authTypesByTool.has(tool)) authTypesByTool.set(tool, new Set());
       if (!connectionIdsByTool.has(tool)) connectionIdsByTool.set(tool, new Set());
@@ -4406,13 +4420,20 @@ function buildToolList(
                 description: "Agent to act through for this call. Use grantry_list_user_agents to inspect names and descriptions.",
               },
             } : {}),
-            scope: { type: "string", enum: scopes, description: "Tenant scope. Use one of the scopes exposed for this agent token." },
-            auth_type: { type: "string", enum: authTypes, description: "Optional auth type disambiguator." },
-            connection_id: { type: "string", enum: connectionIds, description: "Optional connection id disambiguator." },
-            grant_token: { type: "string", description: "One-time delegation grant from grantry_delegate, authorizing this exact tool+scope via a capable peer agent. Required for delegated scopes (those without a direct connection on this agent token)." },
+            // Schema diet (2026-09-13): shared args were ~55% of tools/list bytes.
+            // Emit them only when they can matter; tools/call still accepts all.
+            scope: { type: "string", enum: scopes, description: "Tenant scope." },
+            ...(ambiguousAuthTools.has(toolName) ? { auth_type: { type: "string", enum: authTypes } } : {}),
+            ...(ambiguousConnTools.has(toolName) ? { connection_id: { type: "string", enum: connectionIds, description: "Required when a scope has several connections." } } : {}),
+            ...(delegScopes.size ? { grant_token: { type: "string", description: "From grantry_delegate; required for delegated scopes." } } : {}),
             ...toolSpecificInputProperties(toolName),
           },
-          required: [...(options.userMode && options.requireAgentId ? ["agent_id"] : []), "scope", ...requiredToolSpecificArgs(toolName)],
+          // A single directly-callable scope is inferred server-side on tools/call.
+          required: [
+            ...(options.userMode && options.requireAgentId ? ["agent_id"] : []),
+            ...(scopes.length === 1 && !delegScopes.size ? [] : ["scope"]),
+            ...requiredToolSpecificArgs(toolName),
+          ],
         },
       });
   }
@@ -4914,6 +4935,10 @@ const handleMcpPost = async (c: any) => {
   const configuredScope = configuredMcpScope(c);
   // Optional ?providers= / ?tools= narrowing (display only; never widens access).
   const toolFilter = toolFilterFromRequest(c);
+  const shapeToolList = (tools: any[]) => {
+    const filtered = applyToolFilter(tools, toolFilter);
+    return helpersConsolidated(c) ? consolidateHelperTools(filtered) : filtered;
+  };
   c.header("Access-Control-Expose-Headers", "Mcp-Session-Id, WWW-Authenticate");
 
   if (userMode && !wsSlug) {
@@ -5036,11 +5061,11 @@ const handleMcpPost = async (c: any) => {
         }
       }
       return c.json({ jsonrpc: "2.0", id, result: {
-        tools: applyToolFilter(buildToolList(allConnections, new Map(), {
+        tools: shapeToolList(buildToolList(allConnections, new Map(), {
           userMode: true,
           requireAgentId: agents.length > 1,
           agentOptionsByTool,
-        }), toolFilter),
+        })),
       } });
     }
     const connections = agent
@@ -5059,7 +5084,7 @@ const handleMcpPost = async (c: any) => {
         }
       }
     }
-    return c.json({ jsonrpc: "2.0", id, result: { tools: applyToolFilter(buildToolList(connections, delegatable), toolFilter) } });
+    return c.json({ jsonrpc: "2.0", id, result: { tools: shapeToolList(buildToolList(connections, delegatable)) } });
   }
 
   // --- connections/list: requires auth; returns the exact (provider, scope)
@@ -5092,8 +5117,9 @@ const handleMcpPost = async (c: any) => {
   // --- tools/call: requires auth ---
   if (method === "tools/call") {
     const requestedToolName = String(params?.name ?? "");
-    const toolName = canonicalToolName(requestedToolName);
     const args = params?.arguments ?? {};
+    // grantry_check_connection / grantry_list_capabilities take `provider`.
+    const toolName = expandConsolidatedHelper(canonicalToolName(requestedToolName), args);
     if (!toolAllowedByFilter(toolFilter, requestedToolName) && !toolAllowedByFilter(toolFilter, toolName)) {
       return c.json({
         jsonrpc: "2.0", id,
@@ -5156,7 +5182,14 @@ const handleMcpPost = async (c: any) => {
     }
 
     const requestedScope = args.scope === undefined || args.scope === null ? "" : String(args.scope);
-    const scope = requestedScope || configuredScope;
+    let scope = requestedScope || configuredScope;
+    if (!scope) {
+      // tools/list omits `scope` from required when the tool has exactly one
+      // directly-callable scope; resolve that scope here.
+      const tool = toolName;
+      const scopesForTool = new Set((await connectionsForAgent(agent.id)).filter((conn) => conn.tools.includes(tool)).map((conn) => conn.scope));
+      if (scopesForTool.size === 1) scope = Array.from(scopesForTool)[0];
+    }
     const authType = args.auth_type !== undefined ? String(args.auth_type) : (args.authType !== undefined ? String(args.authType) : "");
     const connectionId = args.connection_id !== undefined ? String(args.connection_id) : (args.connectionId !== undefined ? String(args.connectionId) : "");
     const grantToken = args.grant_token !== undefined ? String(args.grant_token) : (args.grantToken !== undefined ? String(args.grantToken) : "");

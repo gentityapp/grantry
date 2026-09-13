@@ -108,6 +108,15 @@ to the MCP URL, or send `X-Grantry-Providers` / `X-Grantry-Tools` headers. Works
 agent's grants/scope, a named but ungranted tool never appears, and `tools/call`
 on a tool outside the filter returns `-32601`.
 
+**Schema diet (2026-09-13).** Provider tool schemas list `auth_type` /
+`connection_id` only when one scope has several connections, and `grant_token`
+only for delegated scopes. `scope` is not required when the tool has exactly one
+directly-callable scope (the server infers it). All of these are still accepted
+on `tools/call`. Add `?helpers=consolidated` to replace every
+`<provider>_check_connection` / `<provider>_list_capabilities` with
+`grantry_check_connection` / `grantry_list_capabilities` (`provider` argument);
+the per-provider names remain callable.
+
 ### 2. Call a tool with scope
 Use the exact `scope` from `connections/list`:
 ```json

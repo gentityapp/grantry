@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { applyToolFilter, parseToolFilter, toolAllowedByFilter, toolFilterFromRequest } from "../../src/tool_filter.js";
+import { applyToolFilter, consolidateHelperTools, expandConsolidatedHelper, parseToolFilter, toolAllowedByFilter, toolFilterFromRequest } from "../../src/tool_filter.js";
 
 // Shape of an authorized tools/list result: already limited to the agent's grants.
 const AUTHORIZED = [
@@ -89,4 +89,32 @@ test("tools/call gate matches the advertised subset", () => {
   assert.equal(toolAllowedByFilter(filter, "google_ads_mutate"), false);
   assert.equal(toolAllowedByFilter(filter, "ping"), true);
   assert.equal(toolAllowedByFilter(null, "google_ads_mutate"), true);
+});
+
+test("per-provider helpers collapse into grantry_check_connection / grantry_list_capabilities", () => {
+  const withHelpers = [
+    ...AUTHORIZED,
+    { name: "slack_check_connection", description: "", inputSchema: { type: "object", properties: { scope: { enum: ["cs"] } } } },
+    { name: "openai_ads_check_connection", description: "", inputSchema: { type: "object", properties: { scope: { enum: ["seo-marketer"] } } } },
+    { name: "openai_ads_list_capabilities", description: "", inputSchema: { type: "object", properties: { scope: { enum: ["seo-marketer"] } } } },
+  ];
+  const out = consolidateHelperTools(withHelpers);
+  const outNames = names(out);
+  assert.ok(!outNames.includes("slack_check_connection"));
+  assert.ok(!outNames.includes("openai_ads_list_capabilities"));
+  assert.ok(outNames.includes("openai_ads_request"), "request tools are kept");
+  const check = out.find((t: any) => t.name === "grantry_check_connection");
+  assert.deepEqual(check.inputSchema.properties.provider.enum, ["openai_ads", "slack"]);
+  assert.deepEqual(check.inputSchema.properties.scope.enum, ["cs", "seo-marketer"]);
+  const caps = out.find((t: any) => t.name === "grantry_list_capabilities");
+  assert.deepEqual(caps.inputSchema.properties.provider.enum, ["openai_ads"]);
+  // No helpers in -> no consolidated tool out.
+  assert.equal(consolidateHelperTools(AUTHORIZED).length, AUTHORIZED.length);
+});
+
+test("consolidated helper calls expand to the provider tool", () => {
+  assert.equal(expandConsolidatedHelper("grantry/check_connection", { provider: "Slack" }), "slack/check_connection");
+  assert.equal(expandConsolidatedHelper("grantry/list_capabilities", { provider: "openai_ads" }), "openai_ads/list_capabilities");
+  assert.equal(expandConsolidatedHelper("grantry/check_connection", {}), "grantry/check_connection");
+  assert.equal(expandConsolidatedHelper("slack/post_message", { provider: "x" }), "slack/post_message");
 });
