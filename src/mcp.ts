@@ -1,6 +1,7 @@
 // MCP JSON-RPC gateway with auth + policy + dispatch
 // Phase 2: implements real tool dispatch for notion/* and github/*
 // Phase 3: scope-based policy enforcement
+import { providerToolResult } from "./tool_result.js";
 import { Hono } from "hono";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
@@ -5396,11 +5397,7 @@ const handleMcpPost = async (c: any) => {
           durationMs: Date.now() - started,
           ipAddress: c.req.header("x-forwarded-for") ?? null,
         } });
-        return c.json({ jsonrpc: "2.0", id, result: {
-          content: [{ type: "text", text: JSON.stringify(result.structuredContent ?? result).slice(0, 8000) }],
-          structuredContent: result.structuredContent,
-          isError: false,
-        } });
+        return c.json({ jsonrpc: "2.0", id, result: providerToolResult(result) });
       } catch (e: any) {
         const errMsg = String(e?.message ?? e);
         void recordRuntimeCallHealth(conn, { ok: false, errorMessage: errMsg });
@@ -5514,11 +5511,7 @@ const handleMcpPost = async (c: any) => {
 
       return c.json({
         jsonrpc: "2.0", id,
-        result: {
-          content: [{ type: "text", text: JSON.stringify(result.structuredContent ?? result).slice(0, 8000) }],
-          structuredContent: result.structuredContent,
-          isError: false,
-        },
+        result: providerToolResult(result),
       });
     } catch (e: any) {
       const errMsg = String(e?.message ?? e);
