@@ -117,6 +117,14 @@ on `tools/call`. Add `?helpers=consolidated` to replace every
 `grantry_check_connection` / `grantry_list_capabilities` (`provider` argument);
 the per-provider names remain callable.
 
+**Compact results (lossless, opt-in).** Add `?format=compact` (or header
+`X-Grantry-Format: compact`) to get the same data in fewer bytes: `null` fields
+are omitted, and arrays of 2+ objects come back as
+`{"$cols": ["campaign.id", "metrics.costMicros"], "$rows": [["9", "0"], ...]}`
+(nested objects flattened into dotted column names; a missing cell is `null`).
+Nothing is truncated. Measured on real responses: Google Ads search -46%, Meta
+insights -36%, GitHub repo list -40%. Read row i as `{cols[j]: rows[i][j]}`.
+
 ### 2. Call a tool with scope
 Use the exact `scope` from `connections/list`:
 ```json
