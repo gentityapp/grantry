@@ -102,6 +102,7 @@ import { connectionCredentialData, providerCredentialData } from "./provider_cre
 import { adminToolDescriptor, isAdminTool } from "./admin_tools.js";
 import { agentIdIsToolTarget, stripActingAgentSelector } from "./acting_agent_args.js";
 import { callGrantryAdminTool } from "./connectors/grantry_admin.js";
+import { applyToolFilter, toolAllowedByFilter, toolFilterFromRequest } from "./tool_filter.js";
 
 export const mcpApp = new Hono();
 
@@ -4911,6 +4912,8 @@ const handleMcpPost = async (c: any) => {
   const userPrincipal = userMode ? await resolveOAuthUser(auth, wsSlug) : null;
   let agent = userMode ? null : await resolveAgent(auth);
   const configuredScope = configuredMcpScope(c);
+  // Optional ?providers= / ?tools= narrowing (display only; never widens access).
+  const toolFilter = toolFilterFromRequest(c);
   c.header("Access-Control-Expose-Headers", "Mcp-Session-Id, WWW-Authenticate");
 
   if (userMode && !wsSlug) {
@@ -5033,11 +5036,11 @@ const handleMcpPost = async (c: any) => {
         }
       }
       return c.json({ jsonrpc: "2.0", id, result: {
-        tools: buildToolList(allConnections, new Map(), {
+        tools: applyToolFilter(buildToolList(allConnections, new Map(), {
           userMode: true,
           requireAgentId: agents.length > 1,
           agentOptionsByTool,
-        }),
+        }), toolFilter),
       } });
     }
     const connections = agent
@@ -5056,7 +5059,7 @@ const handleMcpPost = async (c: any) => {
         }
       }
     }
-    return c.json({ jsonrpc: "2.0", id, result: { tools: buildToolList(connections, delegatable) } });
+    return c.json({ jsonrpc: "2.0", id, result: { tools: applyToolFilter(buildToolList(connections, delegatable), toolFilter) } });
   }
 
   // --- connections/list: requires auth; returns the exact (provider, scope)
@@ -5091,6 +5094,15 @@ const handleMcpPost = async (c: any) => {
     const requestedToolName = String(params?.name ?? "");
     const toolName = canonicalToolName(requestedToolName);
     const args = params?.arguments ?? {};
+    if (!toolAllowedByFilter(toolFilter, requestedToolName) && !toolAllowedByFilter(toolFilter, toolName)) {
+      return c.json({
+        jsonrpc: "2.0", id,
+        error: {
+          code: -32601,
+          message: `Tool '${requestedToolName}' is outside this connection's tool filter (?providers= / ?tools=). Add it to the filter or use an unfiltered connection.`,
+        },
+      });
+    }
     let systemCtx: SystemToolContext | undefined = userPrincipal ? { userId: userPrincipal.userId, workspaceSlug: wsSlug } : undefined;
 
     if (userPrincipal && !["grantry/get_skill", "grantry/get_providers", "grantry/list_user_agents"].includes(toolName)) {

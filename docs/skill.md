@@ -99,6 +99,15 @@ curl -s -X POST https://api.grantry.ai/mcp \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}'
 ```
 
+**Narrow the advertised tools** (keeps model context small — Claude Code loads
+every advertised definition; a full-scope agent is ~580 tools / ~175k tokens):
+append `?providers=google_ads,meta_ads` and/or `?tools=slack_post_message,github_get_file_contents`
+to the MCP URL, or send `X-Grantry-Providers` / `X-Grantry-Tools` headers. Works on
+`/mcp`, `/mcp/s/<scope>`, `/mcp/w/<ws>`, `/mcp/u/...`. No parameter = unchanged.
+`ping` is always kept. The filter only hides tools: authorization is still the
+agent's grants/scope, a named but ungranted tool never appears, and `tools/call`
+on a tool outside the filter returns `-32601`.
+
 ### 2. Call a tool with scope
 Use the exact `scope` from `connections/list`:
 ```json
