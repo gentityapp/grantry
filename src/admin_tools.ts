@@ -810,8 +810,35 @@ export async function callAdminTool(
     const providerDef = await getProviderForWorkspace(provider, ctx.workspaceId);
     if (!providerDef || providerDef.implemented === false) throw new Error(`provider not implemented: ${provider}`);
 
-    const url = `${origin}/tenants/${encodeURIComponent(scope)}/connect/${encodeURIComponent(provider)}`;
     const supportsOauth = providerDef.authTypes.includes("oauth");
+    // 既に同じ scope に有効な OAuth 接続があるなら「付け直し（reconnect）」の URL を返す。新規接続の URL を渡すと
+    // 同じ (provider, scope) に有効な接続が 2 本並び、connection_id を渡さない呼び出しが全部 ambiguous で落ちる
+    // （2026-09-15 google_gsc@seo-marketer で実測。書き込みスコープ付与のための付け直しが新規作成になった）。
+    if (supportsOauth) {
+      const existing = await prisma.connection.findMany({
+        where: { ...boundaryWhere(ctx), provider, scope, authType: "oauth", enabled: true },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, label: true },
+      });
+      if (existing.length === 1) {
+        const cn = existing[0];
+        const reconnectUrl = `${origin}/oauth/${encodeURIComponent(provider)}/start?tenant=${encodeURIComponent(scope)}&reauth=1&connection_id=${encodeURIComponent(cn.id)}`;
+        return {
+          payload: {
+            provider,
+            scope,
+            url: reconnectUrl,
+            auth: "oauth-reconnect",
+            connection_id: cn.id,
+            label: cn.label,
+            new_connection_url: `${origin}/tenants/${encodeURIComponent(scope)}/connect/${encodeURIComponent(provider)}`,
+            instructions: `An enabled ${providerDef.label} OAuth connection already exists at scope "${scope}" (${cn.label}). Send this URL to a human: it re-runs consent and refreshes that exact connection (new scopes included), so no duplicate connection is created. Use new_connection_url only to add a different account, then disable the old one.`,
+          },
+          summary: `reconnect url for ${provider} at scope ${scope}`,
+        };
+      }
+    }
+    const url = `${origin}/tenants/${encodeURIComponent(scope)}/connect/${encodeURIComponent(provider)}`;
     const supportsPat = providerDef.authTypes.includes("pat");
     const primary = supportsPat ? "paste-credential" : "oauth-consent";
     const instructions = supportsPat
@@ -998,7 +1025,7 @@ export function adminToolDescriptor(toolName: AdminToolName): { description: str
       };
     case "grantry/get_connect_url":
       return {
-        description: "grantry admin: get a human-facing dashboard URL to connect a provider at a scope. Hand the URL to a person who pastes the credential (PAT) or clicks through consent (OAuth); the connection is then created and auto-granted to the scope's agents. Use this instead of asking a human to paste secrets into chat.",
+        description: "grantry admin: get a human-facing dashboard URL to connect a provider at a scope. If exactly one enabled OAuth connection already exists there, returns the reconnect URL for it instead (refreshes tokens and scopes in place, no duplicate). Hand the URL to a person who pastes the credential (PAT) or clicks through consent (OAuth); the connection is then created and auto-granted to the scope's agents. Use this instead of asking a human to paste secrets into chat.",
         properties: {
           provider: { type: "string", description: "Provider key, e.g. 'cloudsign', 'github' (see grantry_get_providers)." },
           target_scope: { type: "string", description: "Scope the connection will be created at. (Named target_scope because 'scope' selects the admin connection itself.)" },
