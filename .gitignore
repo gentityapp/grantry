@@ -5,3 +5,5 @@ dist
 .DS_Store
 *.log
 prisma/dev.db*
+loop/product/state/*
+!loop/product/state/.gitkeep
