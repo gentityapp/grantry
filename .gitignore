@@ -7,3 +7,5 @@ dist
 prisma/dev.db*
 loop/product/state/*
 !loop/product/state/.gitkeep
+loop/po/state/*
+!loop/po/state/.gitkeep

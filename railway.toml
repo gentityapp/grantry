@@ -1,5 +1,8 @@
 [build]
 builder = "NIXPACKS"
+# 本番に効くファイルだけでデプロイする。PO / 製品ループの台帳（loop/**）・HANDOFF・docs の push で関所（全エージェントの MCP）を再起動しない（2026-09-15）。
+# docs/skill.md は src/mcp.ts が実行時に読むので含める。実行時に読むファイルを増やしたらここにも足す
+watchPatterns = ["src/**", "prisma/**", "scripts/**", "docs/skill.md", "package.json", "package-lock.json", "tsconfig.json", "railway.toml"]
 
 [deploy]
 startCommand = "npm start"
