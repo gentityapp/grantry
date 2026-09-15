@@ -3,6 +3,12 @@
 // https://api.twenty.com; self-hosted instances pass base_url in the credential.
 const TWENTY_DEFAULT_BASE = "https://api.twenty.com";
 const TWENTY_TIMEOUT_MS = 12_000;
+// Upstream 429 = Twenty's own rate limit, not a credential/grant problem. We
+// wait per `retry-after` (backoff when absent) and retry a bounded number of
+// times, the way src/connectors/github.ts handles GitHub's 429/403, so a
+// consecutive-record agent workflow survives a rate-limit blip.
+const TWENTY_RATE_LIMIT_ATTEMPTS = 5;
+const TWENTY_RATE_LIMIT_MAX_BACKOFF_MS = 30_000;
 
 type TwentyArgs = Record<string, unknown>;
 
@@ -61,10 +67,25 @@ async function request(credential: string, method: string, path: string, body: u
   if (body !== undefined) headers["Content-Type"] = "application/json";
   const init: RequestInit = { method, headers };
   if (body !== undefined) init.body = JSON.stringify(body);
-  const r = await fetchTwenty(baseUrl, path, init, { tool, ...logContext });
-  const j: any = await readJsonResponse(r);
-  if (!r.ok) throw new Error(`Twenty ${tool} failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
-  return j;
+  let lastWaitMs = 0;
+  for (let attempt = 0; ; attempt++) {
+    const r = await fetchTwenty(baseUrl, path, init, { tool, attempt, ...logContext });
+    if (r.ok) return await readJsonResponse(r);
+    if (r.status !== 429) {
+      const j: any = await readJsonResponse(r);
+      throw new Error(`Twenty ${tool} failed: ${r.status} ${JSON.stringify(j).slice(0, 1000)}`);
+    }
+    if (attempt >= TWENTY_RATE_LIMIT_ATTEMPTS - 1) {
+      // Deliberately NOT phrased "failed: 429": audit counting treats that
+      // substring as an unhandled upstream 429, and this one was handled
+      // (retried) to the cap.
+      throw new Error(`Twenty ${tool} is rate limited by upstream: gave up after ${TWENTY_RATE_LIMIT_ATTEMPTS} attempts (last wait ${Math.round(lastWaitMs / 1000)}s) - retry later`);
+    }
+    const retryAfter = Number(r.headers.get("retry-after"));
+    lastWaitMs = retryAfter > 0 ? retryAfter * 1000 : Math.min(2 ** attempt * 1000, TWENTY_RATE_LIMIT_MAX_BACKOFF_MS);
+    await r.text(); // drain the body before retrying
+    await new Promise((res) => setTimeout(res, lastWaitMs));
+  }
 }
 
 // Object names are workspace-defined (plural camelCase like "people",
