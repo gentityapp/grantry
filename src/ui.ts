@@ -7,7 +7,7 @@ import { prisma } from "./db.js";
 import { decrypt, encrypt } from "./crypto.js";
 import { PROVIDERS, getProvider, getProviderForWorkspace, listProvidersForWorkspace, normalizePathPrefixes, providerCoverageStats, toolsForProviderForWorkspace, validateCustomProviderKey } from "./connectors/registry.js";
 import { providerIcon, providerIconMap } from "./connectors/icons.js";
-import { credentialMetadataForStorage, deriveCredentialHealth } from "./connectors/credential_meta.js";
+import { credentialCheckRejection, credentialMetadataForStorage, deriveCredentialHealth } from "./connectors/credential_meta.js";
 import { callGenericCheckConnection, callGenericListCapabilities, templateVarNames } from "./connectors/generic_request.js";
 import { callGoogleAdminTool } from "./connectors/google_admin.js";
 import { parseServiceAccountInput, serviceAccountPublicMeta, invalidateDwdToken, mintDwdAccessToken, type ServiceAccountCredential } from "./google_dwd.js";
@@ -3496,6 +3496,10 @@ dashboardApp.post("/providers/:providerKey/default-connection", async (c) => {
   let conn;
   if (credential) {
     const credentialMeta = await credentialMetadataForProviderDef(providerDef, authType, credential);
+    const rejection = credentialCheckRejection(credentialMeta);
+    if (rejection) {
+      return c.redirect(`/providers?err=${encodeURIComponent(`${providerDef.label}: ${rejection}`)}`);
+    }
     const data = {
       encryptedCredential: encrypt(credential),
       refreshToken: null,
@@ -5460,6 +5464,10 @@ dashboardApp.post("/connections/:connectionId/edit", async (c) => {
     const message = String(e?.message ?? e);
     return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent(t("Credential validation failed: {message}", { message }))}`);
   }
+  const credentialRejection = credentialCheckRejection(credentialMeta);
+  if (credentialRejection) {
+    return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent(t("Credential validation failed: {message}", { message: credentialRejection }))}`);
+  }
 
   await rotateSharedCredential({
     credentialId: conn.credentialId,
@@ -6939,6 +6947,10 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
     let conn;
     if (credential) {
       const credentialMeta = await credentialMetadataForProviderDef(providerDef, "pat", credential);
+      const rejection = credentialCheckRejection(credentialMeta);
+      if (rejection) {
+        return reject(400, `${providerDef.label}: ${rejection}`);
+      }
       conn = await prisma.connection.create({
         data: {
           provider,
@@ -7703,6 +7715,10 @@ dashboardApp.post("/tenants/new", async (c) => {
       oauthQueue.push({ provider, oauthAppCredentialId });
     } else if (credential) {
       const credentialMeta = await credentialMetadataForProviderDef(providerDef, "pat", credential);
+      const rejection = credentialCheckRejection(credentialMeta);
+      if (rejection) {
+        return c.html(`<h1>${escapeHtml(providerDef.label)} rejected the credential</h1><p>${escapeHtml(rejection)}</p><p><a href="/tenants/new">Back</a></p>`, 400);
+      }
       const conn = await prisma.connection.create({
         data: {
           provider,

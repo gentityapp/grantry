@@ -192,6 +192,17 @@ export function deriveCredentialHealth(args: {
   };
 }
 
+// Definitive connect-time failure (issue-#4): healthStatus "error" is only
+// produced by a real provider response (401/403/invalid), never by a
+// transient check outage (that maps to "unknown"/check_unavailable), so a
+// pasted credential that gets a non-null rejection here must not be stored
+// as enabled. Returns the human-readable reason, or null when the
+// credential may proceed.
+export function credentialCheckRejection(meta: { healthStatus?: string | null; healthErrorMessage?: string | null }): string | null {
+  if (meta?.healthStatus !== "error") return null;
+  return String(meta.healthErrorMessage ?? "").trim() || "credential check failed";
+}
+
 async function fetchWithTimeout(url: string, init: RequestInit = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), META_TIMEOUT_MS);

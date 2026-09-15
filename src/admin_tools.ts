@@ -26,7 +26,7 @@ import { prisma } from "./db.js";
 import { encrypt } from "./crypto.js";
 import { ensureTenant } from "./tenants.js";
 import { getProviderForWorkspace } from "./connectors/registry.js";
-import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
+import { credentialCheckRejection, credentialMetadataForStorage } from "./connectors/credential_meta.js";
 import { connectionCredentialData, createTenantConnectionFromCredential, disableOtherEnabledConnections } from "./provider_credentials.js";
 import { agentAssignedEmail, sendSystemEmail } from "./email.js";
 
@@ -763,6 +763,10 @@ export async function callAdminTool(
       throw new Error(`a ${provider} (${authType}) connection already exists at scope ${scope} (connection_id=${existing.id}, label=${existing.label}) — pass a distinct 'label' to replace it (the old connection is disabled), or rotate the existing one from the dashboard`);
     }
     const credentialMeta = await credentialMetadataForStorage(provider, authType, credential);
+    const rejection = credentialCheckRejection(credentialMeta);
+    if (rejection) {
+      throw new Error(`credential check failed for ${provider} (${authType}): ${rejection} — no connection was created; check the credential and retry`);
+    }
     const conn = await prisma.connection.create({
       data: {
         provider,
