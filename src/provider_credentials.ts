@@ -2,6 +2,7 @@ import type { Connection, ProviderCredential, Tenant } from "@prisma/client";
 import nodeCrypto from "node:crypto";
 import { deriveCredentialHealth } from "./connectors/credential_meta.js";
 import { prisma } from "./db.js";
+import { compatibleProviderKeys } from "./policy.js";
 
 type ConnectionSecretFields = Pick<
   Connection,
@@ -107,6 +108,55 @@ export async function ensureProviderCredentialForConnection(
   return credential;
 }
 
+/**
+ * Invariant from issue #4: at most one enabled connection per
+ * (owner, workspace, provider family, scope). Cross-authType duplicates
+ * (OAuth + PAT side by side) count too — checkPolicy treats any second
+ * enabled connection at the same scope as ambiguous.
+ */
+export function otherEnabledConnectionsWhere(args: {
+  ownerId: string;
+  provider: string;
+  scope: string;
+  workspaceId?: string | null;
+  keepConnectionId?: string | null;
+}): Record<string, unknown> {
+  return {
+    ownerId: args.ownerId,
+    ...(args.workspaceId ? { workspaceId: args.workspaceId } : {}),
+    provider: { in: compatibleProviderKeys(args.provider) },
+    scope: args.scope,
+    enabled: true,
+    ...(args.keepConnectionId ? { id: { not: args.keepConnectionId } } : {}),
+  };
+}
+
+/**
+ * Disable every other enabled connection at the same
+ * (owner, workspace, provider, scope) so a newly created connection replaces
+ * the old one instead of leaving every connection_id-less call ambiguous.
+ * Call right after the create succeeded, passing the new id as
+ * keepConnectionId. Returns how many connections were disabled.
+ */
+export async function disableOtherEnabledConnections(args: {
+  ownerId: string;
+  provider: string;
+  scope: string;
+  workspaceId?: string | null;
+  keepConnectionId?: string | null;
+}): Promise<number> {
+  const res = await prisma.connection.updateMany({
+    where: otherEnabledConnectionsWhere(args),
+    data: { enabled: false },
+  });
+  if (res.count > 0) {
+    console.log(
+      `[connections] replaced ${res.count} enabled connection(s) with ${args.keepConnectionId} at provider=${args.provider} scope=${args.scope}`
+    );
+  }
+  return res.count;
+}
+
 export async function createTenantConnectionFromCredential(args: {
   tenant: Pick<Tenant, "id" | "slug" | "workspaceId" | "ownerId">;
   sourceConnection: ConnectionSecretFields;
@@ -135,7 +185,7 @@ export async function createTenantConnectionFromCredential(args: {
   });
   if (existing) return existing;
 
-  return prisma.connection.create({
+  const created = await prisma.connection.create({
     data: {
       provider: args.sourceConnection.provider,
       authType: args.sourceConnection.authType,
@@ -157,6 +207,16 @@ export async function createTenantConnectionFromCredential(args: {
       ...(args.connectionConfig ? { connectionConfig: args.connectionConfig } : {}),
     },
   });
+  if (created.enabled) {
+    await disableOtherEnabledConnections({
+      ownerId: args.tenant.ownerId,
+      workspaceId,
+      provider: created.provider,
+      scope: created.scope,
+      keepConnectionId: created.id,
+    });
+  }
+  return created;
 }
 
 export async function syncProviderCredentialFromConnection(conn: ConnectionSecretFields) {

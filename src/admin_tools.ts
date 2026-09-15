@@ -27,7 +27,7 @@ import { encrypt } from "./crypto.js";
 import { ensureTenant } from "./tenants.js";
 import { getProviderForWorkspace } from "./connectors/registry.js";
 import { credentialMetadataForStorage } from "./connectors/credential_meta.js";
-import { connectionCredentialData, createTenantConnectionFromCredential } from "./provider_credentials.js";
+import { connectionCredentialData, createTenantConnectionFromCredential, disableOtherEnabledConnections } from "./provider_credentials.js";
 import { agentAssignedEmail, sendSystemEmail } from "./email.js";
 
 export const ADMIN_TOOLS = [
@@ -750,16 +750,17 @@ export async function callAdminTool(
     const label = args.label ? String(args.label).trim() : `${provider}-${scope}-${authType}`;
 
     const tenant = await ensureTenant(ctx.ownerId, scope, undefined, ctx.workspaceId);
-    // Multiple connections per (provider, scope) are allowed, but an
-    // agent-driven create refuses duplicates unless it labels them —
+    // An agent-driven create refuses duplicates unless it labels them —
     // unlabeled duplicates just make every call ambiguous (checkPolicy would
-    // demand connection_id).
+    // demand connection_id). With a label the create replaces: the previous
+    // enabled connection at the same (owner, provider, scope) is disabled
+    // below, per the issue-#4 invariant.
     const existing = await prisma.connection.findFirst({
       where: { ...boundaryWhere(ctx), provider, scope, authType, enabled: true },
       select: { id: true, label: true },
     });
     if (existing && !args.label) {
-      throw new Error(`a ${provider} (${authType}) connection already exists at scope ${scope} (connection_id=${existing.id}, label=${existing.label}) — pass a distinct 'label' to add another, or rotate the existing one from the dashboard`);
+      throw new Error(`a ${provider} (${authType}) connection already exists at scope ${scope} (connection_id=${existing.id}, label=${existing.label}) — pass a distinct 'label' to replace it (the old connection is disabled), or rotate the existing one from the dashboard`);
     }
     const credentialMeta = await credentialMetadataForStorage(provider, authType, credential);
     const conn = await prisma.connection.create({
@@ -775,6 +776,7 @@ export async function callAdminTool(
         ...connectionCredentialData(credentialMeta),
       },
     });
+    const replacedEnabled = await disableOtherEnabledConnections({ ownerId: ctx.ownerId, workspaceId: tenant.workspaceId ?? ctx.workspaceId, provider, scope, keepConnectionId: conn.id });
     const payload = {
       connection_id: conn.id,
       provider: conn.provider,
@@ -782,9 +784,11 @@ export async function callAdminTool(
       scope: conn.scope,
       label: conn.label,
       credential_status: (credentialMeta as any)?.status ?? "unknown",
-      note: "credential stored encrypted. Grant it to an agent with grantry_grant_scope.",
+      replaced_enabled: replacedEnabled,
+      note: "credential stored encrypted. Grant it to an agent with grantry_grant_scope." +
+        (replacedEnabled ? ` The ${replacedEnabled} previously enabled connection(s) at this scope were disabled (issue-#4 invariant).` : ""),
     };
-    return { payload, summary: `created ${provider} (${authType}) connection at scope ${scope}` };
+    return { payload, summary: `created ${provider} (${authType}) connection at scope ${scope}${replacedEnabled ? `; disabled ${replacedEnabled} previous enabled connection(s)` : ""}` };
   }
 
   if (toolName === "grantry/get_connect_url") {

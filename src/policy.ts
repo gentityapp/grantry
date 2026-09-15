@@ -30,7 +30,7 @@ function toolProvider(tool: string): string {
   return tool.includes("/") ? tool.split("/", 2)[0] : "";
 }
 
-function compatibleProviderKeys(provider: string): string[] {
+export function compatibleProviderKeys(provider: string): string[] {
   if (provider === "railway") return ["railway", "railway_api"];
   return [provider];
 }

@@ -13,7 +13,7 @@ import { callGoogleAdminTool } from "./connectors/google_admin.js";
 import { parseServiceAccountInput, serviceAccountPublicMeta, invalidateDwdToken, mintDwdAccessToken, type ServiceAccountCredential } from "./google_dwd.js";
 import { connectionsForAgent, findCapableAgents, normalizeToolName } from "./policy.js";
 import { ensureTenant } from "./tenants.js";
-import { connectionCredentialData, createTenantConnectionFromCredential, ensureProviderCredentialForConnection, providerCredentialData, rotateSharedCredential, syncProviderCredentialFromConnection } from "./provider_credentials.js";
+import { connectionCredentialData, createTenantConnectionFromCredential, disableOtherEnabledConnections, ensureProviderCredentialForConnection, providerCredentialData, rotateSharedCredential, syncProviderCredentialFromConnection } from "./provider_credentials.js";
 import { credentialMetadataForProviderDef, recordRuntimeCallHealth } from "./connection_health.js";
 import { isSweepRunning, runConnectionHealthSweep } from "./health_sweep.js";
 import { credentialForConnection } from "./mcp.js";
@@ -3513,6 +3513,9 @@ dashboardApp.post("/providers/:providerKey/default-connection", async (c) => {
             ...data,
           },
         });
+    if (!existingConn && conn.enabled) {
+      await disableOtherEnabledConnections({ ownerId: user.id, workspaceId: wsId, provider: providerKey, scope: DEFAULT_PROVIDER_SCOPE, keepConnectionId: conn.id });
+    }
     await ensureProviderCredentialForConnection(conn, user.id);
     await syncProviderCredentialFromConnection(conn);
   } else if (existingConn) {
@@ -6864,6 +6867,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
           ...saData,
         },
       });
+      await disableOtherEnabledConnections({ ownerId: user.id, workspaceId: tenantRow.workspaceId ?? wsId, provider, scope, keepConnectionId: conn.id });
       invalidateDwdToken(conn.id);
       await ensureProviderCredentialForConnection(conn, user.id);
       await syncProviderCredentialFromConnection(conn);
@@ -6946,6 +6950,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
           ...connectionCredentialData(credentialMeta),
         },
       });
+      await disableOtherEnabledConnections({ ownerId: user.id, workspaceId: tenantRow.workspaceId ?? wsId, provider, scope, keepConnectionId: conn.id });
       await ensureProviderCredentialForConnection(conn, user.id);
       await syncProviderCredentialFromConnection(conn);
     } else if (reuseConnectionId) {
@@ -9375,6 +9380,7 @@ oauthApp.get("/:provider/callback", async (c) => {
       ...connectionCredentialData(await credentialMetadataForStorage(providerKey, "oauth", accessToken)),
     },
   });
+  await disableOtherEnabledConnections({ ownerId: user.id, workspaceId: wsId, provider: providerKey, scope: effectiveTenant, keepConnectionId: conn.id });
   await ensureProviderCredentialForConnection(conn, user.id);
   await grantConnectionToTenantAgents(callbackRowsWhere, effectiveTenant, conn.id, user.id);
 
