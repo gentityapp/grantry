@@ -135,23 +135,184 @@ function keywordList(args: DataForSeoArgs, max: number) {
 }
 
 /**
+ * DataForSEO answers 40501 "Invalid Field: 'location_code'/'language_code'" when a
+ * targeting value is not in the list for the calling API family. serp, keywords_data
+ * and DataForSEO Labs each publish their own list, and Labs restricts languages per
+ * location (available_languages), so e.g. "ja" is rejected for the United States on
+ * Labs. The lists are free of charge, cached for 24h and shared between concurrent
+ * calls. When a list cannot be fetched the task is sent unvalidated (fail open), so
+ * validation never blocks a call that would have succeeded.
+ */
+const TARGETING_LIST_TTL_MS = 24 * 60 * 60 * 1000;
+const TARGETING_LIST_RETRY_MS = 5 * 60 * 1000;
+const TARGETING_LIST_TIMEOUT_MS = 10_000;
+
+interface TargetingList {
+  locations: Set<number>;
+  languages: Map<string, string>; // lowercase code -> code as DataForSEO writes it
+  locationLanguages?: Map<number, Set<string>>; // Labs only: location_code -> available language codes
+  locationNames?: Map<string, number>; // Labs only: lowercase country name -> location_code
+}
+
+const targetingListCache = new Map<string, { list: TargetingList; at: number }>();
+const targetingListInflight = new Map<string, Promise<TargetingList | null>>();
+const targetingListFailedAt = new Map<string, number>();
+
+export function resetTargetingListCacheForTests() {
+  targetingListCache.clear();
+  targetingListInflight.clear();
+  targetingListFailedAt.clear();
+}
+
+function targetingFamily(tool: string): "serp" | "keywords_data" | "labs" {
+  if (tool === "dataforseo/serp_google_organic") return "serp";
+  if (tool === "dataforseo/keyword_search_volume") return "keywords_data";
+  return "labs";
+}
+
+function targetingFamilyLabel(family: "serp" | "keywords_data" | "labs") {
+  if (family === "serp") return "Google SERP";
+  if (family === "keywords_data") return "Google Ads (Keywords Data)";
+  return "DataForSEO Labs";
+}
+
+function raceTimeout<T>(p: Promise<T>, ms: number, what: string) {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${what} timed out after ${ms}ms`)), ms);
+    p.then((value) => { clearTimeout(timer); resolve(value); }, (e) => { clearTimeout(timer); reject(e); });
+  });
+}
+
+async function loadTargetingList(credential: string, family: "serp" | "keywords_data" | "labs", tool: string): Promise<TargetingList | null> {
+  const cached = targetingListCache.get(family);
+  if (cached && Date.now() - cached.at < TARGETING_LIST_TTL_MS) return cached.list;
+  if (Date.now() - (targetingListFailedAt.get(family) ?? 0) < TARGETING_LIST_RETRY_MS) return null;
+  let inflight = targetingListInflight.get(family);
+  if (!inflight) {
+    inflight = (async () => {
+      try {
+        let list: TargetingList;
+        if (family === "labs") {
+          const env: any = await raceTimeout(request(credential, "GET", "/v3/dataforseo_labs/locations_and_languages", undefined, tool), TARGETING_LIST_TIMEOUT_MS, "DataForSEO Labs locations_and_languages");
+          const locations = new Set<number>();
+          const locationLanguages = new Map<number, Set<string>>();
+          const locationNames = new Map<string, number>();
+          const languages = new Map<string, string>();
+          for (const row of env?.tasks?.[0]?.result ?? []) {
+            const code = Number(row?.location_code);
+            if (!Number.isFinite(code)) continue;
+            locations.add(code);
+            locationNames.set(str(row?.location_name).toLowerCase(), code);
+            const available = new Set<string>();
+            for (const l of row?.available_languages ?? []) {
+              const langCode = str(l?.language_code).toLowerCase();
+              if (!langCode) continue;
+              available.add(langCode);
+              languages.set(langCode, str(l?.language_code));
+            }
+            locationLanguages.set(code, available);
+          }
+          if (!locations.size || !languages.size) throw new Error("DataForSEO Labs locations_and_languages came back empty");
+          list = { locations, languages, locationLanguages, locationNames };
+        } else {
+          const locationsPath = family === "serp" ? "/v3/serp/google/locations" : "/v3/keywords_data/google_ads/locations";
+          const languagesPath = family === "serp" ? "/v3/serp/google/languages" : "/v3/keywords_data/google_ads/languages";
+          const [locEnv, langEnv]: any[] = await raceTimeout(Promise.all([
+            request(credential, "GET", locationsPath, undefined, tool),
+            request(credential, "GET", languagesPath, undefined, tool),
+          ]), TARGETING_LIST_TIMEOUT_MS, "DataForSEO locations/languages lists");
+          const locations = new Set<number>();
+          for (const row of locEnv?.tasks?.[0]?.result ?? []) {
+            const code = Number(row?.location_code);
+            if (Number.isFinite(code)) locations.add(code);
+          }
+          const languages = new Map<string, string>();
+          for (const row of langEnv?.tasks?.[0]?.result ?? []) {
+            const langCode = str(row?.language_code).toLowerCase();
+            if (langCode) languages.set(langCode, str(row?.language_code));
+          }
+          if (!locations.size || !languages.size) throw new Error("DataForSEO locations/languages list came back empty");
+          list = { locations, languages };
+        }
+        targetingListCache.set(family, { list, at: Date.now() });
+        targetingListFailedAt.delete(family);
+        return list;
+      } catch (e: any) {
+        console.error("[dataforseo] targeting list unavailable, sending task unvalidated", { family, error: String(e?.message ?? e) });
+        targetingListFailedAt.set(family, Date.now());
+        return null;
+      } finally {
+        targetingListInflight.delete(family);
+      }
+    })();
+    targetingListInflight.set(family, inflight);
+  }
+  return inflight;
+}
+
+/**
  * Location/language for a task. `required` endpoints (DataForSEO Labs, keyword
  * ideas) reject a task without targeting, so fall back to Japan/Japanese there
  * rather than failing the call.
+ *
+ * Codes the calling API family does not list are rejected here with the reason and
+ * the alternative to use instead (DataForSEO answers 40501 Invalid Field for them,
+ * and the audit check counts upstream 40501 rows by substring, so the rejection
+ * message must not contain that code). Labs only lists country locations and
+ * restricts languages per location, so when the location does not list Japanese the
+ * default language is omitted instead of sent (omitting it means all languages).
  */
-function targeting(args: DataForSeoArgs, required = false) {
+async function targeting(tool: string, args: DataForSeoArgs, credential: string, required = false) {
+  const family = targetingFamily(tool);
   const out: Record<string, unknown> = {};
   const locationCode = num(args.location_code);
   const locationName = str(args.location_name);
-  if (locationCode) out.location_code = locationCode;
-  else if (locationName) out.location_name = locationName;
-  else if (required) out.location_code = DEFAULT_LOCATION_CODE;
-
   const languageCode = str(args.language_code);
   const languageName = str(args.language_name);
-  if (languageCode) out.language_code = languageCode;
-  else if (languageName) out.language_name = languageName;
-  else if (required) out.language_code = DEFAULT_LANGUAGE_CODE;
+  const list = locationCode || languageCode || (required && family === "labs")
+    ? await loadTargetingList(credential, family, tool)
+    : null;
+  const nameLocation = family === "labs" && locationName ? list?.locationNames?.get(locationName.toLowerCase()) : undefined;
+  const effectiveLocation = locationCode || nameLocation || (required && !locationName ? DEFAULT_LOCATION_CODE : 0);
+
+  if (locationCode) {
+    if (list && !list.locations.has(locationCode)) {
+      throw new Error(`location_code ${locationCode} is not in DataForSEO's ${targetingFamilyLabel(family)} locations list. Use location_name (e.g. "Japan") instead, or pick a valid location_code with the dataforseo/list_locations tool.`);
+    }
+    out.location_code = locationCode;
+  } else if (locationName) {
+    out.location_name = locationName;
+  } else if (required) {
+    out.location_code = DEFAULT_LOCATION_CODE;
+  }
+
+  if (languageCode) {
+    if (family === "labs" && list) {
+      const available = effectiveLocation ? list.locationLanguages?.get(effectiveLocation) : undefined;
+      const known = available ?? new Set([...list.languages.keys()]);
+      if (!known.has(languageCode.toLowerCase())) {
+        if (available) {
+          const examples = [...available].sort().slice(0, 5).join(", ");
+          throw new Error(`language_code "${languageCode}" is not available for location_code ${effectiveLocation} in DataForSEO Labs (available: ${examples}). Use one of the available languages for this location, drop language_code for all available languages, or keep the default location 2392 (Japan) for "ja".`);
+        }
+        throw new Error(`language_code "${languageCode}" is not in DataForSEO Labs' language list. Use language_name (e.g. "Japanese") or a listed language_code such as "ja" or "en".`);
+      }
+    } else if (list) {
+      const canonical = list.languages.get(languageCode.toLowerCase());
+      if (!canonical) {
+        throw new Error(`language_code "${languageCode}" is not in DataForSEO's ${targetingFamilyLabel(family)} languages list. Use language_name (e.g. "Japanese") or a listed language_code such as "ja" or "en".`);
+      }
+      out.language_code = canonical;
+    }
+    if (!out.language_code) out.language_code = languageCode;
+  } else if (languageName) {
+    out.language_name = languageName;
+  } else if (required) {
+    const available = family === "labs" && effectiveLocation ? list?.locationLanguages?.get(effectiveLocation) : undefined;
+    if (!available || available.has(DEFAULT_LANGUAGE_CODE)) {
+      out.language_code = DEFAULT_LANGUAGE_CODE;
+    }
+  }
   return out;
 }
 
@@ -223,7 +384,7 @@ export async function callDataForSeoTool(tool: string, args: DataForSeoArgs, cre
   if (tool === "dataforseo/serp_google_organic") {
     const task: Record<string, unknown> = {
       keyword: requireArg(args, "keyword"),
-      ...targeting(args, true),
+      ...(await targeting(tool, args, credential, true)),
       device: str(args.device) || "desktop",
       depth: Math.min(num(args.depth) || 20, 200),
     };
@@ -249,7 +410,7 @@ export async function callDataForSeoTool(tool: string, args: DataForSeoArgs, cre
   if (tool === "dataforseo/keyword_search_volume") {
     const task: Record<string, unknown> = {
       keywords: keywordList(args, 1000),
-      ...targeting(args, true),
+      ...(await targeting(tool, args, credential, true)),
     };
     if (args.search_partners !== undefined) task.search_partners = Boolean(args.search_partners);
     const dateFrom = str(args.date_from);
@@ -270,7 +431,7 @@ export async function callDataForSeoTool(tool: string, args: DataForSeoArgs, cre
   if (tool === "dataforseo/keyword_ideas") {
     const task: Record<string, unknown> = {
       keywords: keywordList(args, 200),
-      ...targeting(args, true),
+      ...(await targeting(tool, args, credential, true)),
       ...paging(args, 100),
     };
     if (args.closely_variants !== undefined) task.closely_variants = Boolean(args.closely_variants);
@@ -294,7 +455,7 @@ export async function callDataForSeoTool(tool: string, args: DataForSeoArgs, cre
   if (tool === "dataforseo/ranked_keywords") {
     const task: Record<string, unknown> = {
       target: requireArg(args, "target", ["domain", "url"]),
-      ...targeting(args, true),
+      ...(await targeting(tool, args, credential, true)),
       ...paging(args, 100),
     };
     if (Array.isArray(args.item_types) && args.item_types.length) task.item_types = args.item_types;
@@ -322,7 +483,7 @@ export async function callDataForSeoTool(tool: string, args: DataForSeoArgs, cre
   if (tool === "dataforseo/domain_rank_overview") {
     const task: Record<string, unknown> = {
       target: requireArg(args, "target", ["domain"]),
-      ...targeting(args, true),
+      ...(await targeting(tool, args, credential, true)),
       limit: Math.min(num(args.limit) || 10, 1000),
     };
     const { result, cost } = await postTask(credential, "/v3/dataforseo_labs/google/domain_rank_overview/live", task, tool, { target: task.target });
@@ -342,7 +503,7 @@ export async function callDataForSeoTool(tool: string, args: DataForSeoArgs, cre
   if (tool === "dataforseo/competitors_domain") {
     const task: Record<string, unknown> = {
       target: requireArg(args, "target", ["domain"]),
-      ...targeting(args, true),
+      ...(await targeting(tool, args, credential, true)),
       ...paging(args, 20),
     };
     if (args.exclude_top_domains !== undefined) task.exclude_top_domains = Boolean(args.exclude_top_domains);
@@ -469,7 +630,12 @@ export async function callDataForSeoTool(tool: string, args: DataForSeoArgs, cre
     const task: Record<string, unknown> = { url: requireArg(args, "url") };
     if (args.enable_javascript !== undefined) task.enable_javascript = Boolean(args.enable_javascript);
     const browserPreset = str(args.browser_preset);
-    if (browserPreset) task.browser_preset = browserPreset;
+    if (browserPreset) {
+      // DataForSEO requires JavaScript rendering for browser presets and rejects the
+      // task with 40501 Invalid Field otherwise (observed in production).
+      task.browser_preset = browserPreset;
+      task.enable_javascript = true;
+    }
     const customUserAgent = str(args.custom_user_agent);
     if (customUserAgent) task.custom_user_agent = customUserAgent;
     const { result, cost } = await postTask(credential, "/v3/on_page/instant_pages", task, tool, { url: task.url });
