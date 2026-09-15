@@ -54,6 +54,7 @@ import { callSendGridTool } from "./connectors/sendgrid.js";
 import { callOpenAITool } from "./connectors/openai.js";
 import { callOpenAIAdsTool } from "./connectors/openai_ads.js";
 import { callOpenRouterTool } from "./connectors/openrouter.js";
+import { callAgentMailTool } from "./connectors/agentmail.js";
 import { callHiggsfieldTool } from "./connectors/higgsfield.js";
 import { callVercelTool } from "./connectors/vercel.js";
 import { callStripeTool } from "./connectors/stripe.js";
@@ -2565,6 +2566,43 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       query: { type: "object", description: "Insights params, e.g. { time_granularity, fields: ['impressions','clicks','spend'], time_ranges, filters, sort, segments, limit }. Array values are repeated." },
     };
   }
+  // --- agentmail ---
+  if (toolName === "agentmail/list_inboxes") { return { limit: { type: "number", description: "Maximum inboxes to return." }, page_token: { type: "string", description: "next_page_token from the previous page." } }; }
+  if (toolName === "agentmail/get_inbox") { return { inbox_id: { type: "string", description: "Inbox id (the inbox email address, e.g. press@example.com). Optional when the connection JSON pins inbox_id. agentmail/list_inboxes shows the ids this key can reach." } }; }
+  if (toolName === "agentmail/send_message") {
+    return {
+      inbox_id: { type: "string", description: "Inbox id (the inbox email address, e.g. press@example.com). Optional when the connection JSON pins inbox_id. agentmail/list_inboxes shows the ids this key can reach." },
+      to: { description: "Address or list of addresses." },
+      cc: { description: "Address or list of addresses." },
+      bcc: { description: "Address or list of addresses." },
+      reply_to: { description: "Address or list of addresses." },
+      subject: { type: "string", description: "Subject line." },
+      text: { type: "string", description: "Plain-text body. Give text, html, or both." },
+      html: { type: "string", description: "HTML body." },
+      labels: { type: "array", items: { type: "string" }, description: "Labels to put on the sent message (e.g. a campaign name) so replies can be tracked." },
+      attachments: { type: "array", items: { type: "object" }, description: "[{ filename, content_type, content (base64) | url }]. Whole request max 6 MB." },
+      headers: { type: "object", description: "Extra email headers." },
+      idempotency_key: { type: "string", description: "Sends are irreversible. Pass a stable key (e.g. the draft id) so a retry with the same key does not send twice." },
+    };
+  }
+  if (toolName === "agentmail/reply_message") {
+    return {
+      inbox_id: { type: "string", description: "Inbox id (the inbox email address, e.g. press@example.com). Optional when the connection JSON pins inbox_id. agentmail/list_inboxes shows the ids this key can reach." },
+      message_id: { type: "string", description: "Message to reply to (from agentmail/list_messages or get_thread)." },
+      text: { type: "string", description: "Plain-text reply body." },
+      html: { type: "string", description: "HTML reply body." },
+      reply_all: { type: "boolean", description: "Reply to all recipients instead of only the sender." },
+      cc: { description: "Address or list of addresses." },
+      bcc: { description: "Address or list of addresses." },
+      labels: { type: "array", items: { type: "string" }, description: "Labels to put on the reply." },
+      attachments: { type: "array", items: { type: "object" }, description: "Same shape as send_message." },
+      idempotency_key: { type: "string", description: "Stable key so a retry does not send the reply twice." },
+    };
+  }
+  if (toolName === "agentmail/list_messages") { return { inbox_id: { type: "string", description: "Inbox id (the inbox email address, e.g. press@example.com). Optional when the connection JSON pins inbox_id. agentmail/list_inboxes shows the ids this key can reach." }, limit: { type: "number", description: "Maximum items to return." }, page_token: { type: "string", description: "next_page_token from the previous page." }, labels: { type: "array", items: { type: "string" }, description: "Only items with all of these labels, e.g. [\"received\"] or [\"unread\"]." }, after: { type: "string", description: "ISO timestamp; only items after it." }, before: { type: "string", description: "ISO timestamp; only items before it." }, ascending: { type: "boolean", description: "Oldest first." }, include_spam: { type: "boolean", description: "Include spam." } }; }
+  if (toolName === "agentmail/get_message") { return { inbox_id: { type: "string", description: "Inbox id (the inbox email address, e.g. press@example.com). Optional when the connection JSON pins inbox_id. agentmail/list_inboxes shows the ids this key can reach." }, message_id: { type: "string", description: "Message id." } }; }
+  if (toolName === "agentmail/list_threads") { return { inbox_id: { type: "string", description: "Inbox id (the inbox email address, e.g. press@example.com). Optional when the connection JSON pins inbox_id. agentmail/list_inboxes shows the ids this key can reach." }, limit: { type: "number", description: "Maximum items to return." }, page_token: { type: "string", description: "next_page_token from the previous page." }, labels: { type: "array", items: { type: "string" }, description: "Only items with all of these labels, e.g. [\"received\"] or [\"unread\"]." }, after: { type: "string", description: "ISO timestamp; only items after it." }, before: { type: "string", description: "ISO timestamp; only items before it." }, ascending: { type: "boolean", description: "Oldest first." }, include_spam: { type: "boolean", description: "Include spam." } }; }
+  if (toolName === "agentmail/get_thread") { return { inbox_id: { type: "string", description: "Inbox id (the inbox email address, e.g. press@example.com). Optional when the connection JSON pins inbox_id. agentmail/list_inboxes shows the ids this key can reach." }, thread_id: { type: "string", description: "Thread id. Returns every message in the conversation." } }; }
   // --- openrouter ---
   if (toolName === "openrouter/chat") {
     return {
@@ -3489,6 +3527,10 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "sendgrid/get_stats") return ["start_date"];
   if (toolName === "openai/generate_image") return ["prompt"];
   if (toolName === "openrouter/get_generation") return ["id"];
+  if (toolName === "agentmail/send_message") return ["to", "subject"];
+  if (toolName === "agentmail/reply_message") return ["message_id"];
+  if (toolName === "agentmail/get_message") return ["message_id"];
+  if (toolName === "agentmail/get_thread") return ["thread_id"];
   if (toolName === "higgsfield/generate_image") return ["prompt"];
   if (toolName === "higgsfield/get_request") return ["request_id"];
   if (toolName === "higgsfield/cancel_request") return ["request_id"];
@@ -3994,6 +4036,7 @@ async function dispatchProviderTool(
   if (provider === "openai") return callOpenAITool(toolName, args, token);
   if (provider === "openai_ads") return callOpenAIAdsTool(toolName, args, token);
   if (provider === "openrouter") return callOpenRouterTool(toolName, args, token);
+  if (provider === "agentmail") return callAgentMailTool(toolName, args, token);
   if (provider === "higgsfield") return callHiggsfieldTool(toolName, args, token);
   if (provider === "vercel") return callVercelTool(toolName, args, token);
   if (provider === "stripe") return callStripeTool(toolName, args, token);

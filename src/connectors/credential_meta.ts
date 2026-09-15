@@ -1151,6 +1151,37 @@ export async function inspectCredential(provider: string, authType: string, toke
       };
     }
 
+    if (provider === "agentmail") {
+      let apiKey = token.trim();
+      let inboxId = "";
+      let region = "";
+      if (apiKey.startsWith("{")) {
+        let p: any; try { p = JSON.parse(apiKey); } catch { return { provider, authType, status: "error", checkedAt, error: 'AgentMail credential JSON is invalid; expected {"api_key":"am_..."}' }; }
+        apiKey = String(p.api_key ?? p.apiKey ?? p.token ?? "").trim();
+        inboxId = String(p.inbox_id ?? p.inboxId ?? "").trim();
+        region = String(p.region ?? "").trim().toLowerCase();
+      }
+      if (!apiKey) return { provider, authType, status: "error", checkedAt, error: "AgentMail API key is required" };
+      const base = region === "eu" || apiKey.startsWith("am_eu_") ? "https://api.agentmail.eu/v0" : "https://api.agentmail.to/v0";
+      const url = inboxId ? `${base}/inboxes/${encodeURIComponent(inboxId)}` : `${base}/inboxes?limit=10`;
+      const resp = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/json" } });
+      const body: any = await readJson(resp);
+      if (!resp.ok) return { provider, authType, status: "error", checkedAt, error: `AgentMail API key check failed: ${resp.status} ${JSON.stringify(body).slice(0, 300)}` };
+      const inboxes = inboxId ? [body] : (Array.isArray(body?.inboxes) ? body.inboxes : []);
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: { key_scope: apiKey.includes("_inbox_") ? "inbox" : apiKey.includes("_pod_") ? "pod" : "organization", region: base.endsWith(".eu/v0") ? "eu" : "us" },
+        resources: inboxes.slice(0, 10).map((i: any) => ({ inbox_id: i?.inbox_id, display_name: i?.display_name ?? null })),
+        notes: [
+          "AgentMail API keys are sent as Authorization: Bearer against api.agentmail.to/v0.",
+          "agentmail/send_message and agentmail/reply_message send real email and cannot be undone; pass idempotency_key on retries.",
+        ],
+        checkedAt,
+      };
+    }
+
     if (provider === "openrouter") {
       let apiKey = token.trim();
       const extraHeaders: Record<string, string> = {};

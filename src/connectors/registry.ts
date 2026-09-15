@@ -1817,6 +1817,24 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  agentmail: {
+    key: "agentmail",
+    label: "AgentMail",
+    authTypes: ["pat"],
+    helpText: "Paste an AgentMail API key (starts with am_) from console.agentmail.to. It is sent as Authorization: Bearer against api.agentmail.to/v0 (am_eu_ keys go to api.agentmail.eu). Inbox-scoped keys only reach one inbox; to pin it as the default for every tool paste JSON like {\"api_key\":\"am_...\",\"inbox_id\":\"press@example.com\"}. agentmail/send_message and agentmail/reply_message send real email and cannot be undone; pass idempotency_key so a retry does not send twice.",
+    tokenUrl: "https://console.agentmail.to",
+    tools: [
+      "agentmail/list_inboxes",
+      "agentmail/get_inbox",
+      "agentmail/send_message",
+      "agentmail/reply_message",
+      "agentmail/list_messages",
+      "agentmail/get_message",
+      "agentmail/list_threads",
+      "agentmail/get_thread",
+    ],
+    implemented: true,
+  },
   openrouter: {
     key: "openrouter",
     label: "OpenRouter",
@@ -2811,6 +2829,13 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET"],
     allowedPathPrefixes: ["/"],
     smokeTests: [{ id: "ad_account", method: "GET", path: "/ad_account" }],
+  },
+  agentmail: {
+    baseUrl: "https://api.agentmail.to/v0",
+    baseUrls: { us: "https://api.agentmail.to/v0", eu: "https://api.agentmail.eu/v0" },
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "inboxes", method: "GET", path: "/inboxes?limit=1" }],
   },
   openrouter: {
     baseUrl: "https://openrouter.ai/api/v1",

@@ -321,6 +321,7 @@ function credentialToken(provider: string, credential: string) {
   if (provider === "customerio" && parsed) return String(parsed.token ?? credential);
   if (provider === "microsoft_ads" && parsed) return String(parsed.access_token ?? credential);
   if (provider === "openai" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
+  if (provider === "agentmail" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? parsed.token ?? credential);
   if (provider === "openrouter" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? parsed.token ?? credential);
   if (provider === "twenty" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "monid" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
@@ -452,6 +453,10 @@ function applyProviderSpecificAuth(provider: string, credential: string, headers
     headers.Authorization = `Bearer ${credentialToken(provider, credential)}`;
     if (parsed?.organization) headers["OpenAI-Organization"] = String(parsed.organization);
     if (parsed?.project) headers["OpenAI-Project"] = String(parsed.project);
+    return true;
+  }
+  if (provider === "agentmail") {
+    headers.Authorization = `Bearer ${credentialToken(provider, credential)}`;
     return true;
   }
   if (provider === "openrouter") {

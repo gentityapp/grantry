@@ -279,6 +279,9 @@ function patSuccessResponse(call: FetchCall) {
   if (url === "https://sentry.io/api/0/organizations/") {
     return jsonResponse([{ id: "1", slug: "acme", name: "Acme" }]);
   }
+  if (url.startsWith("https://api.agentmail.to/v0/inboxes")) {
+    return jsonResponse({ count: 1, inboxes: [{ inbox_id: "press@example.com", display_name: "Press" }] });
+  }
   if (url === "https://openrouter.ai/api/v1/auth/key") {
     return jsonResponse({ data: { label: "grantry-test", usage: 0.12, limit: null, is_free_tier: false, rate_limit: { requests: 200, interval: "10s" } } });
   }
