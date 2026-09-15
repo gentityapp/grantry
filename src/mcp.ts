@@ -82,6 +82,7 @@ import { callSeminarPortalTool } from "./connectors/seminar_portal.js";
 import { callIntentEngineTool } from "./connectors/intent_engine.js";
 import { callLanggraphTool } from "./connectors/langgraph.js";
 import { callLangsmithTool } from "./connectors/langsmith.js";
+import { callSentryTool } from "./connectors/sentry.js";
 import { callMonidTool } from "./connectors/monid.js";
 import { callYouCanBookMeTool } from "./connectors/youcanbookme.js";
 import { callCalcomTool } from "./connectors/calcom.js";
@@ -2968,6 +2969,52 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "langgraph/delete_cron") { return { cron_id: { type: "string", description: "Cron id (uuid) to delete." } }; }
   if (toolName === "langgraph/search_store_items") { return { namespace_prefix: { type: "array", items: { type: "string" }, description: "Namespace path prefix, e.g. [\"memories\", \"user-1\"]." }, filter: { type: "object", description: "Key/value filter over item values." }, query: { type: "string", description: "Natural-language query for semantic search, when the store has an index." }, limit: { type: "number", description: "Max items to return (default 20)." }, offset: { type: "number", description: "Items to skip for pagination." } }; }
 
+  // --- sentry ---
+  if (toolName.startsWith("sentry/") && toolName !== "sentry/request" && toolName !== "sentry/check_connection" && toolName !== "sentry/list_capabilities") {
+    const org = { organization: { type: "string", description: "Organization slug (sentry.io/organizations/<slug>/). Optional when the credential stores a default organization." } };
+    const issue = { issue_id: { type: "string", description: "Numeric issue id, or the short id shown in the Sentry UI (e.g. BACKEND-1A3)." } };
+    const cursor = { cursor: { type: "string", description: "Pagination cursor from a previous next_cursor." } };
+    if (toolName === "sentry/list_organizations") return { ...cursor };
+    if (toolName === "sentry/list_projects") return { ...org, query: { type: "string", description: "Filter projects by slug/name." }, ...cursor };
+    if (toolName === "sentry/list_issues") {
+      return {
+        ...org,
+        query: { type: "string", description: "Sentry search query. Default is:unresolved. e.g. 'is:unresolved level:error', 'is:unresolved firstSeen:-24h', 'assigned:me'." },
+        project: { type: "array", items: { type: "string" }, description: "Numeric project ids to limit to (see sentry/list_projects). Omit for all projects." },
+        environment: { type: "array", items: { type: "string" }, description: "Environments, e.g. ['production']." },
+        stats_period: { type: "string", description: "Relative window, e.g. 24h, 14d. Default is Sentry's (14d)." },
+        start: { type: "string", description: "Absolute window start (ISO 8601). Use with end instead of stats_period." },
+        end: { type: "string", description: "Absolute window end (ISO 8601)." },
+        sort: { type: "string", description: "date (last seen, default) | new (first seen) | freq (events) | user (users affected)." },
+        limit: { type: "number", description: "Max issues per page (1-100)." },
+        ...cursor,
+      };
+    }
+    if (toolName === "sentry/get_issue") return { ...org, ...issue };
+    if (toolName === "sentry/list_issue_events") {
+      return { ...org, ...issue, query: { type: "string", description: "Event search query, e.g. 'release:1.2.3'." }, environment: { type: "array", items: { type: "string" }, description: "Environments to include." }, stats_period: { type: "string", description: "Relative window, e.g. 24h." }, limit: { type: "number", description: "Max events to return from this page." }, ...cursor };
+    }
+    if (toolName === "sentry/get_issue_event") {
+      return { ...org, ...issue, event_id: { type: "string", description: "Event id, or latest (default) | oldest | recommended. Returns exception chain with in-app stack frames, message, release and tags." } };
+    }
+    if (toolName === "sentry/update_issue") {
+      return {
+        ...org,
+        ...issue,
+        status: { type: "string", description: "resolved | resolvedInNextRelease | unresolved | ignored." },
+        substatus: { type: "string", description: "archived_until_escalating | archived_until_condition_met | archived_forever | ongoing | escalating | new | regressed (pairs with status)." },
+        status_details: { type: "object", description: "e.g. { inRelease: 'latest' }, { inNextRelease: true }, { ignoreDuration: 60 } (minutes), { ignoreCount: 100 }." },
+        assigned_to: { type: "string", description: "Assignee: username, email, 'user:<id>' or 'team:<id>'. Empty string unassigns." },
+        has_seen: { type: "boolean", description: "Mark seen/unseen for the token's user." },
+        is_bookmarked: { type: "boolean", description: "Bookmark for the token's user." },
+        is_subscribed: { type: "boolean", description: "Subscribe the token's user to workflow notifications." },
+        is_public: { type: "boolean", description: "Share the issue publicly." },
+      };
+    }
+    if (toolName === "sentry/list_releases") {
+      return { ...org, query: { type: "string", description: "Filter by version substring." }, project: { type: "array", items: { type: "string" }, description: "Numeric project ids." }, environment: { type: "array", items: { type: "string" }, description: "Environments." }, limit: { type: "number", description: "Max releases per page (1-100)." }, ...cursor };
+    }
+  }
   // --- langsmith ---
   if (toolName === "langsmith/list_workspaces") { return {}; }
   if (toolName === "langsmith/list_projects") { return { name: { type: "string", description: "Exact tracing project name." }, name_contains: { type: "string", description: "Substring match on the project name." }, limit: { type: "number", description: "Max projects to return (default 20)." }, offset: { type: "number", description: "Projects to skip for pagination." } }; }
@@ -3558,6 +3605,10 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "langgraph/search_crons") return [];
   if (toolName === "langgraph/delete_cron") return ["cron_id"];
   if (toolName === "langgraph/search_store_items") return [];
+  if (toolName === "sentry/get_issue") return ["issue_id"];
+  if (toolName === "sentry/list_issue_events") return ["issue_id"];
+  if (toolName === "sentry/get_issue_event") return ["issue_id"];
+  if (toolName === "sentry/update_issue") return ["issue_id"];
   if (toolName === "langsmith/list_workspaces") return [];
   if (toolName === "langsmith/list_projects") return [];
   if (toolName === "langsmith/get_project") return ["project_id"];
@@ -3899,6 +3950,7 @@ async function dispatchProviderTool(
   if (provider === "intent_engine") return callIntentEngineTool(toolName, args, token);
   if (provider === "langgraph") return callLanggraphTool(toolName, args, token);
   if (provider === "langsmith") return callLangsmithTool(toolName, args, token);
+  if (provider === "sentry") return callSentryTool(toolName, args, token);
   if (provider === "monid") return callMonidTool(toolName, args, token);
   if (provider === "youcanbookme") return callYouCanBookMeTool(toolName, args, token);
   if (provider === "calendly") return callCalendlyTool(toolName, args, token);

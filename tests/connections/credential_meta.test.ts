@@ -273,6 +273,12 @@ function patSuccessResponse(call: FetchCall) {
   if (url === "https://api.openai.com/v1/models") {
     return jsonResponse({ object: "list", data: [{ id: "gpt-image-1", object: "model" }] });
   }
+  if (url === "https://sentry.io/api/0/") {
+    return jsonResponse({ version: "0", auth: { scopes: ["org:read", "project:read", "event:read", "event:write"] }, user: { username: "ops" } });
+  }
+  if (url === "https://sentry.io/api/0/organizations/") {
+    return jsonResponse([{ id: "1", slug: "acme", name: "Acme" }]);
+  }
   if (url === "https://openrouter.ai/api/v1/auth/key") {
     return jsonResponse({ data: { label: "grantry-test", usage: 0.12, limit: null, is_free_tier: false, rate_limit: { requests: 200, interval: "10s" } } });
   }

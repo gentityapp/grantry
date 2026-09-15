@@ -1325,6 +1325,29 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  sentry: {
+    key: "sentry",
+    label: "Sentry",
+    authTypes: ["pat"],
+    helpText: "Paste a Sentry User Auth Token (Settings > Account > API > Auth Tokens) or an Internal Integration token with org:read, project:read and event:read (add event:write if agents should resolve, ignore or assign issues). It is sent as Authorization: Bearer against the Sentry /api/0 API. Set the organization slug so tools do not need it on every call. sentry.io (US) is the default; the EU region uses https://de.sentry.io and self-hosted installs enter their own URL. Organization Auth Tokens (sntrys_...) only carry org:ci and cannot read issues.",
+    tokenUrl: "https://sentry.io/settings/account/api/auth-tokens/",
+    tools: [
+      "sentry/list_organizations",
+      "sentry/list_projects",
+      "sentry/list_issues",
+      "sentry/get_issue",
+      "sentry/list_issue_events",
+      "sentry/get_issue_event",
+      "sentry/update_issue",
+      "sentry/list_releases",
+    ],
+    credentialFields: [
+      { key: "token", label: "Auth token", required: true, secret: true, placeholder: "sntryu_…" },
+      { key: "organization", label: "Organization slug", required: false, placeholder: "acme", hint: "From sentry.io/organizations/<slug>/. Used as the default organization for every tool." },
+      { key: "base_url", label: "Sentry URL", required: false, placeholder: "https://sentry.io", hint: "EU region: https://de.sentry.io. Self-hosted: your Sentry URL. Leave blank for sentry.io (US)." },
+    ],
+    implemented: true,
+  },
   linear: {
     key: "linear",
     label: "Linear",
@@ -2250,6 +2273,12 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     authScheme: "api_key",
     apiKeyHeader: "X-Api-Key",
     smokeTests: [{ id: "sessions", method: "GET", path: "/api/v1/sessions" }],
+  },
+  sentry: {
+    baseUrl: "credential.sentry_api_0",
+    defaultMethods: ["GET"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "organizations", method: "GET", path: "/organizations/" }],
   },
   monid: {
     baseUrl: "https://api.monid.ai",

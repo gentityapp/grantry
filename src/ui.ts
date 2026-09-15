@@ -105,6 +105,7 @@ function authTypeLabel(providerKey: string, authType: string): string {
   if (providerKey === "intent_engine") return "API token";
   if (providerKey === "langgraph") return "API key";
   if (providerKey === "langsmith") return "API key";
+  if (providerKey === "sentry") return "Auth token";
   if (["airtable", "linear", "sendgrid", "vercel", "stripe", "webflow", "intercom", "customerio", "mailchimp", "openai", "openrouter", "higgsfield"].includes(providerKey)) return "API key";
   if (providerKey === "linkedin_ads" || providerKey === "tiktok_ads") return "Access token";
   if (["zendesk", "wordpress", "shopify", "jira", "salesforce", "microsoft_ads", "aws", "snowflake", "channel_talk"].includes(providerKey)) return "JSON credential";
@@ -140,6 +141,7 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
   if (providerKey === "sendgrid") return "Paste your SendGrid API key (SG....)";
   if (providerKey === "openai") return "Paste your OpenAI API key (sk-... or sk-proj-...)";
   if (providerKey === "openrouter") return "Paste your OpenRouter API key (sk-or-v1-...)";
+  if (providerKey === "sentry") return "Paste your Sentry auth token (sntryu_...) or JSON {\"token\",\"organization\",\"base_url\"}";
   if (providerKey === "higgsfield") return "Paste your Higgsfield key as KEY_ID:KEY_SECRET";
   if (providerKey === "vercel") return "Paste your Vercel access token";
   if (providerKey === "stripe") return "Paste your Stripe secret key (sk_live_... or sk_test_...)";

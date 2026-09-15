@@ -1316,6 +1316,52 @@ export async function inspectCredential(provider: string, authType: string, toke
       return { provider, authType, status: "ok", subject: { tenant_id: first.tenant_id, base_url: base }, notes: ["LangSmith API keys are sent via the X-Api-Key header. This key is workspace-scoped: it can read tracing projects but not the workspace list."], checkedAt };
     }
 
+    if (provider === "sentry") {
+      let authToken = token.trim();
+      let host = "https://sentry.io";
+      let organization = "";
+      if (authToken.startsWith("{")) {
+        let p: any; try { p = JSON.parse(authToken); } catch { return { provider, authType, status: "error", checkedAt, error: 'Sentry credential JSON is invalid; expected {"token":"sntryu_...","organization":"your-org"}' }; }
+        authToken = String(p.token ?? p.auth_token ?? p.api_key ?? p.apiKey ?? "").trim();
+        organization = String(p.organization ?? p.org ?? p.organization_slug ?? "").trim();
+        const url = String(p.base_url ?? p.baseUrl ?? p.url ?? "").trim().replace(/\/+$/, "");
+        if (url) host = url;
+      }
+      if (!authToken) return { provider, authType, status: "error", checkedAt, error: "Sentry auth token is required" };
+      const base = host.endsWith("/api/0") ? host : `${host}/api/0`;
+      const headers = { Authorization: `Bearer ${authToken}`, Accept: "application/json" };
+      // The API root echoes the token's scopes and user, and answers for every
+      // token type (user, internal integration, org auth token).
+      const rootResp = await fetchWithTimeout(`${base}/`, { headers });
+      const root: any = await readJson(rootResp);
+      if (!rootResp.ok || !root?.auth) return { provider, authType, status: "error", checkedAt, error: `Sentry token check failed: ${rootResp.status} ${JSON.stringify(root).slice(0, 300)}` };
+      const scopes: string[] = Array.isArray(root.auth.scopes) ? root.auth.scopes : [];
+      const notes = [`Sentry auth tokens are sent as Authorization: Bearer against ${base}.`];
+      const missing = ["org:read", "project:read", "event:read"].filter((scope) => scopes.length && !scopes.includes(scope) && !scopes.includes(scope.replace(":read", ":write")) && !scopes.includes(scope.replace(":read", ":admin")));
+      if (missing.length) notes.push(`Token is missing ${missing.join(", ")}; issue and event tools will return 403.`);
+      if (scopes.length && !scopes.some((scope) => scope === "event:write" || scope === "event:admin")) notes.push("Token has no event:write, so sentry/update_issue (resolve/ignore/assign) will return 403.");
+      if (!organization) notes.push("No default organization slug stored; tools need organization on every call.");
+      let organizations: any[] = [];
+      const orgResp = await fetchWithTimeout(`${base}/organizations/`, { headers });
+      if (orgResp.ok) {
+        const body: any = await readJson(orgResp);
+        organizations = (Array.isArray(body) ? body : []).map((o: any) => ({ slug: o?.slug, name: o?.name }));
+        if (organization && organizations.length && !organizations.some((o) => o.slug === organization)) notes.push(`Stored organization "${organization}" is not visible to this token (visible: ${organizations.map((o) => o.slug).join(", ")}).`);
+      } else {
+        notes.push(`Listing organizations returned ${orgResp.status}; the token may be an Organization Auth Token (org:ci only), which cannot read issues.`);
+      }
+      return {
+        provider,
+        authType,
+        status: "ok",
+        subject: { user: root.user?.username ?? root.user?.email ?? null, organization: organization || null, base_url: host },
+        scopes,
+        resources: organizations,
+        notes,
+        checkedAt,
+      };
+    }
+
     if (provider === "zendesk") {
       let p: any; try { p = JSON.parse(token.trim()); } catch { return { provider, authType, status: "error", checkedAt, error: 'Zendesk credential must be JSON {"subdomain","email","token"}' }; }
       if (!p.subdomain || !p.email || !p.token) return { provider, authType, status: "error", checkedAt, error: "Zendesk JSON must include subdomain, email, and token" };

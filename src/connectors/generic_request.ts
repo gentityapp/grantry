@@ -298,6 +298,11 @@ function resolveBaseUrl(provider: string, manifest: GenericManifest, credential:
     const baseUrl = normalizeBaseUrl(credentialField(credential, ["base_url", "baseUrl"]));
     return baseUrl || "https://api.smith.langchain.com";
   }
+  if (manifest.baseUrl === "credential.sentry_api_0") {
+    // sentry.io (US) by default; EU (de.sentry.io) and self-hosted ride in base_url.
+    const host = normalizeBaseUrl(credentialField(credential, ["base_url", "baseUrl", "url"])) || "https://sentry.io";
+    return host.endsWith("/api/0") ? host : `${host}/api/0`;
+  }
   if (manifest.baseUrl === "credential.snowflake_api_v2") {
     const account = credentialField(credential, ["account"]);
     if (!account) throw new Error(`${provider}/request requires a JSON credential with account`);
@@ -327,6 +332,7 @@ function credentialToken(provider: string, credential: string) {
   if (provider === "nocodb" && parsed) return String(parsed.api_token ?? parsed.apiToken ?? parsed.token ?? credential);
   if (provider === "langgraph" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? parsed.token ?? credential);
   if (provider === "langsmith" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? parsed.token ?? credential);
+  if (provider === "sentry" && parsed) return String(parsed.token ?? parsed.auth_token ?? parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "shopify" && parsed) return String(parsed.token ?? credential);
   if (provider === "snowflake" && parsed) return String(parsed.token ?? credential);
   return credential;

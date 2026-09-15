@@ -54,6 +54,10 @@ function manifestBases(provider: (typeof PROVIDERS)[string]) {
       bases.add("https://seminar.rootteam.co.jp");
     } else if (generic.baseUrl === "credential.langgraph_base") {
       // Every LangGraph deployment has its own URL; nothing static to compare.
+    } else if (generic.baseUrl === "credential.sentry_api_0") {
+      // EU region / self-hosted URL is credential-derived; both SaaS hosts below.
+      bases.add("https://sentry.io");
+      bases.add("https://de.sentry.io");
     } else if (generic.baseUrl === "credential.langsmith_base") {
       // EU region / self-hosted API URL is credential-derived; US cloud default below.
       bases.add("https://api.smith.langchain.com");
