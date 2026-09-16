@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: grantry
+      POSTGRES_PASSWORD: grantry
+      POSTGRES_DB: grantry
+    volumes:
+      - grantry-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grantry -d grantry"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  app:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql://grantry:grantry@db:5432/grantry}
+      PORT: 3000
+    ports:
+      - "${PORT:-3000}:3000"
+
+volumes:
+  grantry-pgdata:
