@@ -84,4 +84,4 @@ See [PO.md](PO.md) for the product-owner source of truth, plus [docs/business-po
 
 ## License
 
-MIT
+Apache-2.0 — see [LICENSE](LICENSE).
