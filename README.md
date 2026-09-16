@@ -34,22 +34,34 @@ The public provider and tool counts are rendered from `providerCoverageStats()` 
 - API reference: `https://app.grantry.ai/docs`
 - Health: `https://api.grantry.ai/health`
 
-## Quickstart
+## Self-host
 
-```bash
-# Local
-cp .env.example .env
-# edit DATABASE_URL, BETTER_AUTH_SECRET
-npm install
-npx prisma db push
-npm run dev
+Run grantry with Docker Compose in three steps:
 
-# Deploy (Railway)
-# 1. Create new Railway service from this repo
-# 2. Add Postgres plugin
-# 3. Set env vars from .env.example
-# 4. Deploy
-```
+1. Clone the repository and enter it.
+
+   ```bash
+   git clone https://github.com/gentityapp/grantry.git
+   cd grantry
+   ```
+
+2. Create `.env` from `.env.example` and set the required values. `DATABASE_URL` must point to the Postgres service, `BETTER_AUTH_SECRET` signs user sessions, and `FERNET_KEY` encrypts provider credentials. Set `AUTH_GOOGLE_CLIENT_ID` and `AUTH_GOOGLE_CLIENT_SECRET` for the Google sign-in button, and register the callback URL as `<BETTER_AUTH_URL>/api/auth/callback/google` in your Google OAuth client.
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   For a local Compose setup, `DATABASE_URL` can be left unset because Compose supplies its bundled Postgres URL. Keep `BETTER_AUTH_SECRET` and `FERNET_KEY` as separate, randomly generated values. Set `BETTER_AUTH_URL` to the URL where the dashboard is reachable, such as `http://localhost:3000`.
+
+3. Start the application and bundled Postgres database.
+
+   ```bash
+   docker compose up --build
+   ```
+
+After the services are healthy, open `http://localhost:3000/login` and sign in with Google. On the first login, use an address on the domain configured in `OPS_DOMAIN`, open `http://localhost:3000/_ops`, and select **Promote me to admin**. Then open the dashboard to create a workspace, scope, provider connection, agent, and connection grant.
+
+If you do not want to operate grantry yourself, use the hosted dashboard at [app.grantry.ai](https://app.grantry.ai) and the hosted MCP endpoint at `https://api.grantry.ai/mcp`.
 
 ## Endpoints
 
