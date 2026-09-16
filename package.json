@@ -26,7 +26,8 @@
     "db:disable-platform-oauth-app-credentials": "node scripts/disable-platform-oauth-app-credentials.mjs",
     "db:backfill-agent-connection-grants": "node scripts/backfill-agent-connection-grants.mjs",
     "user:reset-password": "node scripts/reset-password.mjs",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "oss:readiness": "node scripts/oss-readiness.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.7",
