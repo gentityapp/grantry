@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
+  "license": "Apache-2.0",
   "description": "OAuth credential broker for AI agents (MCP-compatible)",
   "engines": {
     "node": ">=22"
