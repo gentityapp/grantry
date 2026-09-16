@@ -835,10 +835,17 @@ const PUBLIC_HEADER = () => `
   </header>
 `;
 
+// Public contact address for the footer and the legal pages. Self-hosted
+// deployments set their own; when unset the contact links are simply omitted.
+const CONTACT_EMAIL = (process.env.CONTACT_EMAIL || "").trim();
+
+const contactMailto = (label: string) =>
+  CONTACT_EMAIL ? `<a href="mailto:${escapeHtml(CONTACT_EMAIL)}">${escapeHtml(label)}</a>` : "";
+
 const PUBLIC_FOOTER = () => `
   <footer class="public-footer">
     <span>&copy; ${new Date().getFullYear()} grantry.ai</span>
-    <span><a href="/privacy">${t("Privacy Policy")}</a> &middot; <a href="/terms">${t("Terms of Service")}</a> &middot; <a href="mailto:<運営者のメール>">${t("Contact")}</a></span>
+    <span><a href="/privacy">${t("Privacy Policy")}</a> &middot; <a href="/terms">${t("Terms of Service")}</a>${CONTACT_EMAIL ? ` &middot; ${contactMailto(t("Contact"))}` : ""}</span>
   </footer>
 `;
 
@@ -3760,10 +3767,10 @@ dashboardApp.get("/privacy", (c) => c.html(publicPage("Privacy Policy", `
     <p>OAuth tokens and provider credentials are encrypted at rest. Access to provider connections is controlled by workspace, connection, and agent grants. Audit logs are maintained to help account owners review how agents use configured connections.</p>
 
     <h2>Data retention and deletion</h2>
-    <p>You can disconnect provider connections in the dashboard. Disconnecting a provider removes the stored credentials for that connection and prevents future agent use. You may also request account, workspace, or connection deletion by contacting us at <a href="mailto:<運営者のメール>"><運営者のメール></a>.</p>
-
+    <p>You can disconnect provider connections in the dashboard. Disconnecting a provider removes the stored credentials for that connection and prevents future agent use. You may also request account, workspace, or connection deletion ${CONTACT_EMAIL ? `by contacting us at ${contactMailto(CONTACT_EMAIL)}` : "by contacting the operator of this deployment"}.</p>
+${CONTACT_EMAIL ? `
     <h2>Contact</h2>
-    <p>For privacy questions or deletion requests, contact <a href="mailto:<運営者のメール>"><運営者のメール></a>.</p>
+    <p>For privacy questions or deletion requests, contact ${contactMailto(CONTACT_EMAIL)}.</p>` : ""}
   </main>
 `)));
 
@@ -3802,9 +3809,9 @@ dashboardApp.get("/terms", (c) => c.html(publicPage("Terms of Service", `
 
     <h2>Changes</h2>
     <p>We may update these terms from time to time. Continued use of grantry after changes become effective means you accept the updated terms.</p>
-
+${CONTACT_EMAIL ? `
     <h2>Contact</h2>
-    <p>Questions about these terms can be sent to <a href="mailto:<運営者のメール>"><運営者のメール></a>.</p>
+    <p>Questions about these terms can be sent to ${contactMailto(CONTACT_EMAIL)}.</p>` : ""}
   </main>
 `)));
 
@@ -3912,9 +3919,12 @@ dashboardApp.get("/dashboard", async (c) => {
 });
 
 // --- /_ops — system-wide admin overview (unlisted; not in nav, admin-only) ---
-// Access is gated to admins on this email domain. Override via OPS_DOMAIN env.
-const OPS_DOMAIN = (process.env.OPS_DOMAIN || "rootteam.co.jp").toLowerCase();
+// Access requires the admin role. When OPS_DOMAIN is set, admins must also sit
+// on that email domain, and the very first admin can be bootstrapped from it.
+// Unset, the admin role alone decides and bootstrapping stays closed.
+const OPS_DOMAIN = (process.env.OPS_DOMAIN || "").trim().toLowerCase();
 function isOpsDomain(email: string | null | undefined): boolean {
+  if (!OPS_DOMAIN) return true;
   return (email ?? "").toLowerCase().endsWith(`@${OPS_DOMAIN}`);
 }
 
@@ -3923,10 +3933,10 @@ dashboardApp.get("/_ops", async (c) => {
   if (!dbUser) return c.redirect("/login");
 
   const adminCount = await prisma.user.count({ where: { role: "admin" } });
-  const bootstrapMode = adminCount === 0;
-  // The ops view is restricted to admins whose email is on the rootteam.co.jp
-  // domain. In bootstrap mode (no admins yet) the same domain gate still applies,
-  // so only a rootteam account can promote itself to the first admin.
+  // Bootstrap mode (no admins yet, so a first admin must be promotable) is only
+  // offered while a domain gate exists; without OPS_DOMAIN the role alone
+  // decides and nobody can promote themselves.
+  const bootstrapMode = adminCount === 0 && !!OPS_DOMAIN;
   if (!isOpsDomain(dbUser.email) || (dbUser.role !== "admin" && !bootstrapMode)) {
     return c.html(`
       <!doctype html><html><head><meta charset="utf-8"><title>Meta — grantry</title>
@@ -3934,7 +3944,7 @@ dashboardApp.get("/_ops", async (c) => {
       ${NAV("_ops", dbUser?.email)}
       <main>
         <h1>Meta</h1>
-        <div class="card"><h2>Forbidden</h2><p>This screen is restricted to <code>admin</code> users on the <code>${escapeHtml(OPS_DOMAIN)}</code> domain.</p></div>
+        <div class="card"><h2>Forbidden</h2><p>This screen is restricted to <code>admin</code> users${OPS_DOMAIN ? ` on the <code>${escapeHtml(OPS_DOMAIN)}</code> domain` : ""}.</p></div>
       </main></body></html>
     `, 403);
   }
@@ -4289,9 +4299,9 @@ dashboardApp.get("/_ops", async (c) => {
 dashboardApp.post("/_ops/promote-self", async (c) => {
   const dbUser = await getDbSessionUser(c);
   if (!dbUser) return c.redirect("/login");
-  if (!isOpsDomain(dbUser.email)) return c.html(`<h1>restricted to ${escapeHtml(OPS_DOMAIN)}</h1>`, 403);
+  if (!isOpsDomain(dbUser.email)) return c.html(`<h1>restricted to admins${OPS_DOMAIN ? ` on ${escapeHtml(OPS_DOMAIN)}` : ""}</h1>`, 403);
   const adminCount = await prisma.user.count({ where: { role: "admin" } });
-  if (adminCount > 0 && dbUser.role !== "admin") return c.html(`<h1>${t("admin already exists")}</h1>`, 403);
+  if (dbUser.role !== "admin" && (adminCount > 0 || !OPS_DOMAIN)) return c.html(`<h1>${t("admin required")}</h1>`, 403);
   await prisma.user.update({ where: { id: dbUser.id }, data: { role: "admin" } });
   return c.redirect("/_ops");
 });
@@ -4299,9 +4309,9 @@ dashboardApp.post("/_ops/promote-self", async (c) => {
 dashboardApp.post("/_ops/oauth-states/prune", async (c) => {
   const dbUser = await getDbSessionUser(c);
   if (!dbUser) return c.redirect("/login");
-  if (!isOpsDomain(dbUser.email)) return c.html(`<h1>restricted to ${escapeHtml(OPS_DOMAIN)}</h1>`, 403);
+  if (!isOpsDomain(dbUser.email)) return c.html(`<h1>restricted to admins${OPS_DOMAIN ? ` on ${escapeHtml(OPS_DOMAIN)}` : ""}</h1>`, 403);
   const adminCount = await prisma.user.count({ where: { role: "admin" } });
-  if (dbUser.role !== "admin" && adminCount > 0) return c.html(`<h1>${t("admin required")}</h1>`, 403);
+  if (dbUser.role !== "admin" && (adminCount > 0 || !OPS_DOMAIN)) return c.html(`<h1>${t("admin required")}</h1>`, 403);
   const result = await prisma.oAuthState.deleteMany({ where: { expiresAt: { lt: new Date() } } });
   return c.redirect(`/_ops?pruned=${result.count}`);
 });
@@ -4309,9 +4319,9 @@ dashboardApp.post("/_ops/oauth-states/prune", async (c) => {
 dashboardApp.post("/_ops/platform-oauth-apps/disable", async (c) => {
   const dbUser = await getDbSessionUser(c);
   if (!dbUser) return c.redirect("/login");
-  if (!isOpsDomain(dbUser.email)) return c.html(`<h1>restricted to ${escapeHtml(OPS_DOMAIN)}</h1>`, 403);
+  if (!isOpsDomain(dbUser.email)) return c.html(`<h1>restricted to admins${OPS_DOMAIN ? ` on ${escapeHtml(OPS_DOMAIN)}` : ""}</h1>`, 403);
   const adminCount = await prisma.user.count({ where: { role: "admin" } });
-  if (dbUser.role !== "admin" && adminCount > 0) return c.html(`<h1>${t("admin required")}</h1>`, 403);
+  if (dbUser.role !== "admin" && (adminCount > 0 || !OPS_DOMAIN)) return c.html(`<h1>${t("admin required")}</h1>`, 403);
   const platformOAuthProviderKeys = Object.values(PROVIDERS)
     .filter((p) => p.authTypes.includes("oauth") && !providerUsesWorkspaceOAuthApp(p))
     .map((p) => p.key);

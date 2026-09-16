@@ -6,8 +6,9 @@
 // what makes "recommend something for someone who works with AWS" answerable.
 //
 // The base URL is part of the credential: this is a self-hosted service, so a
-// workspace points its connection at its own deployment.
-const DEFAULT_BASE = "https://seminar.rootteam.co.jp";
+// workspace points its connection at its own deployment. A server-wide default
+// can be set with SEMINAR_PORTAL_BASE_URL; without either there is nothing to call.
+const ENV_BASE = (process.env.SEMINAR_PORTAL_BASE_URL || "").trim().replace(/\/+$/, "");
 const SEMINAR_TIMEOUT_MS = 15_000;
 
 type SeminarArgs = Record<string, unknown>;
@@ -26,12 +27,12 @@ function parseCredential(credential: string): Credential {
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       const apiKey = String(parsed.api_key ?? parsed.apiKey ?? parsed.token ?? "").trim();
       const baseUrl = String(parsed.base_url ?? parsed.baseUrl ?? "").trim();
-      return { apiKey, baseUrl: (baseUrl || DEFAULT_BASE).replace(/\/+$/, "") };
+      return { apiKey, baseUrl: (baseUrl || ENV_BASE).replace(/\/+$/, "") };
     }
   } catch {
     // plain API key
   }
-  return { apiKey: raw, baseUrl: DEFAULT_BASE };
+  return { apiKey: raw, baseUrl: ENV_BASE };
 }
 
 async function readJsonResponse(r: Response) {
@@ -73,6 +74,11 @@ async function request(
 ) {
   const { apiKey, baseUrl } = parseCredential(credential);
   if (!apiKey) throw new Error("Seminar Portal credential must include an api_key");
+  if (!baseUrl) {
+    throw new Error(
+      "Seminar Portal has no deployment URL — paste a JSON credential with base_url, or set SEMINAR_PORTAL_BASE_URL on the server",
+    );
+  }
 
   const url = new URL(path, baseUrl);
   for (const [key, value] of Object.entries(params)) {

@@ -287,7 +287,9 @@ function resolveBaseUrl(provider: string, manifest: GenericManifest, credential:
     // Self-hosted aggregator: the deployment URL rides in the credential, and
     // every agent route lives under /api/v1 on it.
     const site = normalizeBaseUrl(credentialField(credential, ["base_url", "baseUrl"]));
-    return `${site || "https://seminar.rootteam.co.jp"}/api/v1`;
+    const base = site || normalizeBaseUrl(process.env.SEMINAR_PORTAL_BASE_URL || "");
+    if (!base) throw new Error(`${provider}/request requires a JSON credential with base_url (or SEMINAR_PORTAL_BASE_URL on the server)`);
+    return `${base}/api/v1`;
   }
   if (manifest.baseUrl === "credential.langgraph_base") {
     const baseUrl = normalizeBaseUrl(credentialField(credential, ["base_url", "baseUrl", "deployment_url"]));

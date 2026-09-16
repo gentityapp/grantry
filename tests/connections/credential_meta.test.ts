@@ -97,6 +97,7 @@ function patTokenForProvider(providerKey: string) {
     railway: JSON.stringify({ token: "railway-test-token", token_type: "project" }),
     railway_api: "railway-api-test-token",
     salesforce: JSON.stringify({ instance_url: "https://acme.my.salesforce.com", token: "sf-test-token" }),
+    seminar_portal: JSON.stringify({ api_key: "seminar-test-key", base_url: "https://seminar.example.test" }),
     shopify: JSON.stringify({ shop: "acme.myshopify.com", token: "shopify-test-token" }),
     acuity: JSON.stringify({ user_id: "12345", api_key: "acuity-test-key" }),
     snowflake: JSON.stringify({ account: "acme-test", token: "snowflake-test-token" }),
@@ -394,7 +395,7 @@ function patSuccessResponse(call: FetchCall) {
   if (url === "https://api.ads.openai.com/v1/ad_account") {
     return jsonResponse({ data: [{ id: "adacct-1", name: "Root" }] });
   }
-  if (url === "https://seminar.rootteam.co.jp/api/v1/tech") {
+  if (url === "https://seminar.example.test/api/v1/tech") {
     return jsonResponse({ technologies: [{ name: "AWS", upcoming_count: 3 }] });
   }
   if (url === "https://acme-test.supabase.co/rest/v1/") {
