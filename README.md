@@ -61,6 +61,38 @@ Run grantry with Docker Compose in three steps:
 
 After the services are healthy, open `http://localhost:3000/login` and sign in with Google. On the first login, use an address on the domain configured in `OPS_DOMAIN`, open `http://localhost:3000/_ops`, and select **Promote me to admin**. Then open the dashboard to create a workspace, scope, provider connection, agent, and connection grant.
 
+### Troubleshooting
+
+#### `FERNET_KEY` missing or wrong
+
+- **Symptom:** The container starts, but the first credential save fails with `FERNET_KEY must be set (credential encryption key, kept separate from BETTER_AUTH_SECRET)`.
+- **Cause:** `FERNET_KEY` is read lazily by the credential encryption layer (`src/crypto.ts`), so the app boots fine without it and only fails when it first stores or reads a credential.
+- **Fix:** Put `FERNET_KEY=$(openssl rand -base64 32)` in `.env` and restart. Decide the value before going live — changing it later makes already-stored credentials undecryptable.
+
+#### `DATABASE_URL` not reachable
+
+- **Symptom:** The app exits or logs a Prisma connection error (e.g. `P1001: Can't reach database server`) right after `docker compose up`.
+- **Cause:** The `db` service is not up yet (first boot initializes Postgres) or `DATABASE_URL` points at the wrong host or port.
+- **Fix:** Run `docker compose ps` and `docker compose logs db` — the `db` service has a `pg_isready` healthcheck and the app starts after it. In a Compose setup, leave `DATABASE_URL` unset so the built-in default `postgresql://grantry:grantry@db:5432/grantry` is used.
+
+#### First admin bootstrap does not appear
+
+- **Symptom:** After signing in with Google, `http://localhost:3000/_ops` does not offer **Promote me to admin**.
+- **Cause:** Bootstrap is only offered while no admin exists and `OPS_DOMAIN` is set; the candidate must be signed in with an address on that domain.
+- **Fix:** Set `OPS_DOMAIN` in `.env`, restart, and make sure the signed-in account's email is on that domain. If the first account used a different domain, sign up again with an address on the configured one.
+
+#### Port conflict on startup
+
+- **Symptom:** Compose fails with `Bind for 0.0.0.0:3000 failed: port is already allocated`.
+- **Cause:** Something on the host already listens on 3000. The host port is `${PORT:-3000}` in `docker-compose.yml`; the container port is fixed at 3000.
+- **Fix:** Set `PORT=8080` (any free port) in `.env` and run `docker compose up --build` again — only the host side changes.
+
+#### Stale build after code or dependency changes
+
+- **Symptom:** After pulling new commits or changing a dependency, the running app behaves the old way or fails with `Cannot find module` errors.
+- **Cause:** Docker reused cached image layers, so `node_modules` and the built bundle come from an older build.
+- **Fix:** Run `docker compose build --no-cache && docker compose up --build`. Secrets stay out of the image either way (`.dockerignore` excludes `.env`).
+
 If you do not want to operate grantry yourself, use the hosted dashboard at [app.grantry.ai](https://app.grantry.ai) and the hosted MCP endpoint at `https://api.grantry.ai/mcp`.
 
 ## Endpoints
