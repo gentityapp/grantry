@@ -233,6 +233,19 @@ export const ja: Record<string, string> = {
   "Open the agent page": "エージェントの詳細ページを開く",
   "It is usable from your personal MCP token right away — no new token to copy. If you have not created one yet, do it on the MCP tokens page.":
     "あなた個人の MCP トークンからすぐに利用できます。新しいトークンを受け取る必要はありません。まだ作成していない場合は MCP トークンのページから作成してください。",
+
+  // ── Onboarding nudge email (issue #250) ────────────────────────────────
+  "Get started with grantry — create the first scope in {workspace}":
+    "grantry を始めましょう — {workspace} に最初のスコープを作る",
+  "The {workspace} workspace on grantry has no scope yet.":
+    "grantry のワークスペース「{workspace}」には、まだスコープが 1 つもありません。",
+  "The <b>{workspace}</b> workspace on grantry has no scope yet.":
+    "grantry のワークスペース <b>{workspace}</b> には、まだスコープが 1 つもありません。",
+  "A scope is what an agent acts through — until one exists there is nothing for your agents to do. The quickstart sets one up in a single step: paste one credential and you get a scope, a connection and a test agent.":
+    "スコープはエージェントが働きかける相手の設定です — 1 つも無いと、エージェントにできることがありません。Quickstart なら 1 ステップで揃います: 資格情報を 1 つ貼り付ければ、スコープ・接続・テスト用エージェントが作られます。",
+  "Open quickstart": "Quickstart を開く",
+  "If now is not the right time, feel free to ignore this note.":
+    "いま手をつけるタイミングでなければ、この通知は無視して構いません。",
   "Invite": "招待",
   "member": "メンバー",
   "admin": "管理者",

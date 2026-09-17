@@ -14,6 +14,7 @@ import { filesApp } from "./files.js";
 import { Scalar } from "@scalar/hono-api-reference";
 import { openApiDocument } from "./openapi.js";
 import { startHealthSweepScheduler } from "./health_sweep.js";
+import { startOnboardingNudgeScheduler } from "./onboarding_nudge.js";
 // Side-effect import: registers GET /usage on the dashboardApp exported by ui.ts.
 import "./usage.js";
 
@@ -195,3 +196,7 @@ serve({ fetch: app.fetch, port }, (info) => {
 // Background credential-health sweep: re-validates stale connections daily so
 // the Connections page reflects reality without a manual Check now.
 startHealthSweepScheduler();
+
+// Onboarding nudge (issue #250): daily mail to workspaces that never got to
+// their first scope. No-op without RESEND_API_KEY.
+startOnboardingNudgeScheduler();

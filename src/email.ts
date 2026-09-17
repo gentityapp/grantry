@@ -1,4 +1,4 @@
-import { t } from "./i18n.js";
+import { t, runWithLocale, type Locale } from "./i18n.js";
 
 // Local copy of the dashboard's escaper: email bodies are assembled here, and
 // importing ui.ts (which registers every route on import) just for it would
@@ -72,7 +72,62 @@ ${input.charter ? `<p style="color:#555;">${escapeHtml(input.charter)}</p>\n` : 
   return { subject, text, html };
 }
 
-// System (transactional) email via the Resend HTTP API.
+export type OnboardingNudgeEmailInput = {
+  recipientName: string | null;
+  workspaceName: string;
+  /** Dashboard origin, no trailing slash. */
+  baseUrl: string;
+  /**
+   * Force the locale the body is written in. Defaults to the active locale
+   * (t() reads it from AsyncLocalStorage, same as agentAssignedEmail); the
+   * onboarding sweep sends outside a request, so it passes this explicitly.
+   */
+  locale?: Locale;
+};
+
+/**
+ * Body of the "your workspace has no scope yet" onboarding nudge (issue #250).
+ *
+ * Pure so it can be asserted on directly: the link is the quickstart entry
+ * (issue #248) so the reader sees an example before committing to a scope key,
+ * and the workspace name is untrusted display text that has to be escaped in
+ * the HTML part.
+ */
+export function onboardingNudgeEmail(input: OnboardingNudgeEmailInput): { subject: string; text: string; html: string } {
+  const build = (): { subject: string; text: string; html: string } => {
+    const base = input.baseUrl.replace(/\/+$/, "");
+    const link = `${base}/quickstart`;
+    const greeting = input.recipientName ? t("Hi {name},", { name: input.recipientName }) : t("Hi,");
+    const why = t("A scope is what an agent acts through — until one exists there is nothing for your agents to do. The quickstart sets one up in a single step: paste one credential and you get a scope, a connection and a test agent.");
+
+    const subject = t("Get started with grantry — create the first scope in {workspace}", { workspace: input.workspaceName });
+    const headline = t("The {workspace} workspace on grantry has no scope yet.", { workspace: input.workspaceName });
+
+    const text = [
+      greeting,
+      "",
+      headline,
+      "",
+      why,
+      "",
+      `${t("Open quickstart")}:`,
+      link,
+      "",
+      t("If now is not the right time, feel free to ignore this note."),
+      "",
+    ].join("\n");
+
+    const html = `<p>${escapeHtml(greeting)}</p>
+<p>${t("The <b>{workspace}</b> workspace on grantry has no scope yet.", { workspace: escapeHtml(input.workspaceName) })}</p>
+<p style="color:#555;">${escapeHtml(why)}</p>
+<p><a href="${link}">${escapeHtml(t("Open quickstart"))}</a></p>
+<p style="color:#888;font-size:13px;">${escapeHtml(t("If now is not the right time, feel free to ignore this note."))}</p>`;
+
+    return { subject, text, html };
+  };
+
+  return input.locale ? runWithLocale(input.locale, build) : build();
+}
 //
 // This is the service's own outbound mail — password resets and similar —
 // authenticated by RESEND_API_KEY, independent of any tenant Connection.
