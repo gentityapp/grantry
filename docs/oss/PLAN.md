@@ -45,7 +45,33 @@ PO は上の根拠で 1 つ選び、`LICENSE` と `package.json` を同じ PR �
    運営者が 2026-09-16 に OSS 化を指示しているので、**公開そのものは 4 例外の待ちではない**（新しい媒体の判断は済んでいる）。
 
 選ばなかった案: 新しい公開リポジトリに 1 コミットで書き出し、private を上流に残す（ミラー）。外部 PR を private に持ち帰る手間が毎回発生し「開発が公開で進む」にならない。
+**（2026-09-17 追記）** 書き換え実行の結果、refs/pull/*（GitHub が closed PR の head として自動保持する参照・削除不能・2026-09-17 実測 208 本以上）の大半に旧履歴の個人情報が残ることが判明した。このため refs/pull の除去（GitHub サポートへの依頼・asks 2026-09-17・kind: 本人）が間に合わない場合の fallback としてミラー案を復活させた（書き換え済み履歴を `gentityapp/grantry-mirror` に push・2026-09-17 済み・private）。判断点は 2026-09-24。下の「公開切替の実行手順」に両方の枝を書いた。
 既存の GitHub 組織 `Grantry`（https://github.com/Grantry、2026-08-26 作成、公開リポ 0）は `gentityapp` がメンバーではなく持ち主を確認できない。**自社のものなら公開後に `Grantry/grantry` へ transfer**（GitHub は旧 URL を転送する）。分からないうちは `gentityapp` で公開して止まらない。
+
+## 公開切替の実行手順（判断点 2026-09-24・2026-09-17 追記）
+
+公開切替の窓では、まず当日の共通手順を順に実行し、そのあと枝 A か枝 B のどちらか 1 本だけを実行する。実行は 1 日 1 判断として台帳に記録する。
+
+### 共通手順（当日の先頭）
+
+1. refs/pull の再確認: `git ls-remote origin "refs/pull/*/head" | wc -l` が **0** なら枝 A、**1 以上なら枝 B**（GitHub サポートの返信の有無を台帳に 1 行で書く）。
+2. `node scripts/oss-readiness.mjs` で repo-public 以外が全部緑であることを再確認する（1 つでも赤なら公開しない）。
+3. **Security タブの非公開脆弱性報告（Private vulnerability reporting）は private リポジトリでは有効化できない**（2026-09-16 製品ループ実測・API が 404）。公開と同じ周で有効化する。これが先にならないと SECURITY.md の報告先が成立しない。
+4. **本番の公開連絡先（CONTACT_EMAIL・フッター／プライバシー／利用規約の mailto に表示）が個人アドレスのまま**なら、役割名のアドレスへ差し替える（asks 2026-09-17 で用意を依頼中・期限 09-23）。Railway 変数の変更は再デプロイを伴うので、切替窓の他の手と同じ周に 1 回で済ませる。アドレスが用意できていなくても公開を止めない（サイトの表示は今日と同じで、用意でき次第差し替える）。
+5. 公開直後に本番の `/health`・トークン無し POST /mcp が 401・速度の 3 点を測り直し、台帳に書く。
+
+### 枝 A: refs/pull が消えている場合（本リポをそのまま公開）
+
+- `gh repo edit gentityapp/grantry --visibility public --accept-visibility-change-consequences`
+- good first issue 3 本（#254〜#256）は本リポ上にあるので追加の手順は不要。
+
+### 枝 B: refs/pull が残っている場合（ミラーを公開・本リポは private 残置）
+
+1. ミラーを当日の main まで更新して push する（`git push mirror main`・ミラーは台帳のみのコミット分遅れていることがある）。
+2. `gh repo edit gentityapp/grantry-mirror --visibility public --accept-visibility-change-consequences`
+3. `scripts/oss-readiness.mjs` の `OSS_PUBLIC_REPO` 既定を `gentityapp/grantry-mirror` に変える PR を同じ周で出してマージする（verify.py は環境変数を渡さないので、既定の変更で repo-public の測定先が追従する）。
+4. 外部の人が入れる受け皿を本リポから付け直す: good first issue 3 本（#254〜#256）をミラーに本文を写して起票（旧イシューは private に残る）・README のリンク先確認。
+5. 外部 PR の持ち帰りは 1 本ずつ（ミラー側の PR ブランチを本リポに `git fetch` して cherry-pick するか、パッチとして適用する）。溜めて一括にしない。
 
 ## 公開しないもの・気をつけるもの
 
