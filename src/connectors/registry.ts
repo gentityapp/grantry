@@ -2110,6 +2110,20 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
         requiredScopes: ["https://www.googleapis.com/auth/webmasters"],
         risk: "write",
       },
+      {
+        id: "url_inspection",
+        method: "POST",
+        path: "/urlInspection/index:inspect",
+        description:
+          "Inspect a URL's index status in Search Console. Send a JSON body with " +
+          "inspectionUrl (the absolute page URL to inspect) and siteUrl " +
+          "(the owning property, URL-encoded: https%3A%2F%2Fexample.com%2F or " +
+          "sc-domain%3Aexample.com). Optional: languageCode. " +
+          "Returns the index verdict and coverage details for the URL.",
+        baseUrlKey: "webmasters",
+        requiredScopes: ["https://www.googleapis.com/auth/webmasters.readonly"],
+        risk: "read",
+      },
     ],
   },
   google_analytics: {
