@@ -163,14 +163,14 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
     // GitHub's secondary (abuse) rate limit answers with 429 — or 403 carrying a
     // `Retry-After` header / `x-ratelimit-remaining: 0` + `x-ratelimit-reset`.
     // Retry those with backoff instead of aborting the whole push on one blip.
-    const gh = async (path: string, init?: RequestInit) => {
-      const method = init?.method ?? "GET";
+    // `ghRes` returns the final Response (after retries); callers that need to
+    // branch on the status (ref resolution below) use it directly, and `gh` is
+    // the ok-or-throw wrapper the rest of the push goes through.
+    const ghRes = async (url: string, init?: RequestInit): Promise<Response> => {
       for (let attempt = 0; ; attempt++) {
-        const r = await fetch(`${base}${path}`, { ...init, headers });
-        if (r.ok) return r.json() as Promise<any>;
-        if ((r.status !== 429 && r.status !== 403) || attempt >= 5) {
-          throw new Error(`git_push_repo ${method} ${path} failed: ${r.status} ${await r.text()}`);
-        }
+        const r = await fetch(url, { ...init, headers });
+        if (r.ok) return r;
+        if ((r.status !== 429 && r.status !== 403) || attempt >= 5) return r;
         const retryAfter = Number(r.headers.get("retry-after"));
         const reset = Number(r.headers.get("x-ratelimit-reset"));
         const waitMs =
@@ -180,6 +180,14 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
         await r.text(); // drain the body before retrying
         await new Promise((res) => setTimeout(res, waitMs));
       }
+    };
+    const gh = async (path: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      const r = await ghRes(`${base}${path}`, init);
+      if (!r.ok) {
+        throw new Error(`git_push_repo ${method} ${path} failed: ${r.status} ${await r.text()}`);
+      }
+      return r.json() as Promise<any>;
     };
 
     // 1. Resolve the target branch's current commit + base tree.
@@ -195,7 +203,9 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
     let parentCommitSha: string | null = null;
     let baseTreeSha: string | undefined;
     let branchExists = false;
-    const refRes = await fetch(`${base}/ref/heads/${encodeURIComponent(branch)}`, { headers });
+    // Ref resolution shares the retry net (ghRes) with the rest of the push —
+    // a 429 here used to abort with "resolve ref failed" before gh() was reached.
+    const refRes = await ghRes(`${base}/ref/heads/${encodeURIComponent(branch)}`);
     if (refRes.ok) {
       const ref: any = await refRes.json();
       parentCommitSha = ref.object.sha;
@@ -207,7 +217,7 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
       // New branch: resolve a base branch to inherit history + tree from.
       let baseBranch = String(args.base_branch ?? args.baseBranch ?? "").trim();
       if (!baseBranch) {
-        const repoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers });
+        const repoRes = await ghRes(`https://api.github.com/repos/${owner}/${repo}`);
         if (repoRes.ok) {
           const repoInfo: any = await repoRes.json();
           baseBranch = String(repoInfo.default_branch ?? "main");
@@ -216,7 +226,7 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
         }
       }
       if (baseBranch && baseBranch !== branch) {
-        const baseRefRes = await fetch(`${base}/ref/heads/${encodeURIComponent(baseBranch)}`, { headers });
+        const baseRefRes = await ghRes(`${base}/ref/heads/${encodeURIComponent(baseBranch)}`);
         if (baseRefRes.ok) {
           const baseRef: any = await baseRefRes.json();
           parentCommitSha = baseRef.object.sha;

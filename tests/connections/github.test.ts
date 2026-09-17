@@ -211,6 +211,66 @@ test("github/git_push_repo retries a 429 honoring retry-after and then succeeds"
   });
 });
 
+test("github/git_push_repo ref resolution retries on 429 and then succeeds", async (t) => {
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    globalThis.setTimeout = originalSetTimeout;
+  });
+  const waits: number[] = [];
+  fastTimeout(waits);
+  let refSeen = 0;
+  const calls = installFetchMock(({ url }) => {
+    if (url === "https://api.github.com/repos/grantry/hello/git/ref/heads/main") {
+      refSeen++;
+      if (refSeen === 1) {
+        // The ref resolve used to sit OUTSIDE the retry net and abort here.
+        return jsonResponse(
+          { message: "You have exceeded a secondary rate limit" },
+          { status: 429, headers: { "retry-after": "2" } }
+        );
+      }
+      return jsonResponse({ object: { sha: "parent" } });
+    }
+    if (url === "https://api.github.com/repos/grantry/hello/git/commits/parent") {
+      return jsonResponse({ sha: "parent", tree: { sha: "basetree" } });
+    }
+    if (url === "https://api.github.com/repos/grantry/hello/git/trees") {
+      return jsonResponse({ sha: "newtree" });
+    }
+    if (url === "https://api.github.com/repos/grantry/hello/git/commits") {
+      return jsonResponse({ sha: "newcommit" });
+    }
+    if (url === "https://api.github.com/repos/grantry/hello/git/refs/heads/main") {
+      return jsonResponse({ object: { sha: "newcommit" } });
+    }
+    return jsonResponse({ message: "Not Found" }, { status: 404 });
+  });
+
+  const result = await callGitHubTool(
+    "github/git_push_repo",
+    { owner: "grantry", repo: "hello", files: { "README.md": "# hi" } },
+    "ghp_tok"
+  );
+
+  // 2 ref resolves (1 retry) + commit fetch + trees + commit + ref update
+  assert.equal(calls.length, 6);
+  assert.equal(calls[0].url, "https://api.github.com/repos/grantry/hello/git/ref/heads/main");
+  assert.equal(calls[1].url, "https://api.github.com/repos/grantry/hello/git/ref/heads/main");
+  assert.equal(calls[2].url, "https://api.github.com/repos/grantry/hello/git/commits/parent");
+  // retry-after: 2 (seconds) is honored on the ref-resolve retry; a plain
+  // exponential backoff for attempt 0 would have waited 1000ms instead.
+  assert.deepEqual(waits, [2000]);
+  assert.deepEqual(result.structuredContent, {
+    commit_sha: "newcommit",
+    files_pushed: 1,
+    files: ["README.md"],
+    branch: "main",
+    created_branch: false,
+    based_on_parent: true,
+    url: "https://github.com/grantry/hello/commit/newcommit",
+  });
+});
+
 test("github/git_push_repo gives up after the retry cap on a persistent 429", async (t) => {
   t.after(() => {
     globalThis.fetch = originalFetch;
