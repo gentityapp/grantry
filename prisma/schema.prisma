@@ -533,7 +533,33 @@ model Workspace {
   customProviders CustomProvider[]
   adminApiKeys AdminApiKey[]
   mcpTokens UserMcpToken[]
+  knowledge   WorkspaceKnowledge[]
   @@map("workspace")
+}
+
+// Company-context rows served by the built-in grantry_company_context tool.
+// Data lives in the database per workspace (never in code): this repo is going
+// public and the map contents are internal. Rows are imported via the
+// workspace AdminApiKey (a daily job upserts by (workspaceId, key)).
+model WorkspaceKnowledge {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  kind        String // "repo_map" | "rule"
+  key         String // stable id so import jobs can upsert
+  title       String
+  body        String
+  // JSON array of qualifier strings ("[]"). Rows are filtered server-side by
+  // the calling agent's connection grants (issue #253): a row that requires a
+  // permission the caller's connections cannot reach is not returned at all.
+  requires    String   @default("[]")
+  sourceUrl   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([workspaceId, key])
+  @@index([workspaceId, kind])
+  @@map("workspace_knowledge")
 }
 
 
