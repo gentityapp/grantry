@@ -3889,6 +3889,12 @@ dashboardApp.get("/dashboard", async (c) => {
         <div class="scope-summary-card"><span>${t("Agents")}</span><strong>${agentCount}</strong></div>
         <div class="scope-summary-card"><span>${t("Connection grants")}</span><strong>${grantCount}</strong></div>
       </div>
+      ${tenantCount === 0 ? `
+      <div class="card" style="border-color:var(--accent);margin-bottom:20px;">
+        <h2 style="margin-top:0;">${t("Scope")} + ${t("Connection")} + ${t("Agent")}</h2>
+        <p class="field-hint">${t("Create a scope")} · ${t("Add connection")} · ${t("Create agent")} · ${t("Run the MCP smoke test")}</p>
+        <p style="margin-bottom:0;"><a class="btn" href="/quickstart">${t("Create scope")}</a></p>
+      </div>` : ""}
       <h2>${t("Setup checklist")}</h2>
       <div class="card">
         <ol style="list-style:none;margin:0;padding:0;">
@@ -3914,6 +3920,213 @@ dashboardApp.get("/dashboard", async (c) => {
           </tbody>
         </table>`}
       </div>
+    </main></body></html>
+  `);
+});
+
+// --- /quickstart — one-credential setup for workspaces with no scopes yet (issue #248) ---
+// The full wizard (scope -> connection -> agent -> grant) has too many fields
+// for a first run. Quickstart fills the scope key and agent name from the
+// provider key, so pasting one credential completes the whole chain in one
+// POST and lands on the smoke test.
+
+export const QUICKSTART_SCOPE_RE = /^[a-z0-9_-]+$/;
+export const QUICKSTART_AGENT_RE = /^[a-zA-Z0-9_-]+$/;
+
+export function quickstartDefaults(providerKey: string): { scope: string; agentName: string } {
+  const scope = String(providerKey ?? "").trim().toLowerCase().replace(/[^a-z0-9_-]/g, "") || "first-scope";
+  return { scope, agentName: `${scope}-agent` };
+}
+
+export function quickstartValidate(input: { provider?: unknown; scope?: unknown; agent?: unknown; credential?: unknown }): { ok: true } | { ok: false; error: "provider_required" | "scope_invalid" | "agent_required" | "agent_invalid" | "credential_required" } {
+  const provider = String(input.provider ?? "").trim();
+  const scope = String(input.scope ?? "").trim();
+  const agent = String(input.agent ?? "").trim();
+  if (!provider) return { ok: false, error: "provider_required" };
+  if (!QUICKSTART_SCOPE_RE.test(scope)) return { ok: false, error: "scope_invalid" };
+  if (!agent) return { ok: false, error: "agent_required" };
+  if (!QUICKSTART_AGENT_RE.test(agent)) return { ok: false, error: "agent_invalid" };
+  if (!String(input.credential ?? "").trim()) return { ok: false, error: "credential_required" };
+  return { ok: true };
+}
+
+export function quickstartSuccessTarget(agentId: string): string {
+  return `/agents/${agentId}#smoke-test`;
+}
+
+function quickstartCredentialFieldHtml(p: any): string {
+  const structured = renderCredentialFieldsHtml(p, { suffix: `${p.key}_pat`, enforceRequired: true });
+  return `
+        ${structured ? `<div class="cred-input">${structured}</div>` : `<textarea name="credential" rows="2" required placeholder="${escapeHtml(credentialPlaceholder(p.key, p.label, "pat"))}"></textarea>`}
+        <div class="field-hint">${escapeHtml(p.helpText)}</div>
+        ${p.tokenUrl ? `<div style="margin-top:4px;"><a href="${p.tokenUrl}" target="_blank" rel="noopener" style="font-size:13px;">${escapeHtml(tokenLinkLabel(p.key, p.label))}</a></div>` : ""}`;
+}
+
+dashboardApp.get("/quickstart", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+  const wsId = await getActiveWorkspaceId(c);
+  // One credential input means PAT providers only; OAuth-only providers still
+  // go through the redirect flow on /tenants/new or /connections/new.
+  const providers = (await listConnectionCandidateProviders(wsId))
+    .filter((p) => p.implemented !== false && p.authTypes.includes("pat"));
+  const shell = (inner: string) => c.html(`
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>Quickstart — grantry</title>
+    ${FAVICON}<style>${CSS}</style></head><body>
+    ${NAV("tenants", user?.email)}
+    <main>${inner}</main></body></html>
+  `);
+  if (providers.length === 0) {
+    return shell(`
+      <h1>Quickstart</h1>
+      <div class="card"><div class="empty">${t("Only providers enabled in <a href=\"/providers\">Providers</a> are shown here.")}</div></div>
+      <p><a href="/dashboard">← ${t("Back")}</a></p>
+    `);
+  }
+  const requested = String(c.req.query("provider") ?? "").trim();
+  const selectedKey = providers.some((p) => p.key === requested) ? requested : providers[0].key;
+  const selected = providers.find((p) => p.key === selectedKey)!;
+  const defaultsMap = Object.fromEntries(providers.map((p) => [p.key, quickstartDefaults(p.key)]));
+
+  return shell(`
+    <h1>Quickstart</h1>
+    <p style="color:#687385;margin-top:-16px;margin-bottom:4px;">
+      ${t("Create a scope")} · ${t("Add connection")} · ${t("Create agent")} · ${t("Run the MCP smoke test")}
+    </p>
+    <p style="color:#687385;margin-top:0;margin-bottom:24px;">Paste one credential — this creates the scope, its connection, an agent, and the grant in one pass.</p>
+    <form method="post" action="/quickstart" id="quickstartForm">
+      <div class="step-card">
+        <h2>${t("Provider")}</h2>
+        <div class="field field-primary">
+          <label for="quickstartProvider">${t("Provider")}</label>
+          <select name="provider" id="quickstartProvider" required>
+            ${providers.map((p) => `<option value="${escapeHtml(p.key)}"${p.key === selectedKey ? " selected" : ""}>${escapeHtml(p.label)} (${escapeHtml(p.key)})</option>`).join("")}
+          </select>
+          <div class="field-hint">${t("Only providers enabled in <a href=\"/providers\">Providers</a> are shown here.")}</div>
+        </div>
+      </div>
+      <div class="step-card">
+        <h2>${t("Scope")}</h2>
+        <div class="field field-primary">
+          <label for="quickstartScope">${t("Scope key")}</label>
+          <input type="text" name="scope" id="quickstartScope" pattern="[a-z0-9_-]+" value="${escapeHtml(quickstartDefaults(selected.key).scope)}" required>
+          <div class="field-hint">${t("lowercase, alphanumeric, hyphens, underscores. Agents send this as <b>scope</b> in API calls — it cannot be changed later, so pick carefully.")}</div>
+        </div>
+        <div class="field">
+          <label for="quickstartDisplayName">${t("Display name (optional)")}</label>
+          <input type="text" name="display_name" id="quickstartDisplayName">
+          <div class="field-hint">${t("Human-facing label shown in dashboards. Unlike the scope key, you can rename this anytime.")}</div>
+        </div>
+      </div>
+      <div class="step-card">
+        <h2>${t("Credential")}</h2>
+        <div class="field field-primary">
+          <div id="quickstartCred">${quickstartCredentialFieldHtml(selected)}</div>
+        </div>
+      </div>
+      <div class="step-card">
+        <h2>${t("Agent")}</h2>
+        <div class="field field-primary">
+          <label for="quickstartAgent">${t("Agent name")}</label>
+          <input type="text" name="agent" id="quickstartAgent" pattern="[a-zA-Z0-9_-]+" value="${escapeHtml(quickstartDefaults(selected.key).agentName)}" required>
+          <div class="field-hint">${t("Globally unique. This creates a new token and grants this scope's enabled connections.")}</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button type="submit">${t("Create scope")}</button>
+        <a href="/dashboard" class="btn secondary">${t("Cancel")}</a>
+      </div>
+    </form>
+    <script>
+      (function () {
+        var DEFAULTS = ${JSON.stringify(defaultsMap)};
+        var CRED = ${JSON.stringify(Object.fromEntries(providers.map((p) => [p.key, quickstartCredentialFieldHtml(p)])))};
+        var providerSel = document.getElementById('quickstartProvider');
+        var scopeInput = document.getElementById('quickstartScope');
+        var agentInput = document.getElementById('quickstartAgent');
+        var credWrap = document.getElementById('quickstartCred');
+        providerSel.addEventListener('change', function () {
+          var d = DEFAULTS[providerSel.value];
+          if (d) { scopeInput.value = d.scope; agentInput.value = d.agentName; }
+          if (CRED[providerSel.value]) credWrap.innerHTML = CRED[providerSel.value];
+        });
+      })();
+    </script>
+  `);
+});
+
+dashboardApp.post("/quickstart", async (c) => {
+  const user = await getSessionUser(c);
+  if (!user) return c.redirect("/login");
+  const body = await c.req.parseBody();
+  const wsId = await getActiveWorkspaceId(c);
+  const provider = String(body.provider ?? "").trim();
+  const scope = String(body.scope ?? "").trim();
+  const agent = String(body.agent ?? "").trim();
+  const displayName = String(body.display_name ?? "").trim();
+  const back = (status: number, title: string, detail = "") => c.html(`
+    <!doctype html><html><head><meta charset="utf-8"><title>Quickstart — grantry</title>
+    ${FAVICON}<style>${CSS}</style></head><body>
+    ${NAV("tenants", user?.email)}
+    <main>
+      <h1>${title}</h1>
+      ${detail ? `<div class="card"><p style="margin:0;">${detail}</p></div>` : ""}
+      <p><a href="/quickstart">← ${t("Back")}</a></p>
+    </main></body></html>
+  `, status as any);
+
+  const providerDef = provider ? await getProviderForWorkspace(provider, wsId) : null;
+  if (!providerDef) return back(400, escapeHtml(t("unknown provider")));
+  if (!(await workspaceProviderEnabled(wsId, provider))) return back(400, escapeHtml(t("provider disabled for this workspace")));
+  if (providerDef.implemented === false) return back(400, escapeHtml(t("provider not implemented")));
+  if (!providerDef.authTypes.includes("pat")) return back(400, escapeHtml(t("pasted credentials are not accepted for this OAuth-only provider")));
+
+  const credential = patCredentialFromStructuredFields(body, providerDef, `${provider}_pat`)
+    || String((body as any)[`credential_${provider}_pat`] ?? "").trim()
+    || String(body.credential ?? "").trim();
+  const check = quickstartValidate({ provider, scope, agent, credential });
+  if (!check.ok) {
+    const title =
+      check.error === "provider_required" ? escapeHtml(t("select at least one provider"))
+      : check.error === "scope_invalid" ? escapeHtml(t("Scope key must be lowercase letters, numbers, hyphens or underscores."))
+      : check.error === "agent_required" ? escapeHtml(t("agent required"))
+      : check.error === "agent_invalid" ? escapeHtml(t("agent name required (alphanumeric, hyphens, underscores)"))
+      : `credential required for ${escapeHtml(providerDef.label)}`;
+    return back(400, title);
+  }
+
+  const existingAgent = await prisma.agent.findUnique({ where: { name: agent } });
+  if (existingAgent) {
+    return back(409, t("⚠️ Agent name <code>{name}</code> already exists", { name: escapeHtml(agent) }), `<a href="/agents/${existingAgent.id}">${t("Open agent")}</a>`);
+  }
+
+  const tenantRow = await ensureTenant(user.id, scope, displayName || undefined, wsId);
+  const created = await createPatScopeConnection({ provider, providerDef, credential, tenantRow, ownerId: user.id, wsId });
+  if (!created.conn) return back(400, `${escapeHtml(providerDef.label)} rejected the credential`, escapeHtml(created.rejection ?? ""));
+  await disableOtherEnabledConnections({ ownerId: user.id, workspaceId: tenantRow.workspaceId ?? wsId, provider, scope, keepConnectionId: created.conn.id });
+
+  const { agent: agentRow, token } = await createAgentWithToken({ name: agent, description: "", ownerId: user.id, workspaceId: tenantRow.workspaceId ?? wsId });
+  const wsAdmin = tenantRow.workspaceId ? await isWsAdmin(user.id, tenantRow.workspaceId) : false;
+  const rowsWhere: RowsWhere = wsAdmin && tenantRow.workspaceId ? { workspaceId: tenantRow.workspaceId } : { ownerId: user.id };
+  const granted = await grantTenantConnectionsToAgent(rowsWhere, agentRow.id, scope, user.id);
+  const grantedConnections = await connectionsForAgent(agentRow.id);
+  const smokeConnection = grantedConnections.find((cn) => cn.tools.length > 0);
+
+  return c.html(`
+    <!doctype html><html lang="${htmlLang()}"><head><meta charset="utf-8"><title>${t("Agent created")} — grantry</title>
+    ${FAVICON}<style>${CSS}</style></head><body>
+    ${NAV("tenants", user?.email)}
+    <main>
+      <h1>${t("✓ Agent <code>{name}</code> created", { name: escapeHtml(agentRow.name) })}</h1>
+      <div class="card" style="border-color:#3fb950;background:rgba(63,185,80,0.08);">
+        <h2 style="margin-top:0;">${t("Connection grants")}</h2>
+        <p>${t("Granted {count} connection(s) for <code>{scope}</code>.", { count: granted, scope: escapeHtml(scope) })}</p>
+        <p style="margin-bottom:0;"><a href="${quickstartSuccessTarget(agentRow.id)}">${t("Run the MCP smoke test")}</a></p>
+      </div>
+      ${agentTokenCard(token)}
+      ${mcpConfigCard(mcpOrigin(c), agentRow.name, token, true, scope)}
+      ${smokeTestCard(mcpOrigin(c), token, smokeConnection?.scope, smokeConnection?.tools[0])}
+      <p><a href="/tenants">${t("Back to scopes")}</a> · <a href="/agents/${agentRow.id}">${t("Open agent")}</a> · <a href="/agents">${t("Manage all agents")}</a></p>
     </main></body></html>
   `);
 });
@@ -7535,6 +7748,55 @@ dashboardApp.get("/tenants/new", async (c) => {
 });
 
 // --- /tenants/new POST handler ---
+// Shared creation helpers so /tenants/new and /quickstart go through the same
+// prisma writes (issue #248: quickstart must not fork the creation path).
+type CreatedConnection = Awaited<ReturnType<typeof prisma.connection.create>>;
+
+async function createPatScopeConnection(args: {
+  provider: string;
+  providerDef: any;
+  credential: string;
+  tenantRow: { id: string; slug: string; workspaceId: string | null };
+  ownerId: string;
+  wsId: string | null | undefined;
+}): Promise<{ conn?: CreatedConnection; rejection: string | null }> {
+  const credentialMeta = await credentialMetadataForProviderDef(args.providerDef, "pat", args.credential);
+  const rejection = credentialCheckRejection(credentialMeta);
+  if (rejection) return { rejection };
+  const conn = await prisma.connection.create({
+    data: {
+      provider: args.provider,
+      authType: "pat",
+      label: newConnectionLabel(args.provider, args.tenantRow.slug, "pat"),
+      scope: args.tenantRow.slug,
+      tenantId: args.tenantRow.id,
+      ownerId: args.ownerId,
+      workspaceId: args.tenantRow.workspaceId ?? args.wsId,
+      encryptedCredential: encrypt(args.credential),
+      ...connectionCredentialData(credentialMeta),
+    },
+  });
+  await ensureProviderCredentialForConnection(conn, args.ownerId);
+  await syncProviderCredentialFromConnection(conn);
+  return { conn, rejection: null };
+}
+
+async function createAgentWithToken(args: { name: string; description: string; ownerId: string; workspaceId: string | null }) {
+  const token = `gn_agt_${nodeCrypto.randomUUID().replace(/-/g, "")}`;
+  const tokenHash = nodeCrypto.createHash("sha256").update(token).digest("hex");
+  const agent = await prisma.agent.create({
+    data: {
+      name: args.name,
+      description: args.description || null,
+      hashedToken: tokenHash,
+      tokenPrefix: token.slice(0, 16),
+      ownerId: args.ownerId,
+      workspaceId: args.workspaceId,
+    },
+  });
+  return { agent, token };
+}
+
 dashboardApp.post("/tenants/new", async (c) => {
   const user = await getSessionUser(c);
   if (!user) return c.json({ error: "not authenticated" }, 401);
@@ -7724,27 +7986,11 @@ dashboardApp.post("/tenants/new", async (c) => {
       }
       oauthQueue.push({ provider, oauthAppCredentialId });
     } else if (credential) {
-      const credentialMeta = await credentialMetadataForProviderDef(providerDef, "pat", credential);
-      const rejection = credentialCheckRejection(credentialMeta);
-      if (rejection) {
-        return c.html(`<h1>${escapeHtml(providerDef.label)} rejected the credential</h1><p>${escapeHtml(rejection)}</p><p><a href="/tenants/new">Back</a></p>`, 400);
+      const created = await createPatScopeConnection({ provider, providerDef, credential, tenantRow, ownerId: user.id, wsId });
+      if (!created.conn) {
+        return c.html(`<h1>${escapeHtml(providerDef.label)} rejected the credential</h1><p>${escapeHtml(created.rejection ?? "")}</p><p><a href="/tenants/new">Back</a></p>`, 400);
       }
-      const conn = await prisma.connection.create({
-        data: {
-          provider,
-          authType: "pat",
-          label: newConnectionLabel(provider, tenant, "pat"),
-          scope: tenant,
-          tenantId: tenantRow.id,
-          ownerId: user.id,
-          workspaceId: tenantRow.workspaceId ?? wsId,
-          encryptedCredential: encrypt(credential),
-          ...connectionCredentialData(credentialMeta),
-        },
-      });
-      await ensureProviderCredentialForConnection(conn, user.id);
-      await syncProviderCredentialFromConnection(conn);
-      connections.push(conn);
+      connections.push(created.conn);
     } else if (requestedReuseConnectionId && !selectedReusableConn) {
       return c.html(`<h1>selected connection cannot be reused</h1><p>The selected ${escapeHtml(providerDef.label)} connection does not belong to this workspace, provider, or auth type.</p><p><a href="/tenants/new">Back</a></p>`, 400);
     } else if (selectedReusableConn) {
@@ -9969,18 +10215,7 @@ dashboardApp.post("/tenants/:scope/agents/new", async (c) => {
 
   // Mint token + create agent — same workspace as the tenant.
   const wsId = tenant.workspaceId ?? (await getActiveWorkspaceId(c));
-  const token = `gn_agt_${crypto.randomUUID().replace(/-/g, "")}`;
-  const tokenHash = await import("node:crypto").then(c => c.createHash("sha256").update(token).digest("hex"));
-  const agentRow = await prisma.agent.create({
-    data: {
-      name: agent,
-      description: agentDesc || null,
-      hashedToken: tokenHash,
-      tokenPrefix: token.slice(0, 16),
-      ownerId: user.id,
-      workspaceId: wsId,
-    },
-  });
+  const { agent: agentRow, token } = await createAgentWithToken({ name: agent, description: agentDesc, ownerId: user.id, workspaceId: wsId });
   const granted = await grantTenantConnectionsToAgent(rowsWhere, agentRow.id, scope, user.id);
   const grantedConnections = await connectionsForAgent(agentRow.id);
   const smokeConnection = grantedConnections.find((conn) => conn.tools.length > 0);
