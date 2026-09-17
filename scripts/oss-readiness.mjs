@@ -12,7 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const PUBLIC_REPO = process.env.OSS_PUBLIC_REPO || "gentityapp/grantry"; // 公開先を変えるときはここか env
+const PUBLIC_REPO = process.env.OSS_PUBLIC_REPO || "gentityapp/grantry-mirror"; // 公開先（2026-09-18 枝 B 実行で mirror 公開・docs/oss/PLAN.md）
 const argv = process.argv.slice(2);
 const asJson = argv.includes("--json");
 const onlyIdx = argv.indexOf("--only");
