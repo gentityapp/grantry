@@ -3,6 +3,7 @@ import nodeCrypto from "node:crypto";
 import { deriveCredentialHealth } from "./connectors/credential_meta.js";
 import { prisma } from "./db.js";
 import { compatibleProviderKeys } from "./policy.js";
+import { notifyToolsListChanged } from "./mcp_sessions.js";
 
 type ConnectionSecretFields = Pick<
   Connection,
@@ -153,6 +154,7 @@ export async function disableOtherEnabledConnections(args: {
     console.log(
       `[connections] replaced ${res.count} enabled connection(s) with ${args.keepConnectionId} at provider=${args.provider} scope=${args.scope}`
     );
+    notifyToolsListChanged(args.workspaceId ?? null);
   }
   return res.count;
 }

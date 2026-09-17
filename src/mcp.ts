@@ -3,7 +3,7 @@
 // Phase 3: scope-based policy enforcement
 import { compactResultsRequested, providerToolResult } from "./tool_result.js";
 import { Hono } from "hono";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { prisma } from "./db.js";
 import { decrypt, encrypt } from "./crypto.js";
@@ -106,12 +106,12 @@ import { adminToolDescriptor, isAdminTool } from "./admin_tools.js";
 import { agentIdIsToolTarget, stripActingAgentSelector } from "./acting_agent_args.js";
 import { callGrantryAdminTool } from "./connectors/grantry_admin.js";
 import { applyToolFilter, consolidateHelperTools, expandConsolidatedHelper, helpersConsolidated, toolAllowedByFilter, toolFilterFromRequest } from "./tool_filter.js";
+import { cleanupExpiredMcpSessions, mcpSessions, markToolsListSeen, MCP_SESSION_TTL_MS, prepareMcpSession, sseBodyForNotifications, takePendingToolsListChanged } from "./mcp_sessions.js";
 
 export const mcpApp = new Hono();
 
 const TOKEN_REFRESH_TIMEOUT_MS = 8_000;
 const TOKEN_REFRESH_SKEW_MS = 60_000;
-const MCP_SESSION_TTL_MS = 60 * 60 * 1000;
 const MCP_PROTOCOL_VERSION = "2024-11-05";
 const SKILL_URL = new URL("../docs/skill.md", import.meta.url);
 
@@ -134,22 +134,6 @@ const AUTHED_SYSTEM_TOOLS = new Set<string>(["grantry/get_runbook", "grantry/get
 
 // Capability-scoped delegation TTL: short by design (single-use anyway).
 const DELEGATION_TTL_MS = 5 * 60 * 1000;
-
-type McpSession = {
-  principalKey: string;
-  createdAt: number;
-  lastSeenAt: number;
-  expiresAt: number;
-};
-
-const mcpSessions = new Map<string, McpSession>();
-
-function cleanupExpiredMcpSessions() {
-  const now = Date.now();
-  for (const [id, session] of mcpSessions) {
-    if (session.expiresAt <= now) mcpSessions.delete(id);
-  }
-}
 
 function configuredMcpScope(c: any): string {
   // URL path lock (/mcp/s/<scope>) wins; falls back to headers for clients
@@ -4630,37 +4614,6 @@ async function resolveOAuthAgent(token: string): Promise<ResolvedAgent | null> {
   return { id: agent.id, name: agent.name, enabled: agent.enabled, userId: accessToken.userId };
 }
 
-function prepareMcpSession(c: any, principalKey: string | null) {
-  if (!principalKey) return { ok: true as const };
-
-  cleanupExpiredMcpSessions();
-  const now = Date.now();
-  const requestedId = c.req.header("mcp-session-id") ?? c.req.header("Mcp-Session-Id") ?? "";
-  if (requestedId) {
-    const existing = mcpSessions.get(requestedId);
-    if (!existing || existing.expiresAt <= now) {
-      return { ok: false as const, status: 404, message: "Mcp-Session-Id is unknown or expired; retry without the header to create a new session" };
-    }
-    if (existing.principalKey !== principalKey) {
-      return { ok: false as const, status: 409, message: "Mcp-Session-Id belongs to a different authenticated principal" };
-    }
-    existing.lastSeenAt = now;
-    existing.expiresAt = now + MCP_SESSION_TTL_MS;
-    c.header("Mcp-Session-Id", requestedId);
-    return { ok: true as const };
-  }
-
-  const sessionId = randomUUID();
-  mcpSessions.set(sessionId, {
-    principalKey,
-    createdAt: now,
-    lastSeenAt: now,
-    expiresAt: now + MCP_SESSION_TTL_MS,
-  });
-  c.header("Mcp-Session-Id", sessionId);
-  return { ok: true as const };
-}
-
 function auditIdentity(agent: ResolvedAgent): { agentId: string; userId?: string } {
   return agent.userId ? { agentId: agent.id, userId: agent.userId } : { agentId: agent.id };
 }
@@ -5091,7 +5044,18 @@ const handleMcpPost = async (c: any) => {
     }
   }
 
-  const session = prepareMcpSession(c, userPrincipal ? `user:${userPrincipal.userId}` : (agent ? `agent:${agent.id}` : null));
+  const session = await prepareMcpSession(c, userPrincipal ? `user:${userPrincipal.userId}` : (agent ? `agent:${agent.id}` : null), async () => {
+    // Session→workspace mapping lets connection/grant changes target live
+    // sessions of the right workspace (notifications/tools/list_changed, #50).
+    // Resolved only on session creation.
+    if (userPrincipal) {
+      const ws = await prisma.workspace.findUnique({ where: { slug: wsSlug }, select: { id: true } });
+      return ws?.id ?? null;
+    }
+    if (!agent) return null;
+    const row = await prisma.agent.findUnique({ where: { id: agent.id }, select: { workspaceId: true } });
+    return row?.workspaceId ?? null;
+  });
   if (!session.ok) {
     return c.json({
       jsonrpc: "2.0", id: null,
@@ -5119,7 +5083,7 @@ const handleMcpPost = async (c: any) => {
       result: {
         protocolVersion: String(params?.protocolVersion ?? MCP_PROTOCOL_VERSION),
         capabilities: {
-          tools: {},
+          tools: { listChanged: true },
         },
         serverInfo: {
           name: "grantry",
@@ -5141,6 +5105,7 @@ const handleMcpPost = async (c: any) => {
   // Unauthenticated requests only see `ping`; an authenticated agent only sees
   // tools backed by enabled connections it can actually call.
   if (method === "tools/list") {
+    markToolsListSeen(session.sessionId);
     if (userPrincipal) {
       const agents = await selectableAgentsForUser(userPrincipal.userId, wsSlug);
       const allConnections: Awaited<ReturnType<typeof connectionsForAgent>> = [];
@@ -5636,6 +5601,59 @@ const handleMcpPost = async (c: any) => {
 
   return c.json({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });
 };
+
+const handleMcpGet = async (c: any) => {
+  // Server→client notification stream (streamable HTTP GET). Clients that never
+  // open it are unaffected — tools/list stays computed live per request.
+  const auth = c.req.header("authorization") ?? null;
+  const userMode = isUserMcpMode(c);
+  const wsSlug = String(c.req.param("ws") ?? "").trim();
+  const userPrincipal = userMode ? await resolveOAuthUser(auth, wsSlug) : null;
+  const agent = userMode ? null : await resolveAgent(auth);
+
+  if (!agent && !userPrincipal) {
+    const requestOrigin = new URL(c.req.url).origin;
+    const origin = process.env.BETTER_AUTH_URL ? new URL(process.env.BETTER_AUTH_URL).origin : requestOrigin;
+    c.header("WWW-Authenticate", `Bearer resource_metadata="${origin}/.well-known/oauth-protected-resource${c.req.path}"`);
+    return c.json({
+      jsonrpc: "2.0", id: null,
+      error: { code: -32001, message: "Unauthorized: pass 'Authorization: Bearer gn_agt_...' or complete the OAuth flow advertised in WWW-Authenticate" },
+    }, 401);
+  }
+
+  const requestedId = c.req.header("mcp-session-id") ?? c.req.header("Mcp-Session-Id") ?? "";
+  if (!requestedId) {
+    return c.json({ jsonrpc: "2.0", id: null, error: { code: -32002, message: "Mcp-Session-Id header is required to receive server notifications" } }, 400);
+  }
+
+  cleanupExpiredMcpSessions();
+  const now = Date.now();
+  const existing = mcpSessions.get(requestedId);
+  if (!existing || existing.expiresAt <= now) {
+    return c.json({ jsonrpc: "2.0", id: null, error: { code: -32002, message: "Mcp-Session-Id is unknown or expired; retry without the header to create a new session" } }, 404);
+  }
+  const principalKey = userPrincipal ? `user:${userPrincipal.userId}` : `agent:${agent!.id}`;
+  if (existing.principalKey !== principalKey) {
+    return c.json({ jsonrpc: "2.0", id: null, error: { code: -32002, message: "Mcp-Session-Id belongs to a different authenticated principal" } }, 409);
+  }
+  existing.lastSeenAt = now;
+  existing.expiresAt = now + MCP_SESSION_TTL_MS;
+
+  const notifications = takePendingToolsListChanged(requestedId);
+  return new Response(sseBodyForNotifications(notifications), {
+    status: 200,
+    headers: { "content-type": "text/event-stream", "cache-control": "no-cache" },
+  });
+};
+
+mcpApp.get("/", handleMcpGet);
+mcpApp.get("/w/:ws", handleMcpGet);
+mcpApp.get("/s/:scope", handleMcpGet);
+mcpApp.get("/w/:ws/s/:scope", handleMcpGet);
+mcpApp.get("/u", handleMcpGet);
+mcpApp.get("/u/w/:ws", handleMcpGet);
+mcpApp.get("/u/s/:scope", handleMcpGet);
+mcpApp.get("/u/w/:ws/s/:scope", handleMcpGet);
 
 mcpApp.post("/", handleMcpPost);
 // Workspace-locked and scope-locked connector URLs. Distinct URLs let

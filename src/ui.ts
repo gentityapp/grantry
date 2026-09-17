@@ -17,6 +17,7 @@ import { connectionCredentialData, createTenantConnectionFromCredential, disable
 import { credentialMetadataForProviderDef, recordRuntimeCallHealth } from "./connection_health.js";
 import { isSweepRunning, runConnectionHealthSweep } from "./health_sweep.js";
 import { credentialForConnection } from "./mcp.js";
+import { notifyToolsListChanged } from "./mcp_sessions.js";
 import { agentAssignedEmail, sendSystemEmail } from "./email.js";
 import { adminWorkspacesFor, connectableAgentsFor, connectableAgentsForWorkspace, ensurePersonalWorkspace, userMayUseAgent } from "./workspaces.js";
 import { t, htmlLang, currentLocale } from "./i18n.js";
@@ -3561,6 +3562,7 @@ dashboardApp.post("/providers/:providerKey/default-connection", async (c) => {
     });
   }
 
+  notifyToolsListChanged(wsId);
   await grantConnectionToTenantAgents({ ownerId: user.id }, DEFAULT_PROVIDER_SCOPE, conn.id, user.id);
   return c.redirect(`/providers?ok=${encodeURIComponent(`Added ${providerDef.label} default connection.`)}`);
 });
@@ -5659,6 +5661,7 @@ dashboardApp.post("/connections/:connectionId/edit", async (c) => {
         rawCredential,
       });
       await prisma.connection.update({ where: { id: conn.id }, data: baseUpdate });
+      notifyToolsListChanged(conn.workspaceId);
     } catch (e: any) {
       const message = String(e?.message ?? e);
       return c.redirect(`/connections/${encodeURIComponent(connectionId)}/edit?err=${encodeURIComponent(t("OAuth app settings failed: {message}", { message }))}`);
@@ -5672,6 +5675,7 @@ dashboardApp.post("/connections/:connectionId/edit", async (c) => {
 
   if (!newCredential) {
     const updated = await prisma.connection.update({ where: { id: conn.id }, data: baseUpdate });
+    notifyToolsListChanged(conn.workspaceId);
     if (updated.credentialId) {
       await prisma.providerCredential.update({ where: { id: updated.credentialId }, data: { label: updated.label } });
     }
@@ -5703,6 +5707,7 @@ dashboardApp.post("/connections/:connectionId/edit", async (c) => {
     },
   });
   await prisma.connection.update({ where: { id: conn.id }, data: baseUpdate });
+  notifyToolsListChanged(conn.workspaceId);
   if (conn.credentialId) {
     await prisma.providerCredential.update({ where: { id: conn.credentialId }, data: { label } });
   }
@@ -6796,6 +6801,10 @@ async function grantConnectionsToAgent(agentId: string, connectionIds: string[],
     });
     granted++;
   }
+  if (granted > 0) {
+    const agentRow = await prisma.agent.findUnique({ where: { id: agentId }, select: { workspaceId: true } });
+    notifyToolsListChanged(agentRow?.workspaceId ?? null);
+  }
   return granted;
 }
 
@@ -7011,6 +7020,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
           where: { id: cn.id },
           data: updateData,
         });
+        notifyToolsListChanged(updated.workspaceId);
         if (serverCredential || clearServerCredential) await syncProviderCredentialFromConnection(updated);
         connUpdates.push({ id: cn.id, enabled: newEnabled });
       }
@@ -7102,6 +7112,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
         },
       });
       await disableOtherEnabledConnections({ ownerId: user.id, workspaceId: tenantRow.workspaceId ?? wsId, provider, scope, keepConnectionId: conn.id });
+      notifyToolsListChanged(tenantRow.workspaceId ?? wsId);
       invalidateDwdToken(conn.id);
       await ensureProviderCredentialForConnection(conn, user.id);
       await syncProviderCredentialFromConnection(conn);
@@ -7189,6 +7200,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
         },
       });
       await disableOtherEnabledConnections({ ownerId: user.id, workspaceId: tenantRow.workspaceId ?? wsId, provider, scope, keepConnectionId: conn.id });
+      notifyToolsListChanged(tenantRow.workspaceId ?? wsId);
       await ensureProviderCredentialForConnection(conn, user.id);
       await syncProviderCredentialFromConnection(conn);
     } else if (reuseConnectionId) {
@@ -7376,13 +7388,14 @@ dashboardApp.post("/tenants/:scope/connections/:connectionId/delete", async (c) 
   const deleteAccess = await scopeAccessFor(user.id, scope);
   const conn = await prisma.connection.findFirst({
     where: { id: connectionId, scope, ...(deleteAccess?.rowsWhere ?? { ownerId: user.id }) },
-    select: { id: true, label: true, provider: true, scope: true },
+    select: { id: true, label: true, provider: true, scope: true, workspaceId: true },
   });
   if (!conn) {
     return c.html(`<h1>connection not found</h1><p>The connection either does not exist, is not yours, or does not belong to <code>${escapeHtml(scope)}</code>.</p><p><a href="/tenants/${scope}/edit">← Back</a></p>`, 404);
   }
 
   await prisma.connection.delete({ where: { id: conn.id } });
+  notifyToolsListChanged(conn.workspaceId);
   invalidateDwdToken(conn.id);
 
   return c.redirect(tenantEditUrl(scope, `${conn.provider} was removed from this scope. Agents were left unchanged.`, "ok", "#connections"));
@@ -7778,6 +7791,7 @@ async function createPatScopeConnection(args: {
   });
   await ensureProviderCredentialForConnection(conn, args.ownerId);
   await syncProviderCredentialFromConnection(conn);
+  notifyToolsListChanged(args.tenantRow.workspaceId ?? args.wsId);
   return { conn, rejection: null };
 }
 
@@ -8715,6 +8729,7 @@ dashboardApp.post("/agents/:id/scopes/revoke", async (c) => {
   await prisma.agentConnectionGrant.deleteMany({
     where: { agentId: agent.id, connection: connWhere },
   });
+  notifyToolsListChanged(agent.workspaceId);
   return c.redirect(`/agents/${agent.id}?ok=${encodeURIComponent(t("Removed scope {scope}", { scope }))}`);
 });
 
@@ -8794,6 +8809,7 @@ dashboardApp.post("/agents/:id/connections/revoke", async (c) => {
   const res = await prisma.agentConnectionGrant.deleteMany({
     where: { agentId: agent.id, connectionId: { in: connectionIds } },
   });
+  if (res.count > 0) notifyToolsListChanged(agent.workspaceId);
   return c.redirect(
     `/agents/${agent.id}?ok=${encodeURIComponent(t("Removed {count} connection(s)", { count: res.count }))}`,
   );
@@ -9620,6 +9636,7 @@ oauthApp.get("/:provider/callback", async (c) => {
       });
       await ensureProviderCredentialForConnection(created, user.id);
       await grantConnectionToTenantAgents(callbackRowsWhere, effectiveTenant, created.id, user.id);
+      notifyToolsListChanged(wsId);
     }
     if (payload.popup) {
       return oauthPopupCompletePage(c, {
@@ -9658,6 +9675,7 @@ oauthApp.get("/:provider/callback", async (c) => {
   await disableOtherEnabledConnections({ ownerId: user.id, workspaceId: wsId, provider: providerKey, scope: effectiveTenant, keepConnectionId: conn.id });
   await ensureProviderCredentialForConnection(conn, user.id);
   await grantConnectionToTenantAgents(callbackRowsWhere, effectiveTenant, conn.id, user.id);
+  notifyToolsListChanged(wsId);
 
   // If more providers in the chain still need OAuth authorization, hand off
   // to the next one before minting the agent. Each callback attaches its own

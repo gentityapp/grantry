@@ -29,6 +29,7 @@ import { getProviderForWorkspace } from "./connectors/registry.js";
 import { credentialCheckRejection, credentialMetadataForStorage } from "./connectors/credential_meta.js";
 import { connectionCredentialData, createTenantConnectionFromCredential, disableOtherEnabledConnections } from "./provider_credentials.js";
 import { agentAssignedEmail, sendSystemEmail } from "./email.js";
+import { notifyToolsListChanged } from "./mcp_sessions.js";
 
 export const ADMIN_TOOLS = [
   "grantry/list_agents",
@@ -360,6 +361,7 @@ export async function callAdminTool(
       });
       granted += res.count;
     }
+    if (granted > 0) notifyToolsListChanged(ctx.workspaceId);
     const grantedScopes = await agentScopes(agentRow.id);
     const missing = scopes.filter((s) => !grantedScopes.includes(s));
     const payload = {
@@ -574,6 +576,7 @@ export async function callAdminTool(
       data: conns.map((cn) => ({ agentId: target.id, connectionId: cn.id })),
       skipDuplicates: true,
     });
+    if (res.count > 0) notifyToolsListChanged(ctx.workspaceId);
     const payload = {
       agent_id: target.id,
       name: target.name,
@@ -594,6 +597,7 @@ export async function callAdminTool(
       data: [{ agentId: target.id, connectionId: conn.id }],
       skipDuplicates: true,
     });
+    if (res.count > 0) notifyToolsListChanged(ctx.workspaceId);
     const payload = {
       agent_id: target.id,
       name: target.name,
@@ -616,6 +620,7 @@ export async function callAdminTool(
     const res = await prisma.agentConnectionGrant.deleteMany({
       where: { agentId: target.id, connectionId: conn.id },
     });
+    if (res.count > 0) notifyToolsListChanged(ctx.workspaceId);
     const payload = {
       agent_id: target.id,
       name: target.name,
@@ -647,6 +652,7 @@ export async function callAdminTool(
       where: { ...boundaryWhere(ctx), provider: conn.provider, scope: conn.scope, enabled: true, id: { not: conn.id } },
     });
     await prisma.connection.update({ where: { id: conn.id }, data: { enabled } });
+    notifyToolsListChanged(ctx.workspaceId);
     const payload = {
       connection_id: conn.id,
       provider: conn.provider,
@@ -668,6 +674,7 @@ export async function callAdminTool(
     const res = await prisma.agentConnectionGrant.deleteMany({
       where: { agentId: target.id, connection: { scope, ...boundaryWhere(ctx) } },
     });
+    if (res.count > 0) notifyToolsListChanged(ctx.workspaceId);
     const payload = {
       agent_id: target.id,
       name: target.name,
@@ -725,6 +732,7 @@ export async function callAdminTool(
           if (res.count > 0) grantedAgents.push({ agent_id: agent.id, name: agent.name });
         }
       }
+      notifyToolsListChanged(tenant.workspaceId ?? ctx.workspaceId);
       const payload = {
         connection_id: conn.id,
         provider: conn.provider,
