@@ -2,14 +2,15 @@
 name: grantry
 description: |
   Use grantry when the user wants an AI agent to call external SaaS APIs
-  (GitHub, Notion, Google Drive/GSC/Ads/Maps, HubSpot, Attio, Clay, HeyReach,
-  Chatwork, Channel Talk, Railway, Resend, Slack, Reddit, X, Discord, LINE, Airtable, Linear,
-  SendGrid, Vercel, Stripe, Webflow, Intercom, Customer.io, Mailchimp, Zendesk,
-  WordPress, Shopify, Jira, Salesforce, LinkedIn Ads, TikTok Ads, Microsoft Ads,
-  Microsoft Teams, AWS, Snowflake, Google Calendar/Sheets/Tag Manager/Cloud, BigQuery) under OAuth/PAT authentication
-  with tenant isolation. grantry (formerly "grantry-auth", deployed as "agent-oauth") is a
-  Hono/TypeScript service that holds encrypted credentials and exposes them as
-  MCP tools, so the agent never sees raw tokens. Triggers: mentions of
+  under OAuth/PAT/API-key authentication with tenant isolation. 83 connectors
+  are implemented (the README lists them all), including GitHub, Notion,
+  Google Workspace (Drive/Gmail/Calendar/Sheets/Admin), Google
+  Ads/GSC/Analytics/Maps, HubSpot, Attio, Clay, Slack, Discord, LINE,
+  Chatwork, Railway, Stripe, Salesforce, Jira, Zendesk, Intercom, Airtable,
+  Linear, AWS, Snowflake, BigQuery. grantry (formerly "grantry-auth", deployed
+  as "agent-oauth") is a Hono/TypeScript service that holds encrypted
+  credentials and exposes them as MCP tools, so the agent never sees raw
+  tokens. Triggers: mentions of
   "grantry" / "grantry-auth" / "agent-oauth", wiring an agent to a SaaS via OAuth or PAT,
   "ツール権限管理", "テナント分離 / scope ベースの認可", or any request to give
   an AI agent controlled API access. Do NOT trigger for: general OAuth-flow
@@ -422,6 +423,12 @@ the same provider+scope; disambiguate with `auth_type` (`service_account` vs
 - **google_tag_manager** (OAuth; read-only): `list_accounts`, `list_containers`, `get_container`, `list_workspaces`, `list_tags`
 - **google_cloud** (OAuth; read-only): `list_projects`, `get_project`, `list_services`, `list_log_entries`
 - **bigquery** (OAuth; read+query): `list_datasets`, `list_tables`, `get_table`, `query`, `get_job`
+- **Other implemented connectors** (each one's exact tool set is available
+  via `tools/list`): `acuity`, `agentmail`, `apollo`, `calcom`, `calendly`,
+  `clarity`, `cloudsign`, `dataforseo`, `facebook_messenger`, `firecrawl`,
+  `freee`, `godaddy`, `google_forms`, `google_slides`, `jicoo`, `moneyforward`,
+  `monid`, `openai_ads`, `smartlead`, `timerex`, `tldv`, `yahoo_ads`,
+  `youcanbookme`, `zapmail`
 
 ### GitHub tool arguments (besides `scope`)
 - `get_repo`, `list_issues`: `owner`, `repo` (list_issues also `state`, default `open`)
