@@ -15,6 +15,7 @@ import { Scalar } from "@scalar/hono-api-reference";
 import { openApiDocument } from "./openapi.js";
 import { startHealthSweepScheduler } from "./health_sweep.js";
 import { startOnboardingNudgeScheduler } from "./onboarding_nudge.js";
+import { startConnectionDormancyNudgeScheduler } from "./connection_dormancy_nudge.js";
 // Side-effect import: registers GET /usage on the dashboardApp exported by ui.ts.
 import "./usage.js";
 
@@ -200,3 +201,8 @@ startHealthSweepScheduler();
 // Onboarding nudge (issue #250): daily mail to workspaces that never got to
 // their first scope. No-op without RESEND_API_KEY.
 startOnboardingNudgeScheduler();
+
+// Connection dormancy nudge (issue #281): daily mail to workspaces whose
+// enabled connection has had no successful call in the silent window. Off
+// until CONNECTION_DORMANT_NUDGE_ENABLED=true.
+startConnectionDormancyNudgeScheduler();

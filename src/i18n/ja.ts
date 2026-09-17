@@ -246,6 +246,17 @@ export const ja: Record<string, string> = {
   "Open quickstart": "Quickstart を開く",
   "If now is not the right time, feel free to ignore this note.":
     "いま手をつけるタイミングでなければ、この通知は無視して構いません。",
+
+  // ── Connection dormancy nudge email (issue #281) ───────────────────────
+  "Your connection in {workspace} has not made a successful call yet":
+    "{workspace} の接続から、成功した呼び出しがまだありません",
+  "The {workspace} workspace on grantry already has a connection set up, but no successful agent call has gone through it recently.":
+    "grantry のワークスペース「{workspace}」には接続が作成済みですが、直近で成功したエージェントの呼び出しがありません。",
+  "The <b>{workspace}</b> workspace on grantry already has a connection set up, but no successful agent call has gone through it recently.":
+    "grantry のワークスペース <b>{workspace}</b> には接続が作成済みですが、直近で成功したエージェントの呼び出しがありません。",
+  "One step brings it back: open (or create) an agent, attach the connection to it, paste the MCP settings into your agent host, and run the first call — the smoke test on the agent page checks the call for you.":
+    "呼び戻しは 1 手だけです: エージェントを開く（または作る）、接続を結び付ける、MCP 設定をエージェントのホストに貼る、最初の 1 呼び出しを通す、の順に進めます。エージェントページの接続テスト（smoke test）が呼び出しの確認を代行します。",
+  "Open your agents": "エージェント一覧を開く",
   "Invite": "招待",
   "member": "メンバー",
   "admin": "管理者",

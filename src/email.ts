@@ -128,6 +128,58 @@ export function onboardingNudgeEmail(input: OnboardingNudgeEmailInput): { subjec
 
   return input.locale ? runWithLocale(input.locale, build) : build();
 }
+export type ConnectionDormantNudgeEmailInput = {
+  recipientName: string | null;
+  workspaceName: string;
+  /** Dashboard origin, no trailing slash. */
+  baseUrl: string;
+  locale?: Locale;
+};
+
+/**
+ * Body of the "your connection went quiet" dormancy nudge (issue #281).
+ *
+ * Separate body from the onboarding nudge (#250): this segment already has a
+ * connection, so the one step shown is "attach it to an agent, paste the MCP
+ * settings, run the first call" (the agent-page smoke test), not the
+ * quickstart. Pure so it can be asserted on directly; the workspace name is
+ * untrusted display text and has to be escaped in the HTML part.
+ */
+export function connectionDormantNudgeEmail(input: ConnectionDormantNudgeEmailInput): { subject: string; text: string; html: string } {
+  const build = (): { subject: string; text: string; html: string } => {
+    const base = input.baseUrl.replace(/\/+$/, "");
+    const link = `${base}/agents`;
+    const greeting = input.recipientName ? t("Hi {name},", { name: input.recipientName }) : t("Hi,");
+    const why = t("One step brings it back: open (or create) an agent, attach the connection to it, paste the MCP settings into your agent host, and run the first call — the smoke test on the agent page checks the call for you.");
+
+    const subject = t("Your connection in {workspace} has not made a successful call yet", { workspace: input.workspaceName });
+    const headline = t("The {workspace} workspace on grantry already has a connection set up, but no successful agent call has gone through it recently.", { workspace: input.workspaceName });
+
+    const text = [
+      greeting,
+      "",
+      headline,
+      "",
+      why,
+      "",
+      `${t("Open your agents")}:`,
+      link,
+      "",
+      t("If now is not the right time, feel free to ignore this note."),
+      "",
+    ].join("\n");
+
+    const html = `<p>${escapeHtml(greeting)}</p>
+<p>${t("The <b>{workspace}</b> workspace on grantry already has a connection set up, but no successful agent call has gone through it recently.", { workspace: escapeHtml(input.workspaceName) })}</p>
+<p style="color:#555;">${escapeHtml(why)}</p>
+<p><a href="${link}">${escapeHtml(t("Open your agents"))}</a></p>
+<p style="color:#888;font-size:13px;">${escapeHtml(t("If now is not the right time, feel free to ignore this note."))}</p>`;
+
+    return { subject, text, html };
+  };
+
+  return input.locale ? runWithLocale(input.locale, build) : build();
+}
 //
 // This is the service's own outbound mail — password resets and similar —
 // authenticated by RESEND_API_KEY, independent of any tenant Connection.
