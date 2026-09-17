@@ -18,6 +18,7 @@ import { credentialMetadataForProviderDef, recordRuntimeCallHealth } from "./con
 import { isSweepRunning, runConnectionHealthSweep } from "./health_sweep.js";
 import { credentialForConnection } from "./mcp.js";
 import { notifyToolsListChanged } from "./mcp_sessions.js";
+import { resolveAdminApiKey } from "./connectors/grantry_admin.js";
 import { agentAssignedEmail, sendSystemEmail } from "./email.js";
 import { adminWorkspacesFor, connectableAgentsFor, connectableAgentsForWorkspace, ensurePersonalWorkspace, userMayUseAgent } from "./workspaces.js";
 import { t, htmlLang, currentLocale } from "./i18n.js";
@@ -9890,6 +9891,62 @@ dashboardApp.get("/api/capabilities", async (c) => {
   }
   const candidates = Array.from(byAgent.values()).sort((a, b) => b.confidence - a.confidence);
   return c.json({ tool, scope: scope ?? null, candidates });
+});
+
+// Workspace knowledge import (#252): a daily job upserts the internal map
+// (repo_map / rule rows) via the workspace's AdminApiKey. The key IS the
+// workspace boundary — same rule as the grantry admin tools.
+dashboardApp.post("/api/workspace-knowledge/upsert", async (c) => {
+  const identity = await resolveAdminApiKey(c.req.header("authorization")?.replace(/^Bearer\s+/i, "") ?? "");
+  if (!identity) return c.json({ error: "invalid or disabled admin API key (gn_adm_...)" }, 401);
+  const workspaceId = identity.ctx.workspaceId;
+  if (!workspaceId) return c.json({ error: "admin API key has no workspace" }, 403);
+
+  let body: any;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "invalid JSON body" }, 400);
+  }
+  const rows: any[] = Array.isArray(body?.rows) ? body.rows : [];
+  if (!rows.length) return c.json({ error: "rows: non-empty array of { kind, key, title, body } required" }, 400);
+  if (rows.length > 500) return c.json({ error: "rows: at most 500 per request" }, 400);
+
+  let upserted = 0;
+  try {
+    for (const row of rows) {
+      const kind = String(row?.kind ?? "").trim();
+      const key = String(row?.key ?? "").trim();
+      const title = String(row?.title ?? "").trim();
+      const rowBody = String(row?.body ?? "");
+      if (!["repo_map", "rule"].includes(kind)) return c.json({ error: `rows[].kind must be "repo_map" or "rule", got: ${kind || "(empty)"}` }, 400);
+      if (!key || !title || !rowBody.trim()) return c.json({ error: "rows[].key, rows[].title and non-empty rows[].body are required" }, 400);
+      if (key.length > 200 || title.length > 300 || rowBody.length > 20000) return c.json({ error: `rows[].key/title/body exceed size limits (200/300/20000 chars): ${key}` }, 400);
+      await prisma.workspaceKnowledge.upsert({
+        where: { workspaceId_key: { workspaceId, key } },
+        create: {
+          workspaceId,
+          kind,
+          key,
+          title,
+          body: rowBody,
+          requires: JSON.stringify(Array.isArray(row?.requires) ? row.requires.map(String) : []),
+          sourceUrl: row?.sourceUrl ? String(row.sourceUrl) : null,
+        },
+        update: {
+          kind,
+          title,
+          body: rowBody,
+          requires: JSON.stringify(Array.isArray(row?.requires) ? row.requires.map(String) : []),
+          sourceUrl: row?.sourceUrl ? String(row.sourceUrl) : null,
+        },
+      });
+      upserted++;
+    }
+  } catch (e: any) {
+    return c.json({ error: `upsert failed: ${String(e?.message ?? e)}` }, 500);
+  }
+  return c.json({ upserted, workspaceId });
 });
 
 // People-first path for a scope. A person can only reach a scope through an

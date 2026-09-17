@@ -107,6 +107,7 @@ import { agentIdIsToolTarget, stripActingAgentSelector } from "./acting_agent_ar
 import { callGrantryAdminTool } from "./connectors/grantry_admin.js";
 import { applyToolFilter, consolidateHelperTools, expandConsolidatedHelper, helpersConsolidated, toolAllowedByFilter, toolFilterFromRequest } from "./tool_filter.js";
 import { cleanupExpiredMcpSessions, mcpSessions, markToolsListSeen, MCP_SESSION_TTL_MS, prepareMcpSession, sseBodyForNotifications, takePendingToolsListChanged } from "./mcp_sessions.js";
+import { formatKnowledgeHits, searchWorkspaceKnowledge } from "./company_context.js";
 
 export const mcpApp = new Hono();
 
@@ -123,6 +124,7 @@ const SYSTEM_TOOLS = [
   "grantry/list_user_agents",
   "grantry/list_scopes",
   "grantry/find_agent",
+  "grantry/company_context",
   "grantry/route",
   "grantry/delegate",
   "grantry/create_upload_url",
@@ -130,7 +132,7 @@ const SYSTEM_TOOLS = [
 
 // System tools that need the calling agent's identity (workspace boundary) and
 // therefore require authentication, unlike the public metadata tools.
-const AUTHED_SYSTEM_TOOLS = new Set<string>(["grantry/get_runbook", "grantry/get_runbook_file", "grantry/list_user_agents", "grantry/list_scopes", "grantry/find_agent", "grantry/route", "grantry/delegate", "grantry/create_upload_url"]);
+const AUTHED_SYSTEM_TOOLS = new Set<string>(["grantry/get_runbook", "grantry/get_runbook_file", "grantry/list_user_agents", "grantry/list_scopes", "grantry/find_agent", "grantry/company_context", "grantry/route", "grantry/delegate", "grantry/create_upload_url"]);
 
 // Capability-scoped delegation TTL: short by design (single-use anyway).
 const DELEGATION_TTL_MS = 5 * 60 * 1000;
@@ -217,6 +219,11 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
     return {
       task: { type: "string", description: "Plain-language description of what you want to do, e.g. 'set an env var on the prod Railway project'." },
       scope: { type: "string", description: "Optional tenant scope to restrict the search to." },
+    };
+  }
+  if (toolName === "grantry/company_context") {
+    return {
+      query: { type: "string", description: "Plain-language description of the work (Japanese is fine), e.g. 'アンケート収集の持ち場のリポジトリ'. Returns the repo / owner / prod-URL rows this workspace published." },
     };
   }
   if (toolName === "grantry/route") {
@@ -4165,6 +4172,20 @@ async function callSystemTool(toolName: string, args: Record<string, unknown>, c
     const payload = { scopes, count: scopes.length };
     return { content: [{ type: "text", text: JSON.stringify(payload, null, 2) }], structuredContent: payload, isError: false };
   }
+  if (toolName === "grantry/company_context") {
+    if (!ctx?.agentId && !ctx?.userId) throw new Error("company_context requires an authenticated caller");
+    if (!ctx.workspaceId) throw new Error("company_context requires a workspace-scoped caller");
+    const query = String(args.query ?? "").trim();
+    if (!query) throw new Error("company_context requires a 'query' describing the work (Japanese is fine)");
+    const rows = await prisma.workspaceKnowledge.findMany({ where: { workspaceId: ctx.workspaceId } });
+    const hits = searchWorkspaceKnowledge({ workspaceId: ctx.workspaceId, rows, query });
+    const lines = formatKnowledgeHits(hits);
+    const text = lines.length
+      ? lines.join("\n")
+      : "No workspace knowledge matched this query. Workspace admins publish repo_map / rule rows via the workspace knowledge import API (AdminApiKey).";
+    const payload = { query, matches: hits.length, lines };
+    return { content: [{ type: "text", text }], structuredContent: payload, isError: false };
+  }
   if (toolName === "grantry/find_agent") {
     if (!ctx?.agentId || !ctx.ownerId) throw new Error("find_agent requires an authenticated or selected agent");
     const task = String(args.task ?? "");
@@ -4388,6 +4409,15 @@ function buildToolList(
           type: "object",
           properties: toolSpecificInputProperties("grantry/find_agent"),
           required: ["task"],
+        },
+      },
+      {
+        name: publicToolName("grantry/company_context"),
+        description: "grantry: look up your workspace's internal map from a plain-language work description (Japanese is fine) to the repo, owner, handoff doc, and prod URL for that job. Rows are published by workspace admins per workspace; other workspaces' rows are never visible.",
+        inputSchema: {
+          type: "object",
+          properties: toolSpecificInputProperties("grantry/company_context"),
+          required: ["query"],
         },
       },
       {
