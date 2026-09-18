@@ -301,6 +301,9 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     oauthScopes: [
       "https://www.googleapis.com/auth/webmasters",
       "https://www.googleapis.com/auth/webmasters.readonly",
+      // 新しいドメインの所有者確認（DNS TXT のトークン発行と確認）に要る。
+      // 無いと sc-domain を足しても siteUnverifiedUser のまま止まる（2026-09-18 tenjijo.com 移転で発生）。
+      "https://www.googleapis.com/auth/siteverification",
       "https://www.googleapis.com/auth/userinfo.email",
     ],
     authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
@@ -2072,6 +2075,7 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     baseUrls: {
       searchconsole: "https://searchconsole.googleapis.com",
       webmasters: "https://www.googleapis.com/webmasters/v3",
+      siteverification: "https://www.googleapis.com/siteVerification/v1",
     },
     defaultMethods: ["GET", "PUT", "DELETE"],
     allowedPathPrefixes: ["/"],
