@@ -51,7 +51,7 @@ function patProviderKeys() {
  * smoke test for one, so a freshly stored credential is honestly "unknown"
  * until the first real call. They must still explain themselves in notes.
  */
-const NO_CREDENTIAL_PROOF_PROVIDERS = new Set(["higgsfield"]);
+const NO_CREDENTIAL_PROOF_PROVIDERS = new Set(["higgsfield", "framer"]);
 
 function assertStoredStatus(providerKey: string, metadata: any) {
   if (NO_CREDENTIAL_PROOF_PROVIDERS.has(providerKey)) {
@@ -89,6 +89,7 @@ function patTokenForProvider(providerKey: string) {
     channel_talk_documents: JSON.stringify({ accessKey: "ctd-test-key", accessSecret: "ctd-test-secret" }),
     customerio: JSON.stringify({ token: "cio-test-token", region: "us" }),
     dataforseo: JSON.stringify({ login: "ops@example.com", password: "dataforseo-test-password" }),
+    framer: JSON.stringify({ project: "https://framer.com/projects/Site--abc123", api_key: "framer-test-key" }),
     godaddy: "godaddy-key:godaddy-secret",
     higgsfield: "hf-test-key-id:hf-test-key-secret",
     langgraph: JSON.stringify({ api_key: "lsv2-test-key", base_url: "https://grantry-test.us.langgraph.app" }),

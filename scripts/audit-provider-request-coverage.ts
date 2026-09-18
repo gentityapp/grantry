@@ -6,6 +6,7 @@ const EXPLICIT_NON_GENERIC_PROVIDERS: Record<string, string> = {
   microsoft_ads: "Microsoft Ads is SOAP-based and requires generated SOAP envelopes with credential headers",
   microsoft_teams: "Microsoft Teams channel APIs need dedicated Microsoft Graph path construction and delegated message-body shaping",
   cloudsign: "CloudSign stores a Web API client_id and exchanges it for short-lived access tokens through its dedicated connector",
+  framer: "Framer is reached through the official Framer Server API session transport (framer-api connect/disconnect per call), not an HTTP API, so there is no provider/request passthrough",
   higgsfield: "Higgsfield uses a dedicated async job connector (submit image/video job then poll), not plain provider/request passthrough",
   granola: "Granola uses a dedicated read-only notes connector (list_notes/get_note/list_folders against public-api.granola.ai), not plain provider/request passthrough",
   intent_engine: "intent-engine exposes a deliberately read-only data API (no write routes exist); a passthrough that must allow POST/PUT/DELETE would advertise capability the service does not have",

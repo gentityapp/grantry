@@ -1,4 +1,5 @@
 import { callGenericCheckConnection, callGenericListCapabilities, classifyProviderError } from "./generic_request.js";
+import { parseFramerCredential } from "./framer.js";
 import { getProvider } from "./registry.js";
 import { getAccessToken, parseCloudSignCredential } from "./cloudsign.js";
 
@@ -1611,6 +1612,24 @@ export async function inspectCredential(provider: string, authType: string, toke
         authType,
         status: "ok",
         notes: [`intent-engine health check passed against ${baseUrl}.`, ...(body?.version ? [`Version: ${body.version}`] : [])],
+        checkedAt,
+      };
+    }
+
+    if (provider === "framer") {
+      try {
+        parseFramerCredential(token);
+      } catch (error) {
+        return { provider, authType, status: "error", checkedAt, error: error instanceof Error ? error.message : String(error) };
+      }
+      return {
+        provider,
+        authType,
+        status: "unknown",
+        notes: [
+          "Framer API keys are per project and are used through the Framer Server API session transport, not an HTTP endpoint.",
+          "The key is validated on the first call; run framer/get_project_info to prove it against the project.",
+        ],
         checkedAt,
       };
     }

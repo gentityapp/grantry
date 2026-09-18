@@ -159,6 +159,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   openrouter: "#6467F2", // OpenRouter indigo
   sentry: "#362D59", // Sentry dark purple
   higgsfield: "#000000", // Higgsfield black
+  framer: "#0055FF", // Framer blue
   figma: "#F24E1E", // Figma orange-red
   miro: "#FFD02F", // Miro yellow
 };

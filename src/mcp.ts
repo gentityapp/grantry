@@ -57,6 +57,7 @@ import { callOpenAIAdsTool } from "./connectors/openai_ads.js";
 import { callOpenRouterTool } from "./connectors/openrouter.js";
 import { callAgentMailTool } from "./connectors/agentmail.js";
 import { callHiggsfieldTool } from "./connectors/higgsfield.js";
+import { callFramerTool } from "./connectors/framer.js";
 import { callVercelTool } from "./connectors/vercel.js";
 import { callStripeTool } from "./connectors/stripe.js";
 import { callWebflowTool } from "./connectors/webflow.js";
@@ -2629,6 +2630,29 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
   if (toolName === "openrouter/get_key") { return {}; }
   if (toolName === "openrouter/get_credits") { return {}; } // account balance; OpenRouter answers 403 "Only management keys can fetch credits" for plain inference keys — use get_key for the per-key cap
   if (toolName === "openrouter/get_generation") { return { id: { type: "string", description: "Generation id returned by openrouter/chat (gen-...). Returns token counts, cost and latency for that call. OpenRouter indexes generations asynchronously: immediately after the chat call this returns 404 \"Generation ... not found\"; retry after ~5-10 seconds. openrouter/chat already includes usage.cost inline, so this is only needed for native token counts / latency." } }; }
+  // --- framer ---
+  if (toolName === "framer/get_project_info" || toolName === "framer/get_agent_system_prompt" || toolName === "framer/get_agent_context" || toolName === "framer/list_branches") return {};
+  if (toolName === "framer/create_branch") { return { title: { type: "string", description: "Optional branch title. The branch is created from the active branch and becomes active." } }; }
+  if (toolName === "framer/switch_branch") { return { branch_id: { type: "string", description: "Branch id from framer/list_branches. Use \"main\" for the main branch." } }; }
+  if (toolName === "framer/read_project") {
+    return {
+      queries: { type: "array", items: { type: "object" }, description: "Array of query objects (fonts, guides, screenshots, node reads...). Query types and parameters are documented by framer/get_agent_system_prompt." },
+      page_path: { type: "string", description: "Target page path, e.g. /pricing. Defaults to the active page." },
+    };
+  }
+  if (toolName === "framer/apply_changes") {
+    return {
+      dsl: { type: "string", description: "Canvas commands separated by ';' (add / update / remove / move / duplicate nodes). Syntax is documented by framer/get_agent_system_prompt. Failed commands are reported in the result's errors without blocking the rest." },
+      page_path: { type: "string", description: "Target page path, e.g. /lp/pricing. Each call is scoped to one page. Defaults to the active page." },
+      branch_id: { type: "string", description: "Optional branch to switch to before applying. Work on a branch, not on main." },
+    };
+  }
+  if (toolName === "framer/publish_preview") {
+    return {
+      branch_id: { type: "string", description: "Optional branch to switch to first. The main branch is refused: only branch previews are published." },
+      confirm: { type: "boolean", description: "false (default) runs the preview step and returns pending changes and warnings. true also confirms, which publishes the branch preview URL. Production is never deployed." },
+    };
+  }
   // --- higgsfield ---
   if (toolName === "higgsfield/generate_image") {
     return {
@@ -3523,6 +3547,9 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "agentmail/reply_message") return ["message_id"];
   if (toolName === "agentmail/get_message") return ["message_id"];
   if (toolName === "agentmail/get_thread") return ["thread_id"];
+  if (toolName === "framer/switch_branch") return ["branch_id"];
+  if (toolName === "framer/read_project") return ["queries"];
+  if (toolName === "framer/apply_changes") return ["dsl"];
   if (toolName === "higgsfield/generate_image") return ["prompt"];
   if (toolName === "higgsfield/get_request") return ["request_id"];
   if (toolName === "higgsfield/cancel_request") return ["request_id"];
@@ -4030,6 +4057,7 @@ async function dispatchProviderTool(
   if (provider === "openrouter") return callOpenRouterTool(toolName, args, token);
   if (provider === "agentmail") return callAgentMailTool(toolName, args, token);
   if (provider === "higgsfield") return callHiggsfieldTool(toolName, args, token);
+  if (provider === "framer") return callFramerTool(toolName, args, token);
   if (provider === "vercel") return callVercelTool(toolName, args, token);
   if (provider === "stripe") return callStripeTool(toolName, args, token);
   if (provider === "webflow") return callWebflowTool(toolName, args, token);
