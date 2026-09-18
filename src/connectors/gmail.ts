@@ -55,6 +55,29 @@ function headerLine(name: string, value: unknown) {
   return s ? `${name}: ${s}` : "";
 }
 
+/**
+ * RFC 2047 encoded-word for a free-text header (Subject). Raw UTF-8 in a header is read as
+ * Latin-1 by mail clients: a Japanese subject sent in 2026-09-19 arrived as "Ã£ÂƒÂ«…" while the
+ * body (declared charset) rendered fine. ASCII-only values are returned unchanged. Long values are
+ * split into several encoded-words so each stays within the 75-character limit.
+ */
+export function encodeMimeHeaderValue(value: string) {
+  const s = String(value ?? "").replace(/\r?\n/g, " ").trim();
+  if (!s || /^[\x20-\x7e]*$/.test(s)) return s;
+  const words: string[] = [];
+  let chunk = "";
+  for (const ch of s) {
+    // "=?UTF-8?B?" + base64 + "?=" must stay <= 75 chars → at most 45 bytes of input per word
+    if (Buffer.byteLength(chunk + ch, "utf8") > 45) {
+      words.push(`=?UTF-8?B?${Buffer.from(chunk, "utf8").toString("base64")}?=`);
+      chunk = "";
+    }
+    chunk += ch;
+  }
+  if (chunk) words.push(`=?UTF-8?B?${Buffer.from(chunk, "utf8").toString("base64")}?=`);
+  return words.join(" ");
+}
+
 export async function callGmailTool(tool: string, args: GmailArgs, token: string) {
   if (tool === "gmail/list_messages") {
     const params = new URLSearchParams();
@@ -92,7 +115,8 @@ export async function callGmailTool(tool: string, args: GmailArgs, token: string
       headerLine("Cc", args.cc),
       headerLine("Bcc", args.bcc),
       headerLine("Reply-To", args.reply_to ?? args.replyTo),
-      headerLine("Subject", subject),
+      headerLine("Subject", encodeMimeHeaderValue(subject)),
+      "MIME-Version: 1.0",
       `Content-Type: ${mimeType}`,
     ].filter(Boolean);
     const lines = [
