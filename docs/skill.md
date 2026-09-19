@@ -992,7 +992,8 @@ When asked to act via grantry:
   Call `connections/list` to get the exact scope and connection id, then resend.
 - `-32011` → connection row vanished mid-call (rare).
 - `-32029` → rate limited (default 120 `tools/call`/min per agent; HTTP 429).
-  Back off and retry after a minute.
+  Wait the `Retry-After` seconds (also `error.data.retry_after_sec`) and retry.
+  An operator can raise the limit for one agent with `MCP_RATE_LIMIT_OVERRIDES`.
 - `-32601` → unknown JSON-RPC method.
 - Tool-level errors come back as `result.isError = true` with `content[].text`
   (e.g. a GitHub 4xx body), not as a JSON-RPC error.
