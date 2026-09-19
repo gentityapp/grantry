@@ -108,6 +108,7 @@ import { adminToolDescriptor, isAdminTool } from "./admin_tools.js";
 import { agentIdIsToolTarget, stripActingAgentSelector } from "./acting_agent_args.js";
 import { callGrantryAdminTool } from "./connectors/grantry_admin.js";
 import { applyToolFilter, consolidateHelperTools, expandConsolidatedHelper, helpersConsolidated, toolAllowedByFilter, toolFilterFromRequest } from "./tool_filter.js";
+import { AgentRateLimiter } from "./rate_limit.js";
 import { cleanupExpiredMcpSessions, mcpSessions, markToolsListSeen, MCP_SESSION_TTL_MS, prepareMcpSession, sseBodyForNotifications, takePendingToolsListChanged } from "./mcp_sessions.js";
 import { formatKnowledgeHits, searchWorkspaceKnowledge } from "./company_context.js";
 
@@ -4281,26 +4282,9 @@ function maskAuditArgs(args: Record<string, unknown>): string {
   return JSON.stringify(masked).slice(0, 4000);
 }
 
-// Per-agent sliding-window rate limit for tools/call. In-memory: fine for a
-// single instance; the goal is abuse damping for a leaked token, not quota
-// accounting. Set MCP_RATE_LIMIT_PER_MINUTE=0 to disable.
-const RATE_LIMIT_PER_MINUTE = Number(process.env.MCP_RATE_LIMIT_PER_MINUTE ?? 120);
-const rateWindows = new Map<string, number[]>();
-
-function rateLimitExceeded(agentId: string): boolean {
-  if (!RATE_LIMIT_PER_MINUTE || !Number.isFinite(RATE_LIMIT_PER_MINUTE)) return false;
-  const now = Date.now();
-  const cutoff = now - 60_000;
-  let window = rateWindows.get(agentId);
-  if (!window) {
-    window = [];
-    rateWindows.set(agentId, window);
-  }
-  while (window.length && window[0] < cutoff) window.shift();
-  if (window.length >= RATE_LIMIT_PER_MINUTE) return true;
-  window.push(now);
-  return false;
-}
+// Per-agent rate limit for tools/call (src/rate_limit.ts): default
+// MCP_RATE_LIMIT_PER_MINUTE, per-agent MCP_RATE_LIMIT_OVERRIDES.
+const agentRateLimiter = new AgentRateLimiter();
 
 /**
  * Tools advertised via tools/list, scoped to the calling agent.
@@ -5261,10 +5245,16 @@ const handleMcpPost = async (c: any) => {
     const grantToken = args.grant_token !== undefined ? String(args.grant_token) : (args.grantToken !== undefined ? String(args.grantToken) : "");
     const providerArgs = stripActingAgentSelector(args as Record<string, unknown>, { userMode, toolName });
 
-    if (rateLimitExceeded(agent.id)) {
+    const rate = agentRateLimiter.check(agent);
+    if (rate.limited) {
+      c.header("Retry-After", String(rate.retryAfterSec));
       return c.json({
         jsonrpc: "2.0", id,
-        error: { code: -32029, message: `rate limited: max ${RATE_LIMIT_PER_MINUTE} tools/call per minute per agent` },
+        error: {
+          code: -32029,
+          message: `rate limited: max ${rate.limit} tools/call per minute per agent`,
+          data: { retry_after_sec: rate.retryAfterSec, limit_per_minute: rate.limit },
+        },
       }, 429);
     }
 
