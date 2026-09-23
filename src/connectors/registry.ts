@@ -244,7 +244,7 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     key: "cloudflare",
     label: "Cloudflare",
     authTypes: ["pat"],
-    helpText: "Paste a Cloudflare API Token. Recommended permissions: Zone:Read, DNS:Read/Edit, and Cache Purge for the zones this tenant should manage.",
+    helpText: "Paste a Cloudflare API Token. Recommended permissions: Zone:Read, DNS:Read/Edit, Cache Purge, and Zone.Cache Rules Edit (edge caching rules) for the zones this tenant should manage.",
     tokenUrl: "https://dash.cloudflare.com/profile/api-tokens",
     tools: [
       "cloudflare/list_zones",
