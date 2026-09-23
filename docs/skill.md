@@ -2,7 +2,7 @@
 name: grantry
 description: |
   Use grantry when the user wants an AI agent to call external SaaS APIs
-  under OAuth/PAT/API-key authentication with tenant isolation. 83 connectors
+  under OAuth/PAT/API-key authentication with tenant isolation. 96 connectors
   are implemented (the README lists them all), including GitHub, Notion,
   Google Workspace (Drive/Gmail/Calendar/Sheets/Admin), Google
   Ads/GSC/Analytics/Maps, HubSpot, Attio, Clay, Slack, Discord, LINE,
