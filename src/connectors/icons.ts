@@ -160,6 +160,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   sentry: "#362D59", // Sentry dark purple
   higgsfield: "#000000", // Higgsfield black
   framer: "#0055FF", // Framer blue
+  ssh: "#1F2937", // terminal slate
   figma: "#F24E1E", // Figma orange-red
   miro: "#FFD02F", // Miro yellow
 };

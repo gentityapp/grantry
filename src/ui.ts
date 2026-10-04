@@ -110,7 +110,7 @@ function authTypeLabel(providerKey: string, authType: string): string {
   if (providerKey === "sentry") return "Auth token";
   if (["airtable", "linear", "sendgrid", "vercel", "stripe", "webflow", "intercom", "customerio", "mailchimp", "openai", "openrouter", "agentmail", "higgsfield"].includes(providerKey)) return "API key";
   if (providerKey === "linkedin_ads" || providerKey === "tiktok_ads") return "Access token";
-  if (["zendesk", "wordpress", "shopify", "jira", "salesforce", "microsoft_ads", "aws", "snowflake", "channel_talk", "framer"].includes(providerKey)) return "JSON credential";
+  if (["zendesk", "wordpress", "shopify", "jira", "salesforce", "microsoft_ads", "aws", "snowflake", "channel_talk", "framer", "ssh"].includes(providerKey)) return "JSON credential";
   return "paste token";
 }
 
@@ -147,6 +147,7 @@ function credentialPlaceholder(providerKey: string, providerLabel: string, authT
   if (providerKey === "sentry") return "Paste your Sentry auth token (sntryu_...) or JSON {\"token\",\"organization\",\"base_url\"}";
   if (providerKey === "higgsfield") return "Paste your Higgsfield key as KEY_ID:KEY_SECRET";
   if (providerKey === "framer") return "Paste JSON {\"project\":\"https://framer.com/projects/...\",\"api_key\":\"...\"} (API key from the project's Settings -> API Keys)";
+  if (providerKey === "ssh") return "Paste JSON {\"host\":\"...\",\"port\":22,\"username\":\"...\",\"private_key\":\"-----BEGIN OPENSSH PRIVATE KEY-----...\",\"host_key_sha256\":\"SHA256:...\"}";
   if (providerKey === "vercel") return "Paste your Vercel access token";
   if (providerKey === "stripe") return "Paste your Stripe secret key (sk_live_... or sk_test_...)";
   if (providerKey === "webflow") return "Paste your Webflow API token";
