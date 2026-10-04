@@ -1883,6 +1883,21 @@ export const PROVIDERS: Record<string, ProviderDef> = {
     ],
     implemented: true,
   },
+  ssh: {
+    key: "ssh",
+    label: "SSH",
+    authTypes: ["pat"],
+    helpText: "Connect a server you own over SSH. Create a dedicated user and key pair for Grantry (ssh-keygen -t ed25519 -f grantry_key), add grantry_key.pub to that user's ~/.ssh/authorized_keys, and paste JSON {\"host\":\"203.0.113.10\",\"port\":22,\"username\":\"deploy\",\"private_key\":\"-----BEGIN OPENSSH PRIVATE KEY-----\\n...\",\"host_key_sha256\":\"SHA256:...\"} (passphrase optional; password instead of private_key also works). Get host_key_sha256 on the server with ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub, or run ssh/check_connection first: it reports the fingerprint, and every other ssh tool refuses to run until the host key is pinned. Hosts that resolve to private or internal addresses are refused. Commands run as the SSH user, so give that user only the permissions agents need.",
+    tokenUrl: "https://man.openbsd.org/ssh-keygen",
+    tools: [
+      "ssh/check_connection",
+      "ssh/run_command",
+      "ssh/read_file",
+      "ssh/write_file",
+      "ssh/list_directory",
+    ],
+    implemented: true,
+  },
   apify: {
     key: "apify",
     label: "Apify",

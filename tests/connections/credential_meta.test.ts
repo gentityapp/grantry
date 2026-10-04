@@ -51,7 +51,7 @@ function patProviderKeys() {
  * smoke test for one, so a freshly stored credential is honestly "unknown"
  * until the first real call. They must still explain themselves in notes.
  */
-const NO_CREDENTIAL_PROOF_PROVIDERS = new Set(["higgsfield", "framer"]);
+const NO_CREDENTIAL_PROOF_PROVIDERS = new Set(["higgsfield", "framer", "ssh"]);
 
 function assertStoredStatus(providerKey: string, metadata: any) {
   if (NO_CREDENTIAL_PROOF_PROVIDERS.has(providerKey)) {
@@ -92,6 +92,7 @@ function patTokenForProvider(providerKey: string) {
     framer: JSON.stringify({ project: "https://framer.com/projects/Site--abc123", api_key: "framer-test-key" }),
     godaddy: "godaddy-key:godaddy-secret",
     higgsfield: "hf-test-key-id:hf-test-key-secret",
+    ssh: JSON.stringify({ host: "203.0.113.10", username: "deploy", private_key: "-----BEGIN OPENSSH PRIVATE KEY-----\\ntest\\n-----END OPENSSH PRIVATE KEY-----", host_key_sha256: "SHA256:abc" }),
     langgraph: JSON.stringify({ api_key: "lsv2-test-key", base_url: "https://grantry-test.us.langgraph.app" }),
     jira: JSON.stringify({ site: "https://acme.atlassian.net", email: "ops@example.com", token: "jira-test-token" }),
     microsoft_ads: JSON.stringify({ developer_token: "dev-token", access_token: "msads-token", customer_id: "customer", account_id: "account" }),

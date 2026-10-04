@@ -58,6 +58,7 @@ import { callOpenRouterTool } from "./connectors/openrouter.js";
 import { callAgentMailTool } from "./connectors/agentmail.js";
 import { callHiggsfieldTool } from "./connectors/higgsfield.js";
 import { callFramerTool } from "./connectors/framer.js";
+import { callSshTool } from "./connectors/ssh.js";
 import { callVercelTool } from "./connectors/vercel.js";
 import { callStripeTool } from "./connectors/stripe.js";
 import { callWebflowTool } from "./connectors/webflow.js";
@@ -2654,6 +2655,30 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       confirm: { type: "boolean", description: "false (default) runs the preview step and returns pending changes and warnings. true also confirms, which publishes the branch preview URL. Production is never deployed." },
     };
   }
+  // --- ssh ---
+  if (toolName === "ssh/check_connection") return {};
+  if (toolName === "ssh/run_command") {
+    return {
+      command: { type: "string", description: "Shell command run by the SSH user's login shell on the server, e.g. \"systemctl status nginx --no-pager\" or \"cd /srv/app && git pull\". Returns exit_code, stdout and stderr (each capped at 1 MB)." },
+      timeout_seconds: { type: "number", description: "Kill the command after this many seconds. Default 60, max 300. timed_out is true in the result when it fires." },
+      stdin: { type: "string", description: "Optional text written to the command's standard input." },
+    };
+  }
+  if (toolName === "ssh/read_file") {
+    return {
+      path: { type: "string", description: "File path on the server (absolute, or relative to the SSH user's home)." },
+      max_bytes: { type: "number", description: "Read at most this many bytes from the start of the file. Default 1000000, max 5000000. truncated is true when the file is longer." },
+    };
+  }
+  if (toolName === "ssh/write_file") {
+    return {
+      path: { type: "string", description: "File path on the server. The file is created or overwritten; the parent directory must exist." },
+      content: { type: "string", description: "File content (max 5 MB)." },
+      encoding: { type: "string", enum: ["utf8", "base64"], description: "How content is encoded. Default utf8; use base64 for binary files." },
+      mode: { type: "string", description: "Optional octal permission for a new file, e.g. \"644\" or \"755\"." },
+    };
+  }
+  if (toolName === "ssh/list_directory") { return { path: { type: "string", description: "Directory on the server. Defaults to the SSH user's home." } }; }
   // --- higgsfield ---
   if (toolName === "higgsfield/generate_image") {
     return {
@@ -3551,6 +3576,9 @@ function requiredToolSpecificArgs(toolName: string): string[] {
   if (toolName === "framer/switch_branch") return ["branch_id"];
   if (toolName === "framer/read_project") return ["queries"];
   if (toolName === "framer/apply_changes") return ["dsl"];
+  if (toolName === "ssh/run_command") return ["command"];
+  if (toolName === "ssh/read_file") return ["path"];
+  if (toolName === "ssh/write_file") return ["path", "content"];
   if (toolName === "higgsfield/generate_image") return ["prompt"];
   if (toolName === "higgsfield/get_request") return ["request_id"];
   if (toolName === "higgsfield/cancel_request") return ["request_id"];
@@ -4059,6 +4087,7 @@ async function dispatchProviderTool(
   if (provider === "agentmail") return callAgentMailTool(toolName, args, token);
   if (provider === "higgsfield") return callHiggsfieldTool(toolName, args, token);
   if (provider === "framer") return callFramerTool(toolName, args, token);
+  if (provider === "ssh") return callSshTool(toolName, args, token);
   if (provider === "vercel") return callVercelTool(toolName, args, token);
   if (provider === "stripe") return callStripeTool(toolName, args, token);
   if (provider === "webflow") return callWebflowTool(toolName, args, token);
