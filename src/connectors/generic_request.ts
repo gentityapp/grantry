@@ -1,4 +1,5 @@
 import type { ProviderDef } from "./registry.js";
+import { agentMailBaseUrl, parseAgentMailCredential } from "./agentmail.js";
 import { loadStagedFile } from "../files.js";
 
 // 12s used to be the ceiling for every provider call, which cut off the slow
@@ -238,6 +239,9 @@ function resolveBaseUrl(provider: string, manifest: GenericManifest, credential:
     }
     return normalizeBaseUrl(baseUrl);
   }
+  if (provider === "agentmail") {
+    return agentMailBaseUrl(parseAgentMailCredential(credential));
+  }
   if (manifest.baseUrl === "credential.instance_url") {
     const parsed = parseJsonMaybe(credential);
     const instanceUrl = normalizeBaseUrl(String(parsed?.instance_url ?? parsed?.instanceUrl ?? ""));
@@ -323,7 +327,7 @@ function credentialToken(provider: string, credential: string) {
   if (provider === "customerio" && parsed) return String(parsed.token ?? credential);
   if (provider === "microsoft_ads" && parsed) return String(parsed.access_token ?? credential);
   if (provider === "openai" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
-  if (provider === "agentmail" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? parsed.token ?? credential);
+  if (provider === "agentmail") return parseAgentMailCredential(credential).apiKey;
   if (provider === "openrouter" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? parsed.token ?? credential);
   if (provider === "twenty" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);
   if (provider === "monid" && parsed) return String(parsed.api_key ?? parsed.apiKey ?? credential);

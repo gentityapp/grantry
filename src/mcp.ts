@@ -2577,6 +2577,7 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
       labels: { type: "array", items: { type: "string" }, description: "Labels to put on the sent message (e.g. a campaign name) so replies can be tracked." },
       attachments: { type: "array", items: { type: "object" }, description: "[{ filename, content_type, content (base64) | url }]. Whole request max 6 MB." },
       headers: { type: "object", description: "Extra email headers." },
+      track_opens: { type: "boolean", description: "Track the first open. Requires a custom domain with tracking enabled and an HTML body." },
       idempotency_key: { type: "string", description: "Sends are irreversible. Pass a stable key (e.g. the draft id) so a retry with the same key does not send twice." },
     };
   }
