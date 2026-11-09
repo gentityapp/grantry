@@ -1,3 +1,4 @@
+import { TALLY_TOOLS } from "./tally.js";
 // Connector registry: maps provider name to its configuration.
 // Each provider knows:
 //   - How to authenticate (paste PAT, or OAuth start/callback)
@@ -574,6 +575,15 @@ export const PROVIDERS: Record<string, ProviderDef> = {
       { key: "api_key", label: "API key", required: true, secret: true, placeholder: "monid_live_..." },
       { key: "base_url", label: "Base URL", required: false, placeholder: "https://api.monid.ai" },
     ],
+    implemented: true,
+  },
+  tally: {
+    key: "tally",
+    label: "Tally",
+    authTypes: ["pat"],
+    helpText: "Create a Tally API key in Settings > API keys and paste it here. The key inherits its user's permissions and is sent as a Bearer token. Manage forms, read submissions and configure webhooks. Creating or publishing forms, changing webhooks and deleting data affect your live account. Use tally/request for other documented API operations.",
+    tokenUrl: "https://tally.so/settings/api-keys",
+    tools: Object.keys(TALLY_TOOLS),
     implemented: true,
   },
   calendly: {
@@ -2351,6 +2361,21 @@ const GENERIC_REQUESTS: Record<string, NonNullable<ProviderDef["genericRequest"]
     defaultMethods: ["GET", "POST"],
     allowedPathPrefixes: ["/v1/"],
     smokeTests: [{ id: "whoami", method: "GET", path: "/v1/auth/whoami" }],
+  },
+  tally: {
+    baseUrl: "https://api.tally.so",
+    defaultMethods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allowedPathPrefixes: ["/"],
+    smokeTests: [{ id: "me", method: "GET", path: "/users/me" }],
+    operations: Object.entries(TALLY_TOOLS).map(([name, tool]) => ({
+      id: name.split("/")[1],
+      tools: [name],
+      method: tool.method,
+      path: tool.path,
+      description: `Tally: ${name.split("/")[1].replace(/_/g, " ")}`,
+      risk: tool.method === "GET" ? "read" as const : tool.method === "DELETE" ? "destructive" as const : "write" as const,
+      probeQuery: (name === "tally/list_forms" || name === "tally/list_webhooks" ? { limit: 1 } : {}) as Record<string, string | number | boolean>,
+    })),
   },
   calendly: {
     baseUrl: "https://api.calendly.com",

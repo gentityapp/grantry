@@ -382,6 +382,10 @@ function patSuccessResponse(call: FetchCall) {
   if (url === "https://api.cal.com/v2/me") {
     return jsonResponse({ status: "success", data: { id: 1, email: "ops@example.com", username: "ops" } });
   }
+  if (url === "https://api.tally.so/users/me") return jsonResponse({ id: "u1", email: "ops@example.com" });
+  if (url === "https://api.tally.so/forms?limit=1") return jsonResponse({ items: [], page: 1, hasMore: false });
+  if (url === "https://api.tally.so/workspaces") return jsonResponse({ items: [], page: 1, hasMore: false });
+  if (url === "https://api.tally.so/webhooks?limit=1") return jsonResponse({ items: [], page: 1, hasMore: false });
   if (url === "https://api.calendly.com/users/me") {
     return jsonResponse({ resource: { uri: "https://api.calendly.com/users/u1", email: "ops@example.com", name: "Ops" } });
   }
