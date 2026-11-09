@@ -138,6 +138,7 @@ const LETTER_TILE_COLORS: Record<string, string> = {
   langsmith: "#1C3C3C", // LangChain dark teal
   monid: "#111827",
   youcanbookme: "#0053F0",
+  tally: "#FFB6D5",
   calendly: "#006BFF",
   calcom: "#292929",
   acuity: "#1B7DA0",

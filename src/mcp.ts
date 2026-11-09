@@ -1,3 +1,4 @@
+import { TALLY_TOOLS, callTallyTool, tallyInputProperties, tallyRequiredArgs } from "./connectors/tally.js";
 // MCP JSON-RPC gateway with auth + policy + dispatch
 // Phase 2: implements real tool dispatch for notion/* and github/*
 // Phase 3: scope-based policy enforcement
@@ -191,6 +192,7 @@ function canonicalToolName(name: unknown): string {
 }
 
 function toolSpecificInputProperties(toolName: string): Record<string, any> {
+  if (TALLY_TOOLS[toolName]) return tallyInputProperties(toolName);
   const metaToolName = metaAdsRuntimeToolName(toolName);
   if (isAdminTool(toolName)) return adminToolDescriptor(toolName).properties as Record<string, any>;
   if (toolName === "grantry/get_skill") {
@@ -3336,6 +3338,7 @@ function toolSpecificInputProperties(toolName: string): Record<string, any> {
 }
 
 function requiredToolSpecificArgs(toolName: string): string[] {
+  if (TALLY_TOOLS[toolName]) return tallyRequiredArgs(toolName);
   const metaToolName = metaAdsRuntimeToolName(toolName);
   if (SYSTEM_TOOLS.includes(toolName as any)) return [];
   if (isAdminTool(toolName)) return adminToolDescriptor(toolName).required;
@@ -4044,6 +4047,7 @@ async function dispatchProviderTool(
   if (provider === "sentry") return callSentryTool(toolName, args, token);
   if (provider === "monid") return callMonidTool(toolName, args, token);
   if (provider === "youcanbookme") return callYouCanBookMeTool(toolName, args, token);
+  if (provider === "tally") return callTallyTool(toolName, args, token, PROVIDERS.tally);
   if (provider === "calendly") return callCalendlyTool(toolName, args, token);
   if (provider === "calcom") return callCalcomTool(toolName, args, token);
   if (provider === "acuity") return callAcuityTool(toolName, args, token);

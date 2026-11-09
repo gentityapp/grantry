@@ -423,6 +423,7 @@ the same provider+scope; disambiguate with `auth_type` (`service_account` vs
 - **google_tag_manager** (OAuth; read-only): `list_accounts`, `list_containers`, `get_container`, `list_workspaces`, `list_tags`
 - **google_cloud** (OAuth; read-only): `list_projects`, `get_project`, `list_services`, `list_log_entries`
 - **bigquery** (OAuth; read+query): `list_datasets`, `list_tables`, `get_table`, `query`, `get_job`
+- **tally** (API key; read+write): `get_me`, `list_forms`, `get_form`, `create_form`, `update_form`, `delete_form`, `list_questions`, `list_submissions`, `get_submission`, `delete_submission`, `list_workspaces`, `list_webhooks`, `create_webhook`, `update_webhook`, `delete_webhook`. Also exposes `request`, `check_connection`, and `list_capabilities`. See `docs/providers/tally.md` for arguments and setup.
 - **Other implemented connectors** (each one's exact tool set is available
   via `tools/list`): `acuity`, `agentmail`, `apollo`, `calcom`, `calendly`,
   `clarity`, `cloudsign`, `dataforseo`, `facebook_messenger`, `firecrawl`,
