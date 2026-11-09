@@ -1,3 +1,4 @@
+import { isPublicAddress } from "../public_download.js";
 // SSH connector - run commands and move files on a server the workspace owns,
 // over SSH (`ssh2`). Like Framer this is not an HTTP proxy: every tool call opens
 // one SSH session, runs one operation and closes it.
@@ -104,14 +105,7 @@ export function parseSshCredential(raw: string): SshCredential {
 }
 
 export function isPrivateAddress(ip: string): boolean {
-  const v4 = ip.startsWith("::ffff:") ? ip.slice(7) : ip;
-  if (isIP(v4) === 4) {
-    const [a, b] = v4.split(".").map(Number);
-    return a === 0 || a === 10 || a === 127 || (a === 100 && b >= 64 && b <= 127) || (a === 169 && b === 254)
-      || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 198 && (b === 18 || b === 19)) || a >= 224;
-  }
-  const v6 = ip.toLowerCase();
-  return v6 === "::" || v6 === "::1" || v6.startsWith("fc") || v6.startsWith("fd") || /^fe[89ab]/.test(v6) || v6.startsWith("ff");
+  return !isPublicAddress(ip);
 }
 
 export type SshResolve = (host: string) => Promise<string[]>;

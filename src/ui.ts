@@ -6043,7 +6043,7 @@ dashboardApp.get("/tenants/:scope/edit", async (c) => {
   const scope = c.req.param("scope");
   const access = await scopeAccessFor(user.id, scope);
   const tenantRow = access?.tenant ?? null;
-  const rowsWhere = access?.rowsWhere ?? { ownerId: user.id };
+  const rowsWhere: RowsWhere = access?.rowsWhere ?? { ownerId: user.id };
   const wsId = tenantRow?.workspaceId ?? (await getActiveWorkspaceId(c));
   const connections = await prisma.connection.findMany({
     where: { scope, ...rowsWhere },
@@ -6845,7 +6845,7 @@ dashboardApp.post("/tenants/:scope/codex-mcp/create", async (c) => {
   if (!/^[a-z0-9_-]+$/.test(scope)) return c.html("<h1>invalid scope</h1>", 400);
 
   const access = await scopeAccessFor(user.id, scope);
-  const rowsWhere = access?.rowsWhere ?? { ownerId: user.id };
+  const rowsWhere: RowsWhere = access?.rowsWhere ?? { ownerId: user.id };
   const wsId = access?.tenant.workspaceId ?? (await getActiveWorkspaceId(c));
   const existing = await prisma.agent.findFirst({
     where: {
@@ -6978,7 +6978,7 @@ dashboardApp.post("/tenants/:scope/edit", async (c) => {
   // Connection updates belong to the tenant's own workspace, not
   // whatever workspace happens to be active in the cookie.
   const access = await scopeAccessFor(user.id, scope);
-  const rowsWhere = access?.rowsWhere ?? { ownerId: user.id };
+  const rowsWhere: RowsWhere = access?.rowsWhere ?? { ownerId: user.id };
   const wsId = access?.tenant.workspaceId ?? (await getActiveWorkspaceId(c));
 
   // --- save_settings: update connection labels/enabled + role desc/tools/scopes ---
@@ -10334,7 +10334,7 @@ dashboardApp.post("/tenants/:scope/delete", async (c) => {
   // 1) Find manageable connections + tenant row for this scope. A tenant with
   //    zero connections is still deletable (the entity exists on its own).
   const access = await scopeAccessFor(user.id, scope);
-  const rowsWhere = access?.rowsWhere ?? { ownerId: user.id };
+  const rowsWhere: RowsWhere = access?.rowsWhere ?? { ownerId: user.id };
   const conns = await prisma.connection.findMany({
     where: { scope, ...rowsWhere },
     select: { id: true, label: true },
@@ -10402,7 +10402,7 @@ dashboardApp.post("/tenants/bulk-delete", async (c) => {
   const detail: string[] = [];
   for (const scope of scopes) {
     const access = await scopeAccessFor(user.id, scope);
-    const rowsWhere = access?.rowsWhere ?? { ownerId: user.id };
+    const rowsWhere: RowsWhere = access?.rowsWhere ?? { ownerId: user.id };
     const connDelete = await prisma.connection.deleteMany({ where: { scope, ...rowsWhere } });
     const roleList = await prisma.role.findMany({
       where: { ownerId: user.id, OR: [{ name: `${scope}-dev-${bulkUserIdShort}` }, { name: `${scope}-dev` }, { name: scope }] },

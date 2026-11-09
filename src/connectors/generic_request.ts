@@ -36,7 +36,7 @@ function normalizePath(pathValue: unknown) {
   const path = String(pathValue ?? "").trim();
   if (!path) throw new Error("path is required");
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(path)) throw new Error("provider_path_not_allowed: path must be relative, not a full URL");
-  if (path.includes("..")) throw new Error("provider_path_not_allowed: path must not contain ..");
+  if (path.includes("..") || /[#\\]/.test(path) || /%(?:2e|5c)/i.test(path)) throw new Error("provider_path_not_allowed: path must not contain traversal, backslashes or a fragment");
   return path.startsWith("/") ? path : `/${path}`;
 }
 
@@ -695,7 +695,7 @@ async function executeGenericRequest(args: {
   applyProviderServerCredential(args.provider.key, args.serverCredential, headers);
   Object.assign(headers, args.headers ?? {});
 
-  const init: RequestInit = { method, headers, signal: undefined };
+  const init: RequestInit = { method, headers, signal: undefined, redirect: "error" };
   const files = args.files ?? [];
   if (files.length) {
     if (BODYLESS_METHODS.has(method)) throw new Error(`provider_files_not_allowed: ${method} requests cannot carry files`);
@@ -720,13 +720,13 @@ async function executeGenericRequest(args: {
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   const started = Date.now();
   try {
-    console.log("[provider-request] request", { provider: args.provider.key, method, path, baseUrlKey: args.baseUrlKey });
+    console.log("[provider-request] request", { provider: args.provider.key, method, path: path.split("?")[0], baseUrlKey: args.baseUrlKey });
     const response = await fetch(url, init);
     const { body, truncated, pagination } = await readResponse(response);
     console.log("[provider-request] response", {
       provider: args.provider.key,
       method,
-      path,
+      path: path.split("?")[0],
       baseUrlKey: args.baseUrlKey,
       status: response.status,
       durationMs: Date.now() - started,

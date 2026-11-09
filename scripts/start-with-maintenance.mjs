@@ -34,17 +34,6 @@ function run(command, args, { timeoutMs = 30_000, required = false } = {}) {
 
 await run("npx", ["prisma", "generate"], { required: true, timeoutMs: 45_000 });
 
-// Database hardening is best-effort at process start. It must never keep the
-// HTTP service down; failed maintenance is visible in logs and can be rerun.
-await run("npx", ["prisma", "db", "push", "--accept-data-loss"], { timeoutMs: 30_000 });
-await run("node", ["scripts/backfill-auth-types.mjs"], { timeoutMs: 20_000 });
-await run("node", ["--import", "tsx/esm", "scripts/backfill-credential-metadata.mjs"], { timeoutMs: 30_000 });
-await run("node", ["--import", "tsx/esm", "scripts/backfill-credential-health.mjs"], { timeoutMs: 30_000 });
-await run("node", ["scripts/dedupe-connections.mjs"], { timeoutMs: 20_000 });
-await run("node", ["scripts/backfill-tenants.mjs"], { timeoutMs: 20_000 });
-await run("node", ["scripts/backfill-workspaces.mjs"], { timeoutMs: 30_000 });
-await run("node", ["--import", "tsx/esm", "scripts/backfill-provider-credentials.mjs"], { timeoutMs: 30_000 });
-await run("node", ["scripts/disable-platform-oauth-app-credentials.mjs"], { timeoutMs: 20_000 });
-await run("node", ["scripts/backfill-agent-connection-grants.mjs"], { timeoutMs: 30_000 });
-
+// Startup must never migrate schemas, restore grants or rewrite credentials.
+// Run reviewed maintenance explicitly, after backing up the database.
 await run("node", ["--import", "tsx/esm", "src/server.ts"], { required: true, timeoutMs: null });

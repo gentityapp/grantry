@@ -1,3 +1,5 @@
+import { bodyLimit } from "hono/body-limit";
+import { stagedFileHeaders } from "./http_security.js";
 // Upload staging for providers that will not take JSON.
 //
 // The MCP transport carries JSON-RPC, so a provider call that needs actual
@@ -64,13 +66,14 @@ async function resolveTicketAgent(ticket: string) {
     await prisma.uploadTicket.delete({ where: { id: row.id } }).catch(() => {});
     return null;
   }
-  if (!row.agent.enabled) return null;
-  const used = await prisma.uploadTicket.update({
-    where: { id: row.id },
+  if (!row.agent.enabled || (row.agent.expiresAt && row.agent.expiresAt < new Date())) return null;
+  // Compare-and-swap prevents concurrent requests redeeming the same use.
+  const used = await prisma.uploadTicket.updateMany({
+    where: { id: row.id, usedCount: row.usedCount, expiresAt: { gt: new Date() } },
     data: { usedCount: { increment: 1 } },
-    select: { usedCount: true, maxUses: true },
   });
-  if (used.usedCount >= used.maxUses) {
+  if (used.count !== 1) return null;
+  if (row.usedCount + 1 >= row.maxUses) {
     await prisma.uploadTicket.delete({ where: { id: row.id } }).catch(() => {});
   }
   return row.agent;
@@ -116,7 +119,7 @@ function resolveTtlSeconds(raw: unknown) {
   return Math.min(Math.floor(value), MAX_TTL_SECONDS);
 }
 
-filesApp.post("/", async (c) => {
+filesApp.post("/", bodyLimit({ maxSize: MAX_UPLOAD_BYTES + 64 * 1024 }), async (c) => {
   const agent =
     (await resolveAgent(c.req.header("authorization") ?? null)) ??
     (await resolveTicketAgent(c.req.query("ticket") ?? ""));
@@ -203,13 +206,7 @@ filesApp.get("/:id", async (c) => {
     .catch(() => {});
   return new Response(Buffer.from(staged.bytes), {
     status: 200,
-    headers: {
-      "Content-Type": staged.contentType,
-      "Content-Length": String(staged.size),
-      "Content-Disposition": `inline; filename="${staged.filename.replace(/"/g, "")}"`,
-      "Cache-Control": "no-store",
-      "X-Robots-Tag": "noindex, nofollow",
-    },
+    headers: stagedFileHeaders(staged.filename, staged.contentType, staged.size),
   });
 });
 

@@ -76,8 +76,8 @@ function consentHTML(props: {
   <p class="err" id="err"></p>
 </div>
 <script>
-  const clientId = ${JSON.stringify(props.clientId)};
-  const code = ${JSON.stringify(props.code)};
+  const clientId = ${JSON.stringify(props.clientId).replace(/</g, "\\u003c")};
+  const code = ${JSON.stringify(props.code).replace(/</g, "\\u003c")};
   const sel = document.getElementById("agent");
   const approve = document.getElementById("approve");
   const deny = document.getElementById("deny");
