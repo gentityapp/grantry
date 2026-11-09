@@ -1,3 +1,5 @@
+import { delegationBoundaryMatches, consumeDelegationGrant } from "./delegation_security.js";
+import { maskAuditArgs, auditErrorSummary } from "./audit_redaction.js";
 // MCP JSON-RPC gateway with auth + policy + dispatch
 // Phase 2: implements real tool dispatch for notion/* and github/*
 // Phase 3: scope-based policy enforcement
@@ -4284,34 +4286,6 @@ async function callSystemTool(toolName: string, args: Record<string, unknown>, c
   throw new Error(`Unknown system tool: ${toolName}`);
 }
 
-// Keys whose values never belong in the audit log in plaintext: file payloads,
-// message bodies, and anything credential-shaped. Length/shape is kept so the
-// log still shows *what* was sent, just not the content.
-const SENSITIVE_AUDIT_KEYS = new Set([
-  "files", "content", "body", "text", "html", "credential", "token", "password", "secret", "api_key", "apiKey",
-]);
-const TOKEN_LIKE = /^(gh[pousr]_|github_pat_|ntn_|secret_|re_|sk-|ya29\.|Bearer\s|gn_(agt|adm|grant)_)/;
-
-function maskAuditArgs(args: Record<string, unknown>): string {
-  const masked: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(args ?? {})) {
-    if (SENSITIVE_AUDIT_KEYS.has(key)) {
-      masked[key] =
-        typeof value === "string" ? `<redacted ${value.length} chars>`
-        : Array.isArray(value) ? `<redacted ${value.length} items>`
-        : value && typeof value === "object" ? `<redacted ${Object.keys(value).length} keys>`
-        : "<redacted>";
-    } else if (typeof value === "string" && TOKEN_LIKE.test(value)) {
-      masked[key] = "<redacted token-like value>";
-    } else if (typeof value === "string" && value.length > 300) {
-      masked[key] = `${value.slice(0, 300)}…<+${value.length - 300} chars>`;
-    } else {
-      masked[key] = value;
-    }
-  }
-  return JSON.stringify(masked).slice(0, 4000);
-}
-
 // Per-agent rate limit for tools/call (src/rate_limit.ts): default
 // MCP_RATE_LIMIT_PER_MINUTE, per-agent MCP_RATE_LIMIT_OVERRIDES.
 const agentRateLimiter = new AgentRateLimiter();
@@ -5324,8 +5298,8 @@ const handleMcpPost = async (c: any) => {
       if (!delegScope) return fail(-32602, "delegate requires 'scope'");
 
       const [self, target] = await Promise.all([
-        prisma.agent.findUnique({ where: { id: agent.id }, select: { ownerId: true } }),
-        prisma.agent.findUnique({ where: { id: targetAgentId }, select: { id: true, name: true, enabled: true, ownerId: true, expiresAt: true } }),
+        prisma.agent.findUnique({ where: { id: agent.id }, select: { ownerId: true, workspaceId: true } }),
+        prisma.agent.findUnique({ where: { id: targetAgentId }, select: { id: true, name: true, enabled: true, ownerId: true, workspaceId: true, expiresAt: true } }),
       ]);
       if (!self) return fail(-32011, "calling agent vanished", 500);
       if (target?.id === agent.id) return fail(-32602, "cannot delegate to yourself");
@@ -5333,7 +5307,7 @@ const handleMcpPost = async (c: any) => {
       if (target.expiresAt && target.expiresAt < new Date()) return fail(-32010, "target agent token expired", 403);
       // Owner boundary: delegation never crosses owners (cross-owner routing is
       // a larger policy decision — see the design doc).
-      if (target.ownerId !== self.ownerId) return fail(-32010, "delegation is limited to agents that share your owner", 403);
+      if (!delegationBoundaryMatches(self, target)) return fail(-32010, "delegation is limited to agents that share your owner and workspace", 403);
 
       // The target must genuinely be capable — same predicate as a direct call.
       const decision = await checkPolicy({ agentId: target.id, tool: delegTool, scope: delegScope });
@@ -5445,6 +5419,14 @@ const handleMcpPost = async (c: any) => {
         return c.json({ jsonrpc: "2.0", id, error: { code: -32010, message: `delegation grant rejected: ${invalid}` } }, 403);
       }
 
+      const [requesterBoundary, targetBoundary] = await Promise.all([
+        prisma.agent.findUnique({ where: { id: agent.id }, select: { ownerId: true, workspaceId: true } }),
+        prisma.agent.findUnique({ where: { id: grant!.targetAgentId }, select: { ownerId: true, workspaceId: true } }),
+      ]);
+      if (!delegationBoundaryMatches(requesterBoundary, targetBoundary)) {
+        return c.json({ jsonrpc: "2.0", id, error: { code: -32010, message: "delegation boundary changed" } }, 403);
+      }
+
       // Re-verify the target is still capable (connection grants may have moved
       // since the grant was minted).
       const decision = await checkPolicy({ agentId: grant!.targetAgentId, tool: toolName, scope });
@@ -5467,17 +5449,18 @@ const handleMcpPost = async (c: any) => {
       delete innerArgs.grant_token;
       delete innerArgs.grantToken;
       try {
+        // Claim atomically before resolving credentials or making a provider call.
+        if (!(await consumeDelegationGrant(grant!.id))) {
+          return c.json({ jsonrpc: "2.0", id, error: { code: -32010, message: "grant already used or expired" } }, 403);
+        }
         const credential = await credentialForConnection(conn);
-
-        // Burn the single use up front: a failed provider call still consumes the grant.
-        await prisma.delegationGrant.update({ where: { id: grant!.id }, data: { status: "consumed", consumedAt: now } });
         const result = await dispatchProviderTool(decision.provider, toolName, innerArgs, credential, conn, agent.id);
         void recordRuntimeCallHealth(conn, { ok: true });
         await prisma.auditLog.create({ data: {
           agentId: grant!.targetAgentId, userId: agent.userId ?? undefined, delegatedById: agent.id, delegationId: grant!.id,
           connectionId: conn.id,
           provider: decision.provider, tool: toolName, scope, status: "ok",
-          responseSummary: JSON.stringify({ delegatedBy: agent.name, connectionId: conn.id, result: (result as any)?.auditSummary ?? result }).slice(0, 500),
+          responseSummary: JSON.stringify({ delegatedBy: agent.name, connectionId: conn.id, status: "ok" }).slice(0, 500),
           requestArgs: maskAuditArgs(innerArgs),
           durationMs: Date.now() - started,
           ipAddress: c.req.header("x-forwarded-for") ?? null,
@@ -5490,7 +5473,7 @@ const handleMcpPost = async (c: any) => {
           agentId: grant!.targetAgentId, userId: agent.userId ?? undefined, delegatedById: agent.id, delegationId: grant!.id,
           connectionId: conn.id,
           provider: decision.provider, tool: toolName, scope, status: "error",
-          errorMessage: errMsg.slice(0, 2000),
+          errorMessage: auditErrorSummary(errMsg),
           requestArgs: maskAuditArgs(innerArgs),
           durationMs: Date.now() - started,
         } });
@@ -5563,7 +5546,7 @@ const handleMcpPost = async (c: any) => {
           tool: toolName,
           scope,
           status: "error",
-          errorMessage: errMsg.slice(0, 2000),
+          errorMessage: auditErrorSummary(errMsg),
           requestArgs: maskAuditArgs(args),
           durationMs: Date.now() - started,
         },
@@ -5587,7 +5570,7 @@ const handleMcpPost = async (c: any) => {
           tool: toolName,
           scope,
           status: "ok",
-          responseSummary: JSON.stringify({ authType: decision.authType, connectionId: conn.id, result: (result as any)?.auditSummary ?? result }).slice(0, 500),
+          responseSummary: JSON.stringify({ authType: decision.authType, connectionId: conn.id, status: "ok" }).slice(0, 500),
           requestArgs: maskAuditArgs(providerArgs),
           durationMs: Date.now() - started,
           ipAddress: c.req.header("x-forwarded-for") ?? null,
@@ -5609,7 +5592,7 @@ const handleMcpPost = async (c: any) => {
           tool: toolName,
           scope,
           status: "error",
-          errorMessage: errMsg.slice(0, 2000),
+          errorMessage: auditErrorSummary(errMsg),
           requestArgs: maskAuditArgs(providerArgs),
           durationMs: Date.now() - started,
         },

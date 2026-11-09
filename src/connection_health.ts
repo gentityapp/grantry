@@ -1,3 +1,4 @@
+import { auditErrorSummary } from "./audit_redaction.js";
 // Runtime connection-health reflection. The dashboard's "active/broken" badge
 // renders healthStatusSnapshot, which historically was written only at
 // connect-time and on manual Recheck — a PAT that expired after that stayed
@@ -95,7 +96,7 @@ export async function recordRuntimeCallHealth(
         healthErrorCode: authInvalid
           ? healthErrorCodeFromAuthFailure(message, conn.accessTokenExpiresAt)
           : "missing_scope",
-        healthErrorMessage: message.slice(0, 1000),
+        healthErrorMessage: auditErrorSummary(message),
       },
     });
   } catch (e) {

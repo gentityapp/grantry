@@ -1,3 +1,4 @@
+import { downloadPublicFile } from "../public_download.js";
 // GitHub connector — Personal Access Tokens (fine-grained recommended)
 // Calls the GitHub REST API using the stored PAT.
 type GhArgs = Record<string, unknown>;
@@ -263,11 +264,7 @@ export async function callGitHubTool(tool: string, args: GhArgs, token: string) 
       if (spec && typeof spec === "object" && typeof spec.base64 === "string") {
         b64 = spec.base64.replace(/^data:[^;]+;base64,/, "");
       } else if (spec && typeof spec === "object" && typeof spec.url === "string") {
-        const fr = await fetch(spec.url);
-        if (!fr.ok) {
-          throw new Error(`git_push_repo could not fetch files["${path}"].url (${spec.url}): ${fr.status} ${await fr.text()}`);
-        }
-        const buf = Buffer.from(await fr.arrayBuffer());
+        const buf = await downloadPublicFile(spec.url, MAX_BLOB_BYTES);
         if (buf.length > MAX_BLOB_BYTES) {
           throw new Error(`files["${path}"] is ${buf.length} bytes; exceeds GitHub's 100MB blob limit`);
         }

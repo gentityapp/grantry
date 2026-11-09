@@ -1,8 +1,8 @@
 // grantry — Phase 1: Hono server with /health and /mcp placeholder
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
-import { cors } from "hono/cors";
-import { logger } from "hono/logger";
+import { browserBoundary } from "./http_security.js";
+
 import { getCookie, setCookie } from "hono/cookie";
 import { detectLocale, runWithLocale, t, LANG_COOKIE, LOCALES, type Locale } from "./i18n.js";
 import { oAuthDiscoveryMetadata, oAuthProtectedResourceMetadata } from "better-auth/plugins";
@@ -21,14 +21,12 @@ import "./usage.js";
 
 const app = new Hono();
 
-app.use("*", logger());
-app.use(
-  "*",
-  cors({
-    origin: (origin) => origin ?? "*",
-    credentials: true,
-  }),
-);
+// Avoid logging raw request URLs: OAuth codes and file tickets live in queries.
+app.use("*", async (c, next) => {
+  await next();
+  console.log("[http]", c.req.method, c.res.status);
+});
+app.use("*", browserBoundary);
 
 // Per-request locale. Runs the entire downstream chain (handlers + the HTML
 // post-processing middleware below) inside an AsyncLocalStorage store so the
@@ -139,10 +137,9 @@ app.route("/files", filesApp);
 // opaque default "Internal Server Error" page with no diagnostics (see the
 // OAuth callback). Log the real error and surface a minimal, safe message.
 app.onError((err, c) => {
-  console.error(`[error] ${c.req.method} ${c.req.path}:`, err);
-  const detail = err instanceof Error ? err.message : String(err);
+  console.error("[error] request failed", { method: c.req.method, type: err.name });
   return c.json(
-    { error: "internal_server_error", path: c.req.path, detail },
+    { error: "internal_server_error" },
     500,
   );
 });
